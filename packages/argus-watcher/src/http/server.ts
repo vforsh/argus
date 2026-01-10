@@ -55,7 +55,7 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 					}
 					resolve()
 				})
-			})
+			}),
 	}
 }
 
@@ -67,7 +67,7 @@ const handleLogs = (url: URL, res: http.ServerResponse, options: HttpServerOptio
 	const sinceTs = clampNumber(url.searchParams.get('sinceTs'), undefined)
 
 	const events = options.buffer.listAfter(after, { levels, grep, sinceTs }, limit)
-	const nextAfter = events.length > 0 ? events[events.length - 1]?.id ?? after : after
+	const nextAfter = events.length > 0 ? (events[events.length - 1]?.id ?? after) : after
 	const response: LogsResponse = { ok: true, events, nextAfter }
 	respondJson(res, response)
 }
@@ -80,7 +80,7 @@ const handleTail = async (url: URL, res: http.ServerResponse, options: HttpServe
 	const grep = url.searchParams.get('grep') ?? undefined
 
 	const events = await options.buffer.waitForAfter(after, { levels, grep }, limit, timeoutMs)
-	const nextAfter = events.length > 0 ? events[events.length - 1]?.id ?? after : after
+	const nextAfter = events.length > 0 ? (events[events.length - 1]?.id ?? after) : after
 	const response: TailResponse = { ok: true, events, nextAfter, timedOut: events.length === 0 }
 	respondJson(res, response)
 }
@@ -97,7 +97,7 @@ const buildStatus = (options: HttpServerOptions): StatusResponse => {
 		attached: cdpStatus.attached,
 		target: cdpStatus.target,
 		buffer,
-		watcher
+		watcher,
 	}
 }
 

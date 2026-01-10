@@ -29,6 +29,6 @@ export const startRegistryHeartbeat = (getWatcher: () => WatcherRecord, interval
 	}, intervalMs)
 
 	return {
-		stop: () => clearInterval(timer)
+		stop: () => clearInterval(timer),
 	}
 }

@@ -30,7 +30,7 @@ export class LogBuffer {
 	add(event: Omit<LogEvent, 'id'>): LogEvent {
 		const entry: LogEvent = {
 			...event,
-			id: this.nextId++
+			id: this.nextId++,
 		}
 		this.events.push(entry)
 		this.trim()
@@ -71,7 +71,7 @@ export class LogBuffer {
 			size: this.maxSize,
 			count: this.events.length,
 			minId: this.events[0]?.id ?? null,
-			maxId: this.events[this.events.length - 1]?.id ?? null
+			maxId: this.events[this.events.length - 1]?.id ?? null,
 		}
 	}
 

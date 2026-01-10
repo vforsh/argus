@@ -1,8 +1,4 @@
 {
 	"files": [],
-	"references": [
-		{ "path": "./packages/argus-core" },
-		{ "path": "./packages/argus-watcher" },
-		{ "path": "./packages/argus" }
-	]
+	"references": [{ "path": "./packages/argus-core" }, { "path": "./packages/argus-watcher" }, { "path": "./packages/argus" }]
 }

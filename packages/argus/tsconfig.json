@@ -8,14 +8,8 @@
 		"rootDir": "./src",
 		"outDir": "./dist",
 		"tsBuildInfoFile": "./dist/.tsbuildinfo",
-		"types": [
-			"node"
-		]
+		"types": ["node"]
 	},
-	"references": [
-		{ "path": "../argus-core" }
-	],
-	"include": [
-		"src"
-	]
+	"references": [{ "path": "../argus-core" }],
+	"include": ["src"]
 }

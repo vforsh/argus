@@ -11,7 +11,7 @@ program
 	.description('Argus CLI for local watcher servers')
 	.version('0.1.0')
 	.configureOutput({
-		outputError: (str, write) => write(str)
+		outputError: (str, write) => write(str),
 	})
 	.showSuggestionAfterError(true)
 	.exitOverride((error) => {
@@ -26,10 +26,7 @@ program
 	.command('list')
 	.description('List registered watchers')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus list\n  $ argus list --json\n'
-	)
+	.addHelpText('after', '\nExamples:\n  $ argus list\n  $ argus list --json\n')
 	.action(async (options) => {
 		await runList(options)
 	})
@@ -44,10 +41,7 @@ program
 	.option('--after <id>', 'Only return events after this id')
 	.option('--limit <count>', 'Maximum number of events')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus logs app\n  $ argus logs app --since 10m --levels error,warning\n  $ argus logs app --json\n'
-	)
+	.addHelpText('after', '\nExamples:\n  $ argus logs app\n  $ argus logs app --since 10m --levels error,warning\n  $ argus logs app --json\n')
 	.action(async (id, options) => {
 		await runLogs(id, options)
 	})
@@ -62,10 +56,7 @@ program
 	.option('--limit <count>', 'Maximum number of events per poll')
 	.option('--timeout <ms>', 'Long-poll timeout in milliseconds')
 	.option('--json', 'Output newline-delimited JSON events')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus tail app\n  $ argus tail app --levels error\n  $ argus tail app --json\n'
-	)
+	.addHelpText('after', '\nExamples:\n  $ argus tail app\n  $ argus tail app --levels error\n  $ argus tail app --json\n')
 	.action(async (id, options) => {
 		await runTail(id, options)
 	})

@@ -54,7 +54,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		startedAt: Date.now(),
 		updatedAt: Date.now(),
 		match: options.match,
-		chrome
+		chrome,
 	}
 
 	const server = await startHttpServer({
@@ -62,7 +62,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		port,
 		buffer,
 		getWatcher: () => record,
-		getCdpStatus: () => cdpStatus
+		getCdpStatus: () => cdpStatus,
 	})
 
 	record.port = server.port
@@ -75,7 +75,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		onLog: (event) => buffer.add(event),
 		onStatus: (status) => {
 			cdpStatus = status
-		}
+		},
 	})
 
 	return {
@@ -85,7 +85,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 			await cdp.stop()
 			await server.close()
 			await removeWatcher(record.id)
-		}
+		},
 	}
 }
 

@@ -13,7 +13,7 @@ export const fetchJson = async <T>(url: string, options: HttpOptions = {}): Prom
 	try {
 		const response = await fetch(url, {
 			method: options.method ?? 'GET',
-			signal: controller.signal
+			signal: controller.signal,
 		})
 
 		if (!response.ok) {

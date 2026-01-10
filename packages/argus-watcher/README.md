@@ -10,7 +10,7 @@ import { startWatcher } from 'argus-watcher'
 const watcher = await startWatcher({
 	id: 'app',
 	match: { url: 'localhost:3000' },
-	chrome: { host: '127.0.0.1', port: 9222 }
+	chrome: { host: '127.0.0.1', port: 9222 },
 })
 
 // later
