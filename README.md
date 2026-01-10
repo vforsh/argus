@@ -6,6 +6,10 @@ Brokerless console-log watcher for Chromium-based browsers via CDP. This repo is
 - `argus-watcher`: watcher library
 - `argus-core`: shared types + registry helpers
 
+## Why “Argus”?
+
+“Argus” is a nod to **Argus Panoptes** (the many‑eyed, all‑seeing watcher in Greek mythology). This project “keeps an eye” on Chromium targets via CDP and streams what it sees (console logs, errors, etc.).
+
 ## Quickstart
 
 1. Install dependencies:
