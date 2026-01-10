@@ -1,0 +1,12 @@
+{
+	"plugins": [
+		"typescript"
+	],
+	"rules": {
+		"no-debugger": "error"
+	},
+	"ignorePatterns": [
+		"dist",
+		"node_modules"
+	]
+}

@@ -1,0 +1,27 @@
+{
+	"name": "argus",
+	"version": "0.1.0",
+	"type": "module",
+	"bin": {
+		"argus": "./dist/bin.js"
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"dependencies": {
+		"argus-core": "0.1.0",
+		"commander": "14.0.2"
+	},
+	"scripts": {
+		"build": "tsc -b",
+		"typecheck": "tsc -b --pretty false --noEmit"
+	}
+}

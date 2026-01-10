@@ -1,0 +1,27 @@
+{
+	"name": "argus",
+	"private": true,
+	"type": "module",
+	"workspaces": [
+		"packages/*"
+	],
+	"scripts": {
+		"lint": "oxlint .",
+		"lint:fix": "oxlint . --fix",
+		"typecheck": "tsc -b --pretty false",
+		"typecheck:packages": "tsc -b packages/* --pretty false --noEmit",
+		"build": "tsc -b",
+		"build:packages": "tsc -b packages/*",
+		"commitlint:range": "commitlint --from origin/main --to HEAD",
+		"prepare": "husky"
+	},
+	"devDependencies": {
+		"@commitlint/cli": "20.3.1",
+		"@commitlint/config-conventional": "20.3.1",
+		"@types/node": "25.0.6",
+		"husky": "9.1.7",
+		"oxlint": "1.38.0",
+		"prettier": "3.7.4",
+		"typescript": "5.9.3"
+	}
+}
