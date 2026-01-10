@@ -18,6 +18,6 @@
 	},
 	"scripts": {
 		"build": "tsc -b",
-		"typecheck": "tsc -b --pretty false --noEmit"
+		"typecheck": "tsc -b --pretty false"
 	}
 }

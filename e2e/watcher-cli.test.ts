@@ -96,7 +96,42 @@ test('watcher + CLI e2e', async (t) => {
 		`Logs should contain "${testMsg}"`,
 	)
 
-	// 6. Assert `argus tail`
+	// 6. Emit page errors and assert `argus logs`
+	const exceptionMarker = `e2e-uncaught-${Date.now()}`
+	const rejectionMarker = `e2e-rejection-${Date.now()}`
+
+	await page.evaluate(
+		({ exceptionMarker, rejectionMarker }) => {
+			setTimeout(() => {
+				throw new Error(exceptionMarker)
+			}, 0)
+			Promise.reject(new Error(rejectionMarker))
+		},
+		{ exceptionMarker, rejectionMarker },
+	)
+
+	await new Promise((r) => setTimeout(r, 1500))
+
+	const { stdout: errorLogsOut } = await runCommand('node', [BIN_PATH, 'logs', watcherId, '--json'], { env })
+	const errorLogs = JSON.parse(errorLogsOut) as Array<{
+		text: string
+		level: string
+		source: string
+		args?: unknown[]
+	}>
+
+	const exceptionLogs = errorLogs.filter((event) => event.level === 'exception' && event.source === 'exception')
+	assert.ok(exceptionLogs.length > 0, 'Expected exception logs in watcher output')
+	assert.ok(
+		exceptionLogs.some((event) => event.text.includes(exceptionMarker) || JSON.stringify(event.args ?? []).includes(exceptionMarker)),
+		`Expected uncaught exception marker "${exceptionMarker}" in logs`,
+	)
+	assert.ok(
+		exceptionLogs.some((event) => event.text.includes(rejectionMarker) || JSON.stringify(event.args ?? []).includes(rejectionMarker)),
+		`Expected unhandled rejection marker "${rejectionMarker}" in logs`,
+	)
+
+	// 7. Assert `argus tail`
 	const tailMsg = `tail message ${Date.now()}`
 
 	const tailProcPromise = spawnAndWait('node', [BIN_PATH, 'tail', watcherId, '--json'], { env }, new RegExp(tailMsg))

@@ -9,7 +9,7 @@
 		"lint": "oxlint .",
 		"lint:fix": "oxlint . --fix",
 		"typecheck": "tsc -b --pretty false",
-		"typecheck:packages": "tsc -b packages/* --pretty false --noEmit",
+		"typecheck:packages": "tsc -b packages/* --pretty false",
 		"build": "tsc -b",
 		"build:packages": "tsc -b packages/*",
 		"test:e2e": "npm run build:packages && npx tsx --test e2e/**/*.test.ts",

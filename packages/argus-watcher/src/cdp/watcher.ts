@@ -201,8 +201,10 @@ const toExceptionEvent = (params: unknown, target: CdpTarget): Omit<LogEvent, 'i
 		}
 	}
 	const details = record.exceptionDetails
-	const args = details?.exception ? [serializeRemoteObject(details.exception)] : []
-	const text = details?.text ?? (args[0] ? String(args[0]) : 'Exception')
+	const exceptionValue = details?.exception ? serializeRemoteObject(details.exception) : null
+	const args = exceptionValue != null ? [exceptionValue] : []
+	const exceptionDescription = describeExceptionValue(exceptionValue)
+	const text = formatExceptionText(details?.text, exceptionDescription)
 	const frame = details?.stackTrace?.callFrames?.[0]
 	const file = frame?.url ?? null
 	const line = frame?.lineNumber != null ? frame.lineNumber + 1 : null
@@ -220,6 +222,40 @@ const toExceptionEvent = (params: unknown, target: CdpTarget): Omit<LogEvent, 'i
 		pageTitle: target.title ?? null,
 		source: 'exception',
 	}
+}
+
+const describeExceptionValue = (value: unknown): string | null => {
+	if (value == null) {
+		return null
+	}
+
+	if (typeof value === 'string') {
+		return value
+	}
+
+	try {
+		return JSON.stringify(value)
+	} catch {
+		return String(value)
+	}
+}
+
+const formatExceptionText = (baseText: string | undefined, description: string | null): string => {
+	const trimmed = baseText?.trim()
+	if (!trimmed) {
+		return description ?? 'Exception'
+	}
+
+	if (!description) {
+		return trimmed
+	}
+
+	const isGeneric = trimmed === 'Uncaught' || trimmed === 'Uncaught (in promise)'
+	if (isGeneric && !trimmed.includes(description)) {
+		return `${trimmed}: ${description}`
+	}
+
+	return trimmed
 }
 
 const serializeRemoteObject = (value: unknown): unknown => {
