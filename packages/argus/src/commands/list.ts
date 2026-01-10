@@ -3,10 +3,12 @@ import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registr
 import { fetchJson } from '../httpClient.js'
 import { formatWatcherLine } from '../output/format.js'
 
+/** Options for the list command. */
 export type ListOptions = {
 	json?: boolean
 }
 
+/** Execute the list command. */
 export const runList = async (options: ListOptions): Promise<void> => {
 	let registry = await loadRegistry()
 	registry = await pruneRegistry(registry)

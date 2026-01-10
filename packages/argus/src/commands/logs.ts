@@ -4,6 +4,7 @@ import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
 import { parseDurationMs } from '../time.js'
 
+/** Options for the logs command. */
 export type LogsOptions = {
 	json?: boolean
 	levels?: string
@@ -13,6 +14,7 @@ export type LogsOptions = {
 	limit?: string
 }
 
+/** Execute the logs command for a watcher id. */
 export const runLogs = async (id: string, options: LogsOptions): Promise<void> => {
 	let registry = await loadRegistry()
 	registry = await pruneRegistry(registry)

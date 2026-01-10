@@ -1,5 +1,6 @@
 import type { LogEvent, WatcherRecord } from 'argus-core'
 
+/** Format a watcher line for human output. */
 export const formatWatcherLine = (watcher: WatcherRecord, status?: { attached: boolean; target?: { title: string | null; url: string | null } | null }): string => {
 	const base = `${watcher.id} ${watcher.host}:${watcher.port}`
 	const match = formatMatch(watcher)
@@ -11,6 +12,7 @@ export const formatWatcherLine = (watcher: WatcherRecord, status?: { attached: b
 	return `${base} ${match} [${state}]${targetSuffix}`.trim()
 }
 
+/** Format a log event for human output. */
 export const formatLogEvent = (event: LogEvent, watcherId?: string): string => {
 	const prefix = watcherId ? `[${watcherId}] ` : ''
 	const header = `${prefix}[${event.level}] ${event.text}`.trim()

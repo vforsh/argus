@@ -3,6 +3,7 @@ import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registr
 import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
 
+/** Options for the tail command. */
 export type TailOptions = {
 	json?: boolean
 	levels?: string
@@ -12,6 +13,7 @@ export type TailOptions = {
 	limit?: string
 }
 
+/** Execute the tail command for a watcher id. */
 export const runTail = async (id: string, options: TailOptions): Promise<void> => {
 	let registry = await loadRegistry()
 	registry = await pruneRegistry(registry)

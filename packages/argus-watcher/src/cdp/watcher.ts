@@ -1,5 +1,6 @@
 import type { LogEvent, LogLevel, WatcherMatch, WatcherChrome } from 'argus-core'
 
+/** Minimal CDP target metadata needed for attachment. */
 export type CdpTarget = {
 	id: string
 	title: string
@@ -7,6 +8,7 @@ export type CdpTarget = {
 	webSocketDebuggerUrl: string
 }
 
+/** Current CDP attachment status. */
 export type CdpStatus = {
 	attached: boolean
 	target: {
@@ -15,6 +17,7 @@ export type CdpStatus = {
 	} | null
 }
 
+/** Options for CDP watcher lifecycle. */
 export type CdpWatcherOptions = {
 	chrome: WatcherChrome
 	match?: WatcherMatch
@@ -22,6 +25,7 @@ export type CdpWatcherOptions = {
 	onStatus: (status: CdpStatus) => void
 }
 
+/** Start CDP polling + websocket subscriptions for console/exception events. */
 export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promise<void> } => {
 	let stopped = false
 	let socket: WebSocket | null = null

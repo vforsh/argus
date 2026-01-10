@@ -1,5 +1,6 @@
 import type { LogEvent, LogLevel } from 'argus-core'
 
+/** Filtering options for log retrieval. */
 export type LogFilters = {
 	levels?: LogLevel[]
 	grep?: string
@@ -14,6 +15,7 @@ type Waiter = {
 	timer: NodeJS.Timeout
 }
 
+/** In-memory ring buffer for log events with long-poll waiters. */
 export class LogBuffer {
 	private readonly maxSize: number
 	private events: LogEvent[] = []
@@ -24,6 +26,7 @@ export class LogBuffer {
 		this.maxSize = maxSize
 	}
 
+	/** Add a log event and return the stored entry with id. */
 	add(event: Omit<LogEvent, 'id'>): LogEvent {
 		const entry: LogEvent = {
 			...event,
@@ -35,11 +38,13 @@ export class LogBuffer {
 		return entry
 	}
 
+	/** List events after the given id, respecting filters and limit. */
 	listAfter(after: number, filters: LogFilters, limit: number): LogEvent[] {
 		const filtered = this.events.filter((event) => event.id > after && matchesFilters(event, filters))
 		return filtered.slice(0, limit)
 	}
 
+	/** Wait for events after an id or timeout. */
 	waitForAfter(after: number, filters: LogFilters, limit: number, timeoutMs: number): Promise<LogEvent[]> {
 		const immediate = this.listAfter(after, filters, limit)
 		if (immediate.length > 0) {
@@ -56,6 +61,7 @@ export class LogBuffer {
 		})
 	}
 
+	/** Get buffer size and id boundaries. */
 	getStats(): { size: number; count: number; minId: number | null; maxId: number | null } {
 		if (this.events.length === 0) {
 			return { size: this.maxSize, count: 0, minId: null, maxId: null }

@@ -1,8 +1,10 @@
+/** Fetch options for watcher HTTP calls. */
 export type HttpOptions = {
 	timeoutMs?: number
 	method?: 'GET' | 'POST'
 }
 
+/** Fetch JSON with timeout and typed response. */
 export const fetchJson = async <T>(url: string, options: HttpOptions = {}): Promise<T> => {
 	const controller = new AbortController()
 	const timeoutMs = options.timeoutMs ?? 5_000

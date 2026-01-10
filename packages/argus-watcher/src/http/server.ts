@@ -2,6 +2,7 @@ import http from 'node:http'
 import type { ErrorResponse, LogsResponse, StatusResponse, TailResponse, LogLevel, WatcherRecord } from 'argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 
+/** Options for the watcher HTTP server. */
 export type HttpServerOptions = {
 	host: string
 	port: number
@@ -10,11 +11,13 @@ export type HttpServerOptions = {
 	getCdpStatus: () => { attached: boolean; target: { title: string | null; url: string | null } | null }
 }
 
+/** Handle for the running HTTP server. */
 export type HttpServerHandle = {
 	port: number
 	close: () => Promise<void>
 }
 
+/** Start HTTP server bound to localhost for watcher API. */
 export const startHttpServer = async (options: HttpServerOptions): Promise<HttpServerHandle> => {
 	const server = http.createServer(async (req, res) => {
 		const url = new URL(req.url ?? '/', `http://${req.headers.host ?? options.host}`)

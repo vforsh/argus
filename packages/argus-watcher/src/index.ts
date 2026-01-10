@@ -4,6 +4,7 @@ import { LogBuffer } from './buffer/LogBuffer.js'
 import { startHttpServer } from './http/server.js'
 import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
 
+/** Options to start a watcher server. */
 export type StartWatcherOptions = {
 	id: string
 	host?: string
@@ -14,6 +15,7 @@ export type StartWatcherOptions = {
 	heartbeatMs?: number
 }
 
+/** Handle returned by startWatcher. */
 export type WatcherHandle = {
 	close: () => Promise<void>
 	watcher: WatcherRecord
@@ -80,4 +82,5 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	}
 }
 
+/** Log event shape emitted by watchers. */
 export type { LogEvent }

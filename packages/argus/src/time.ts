@@ -1,3 +1,4 @@
+/** Parse duration strings like 10m, 2h, 30s into ms. */
 export const parseDurationMs = (value: string): number | null => {
 	const trimmed = value.trim()
 	if (!trimmed) {

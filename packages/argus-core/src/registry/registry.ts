@@ -3,15 +3,19 @@ import path from 'node:path'
 import { getRegistryPath } from './paths.js'
 import type { RegistryReadResult, RegistryV1, WatcherRecord } from './types.js'
 
+/** Current registry schema version. */
 export const REGISTRY_VERSION = 1
+/** Default staleness threshold in ms. */
 export const DEFAULT_TTL_MS = 60_000
 
+/** Create a fresh empty registry object. */
 export const createEmptyRegistry = (now = Date.now()): RegistryV1 => ({
 	version: REGISTRY_VERSION,
 	updatedAt: now,
 	watchers: {}
 })
 
+/** Read registry file from disk with safe fallback + warnings. */
 export const readRegistry = async (registryPath = getRegistryPath()): Promise<RegistryReadResult> => {
 	const warnings: string[] = []
 	let raw: string | null = null
@@ -42,14 +46,17 @@ export const readRegistry = async (registryPath = getRegistryPath()): Promise<Re
 	return { registry: parsed, warnings }
 }
 
+/** Write registry to disk using atomic replacement. */
 export const writeRegistry = async (registry: RegistryV1, registryPath = getRegistryPath()): Promise<void> => {
 	const dir = path.dirname(registryPath)
 	await fs.mkdir(dir, { recursive: true })
 	await atomicWrite(registryPath, JSON.stringify(registry, null, 2))
 }
 
+/** Return registry watchers as a list. */
 export const listWatchers = (registry: RegistryV1): WatcherRecord[] => Object.values(registry.watchers)
 
+/** Add or update a watcher entry. */
 export const setWatcherEntry = (registry: RegistryV1, watcher: WatcherRecord, now = Date.now()): RegistryV1 => {
 	const next: RegistryV1 = {
 		...registry,
@@ -62,6 +69,7 @@ export const setWatcherEntry = (registry: RegistryV1, watcher: WatcherRecord, no
 	return next
 }
 
+/** Remove a watcher entry by id. */
 export const removeWatcherEntry = (registry: RegistryV1, id: string, now = Date.now()): RegistryV1 => {
 	if (!registry.watchers[id]) {
 		return registry
@@ -77,6 +85,7 @@ export const removeWatcherEntry = (registry: RegistryV1, id: string, now = Date.
 	}
 }
 
+/** Remove watchers whose updatedAt exceeds TTL. */
 export const pruneStaleWatchers = (
 	registry: RegistryV1,
 	now = Date.now(),
