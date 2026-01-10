@@ -1,0 +1,111 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import path from 'node:path'
+import os from 'node:os'
+import fs from 'node:fs/promises'
+import { chromium } from 'playwright'
+import { getFreePort } from './helpers/ports.js'
+import { runCommand, spawnAndWait } from './helpers/process.js'
+
+const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
+const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
+
+test('watcher + CLI e2e', async (t) => {
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-e2e-'))
+	const env = { ...process.env, ARGUS_HOME: tempDir }
+	const debugPort = await getFreePort()
+	const watcherId = `e2e-watcher-${Date.now()}`
+
+	// 1. Launch browser
+	const browser = await chromium.launch({
+		args: [`--remote-debugging-address=127.0.0.1`, `--remote-debugging-port=${debugPort}`],
+	})
+
+	t.after(async () => {
+		await browser.close()
+		await fs.rm(tempDir, { recursive: true, force: true })
+	})
+
+	const context = await browser.newContext()
+	const page = await context.newPage()
+	// Set title before navigating or staying on blank page
+	await page.setContent('<html><head><title>argus-e2e</title></head><body><h1>E2E Page</h1></body></html>')
+
+	// Verify title
+	const title = await page.title()
+	assert.equal(title, 'argus-e2e')
+
+	// 2. Start watcher
+	const watcherConfig = {
+		id: watcherId,
+		chrome: { host: '127.0.0.1', port: debugPort },
+		match: { title: 'argus-e2e' },
+		host: '127.0.0.1',
+		port: 0,
+	}
+
+	const { proc: watcherProc, stdout: watcherStdout } = await spawnAndWait(
+		'npx',
+		['tsx', FIXTURE_WATCHER, JSON.stringify(watcherConfig)],
+		{ env },
+		/\{"id":"e2e-watcher-/,
+	)
+
+	t.after(async () => {
+		watcherProc.kill('SIGTERM')
+	})
+
+	const watcherInfo = JSON.parse(watcherStdout)
+
+	// 3. Wait for attachment
+	let attached = false
+	for (let i = 0; i < 50; i++) {
+		try {
+			const res = await fetch(`http://127.0.0.1:${watcherInfo.port}/status`)
+			const status = (await res.json()) as { attached: boolean }
+			if (status.attached) {
+				attached = true
+				break
+			}
+		} catch (e) {
+			// ignore connection errors during startup
+		}
+		await new Promise((r) => setTimeout(r, 200))
+	}
+	assert.ok(attached, 'Watcher should be attached to page')
+
+	// 4. Assert `argus list`
+	const { stdout: listOut } = await runCommand('node', [BIN_PATH, 'list'], { env })
+	assert.match(listOut, new RegExp(watcherId))
+	assert.match(listOut, /\[attached\]/)
+
+	// 5. Emit log and assert `argus logs`
+	const testMsg = `hello from e2e ${Date.now()}`
+	// Give it another moment to ensure Runtime.enable is active
+	await new Promise((r) => setTimeout(r, 1000))
+	await page.evaluate((msg) => console.log(msg), testMsg)
+
+	// Give it a moment to buffer
+	await new Promise((r) => setTimeout(r, 1000))
+
+	const { stdout: logsOut } = await runCommand('node', [BIN_PATH, 'logs', watcherId, '--json'], { env })
+	const logs = JSON.parse(logsOut) as Array<{ text: string }>
+	assert.ok(Array.isArray(logs), 'Logs should be a JSON array')
+	assert.ok(
+		logs.some((l) => l.text === testMsg),
+		`Logs should contain "${testMsg}"`,
+	)
+
+	// 6. Assert `argus tail`
+	const tailMsg = `tail message ${Date.now()}`
+
+	const tailProcPromise = spawnAndWait('node', [BIN_PATH, 'tail', watcherId, '--json'], { env }, new RegExp(tailMsg))
+
+	// Give tail a moment to start long-polling
+	await new Promise((r) => setTimeout(r, 1000))
+
+	await page.evaluate((msg) => console.log(msg), tailMsg)
+
+	const { proc: tailProc } = await tailProcPromise
+	tailProc.kill('SIGINT')
+})

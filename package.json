@@ -12,16 +12,23 @@
 		"typecheck:packages": "tsc -b packages/* --pretty false --noEmit",
 		"build": "tsc -b",
 		"build:packages": "tsc -b packages/*",
+		"test:e2e": "npm run build:packages && npx tsx --test e2e/**/*.test.ts",
 		"commitlint:range": "commitlint --from origin/main --to HEAD",
 		"prepare": "husky"
+	},
+	"lint-staged": {
+		"*": "prettier --write --ignore-unknown"
 	},
 	"devDependencies": {
 		"@commitlint/cli": "20.3.1",
 		"@commitlint/config-conventional": "20.3.1",
 		"@types/node": "25.0.6",
 		"husky": "9.1.7",
+		"lint-staged": "^16.2.7",
 		"oxlint": "1.38.0",
+		"playwright": "^1.57.0",
 		"prettier": "3.7.4",
+		"tsx": "^4.21.0",
 		"typescript": "5.9.3"
 	}
 }
