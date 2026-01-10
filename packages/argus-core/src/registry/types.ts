@@ -1,38 +1,57 @@
 /** Target matching rules for CDP selection. */
 export type WatcherMatch = {
+	/** Exact URL match against the CDP target URL. */
 	url?: string
+	/** Exact title match against the CDP target title. */
 	title?: string
+	/** JavaScript regex pattern (without flags) matched against the CDP target URL. */
 	urlRegex?: string
+	/** JavaScript regex pattern (without flags) matched against the CDP target title. */
 	titleRegex?: string
 }
 
 /** Chrome CDP connection details. */
 export type WatcherChrome = {
+	/** Hostname / IP where Chrome's remote debugging endpoint is reachable. */
 	host: string
+	/** Port for Chrome's remote debugging endpoint (commonly `9222`). */
 	port: number
 }
 
 /** Registry entry for a watcher instance. */
 export type WatcherRecord = {
+	/** Unique watcher identifier (also used as the key in the registry). */
 	id: string
+	/** Host/interface the watcher HTTP server is bound to. */
 	host: string
+	/** Port the watcher HTTP server is bound to. */
 	port: number
+	/** Process ID of the watcher process. */
 	pid: number
+	/** Watcher start time as milliseconds since Unix epoch. */
 	startedAt: number
+	/** Last update time as milliseconds since Unix epoch. */
 	updatedAt: number
+	/** Optional CDP target matching rules used by this watcher. */
 	match?: WatcherMatch
+	/** Optional CDP connection details used by this watcher. */
 	chrome?: WatcherChrome
 }
 
 /** Registry schema v1. */
 export type RegistryV1 = {
+	/** Schema version discriminator. */
 	version: 1
+	/** Registry update time as milliseconds since Unix epoch. */
 	updatedAt: number
+	/** Watchers keyed by `WatcherRecord.id`. */
 	watchers: Record<string, WatcherRecord>
 }
 
 /** Result of reading the registry file with warnings. */
 export type RegistryReadResult = {
+	/** Parsed registry content (normalized to the latest supported schema). */
 	registry: RegistryV1
+	/** Non-fatal warnings encountered while reading/parsing the registry file. */
 	warnings: string[]
 }

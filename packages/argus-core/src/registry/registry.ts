@@ -5,6 +5,7 @@ import type { RegistryReadResult, RegistryV1, WatcherRecord } from './types.js'
 
 /** Current registry schema version. */
 export const REGISTRY_VERSION = 1
+
 /** Default staleness threshold in ms. */
 export const DEFAULT_TTL_MS = 60_000
 
@@ -12,7 +13,7 @@ export const DEFAULT_TTL_MS = 60_000
 export const createEmptyRegistry = (now = Date.now()): RegistryV1 => ({
 	version: REGISTRY_VERSION,
 	updatedAt: now,
-	watchers: {}
+	watchers: {},
 })
 
 /** Read registry file from disk with safe fallback + warnings. */
@@ -63,8 +64,8 @@ export const setWatcherEntry = (registry: RegistryV1, watcher: WatcherRecord, no
 		updatedAt: now,
 		watchers: {
 			...registry.watchers,
-			[watcher.id]: watcher
-		}
+			[watcher.id]: watcher,
+		},
 	}
 	return next
 }
@@ -81,7 +82,7 @@ export const removeWatcherEntry = (registry: RegistryV1, id: string, now = Date.
 	return {
 		...registry,
 		updatedAt: now,
-		watchers
+		watchers,
 	}
 }
 
@@ -89,7 +90,7 @@ export const removeWatcherEntry = (registry: RegistryV1, id: string, now = Date.
 export const pruneStaleWatchers = (
 	registry: RegistryV1,
 	now = Date.now(),
-	ttlMs = DEFAULT_TTL_MS
+	ttlMs = DEFAULT_TTL_MS,
 ): { registry: RegistryV1; removedIds: string[] } => {
 	const removedIds: string[] = []
 	const watchers: Record<string, WatcherRecord> = {}
@@ -110,9 +111,9 @@ export const pruneStaleWatchers = (
 		registry: {
 			...registry,
 			updatedAt: now,
-			watchers
+			watchers,
 		},
-		removedIds
+		removedIds,
 	}
 }
 

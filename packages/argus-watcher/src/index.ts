@@ -6,12 +6,19 @@ import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './regist
 
 /** Options to start a watcher server. */
 export type StartWatcherOptions = {
+	/** Unique watcher identifier (used for registry presence and removal on shutdown). */
 	id: string
+	/** Host/interface to bind the watcher HTTP server to. Defaults to `127.0.0.1`. */
 	host?: string
+	/** Port to bind the watcher HTTP server to. Defaults to `0` (ephemeral). */
 	port?: number
+	/** Criteria for which Chrome target(s) to attach to. */
 	match?: WatcherMatch
+	/** Chrome DevTools Protocol (CDP) connection settings. Defaults to `127.0.0.1:9222`. */
 	chrome?: WatcherChrome
+	/** Max buffered log events before older entries are dropped. Defaults to `50_000`. */
 	bufferSize?: number
+	/** How often (in ms) to refresh the watcher record in the registry. Defaults to `15_000`. */
 	heartbeatMs?: number
 }
 
