@@ -58,7 +58,6 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 
 	async function connectOnce(): Promise<void> {
 		const target = await findTarget(options.chrome, options.match)
-		options.onStatus({ attached: true, target: { title: target.title ?? null, url: target.url ?? null } })
 
 		socket = new WebSocket(target.webSocketDebuggerUrl)
 		await new Promise<void>((resolve, reject) => {
@@ -92,6 +91,9 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 
 		send(socket, 'Runtime.enable')
 		send(socket, 'Page.enable')
+
+		// Only signal attached after we've enabled the necessary domains
+		options.onStatus({ attached: true, target: { title: target.title ?? null, url: target.url ?? null } })
 
 		await new Promise<void>((resolve) => {
 			socket?.addEventListener('close', () => resolve())
@@ -151,7 +153,7 @@ const fetchTargets = async (chrome: WatcherChrome): Promise<CdpTarget[]> => {
 			id: target.id as string,
 			title: String(target.title ?? ''),
 			url: String(target.url ?? ''),
-			webSocketDebuggerUrl: String(target.webSocketDebuggerUrl ?? '')
+			webSocketDebuggerUrl: String(target.webSocketDebuggerUrl ?? ''),
 		}))
 		.filter((target) => Boolean(target.webSocketDebuggerUrl))
 }
@@ -179,7 +181,7 @@ const toConsoleEvent = (params: unknown, target: CdpTarget): Omit<LogEvent, 'id'
 		column,
 		pageUrl: target.url ?? null,
 		pageTitle: target.title ?? null,
-		source: 'console'
+		source: 'console',
 	}
 }
 
@@ -209,7 +211,7 @@ const toExceptionEvent = (params: unknown, target: CdpTarget): Omit<LogEvent, 'i
 		column,
 		pageUrl: target.url ?? null,
 		pageTitle: target.title ?? null,
-		source: 'exception'
+		source: 'exception',
 	}
 }
 
@@ -286,8 +288,9 @@ const parseMessage = (data: unknown): unknown => {
 	return null
 }
 
+let nextId = 1
 const send = (socket: WebSocket, method: string): void => {
-	socket.send(JSON.stringify({ id: Date.now(), method }))
+	socket.send(JSON.stringify({ id: nextId++, method }))
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
@@ -310,7 +313,7 @@ const createSystemLog = (message: string): Omit<LogEvent, 'id'> => ({
 	column: null,
 	pageUrl: null,
 	pageTitle: null,
-	source: 'system'
+	source: 'system',
 })
 
 const formatError = (error: unknown): string => {
