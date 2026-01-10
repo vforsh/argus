@@ -2,9 +2,16 @@ import type { LogEvent, LogLevel, WatcherMatch, WatcherChrome } from 'argus-core
 
 /** Minimal CDP target metadata needed for attachment. */
 export type CdpTarget = {
+	/** CDP target id (from Chrome `/json` endpoint). */
 	id: string
+
+	/** Human-readable page title for the target. */
 	title: string
+
+	/** Page URL for the target. */
 	url: string
+
+	/** WebSocket URL used to connect to the target via the Chrome DevTools Protocol. */
 	webSocketDebuggerUrl: string
 }
 

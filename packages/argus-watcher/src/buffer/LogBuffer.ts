@@ -1,9 +1,25 @@
 import type { LogEvent, LogLevel } from 'argus-core'
 
-/** Filtering options for log retrieval. */
+/**
+ * Filtering options for log retrieval.
+ *
+ * Used by `LogBuffer.listAfter()` and `LogBuffer.waitForAfter()`.
+ */
 export type LogFilters = {
+	/** If provided, only include events whose `level` is in this list. */
 	levels?: LogLevel[]
+
+	/**
+	 * Case-insensitive substring match against `LogEvent.text`.
+	 * If provided, only include events whose text contains this value.
+	 */
 	grep?: string
+
+	/**
+	 * Only include events with `event.ts >= sinceTs`.
+	 *
+	 * Timestamp is **epoch milliseconds** (same units as `Date.now()`).
+	 */
 	sinceTs?: number
 }
 
