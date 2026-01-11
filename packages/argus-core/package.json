@@ -1,6 +1,11 @@
 {
 	"name": "@vforsh/argus-core",
 	"version": "0.1.1",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/vforsh/argus.git",
+		"directory": "packages/argus-core"
+	},
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
