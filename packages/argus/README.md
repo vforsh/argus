@@ -29,7 +29,8 @@ argus tail <id>
 
 - **`argus tail <id>`**: Stream logs as they arrive (follow mode).
     - Best for “what’s happening right now?” while you reproduce an issue.
-    - With `--json`, emits newline-delimited JSON events (NDJSON) for piping into tools.
+    - With `--json`, emits bounded newline-delimited JSON events (NDJSON) for piping into tools.
+    - With `--json-full`, emits full NDJSON events (can be very large).
 
 #### `logs` vs `tail`
 
@@ -38,10 +39,15 @@ argus tail <id>
 
 ### Options
 
-- **`--json`**: output machine-readable JSON.
+- **`--json`**: output bounded, machine-readable JSON preview.
     - **What**: switches from human text formatting to JSON; for `tail`, this is newline-delimited JSON (NDJSON) so each event is one line.
-    - **When**: when piping into tools like `jq`, writing to a file, or building scripts around Argus.
-    - **Why**: stable structure is easier to parse than terminal-friendly text.
+    - **When**: when piping into tools like `jq`, writing to a file, or building scripts around Argus without risking megabytes-per-line.
+    - **Why**: stable structure is easier to parse than terminal-friendly text, and large payloads stay capped.
+
+- **`--json-full`**: output full, raw JSON.
+    - **What**: emits the full event payload with no preview caps; for `tail`, this is NDJSON.
+    - **When**: when you need exact fidelity and are ok with large output.
+    - **Why**: preserves complete structures for deep debugging or archival.
 
 - **`--levels <comma-separated>`**: filter by log severity.
     - **What**: only returns/emits events whose `level` is in the list (e.g. `error,warning`).
@@ -66,7 +72,7 @@ argus tail <id>
 ## Output
 
 - Text output uses 4-character level tags (e.g. `LOG `, `DEBG`, `WARN`, `ERR `, `INFO`, `EXCP`).
-- JSON output preserves the raw `level` values.
+- JSON output preserves the raw `level` values; `--json` uses bounded preview values, `--json-full` is raw.
 
 ## Examples
 

@@ -3,7 +3,7 @@ import fsPromises from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { LogEvent, WatcherChrome, WatcherMatch } from '@vforsh/argus-core'
-import { formatLogLevelTag } from '@vforsh/argus-core'
+import { formatLogLevelTag, previewStringify } from '@vforsh/argus-core'
 import type { BuildFilenameContext } from '../index.js'
 
 type PageInfo = {
@@ -278,7 +278,7 @@ type HeaderContext = {
 }
 
 const renderHeader = (context: HeaderContext): string => {
-	const matchText = context.match ? safeStringify(context.match) : '(none)'
+	const matchText = context.match ? previewStringify(context.match) : '(none)'
 	const pageUrl = context.pageUrl ?? '(unknown)'
 	const pageSearchParams = formatPageSearchParams(context.pageUrl)
 	const pageTitle = context.pageTitle ?? '(unknown)'
@@ -333,14 +333,6 @@ const formatLocation = (event: Omit<LogEvent, 'id'>): string | null => {
 }
 
 const toSafeTimestamp = (ts: number): string => new Date(ts).toISOString().replace(/:/g, '-')
-
-const safeStringify = (value: unknown): string => {
-	try {
-		return JSON.stringify(value)
-	} catch {
-		return String(value)
-	}
-}
 
 const formatPageSearchParams = (pageUrl: string | null): string => {
 	if (!pageUrl || pageUrl === '(unknown)') {

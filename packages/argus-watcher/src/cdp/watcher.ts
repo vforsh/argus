@@ -1,4 +1,5 @@
 import type { LogEvent, LogLevel, WatcherMatch, WatcherChrome } from '@vforsh/argus-core'
+import { previewStringify } from '@vforsh/argus-core'
 import type { IgnoreMatcher } from './ignoreList.js'
 import { stripUrlPrefixes } from './locationCleanup.js'
 import type { CallFrame, SelectedLocation } from './selectBestFrame.js'
@@ -539,7 +540,7 @@ const formatArgs = (args: unknown[]): string => {
 		return ''
 	}
 
-	return args.map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')
+	return args.map((arg) => previewStringify(arg)).join(' ')
 }
 
 const parseMessage = (data: unknown): unknown => {

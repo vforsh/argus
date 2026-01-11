@@ -2,10 +2,12 @@ import type { TailResponse } from '@vforsh/argus-core'
 import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
+import { previewLogEvent } from '../output/preview.js'
 
 /** Options for the tail command. */
 export type TailOptions = {
 	json?: boolean
+	jsonFull?: boolean
 	levels?: string
 	grep?: string
 	after?: string
@@ -64,8 +66,13 @@ export const runTail = async (id: string, options: TailOptions): Promise<void> =
 
 		if (response.events.length > 0) {
 			for (const event of response.events) {
-				if (options.json) {
+				if (options.jsonFull) {
 					process.stdout.write(`${JSON.stringify({ watcher: watcher.id, event })}\n`)
+					continue
+				}
+				if (options.json) {
+					const previewEvent = previewLogEvent(event)
+					process.stdout.write(`${JSON.stringify({ watcher: watcher.id, event: previewEvent })}\n`)
 					continue
 				}
 				process.stdout.write(

@@ -2,11 +2,13 @@ import type { LogsResponse } from '@vforsh/argus-core'
 import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
+import { previewLogEvent } from '../output/preview.js'
 import { parseDurationMs } from '../time.js'
 
 /** Options for the logs command. */
 export type LogsOptions = {
 	json?: boolean
+	jsonFull?: boolean
 	levels?: string
 	grep?: string
 	since?: string
@@ -62,8 +64,14 @@ export const runLogs = async (id: string, options: LogsOptions): Promise<void> =
 		return
 	}
 
-	if (options.json) {
+	if (options.jsonFull) {
 		process.stdout.write(JSON.stringify(response.events))
+		return
+	}
+
+	if (options.json) {
+		const previewEvents = response.events.map((event) => previewLogEvent(event))
+		process.stdout.write(JSON.stringify(previewEvents))
 		return
 	}
 
