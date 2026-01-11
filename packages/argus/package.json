@@ -20,7 +20,7 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@vforsh/argus-core": "0.1.0",
+		"@vforsh/argus-core": "0.1.1",
 		"commander": "14.0.2"
 	},
 	"scripts": {
