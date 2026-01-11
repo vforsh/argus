@@ -8,12 +8,13 @@ export const formatWatcherLine = (
 ): string => {
 	const base = `${watcher.id} ${watcher.host}:${watcher.port}`
 	const match = formatMatch(watcher)
+	const cwd = formatCwd(watcher)
 	const state = status ? (status.attached ? 'attached' : 'detached') : 'unknown'
 	const target = status?.target
 	const targetLabel = target?.title || target?.url ? `${target?.title ?? ''}${target?.title && target?.url ? ' • ' : ''}${target?.url ?? ''}` : ''
 	const targetSuffix = targetLabel ? ` (${targetLabel})` : ''
 
-	return `${base} ${match} [${state}]${targetSuffix}`.trim()
+	return `${base} ${match} ${cwd} [${state}]${targetSuffix}`.trim()
 }
 
 /** Format a log event for human output. */
@@ -51,6 +52,13 @@ const formatMatch = (watcher: WatcherRecord): string => {
 	}
 
 	return ''
+}
+
+const formatCwd = (watcher: WatcherRecord): string => {
+	if (!watcher.cwd) {
+		return ''
+	}
+	return `cwd:${watcher.cwd}`
 }
 
 const formatLineColumn = (event: LogEvent): string => {

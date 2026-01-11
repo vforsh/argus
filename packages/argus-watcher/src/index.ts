@@ -95,6 +95,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		host,
 		port,
 		pid: process.pid,
+		cwd: process.cwd(),
 		startedAt,
 		updatedAt: Date.now(),
 		match: options.match,

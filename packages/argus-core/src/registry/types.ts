@@ -28,6 +28,8 @@ export type WatcherRecord = {
 	port: number
 	/** Process ID of the watcher process. */
 	pid: number
+	/** Working directory (`process.cwd()`) of the watcher process. */
+	cwd?: string
 	/** Watcher start time as milliseconds since Unix epoch. */
 	startedAt: number
 	/** Last update time as milliseconds since Unix epoch. */
