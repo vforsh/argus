@@ -13,7 +13,6 @@
 		"build": "tsc -b",
 		"build:packages": "tsc -b packages/*",
 		"test:e2e": "npm run build:packages && npx tsx --test e2e/**/*.test.ts",
-		"commitlint:range": "commitlint --from origin/main --to HEAD",
 		"prepare": "husky"
 	},
 	"lint-staged": {

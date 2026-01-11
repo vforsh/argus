@@ -46,6 +46,8 @@
 
 - **Commits**: Conventional Commits only (`feat|fix|refactor|build|ci|chore|docs|style|perf|test`). Pick type by user-visible intent, not files touched. If there’s nuance: add a short “why” body.
 
+- **Commit message length**: Keep the commit message header under 120 characters. This is enforced by `commitlint.config.mjs` to allow for descriptive headers while maintaining readability. If a header needs more detail, use the commit body.
+
 - **Worktrees root**: Worktrees live as siblings under `~/dev/argus/` "container" directory.
 
 - **Main checkout**: Primary working tree: `~/dev/argus/argus` (`main` branch). Treat it as the default base for tooling/scripts unless a worktree is mentioned.
