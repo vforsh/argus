@@ -61,3 +61,13 @@ node packages/argus/dist/bin.js tail app
 ## Registry
 
 Watchers announce themselves in `~/.argus/registry.json` (macOS/Linux) or `%USERPROFILE%\.argus\registry.json` (Windows). Entries are updated periodically and pruned when stale or unreachable.
+
+## Troubleshooting
+
+- **`TS2307: Cannot find module '@vforsh/argus-core'` (or similar workspace package imports)**: your npm workspaces may not be linked into `node_modules` (no publish required).
+
+```bash
+npm install --no-audit --no-fund --prefer-offline
+npm ls @vforsh/argus-core --all
+npm run build
+```

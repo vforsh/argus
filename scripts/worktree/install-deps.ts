@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readlinkSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { getMainWorktreeDir } from './worktree-utils'
@@ -16,6 +16,31 @@ import { getMainWorktreeDir } from './worktree-utils'
 
 function runNpmCi() {
 	execFileSync('npm', ['ci', '--no-audit', '--no-fund', '--prefer-offline', '--progress=false'], { stdio: 'inherit' })
+}
+
+function runNpmInstall() {
+	execFileSync('npm', ['install', '--no-audit', '--no-fund', '--prefer-offline', '--progress=false'], { stdio: 'inherit' })
+}
+
+function shouldRelinkWorkspacePackages() {
+	const linkPath = resolve('node_modules/@vforsh/argus-core')
+	if (!existsSync(linkPath)) {
+		return true
+	}
+
+	try {
+		const st = lstatSync(linkPath)
+		if (!st.isSymbolicLink()) {
+			return true
+		}
+
+		const expectedTarget = resolve('packages/argus-core')
+		const rawTarget = readlinkSync(linkPath)
+		const resolvedTarget = resolve(resolve(linkPath, '..'), rawTarget)
+		return resolvedTarget !== expectedTarget
+	} catch {
+		return true
+	}
 }
 
 function main() {
@@ -60,6 +85,11 @@ function main() {
 	if (process.platform === 'darwin') {
 		try {
 			execFileSync('cp', ['-cR', mainNodeModulesPath, resolve('node_modules')], { stdio: 'inherit' })
+			// Copied node_modules may still have missing/broken workspace links for this worktree.
+			// Run a minimal install only if we need to relink workspace packages.
+			if (shouldRelinkWorkspacePackages()) {
+				runNpmInstall()
+			}
 			return
 		} catch {
 			// Fall through to npm ci.
