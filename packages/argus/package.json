@@ -1,6 +1,6 @@
 {
 	"name": "@vforsh/argus",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/vforsh/argus.git",
@@ -25,7 +25,7 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@vforsh/argus-core": "0.1.1",
+		"@vforsh/argus-core": "0.1.2",
 		"commander": "14.0.2"
 	},
 	"scripts": {
