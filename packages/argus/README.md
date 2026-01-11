@@ -23,6 +23,11 @@ argus tail <id>
 - `--grep` filters by substring.
 - `--since` accepts durations like `10m`, `2h`, `30s`.
 
+## Output
+
+- Text output uses 4-character level tags (e.g. `LOG `, `DEBG`, `WARN`, `ERR `, `INFO`, `EXCP`).
+- JSON output preserves the raw `level` values.
+
 ## Examples
 
 ```bash

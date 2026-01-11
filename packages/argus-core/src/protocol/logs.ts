@@ -21,3 +21,23 @@ export type LogEvent = {
 
 /** Ordered list of supported log levels. */
 export const LOG_LEVELS: LogLevel[] = ['log', 'info', 'warning', 'error', 'debug', 'exception']
+
+/** Format a log level as a 4-character uppercase tag for text output. */
+export const formatLogLevelTag = (level: LogLevel): string => {
+	switch (level) {
+		case 'log':
+			return 'LOG '
+		case 'debug':
+			return 'DEBG'
+		case 'error':
+			return 'ERR '
+		case 'info':
+			return 'INFO'
+		case 'warning':
+			return 'WARN'
+		case 'exception':
+			return 'EXCP'
+		default:
+			return 'LOG '
+	}
+}

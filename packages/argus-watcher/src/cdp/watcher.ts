@@ -1,4 +1,8 @@
 import type { LogEvent, LogLevel, WatcherMatch, WatcherChrome } from '@vforsh/argus-core'
+import type { IgnoreMatcher } from './ignoreList.js'
+import { stripUrlPrefixes } from './locationCleanup.js'
+import type { CallFrame, SelectedLocation } from './selectBestFrame.js'
+import { selectBestFrame } from './selectBestFrame.js'
 import { resolveSourcemappedLocation } from '../sourcemaps/resolveLocation.js'
 
 /** Minimal CDP target metadata needed for attachment. */
@@ -32,6 +36,8 @@ export type CdpWatcherOptions = {
 	onLog: (event: Omit<LogEvent, 'id'>) => void
 	onStatus: (status: CdpStatus) => void
 	onPageNavigation?: (info: { url: string; title: string | null }) => void
+	ignoreMatcher?: IgnoreMatcher | null
+	stripUrlPrefixes?: string[]
 }
 
 /** Start CDP polling + websocket subscriptions for console/exception events. */
@@ -86,11 +92,11 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 
 			const payload = message as { method?: string; params?: unknown }
 			if (payload.method === 'Runtime.consoleAPICalled') {
-				void toConsoleEvent(payload.params, target).then((event) => options.onLog(event))
+				void toConsoleEvent(payload.params, target, options).then((event) => options.onLog(event))
 				return
 			}
 			if (payload.method === 'Runtime.exceptionThrown') {
-				void toExceptionEvent(payload.params, target).then((event) => options.onLog(event))
+				void toExceptionEvent(payload.params, target, options).then((event) => options.onLog(event))
 				return
 			}
 			if (payload.method === 'Page.frameNavigated') {
@@ -188,41 +194,50 @@ const fetchTargets = async (chrome: WatcherChrome): Promise<CdpTarget[]> => {
 		.filter((target) => Boolean(target.webSocketDebuggerUrl))
 }
 
-const toConsoleEvent = async (params: unknown, target: CdpTarget): Promise<Omit<LogEvent, 'id'>> => {
+const toConsoleEvent = async (
+	params: unknown,
+	target: CdpTarget,
+	config: { ignoreMatcher?: IgnoreMatcher | null; stripUrlPrefixes?: string[] },
+): Promise<Omit<LogEvent, 'id'>> => {
 	const record = params as {
 		type?: LogLevel
 		args?: unknown[]
-		stackTrace?: { callFrames?: Array<{ url?: string; lineNumber?: number; columnNumber?: number }> }
+		stackTrace?: { callFrames?: CallFrame[] }
 	}
 	const args = Array.isArray(record.args) ? record.args.map(serializeRemoteObject) : []
 	const text = formatArgs(args)
-	const frame = record.stackTrace?.callFrames?.[0]
-	const file = frame?.url ?? null
-	const line = frame?.lineNumber != null ? frame.lineNumber + 1 : null
-	const column = frame?.columnNumber != null ? frame.columnNumber + 1 : null
-
 	const baseEvent: Omit<LogEvent, 'id'> = {
 		ts: Date.now(),
 		level: normalizeLevel(record.type ?? 'log'),
 		text,
 		args,
-		file,
-		line,
-		column,
+		file: null,
+		line: null,
+		column: null,
 		pageUrl: target.url ?? null,
 		pageTitle: target.title ?? null,
 		source: 'console',
 	}
 
-	return applySourcemap(baseEvent)
+	const selected = await selectLocationFromFrames(record.stackTrace?.callFrames, config.ignoreMatcher ?? null)
+	if (selected) {
+		return applyLocationCleanup({ ...baseEvent, ...selected }, config.stripUrlPrefixes)
+	}
+
+	const fallback = await applySourcemap(applyFirstFrame(baseEvent, record.stackTrace?.callFrames))
+	return applyLocationCleanup(fallback, config.stripUrlPrefixes)
 }
 
-const toExceptionEvent = async (params: unknown, target: CdpTarget): Promise<Omit<LogEvent, 'id'>> => {
+const toExceptionEvent = async (
+	params: unknown,
+	target: CdpTarget,
+	config: { ignoreMatcher?: IgnoreMatcher | null; stripUrlPrefixes?: string[] },
+): Promise<Omit<LogEvent, 'id'>> => {
 	const record = params as {
 		exceptionDetails?: {
 			text?: string
 			exception?: unknown
-			stackTrace?: { callFrames?: Array<{ url?: string; lineNumber?: number; columnNumber?: number }> }
+			stackTrace?: { callFrames?: CallFrame[] }
 		}
 	}
 	const details = record.exceptionDetails
@@ -230,25 +245,26 @@ const toExceptionEvent = async (params: unknown, target: CdpTarget): Promise<Omi
 	const args = exceptionValue != null ? [exceptionValue] : []
 	const exceptionDescription = describeExceptionValue(exceptionValue)
 	const text = formatExceptionText(details?.text, exceptionDescription)
-	const frame = details?.stackTrace?.callFrames?.[0]
-	const file = frame?.url ?? null
-	const line = frame?.lineNumber != null ? frame.lineNumber + 1 : null
-	const column = frame?.columnNumber != null ? frame.columnNumber + 1 : null
-
 	const baseEvent: Omit<LogEvent, 'id'> = {
 		ts: Date.now(),
 		level: 'exception',
 		text,
 		args,
-		file,
-		line,
-		column,
+		file: null,
+		line: null,
+		column: null,
 		pageUrl: target.url ?? null,
 		pageTitle: target.title ?? null,
 		source: 'exception',
 	}
 
-	return applySourcemap(baseEvent)
+	const selected = await selectLocationFromFrames(details?.stackTrace?.callFrames, config.ignoreMatcher ?? null)
+	if (selected) {
+		return applyLocationCleanup({ ...baseEvent, ...selected }, config.stripUrlPrefixes)
+	}
+
+	const fallback = await applySourcemap(applyFirstFrame(baseEvent, details?.stackTrace?.callFrames))
+	return applyLocationCleanup(fallback, config.stripUrlPrefixes)
 }
 
 const applySourcemap = async (event: Omit<LogEvent, 'id'>): Promise<Omit<LogEvent, 'id'>> => {
@@ -273,6 +289,35 @@ const applySourcemap = async (event: Omit<LogEvent, 'id'>): Promise<Omit<LogEven
 	} catch {
 		return event
 	}
+}
+
+const selectLocationFromFrames = async (
+	callFrames: CallFrame[] | undefined,
+	ignoreMatcher: IgnoreMatcher | null,
+): Promise<SelectedLocation | null> => {
+	if (!ignoreMatcher) {
+		return null
+	}
+	return selectBestFrame(callFrames, ignoreMatcher)
+}
+
+const applyFirstFrame = (event: Omit<LogEvent, 'id'>, callFrames: CallFrame[] | undefined): Omit<LogEvent, 'id'> => {
+	const frame = callFrames?.[0]
+	const file = frame?.url ?? null
+	const line = frame?.lineNumber != null ? frame.lineNumber + 1 : null
+	const column = frame?.columnNumber != null ? frame.columnNumber + 1 : null
+	return { ...event, file, line, column }
+}
+
+const applyLocationCleanup = (event: Omit<LogEvent, 'id'>, prefixes: string[] | undefined): Omit<LogEvent, 'id'> => {
+	if (!event.file) {
+		return event
+	}
+	const cleaned = stripUrlPrefixes(event.file, prefixes)
+	if (cleaned === event.file) {
+		return event
+	}
+	return { ...event, file: cleaned }
 }
 
 const describeExceptionValue = (value: unknown): string | null => {

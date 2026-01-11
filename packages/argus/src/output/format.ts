@@ -1,4 +1,5 @@
 import type { LogEvent, WatcherRecord } from '@vforsh/argus-core'
+import { formatLogLevelTag } from '@vforsh/argus-core'
 
 /** Format a watcher line for human output. */
 export const formatWatcherLine = (
@@ -18,7 +19,7 @@ export const formatWatcherLine = (
 /** Format a log event for human output. */
 export const formatLogEvent = (event: LogEvent, watcherId?: string): string => {
 	const prefix = watcherId ? `[${watcherId}] ` : ''
-	const header = `${prefix}[${event.level}] ${event.text}`.trim()
+	const header = `${prefix}[${formatLogLevelTag(event.level)}] ${event.text}`.trim()
 	const location = event.file ? `${event.file}${formatLineColumn(event)}` : null
 	if (!location) {
 		return header

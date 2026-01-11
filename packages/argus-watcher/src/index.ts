@@ -5,6 +5,7 @@ import { LogBuffer } from './buffer/LogBuffer.js'
 import { startHttpServer } from './http/server.js'
 import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
 import { WatcherFileLogger } from './fileLogs/WatcherFileLogger.js'
+import { buildIgnoreMatcher } from './cdp/ignoreList.js'
 
 /** Options to start a watcher server. */
 export type StartWatcherOptions = {
@@ -29,6 +30,20 @@ export type StartWatcherOptions = {
 		/** Max number of log files to keep for this watcher. Defaults to `5`. */
 		maxFiles?: number
 	}
+	/** Optional ignore list filtering when selecting log/exception locations. */
+	ignoreList?: {
+		/** Enable ignore list filtering for log/exception locations. */
+		enabled?: boolean
+		/** Regex patterns (as strings) to ignore when selecting a stack frame. */
+		rules?: string[]
+	}
+	location?: {
+		/**
+		 * Strip these literal prefixes from event.file for display/logging.
+		 * This is cosmetic and does not affect sourcemap resolution.
+		 */
+		stripUrlPrefixes?: string[]
+	}
 }
 
 /** Handle returned by startWatcher. */
@@ -52,6 +67,8 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const chrome = options.chrome ?? { host: '127.0.0.1', port: 9222 }
 	const bufferSize = options.bufferSize ?? 50_000
 	const startedAt = Date.now()
+	const ignoreMatcher = buildIgnoreMatcher(options.ignoreList)
+	const stripUrlPrefixes = options.location?.stripUrlPrefixes
 
 	const buffer = new LogBuffer(bufferSize)
 	let cdpStatus = { attached: false, target: null as { title: string | null; url: string | null } | null }
@@ -95,6 +112,8 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const cdp = startCdpWatcher({
 		chrome,
 		match: options.match,
+		ignoreMatcher,
+		stripUrlPrefixes,
 		onLog: (event) => {
 			buffer.add(event)
 			fileLogger?.writeEvent(event)

@@ -10,8 +10,15 @@ import { startWatcher } from '@vforsh/argus-watcher'
 const watcher = await startWatcher({
 	id: 'app',
 	match: { url: 'localhost:3000' },
-	chrome: { host: '127.0.0.1', port: 9222 },
-	fileLogs: { logsDir: '/tmp/argus/watcher-logs' },
+  chrome: { host: '127.0.0.1', port: 9222 },
+  fileLogs: { logsDir: '/tmp/argus/watcher-logs' },
+  ignoreList: {
+    enabled: true,
+    rules: ['webpack:///node_modules/'],
+  },
+  location: {
+    stripUrlPrefixes: ['http://127.0.0.1:3000/'],
+  },
 })
 
 // later
@@ -31,6 +38,11 @@ await watcher.close()
     - `logsDir`: directory for log files (required)
     - `maxFiles`: max log files to keep for the session (default `5`)
     - Rotation: a new file is created after each top-level navigation/reload (lazy; created on first log)
+- `ignoreList`: optional ignore list filtering when selecting log/exception locations
+    - `enabled`: enable ignore list selection (default `false`)
+    - `rules`: regex patterns (as strings) to ignore (merged with built-in defaults)
+- `location`: optional display cleanup settings
+    - `stripUrlPrefixes`: literal URL prefixes to remove from `event.file` for display
 
 ## File logs
 

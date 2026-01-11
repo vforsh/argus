@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import fsPromises from 'node:fs/promises'
 import path from 'node:path'
 import type { LogEvent, WatcherChrome, WatcherMatch } from '@vforsh/argus-core'
+import { formatLogLevelTag } from '@vforsh/argus-core'
 
 type PageInfo = {
 	url: string
@@ -241,7 +242,7 @@ const renderHeader = (context: HeaderContext): string => {
 
 const formatLogLine = (event: Omit<LogEvent, 'id'>, previousPageUrl: string | null): string => {
 	const timestamp = new Date(event.ts).toISOString()
-	let line = `${timestamp} [${event.level}] ${event.text}`
+	let line = `${timestamp} [${formatLogLevelTag(event.level)}] ${event.text}`
 	const location = formatLocation(event)
 	if (location) {
 		line += ` at ${location}`
