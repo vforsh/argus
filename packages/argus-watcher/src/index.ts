@@ -7,6 +7,20 @@ import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './regist
 import { WatcherFileLogger } from './fileLogs/WatcherFileLogger.js'
 import { buildIgnoreMatcher } from './cdp/ignoreList.js'
 
+/** Context for the optional log filename builder callback. */
+export type BuildFilenameContext = {
+	/** Unique watcher identifier. */
+	watcherId: string
+	/** Watcher start time as milliseconds since Unix epoch. */
+	startedAt: number
+	/** Sequence number of the log file within the current watcher session (starts at 1). */
+	fileIndex: number
+	/** Current page URL if available when the file is created. */
+	pageUrl: string | null
+	/** Current page title if available when the file is created. */
+	pageTitle: string | null
+}
+
 /** Options to start a watcher server. */
 export type StartWatcherOptions = {
 	/** Unique watcher identifier (used for registry presence and removal on shutdown). */
@@ -29,6 +43,8 @@ export type StartWatcherOptions = {
 		logsDir: string
 		/** Max number of log files to keep for this watcher. Defaults to `5`. */
 		maxFiles?: number
+		/** Optional callback to customize the log filename. Return null/undefined to use default. */
+		buildFilename?: (context: BuildFilenameContext) => string | undefined | null
 	}
 	/** Optional ignore list filtering when selecting log/exception locations. */
 	ignoreList?: {
@@ -87,6 +103,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 				match: options.match,
 				maxFiles: maxFiles ?? 5,
 				includeTimestamps,
+				buildFilename: fileLogs?.buildFilename,
 			})
 		: null
 

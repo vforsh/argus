@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { LogEvent, WatcherChrome, WatcherMatch } from '@vforsh/argus-core'
 import { formatLogLevelTag } from '@vforsh/argus-core'
+import type { BuildFilenameContext } from '../index.js'
 
 type PageInfo = {
 	url: string
@@ -23,6 +24,7 @@ export type WatcherFileLoggerOptions = {
 	match?: WatcherMatch
 	maxFiles: number
 	includeTimestamps: boolean
+	buildFilename?: (context: BuildFilenameContext) => string | undefined | null
 }
 
 export class WatcherFileLogger {
@@ -34,6 +36,7 @@ export class WatcherFileLogger {
 	private readonly match?: WatcherMatch
 	private readonly maxFiles: number
 	private readonly includeTimestamps: boolean
+	private readonly customBuildFilename?: (context: BuildFilenameContext) => string | undefined | null
 	private currentStream: fs.WriteStream | null = null
 	private writePromise: Promise<void> = Promise.resolve()
 	private fileIndex = 1
@@ -54,6 +57,7 @@ export class WatcherFileLogger {
 		this.match = options.match
 		this.maxFiles = options.maxFiles
 		this.includeTimestamps = options.includeTimestamps
+		this.customBuildFilename = options.buildFilename
 	}
 
 	setPageIntl(info: PageIntlInfo): void {
@@ -138,7 +142,37 @@ export class WatcherFileLogger {
 	}
 
 	private buildFilename(): string {
-		return `watcher-${this.watcherId}-${this.startedAtIso}-${this.fileIndex}.log`
+		const defaultFilename = `watcher-${this.watcherId}-${this.startedAtIso}-${this.fileIndex}.log`
+
+		if (!this.customBuildFilename) {
+			return defaultFilename
+		}
+
+		const context: BuildFilenameContext = {
+			watcherId: this.watcherId,
+			startedAt: this.startedAt,
+			fileIndex: this.fileIndex,
+			pageUrl: this.currentPageUrl,
+			pageTitle: this.currentPageTitle,
+		}
+
+		let filename: string | undefined | null
+		try {
+			filename = this.customBuildFilename(context)
+		} catch (error) {
+			console.error('Error in custom log filename builder:', error)
+			return defaultFilename
+		}
+
+		if (!filename) {
+			return defaultFilename
+		}
+
+		if (!filename.toLowerCase().endsWith('.log')) {
+			return `${filename}.log`
+		}
+
+		return filename
 	}
 
 	private async closeCurrentStream(): Promise<void> {
