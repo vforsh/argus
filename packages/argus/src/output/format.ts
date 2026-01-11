@@ -18,16 +18,16 @@ export const formatWatcherLine = (
 }
 
 /** Format a log event for human output. */
-export const formatLogEvent = (event: LogEvent, options?: { watcherId?: string; includeTimestamps?: boolean }): string => {
-	const prefix = options?.watcherId ? `[${options.watcherId}] ` : ''
+export const formatLogEvent = (event: LogEvent, options?: { includeTimestamps?: boolean }): string => {
 	const timestamp = options?.includeTimestamps ? `${new Date(event.ts).toISOString()} ` : ''
-	const header = `${timestamp}${prefix}${formatLogLevelTag(event.level)} ${event.text}`.trim()
+	const tag = formatLogLevelTag(event.level)
+	const header = `${timestamp}${tag} | ${event.text}`.trim()
 	const location = event.file ? `${event.file}${formatLineColumn(event)}` : null
 	if (!location) {
 		return header
 	}
 
-	return `${header}\n  at ${location}`
+	return `${header} at ${location}`
 }
 
 const formatMatch = (watcher: WatcherRecord): string => {

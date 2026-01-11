@@ -70,7 +70,6 @@ export const runLogs = async (id: string, options: LogsOptions): Promise<void> =
 	for (const event of response.events) {
 		process.stdout.write(
 			`${formatLogEvent(event, {
-				watcherId: watcher.id,
 				includeTimestamps: watcher.includeTimestamps,
 			})}\n`,
 		)
