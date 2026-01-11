@@ -10,6 +10,7 @@ const matchUrl = getArgValue('--page-url') ?? readEnv('ARGUS_MATCH_URL', '192.16
 const chromeHost = readEnv('ARGUS_CHROME_HOST', '127.0.0.1')
 const chromePort = readEnvInt('ARGUS_CHROME_PORT', 9222)
 const logsDir = readEnv('ARGUS_LOGS_DIR', DEFAULT_LOGS_DIR)
+const includeTimestamps = process.argv.includes('--include-timestamps')
 
 guardLogsDir(logsDir)
 
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
 			match: { url: matchUrl },
 			chrome: { host: chromeHost, port: chromePort },
 			fileLogs: { logsDir },
+			includeTimestamps,
 			ignoreList: {
 				enabled: true,
 				rules: ['LogsManager.ts'],

@@ -36,6 +36,8 @@ export type WatcherRecord = {
 	match?: WatcherMatch
 	/** Optional CDP connection details used by this watcher. */
 	chrome?: WatcherChrome
+	/** Whether to include ISO timestamps in formatted log output. */
+	includeTimestamps?: boolean
 }
 
 /** Registry schema v1. */

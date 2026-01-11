@@ -68,7 +68,12 @@ export const runTail = async (id: string, options: TailOptions): Promise<void> =
 					process.stdout.write(`${JSON.stringify({ watcher: watcher.id, event })}\n`)
 					continue
 				}
-				process.stdout.write(`${formatLogEvent(event, watcher.id)}\n`)
+				process.stdout.write(
+					`${formatLogEvent(event, {
+						watcherId: watcher.id,
+						includeTimestamps: watcher.includeTimestamps,
+					})}\n`,
+				)
 			}
 		}
 

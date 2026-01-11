@@ -37,6 +37,8 @@ export type StartWatcherOptions = {
 		/** Regex patterns (as strings) to ignore when selecting a stack frame. */
 		rules?: string[]
 	}
+	/** Whether to include ISO timestamps in log records. Defaults to `false`. */
+	includeTimestamps?: boolean
 	location?: {
 		/**
 		 * Strip these literal prefixes from event.file for display/logging.
@@ -67,6 +69,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const chrome = options.chrome ?? { host: '127.0.0.1', port: 9222 }
 	const bufferSize = options.bufferSize ?? 50_000
 	const startedAt = Date.now()
+	const includeTimestamps = options.includeTimestamps ?? false
 	const ignoreMatcher = buildIgnoreMatcher(options.ignoreList)
 	const stripUrlPrefixes = options.location?.stripUrlPrefixes
 
@@ -83,6 +86,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 				chrome,
 				match: options.match,
 				maxFiles: maxFiles ?? 5,
+				includeTimestamps,
 			})
 		: null
 
@@ -95,6 +99,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		updatedAt: Date.now(),
 		match: options.match,
 		chrome,
+		includeTimestamps,
 	}
 
 	const server = await startHttpServer({

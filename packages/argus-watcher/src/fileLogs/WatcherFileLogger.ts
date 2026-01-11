@@ -22,6 +22,7 @@ export type WatcherFileLoggerOptions = {
 	chrome: WatcherChrome
 	match?: WatcherMatch
 	maxFiles: number
+	includeTimestamps: boolean
 }
 
 export class WatcherFileLogger {
@@ -32,6 +33,7 @@ export class WatcherFileLogger {
 	private readonly chrome: WatcherChrome
 	private readonly match?: WatcherMatch
 	private readonly maxFiles: number
+	private readonly includeTimestamps: boolean
 	private currentStream: fs.WriteStream | null = null
 	private writePromise: Promise<void> = Promise.resolve()
 	private fileIndex = 1
@@ -51,6 +53,7 @@ export class WatcherFileLogger {
 		this.chrome = options.chrome
 		this.match = options.match
 		this.maxFiles = options.maxFiles
+		this.includeTimestamps = options.includeTimestamps
 	}
 
 	setPageIntl(info: PageIntlInfo): void {
@@ -75,7 +78,7 @@ export class WatcherFileLogger {
 				this.currentPageTitle = event.pageTitle
 			}
 			await this.ensureStream()
-			const line = formatLogLine(event, previousPageUrl)
+			const line = formatLogLine(event, previousPageUrl, this.includeTimestamps)
 			await this.writeToStream(line)
 		})
 	}
@@ -250,7 +253,6 @@ const renderHeader = (context: HeaderContext): string => {
 	const pageLocale = context.pageIntl?.locale ?? '(unknown)'
 	return [
 		'---',
-		'logFormatVersion: 2',
 		`watcherId: ${context.watcherId}`,
 		`startedAt: ${new Date(context.startedAt).toISOString()}`,
 		`host: ${os.hostname()}`,
@@ -270,9 +272,9 @@ const renderHeader = (context: HeaderContext): string => {
 	].join('\n')
 }
 
-const formatLogLine = (event: Omit<LogEvent, 'id'>, previousPageUrl: string | null): string => {
-	const timestamp = new Date(event.ts).toISOString()
-	let line = `${timestamp} [${formatLogLevelTag(event.level)}] ${event.text}`
+const formatLogLine = (event: Omit<LogEvent, 'id'>, previousPageUrl: string | null, includeTimestamps: boolean): string => {
+	const timestamp = includeTimestamps ? `${new Date(event.ts).toISOString()} ` : ''
+	let line = `${timestamp}${formatLogLevelTag(event.level)} ${event.text}`
 	const location = formatLocation(event)
 	if (location) {
 		line += ` at ${location}`
