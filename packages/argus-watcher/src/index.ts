@@ -121,6 +121,9 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		onPageNavigation: (info) => {
 			fileLogger?.rotate(info)
 		},
+		onPageIntl: (info) => {
+			fileLogger?.setPageIntl(info)
+		},
 		onStatus: (status) => {
 			cdpStatus = status
 		},

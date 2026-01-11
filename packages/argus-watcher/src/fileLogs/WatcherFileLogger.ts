@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import fsPromises from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import type { LogEvent, WatcherChrome, WatcherMatch } from '@vforsh/argus-core'
 import { formatLogLevelTag } from '@vforsh/argus-core'
@@ -7,6 +8,11 @@ import { formatLogLevelTag } from '@vforsh/argus-core'
 type PageInfo = {
 	url: string
 	title: string | null
+}
+
+type PageIntlInfo = {
+	timezone: string | null
+	locale: string | null
 }
 
 export type WatcherFileLoggerOptions = {
@@ -33,6 +39,7 @@ export class WatcherFileLogger {
 	private hasCreatedFile = false
 	private currentPageUrl: string | null = null
 	private currentPageTitle: string | null = null
+	private pageIntl: PageIntlInfo | null = null
 	private closed = false
 	private failed = false
 
@@ -44,6 +51,15 @@ export class WatcherFileLogger {
 		this.chrome = options.chrome
 		this.match = options.match
 		this.maxFiles = options.maxFiles
+	}
+
+	setPageIntl(info: PageIntlInfo): void {
+		if (this.closed || this.failed) {
+			return
+		}
+		const timezone = info.timezone && info.timezone.trim() !== '' ? info.timezone : null
+		const locale = info.locale && info.locale.trim() !== '' ? info.locale : null
+		this.pageIntl = { timezone, locale }
 	}
 
 	writeEvent(event: Omit<LogEvent, 'id'>): void {
@@ -111,6 +127,8 @@ export class WatcherFileLogger {
 			match: this.match,
 			pageUrl: this.currentPageUrl,
 			pageTitle: this.currentPageTitle,
+			logsPath: filePath,
+			pageIntl: this.pageIntl,
 		})
 		await this.writeToStream(header)
 		await this.pruneOldFiles()
@@ -219,6 +237,8 @@ type HeaderContext = {
 	match?: WatcherMatch
 	pageUrl: string | null
 	pageTitle: string | null
+	logsPath: string
+	pageIntl: PageIntlInfo | null
 }
 
 const renderHeader = (context: HeaderContext): string => {
@@ -226,15 +246,25 @@ const renderHeader = (context: HeaderContext): string => {
 	const pageUrl = context.pageUrl ?? '(unknown)'
 	const pageSearchParams = formatPageSearchParams(context.pageUrl)
 	const pageTitle = context.pageTitle ?? '(unknown)'
+	const pageTimezone = context.pageIntl?.timezone ?? '(unknown)'
+	const pageLocale = context.pageIntl?.locale ?? '(unknown)'
 	return [
 		'---',
+		'logFormatVersion: 2',
 		`watcherId: ${context.watcherId}`,
 		`startedAt: ${new Date(context.startedAt).toISOString()}`,
+		`host: ${os.hostname()}`,
+		`os: ${os.platform()} ${os.release()}`,
+		`arch: ${os.arch()}`,
+		`cwd: ${process.cwd()}`,
+		`logsPath: ${context.logsPath}`,
 		`chrome: ${context.chrome.host}:${context.chrome.port}`,
 		`match: ${matchText}`,
 		`pageUrl: ${pageUrl}`,
 		`pageSearchParams: ${pageSearchParams}`,
 		`pageTitle: ${pageTitle}`,
+		`pageTimezone: ${pageTimezone}`,
+		`pageLocale: ${pageLocale}`,
 		'---',
 		'',
 	].join('\n')

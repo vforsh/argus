@@ -54,5 +54,5 @@ Behavior details:
 - Rotation trigger: each top-level navigation or reload rotates to a new file.
 - File naming: `watcher-<watcherId>-<startedAtIso>-<n>.log` (n starts at 1).
 - Retention: after a new file is created, older files are deleted to keep at most `maxFiles`.
-- Session header: each file starts with a short header containing watcher id, start time, chrome host/port, match, page URL, and page title.
+- Session header: each file starts with a short header containing watcher id, start time, host/os/arch, cwd, logs path, chrome host/port, match, page URL/title, and page timezone/locale.
 - Log lines: one log event per line with ISO timestamp and level; includes location when available and page URL when it changes.

@@ -29,6 +29,11 @@ export type CdpStatus = {
 	} | null
 }
 
+type PageIntlInfo = {
+	timezone: string | null
+	locale: string | null
+}
+
 /** Options for CDP watcher lifecycle. */
 export type CdpWatcherOptions = {
 	chrome: WatcherChrome
@@ -36,6 +41,7 @@ export type CdpWatcherOptions = {
 	onLog: (event: Omit<LogEvent, 'id'>) => void
 	onStatus: (status: CdpStatus) => void
 	onPageNavigation?: (info: { url: string; title: string | null }) => void
+	onPageIntl?: (info: PageIntlInfo) => void
 	ignoreMatcher?: IgnoreMatcher | null
 	stripUrlPrefixes?: string[]
 }
@@ -73,6 +79,7 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 
 	async function connectOnce(): Promise<void> {
 		const target = await findTarget(options.chrome, options.match)
+		const pendingRequests = new Map<number, PendingRequest>()
 
 		socket = new WebSocket(target.webSocketDebuggerUrl)
 		await new Promise<void>((resolve, reject) => {
@@ -90,7 +97,26 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 				return
 			}
 
-			const payload = message as { method?: string; params?: unknown }
+			const payload = message as {
+				id?: number
+				result?: unknown
+				error?: { message?: string } | null
+				method?: string
+				params?: unknown
+			}
+			if (payload.id != null) {
+				const pending = pendingRequests.get(payload.id)
+				if (!pending) {
+					return
+				}
+				pendingRequests.delete(payload.id)
+				if (payload.error) {
+					pending.reject(new Error(payload.error.message ?? 'CDP request failed'))
+					return
+				}
+				pending.resolve(payload.result)
+				return
+			}
 			if (payload.method === 'Runtime.consoleAPICalled') {
 				void toConsoleEvent(payload.params, target, options).then((event) => options.onLog(event))
 				return
@@ -113,8 +139,13 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 			options.onStatus({ attached: false, target: null })
 		})
 
-		send(socket, 'Runtime.enable')
-		send(socket, 'Page.enable')
+		const pageIntl = await fetchPageIntl(socket, pendingRequests)
+		if (pageIntl) {
+			options.onPageIntl?.(pageIntl)
+		}
+
+		await sendAndWait(socket, pendingRequests, 'Runtime.enable')
+		await sendAndWait(socket, pendingRequests, 'Page.enable')
 
 		// Only signal attached after we've enabled the necessary domains
 		options.onStatus({ attached: true, target: { title: target.title ?? null, url: target.url ?? null } })
@@ -427,9 +458,49 @@ const parseMessage = (data: unknown): unknown => {
 	return null
 }
 
+type PendingRequest = {
+	resolve: (result: unknown) => void
+	reject: (error: Error) => void
+}
+
 let nextId = 1
-const send = (socket: WebSocket, method: string): void => {
-	socket.send(JSON.stringify({ id: nextId++, method }))
+const sendAndWait = (
+	socket: WebSocket,
+	pendingRequests: Map<number, PendingRequest>,
+	method: string,
+	params?: Record<string, unknown>,
+): Promise<unknown> => {
+	const id = nextId++
+	return new Promise((resolve, reject) => {
+		pendingRequests.set(id, { resolve, reject })
+		try {
+			socket.send(JSON.stringify({ id, method, params }))
+		} catch (error) {
+			pendingRequests.delete(id)
+			reject(error instanceof Error ? error : new Error(String(error)))
+		}
+	})
+}
+
+const fetchPageIntl = async (socket: WebSocket, pendingRequests: Map<number, PendingRequest>): Promise<PageIntlInfo | null> => {
+	try {
+		const result = await sendAndWait(socket, pendingRequests, 'Runtime.evaluate', {
+			expression:
+				'(() => { const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? null; const locale = navigator.language ?? null; return { timezone, locale }; })()',
+			returnByValue: true,
+		})
+		const payload = result as { result?: { value?: { timezone?: unknown; locale?: unknown } } }
+		const value = payload.result?.value
+		if (!value || typeof value !== 'object') {
+			return null
+		}
+		const record = value as { timezone?: unknown; locale?: unknown }
+		const timezone = typeof record.timezone === 'string' && record.timezone.trim() !== '' ? record.timezone : null
+		const locale = typeof record.locale === 'string' && record.locale.trim() !== '' ? record.locale : null
+		return { timezone, locale }
+	} catch {
+		return null
+	}
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
