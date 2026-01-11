@@ -1,5 +1,4 @@
 import type { WatcherMatch, WatcherChrome, WatcherRecord, LogEvent } from '@vforsh/argus-core'
-import { getLogsDir } from '@vforsh/argus-core'
 import path from 'node:path'
 import { startCdpWatcher } from './cdp/watcher.js'
 import { LogBuffer } from './buffer/LogBuffer.js'
@@ -25,8 +24,10 @@ export type StartWatcherOptions = {
 	heartbeatMs?: number
 	/** Optional file log persistence settings. */
 	fileLogs?: {
-		/** Directory to store watcher logs. Defaults to `~/.argus/logs/<watcherId>`. */
-		logsDir?: string
+		/** Directory to store watcher logs. Required when fileLogs is set. */
+		logsDir: string
+		/** Max number of log files to keep for this watcher session. Defaults to `5`. */
+		maxFiles?: number
 	}
 }
 
@@ -54,7 +55,9 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 
 	const buffer = new LogBuffer(bufferSize)
 	let cdpStatus = { attached: false, target: null as { title: string | null; url: string | null } | null }
-	const logsDir = options.fileLogs ? resolveLogsDir(options.id, options.fileLogs.logsDir) : null
+	const fileLogs = options.fileLogs
+	const logsDir = fileLogs ? resolveLogsDir(fileLogs.logsDir) : null
+	const maxFiles = fileLogs ? resolveMaxFiles(fileLogs.maxFiles) : null
 	const fileLogger = logsDir
 		? new WatcherFileLogger({
 				watcherId: options.id,
@@ -62,6 +65,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 				logsDir,
 				chrome,
 				match: options.match,
+				maxFiles: maxFiles ?? 5,
 			})
 		: null
 
@@ -118,12 +122,19 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 /** Log event shape emitted by watchers. */
 export type { LogEvent }
 
-const resolveLogsDir = (watcherId: string, logsDir?: string): string => {
-	if (logsDir === undefined) {
-		return path.join(getLogsDir(), watcherId)
-	}
+const resolveLogsDir = (logsDir: string): string => {
 	if (typeof logsDir !== 'string' || logsDir.trim() === '') {
-		throw new Error('fileLogs.logsDir must be a non-empty string')
+		throw new Error('fileLogs.logsDir is required')
 	}
 	return path.resolve(logsDir)
+}
+
+const resolveMaxFiles = (maxFiles?: number): number => {
+	if (maxFiles === undefined) {
+		return 5
+	}
+	if (!Number.isInteger(maxFiles) || maxFiles < 1) {
+		throw new Error('fileLogs.maxFiles must be an integer >= 1')
+	}
+	return maxFiles
 }

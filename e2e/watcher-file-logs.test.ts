@@ -15,6 +15,7 @@ test('WatcherFileLogger creates files lazily and rotates on navigation', async (
 		logsDir,
 		chrome: { host: '127.0.0.1', port: 9222 },
 		match: { url: 'example.com' },
+		maxFiles: 2,
 	})
 
 	t.after(async () => {
@@ -51,6 +52,21 @@ test('WatcherFileLogger creates files lazily and rotates on navigation', async (
 		source: 'console',
 	})
 
+	logger.rotate({ url: 'https://example.com/final?y=1', title: 'Final' })
+
+	logger.writeEvent({
+		ts: startedAt + 3000,
+		level: 'info',
+		text: 'third log',
+		args: [],
+		file: null,
+		line: null,
+		column: null,
+		pageUrl: 'https://example.com/final?y=1',
+		pageTitle: 'Final',
+		source: 'console',
+	})
+
 	await logger.close()
 
 	assert.equal(await pathExists(logsDir), true)
@@ -59,19 +75,19 @@ test('WatcherFileLogger creates files lazily and rotates on navigation', async (
 
 	const safeTimestamp = new Date(startedAt).toISOString().replace(/:/g, '-')
 	assert.ok(files[0]?.startsWith(`watcher-test-watcher-${safeTimestamp}-`))
-	assert.ok(files[0]?.endsWith('-1.log'))
+	assert.ok(files[0]?.endsWith('-2.log'))
 	assert.ok(files[1]?.startsWith(`watcher-test-watcher-${safeTimestamp}-`))
-	assert.ok(files[1]?.endsWith('-2.log'))
+	assert.ok(files[1]?.endsWith('-3.log'))
 
-	const firstContents = await fs.readFile(path.join(logsDir, files[0] ?? ''), 'utf8')
-	assert.ok(firstContents.includes('pageUrl: https://example.com/?q=1'))
-	assert.equal(countOccurrences(firstContents, 'watcherId:'), 1)
-	assert.ok(firstContents.includes('first log'))
-
-	const secondContents = await fs.readFile(path.join(logsDir, files[1] ?? ''), 'utf8')
+	const secondContents = await fs.readFile(path.join(logsDir, files[0] ?? ''), 'utf8')
 	assert.ok(secondContents.includes('pageUrl: https://example.com/next?x=1'))
 	assert.equal(countOccurrences(secondContents, 'watcherId:'), 1)
 	assert.ok(secondContents.includes('second log'))
+
+	const thirdContents = await fs.readFile(path.join(logsDir, files[1] ?? ''), 'utf8')
+	assert.ok(thirdContents.includes('pageUrl: https://example.com/final?y=1'))
+	assert.equal(countOccurrences(thirdContents, 'watcherId:'), 1)
+	assert.ok(thirdContents.includes('third log'))
 })
 
 const pathExists = async (target: string): Promise<boolean> => {

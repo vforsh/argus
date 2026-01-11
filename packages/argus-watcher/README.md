@@ -28,5 +28,19 @@ await watcher.close()
 - `chrome`: CDP host/port (defaults to `127.0.0.1:9222`)
 - `bufferSize`: max in-memory log count (default `50000`)
 - `fileLogs`: optional persistence for watcher logs
-    - `logsDir`: directory for log files (default `~/.argus/logs/<watcherId>`)
+    - `logsDir`: directory for log files (required)
+    - `maxFiles`: max log files to keep for the session (default `5`)
     - Rotation: a new file is created after each top-level navigation/reload (lazy; created on first log)
+
+## File logs
+
+File logging is opt-in via `fileLogs`. When enabled, logs are written to `.log` files under the provided `logsDir`.
+
+Behavior details:
+
+- Lazy creation: no file is created until the first log arrives after start or after a rotation.
+- Rotation trigger: each top-level navigation or reload rotates to a new file.
+- File naming: `watcher-<watcherId>-<startedAtIso>-<n>.log` (n starts at 1).
+- Retention: after a new file is created, older files are deleted to keep at most `maxFiles`.
+- Session header: each file starts with a short header containing watcher id, start time, chrome host/port, match, page URL, and page title.
+- Log lines: one log event per line with ISO timestamp and level; includes location when available and page URL when it changes.

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import fsPromises from 'node:fs/promises'
 import path from 'node:path'
-import type { LogEvent, WatcherChrome, WatcherMatch } from 'argus-core'
+import type { LogEvent, WatcherChrome, WatcherMatch } from '@vforsh/argus-core'
 
 type PageInfo = {
 	url: string
@@ -14,6 +14,7 @@ export type WatcherFileLoggerOptions = {
 	logsDir: string
 	chrome: WatcherChrome
 	match?: WatcherMatch
+	maxFiles: number
 }
 
 export class WatcherFileLogger {
@@ -23,6 +24,7 @@ export class WatcherFileLogger {
 	private readonly logsDir: string
 	private readonly chrome: WatcherChrome
 	private readonly match?: WatcherMatch
+	private readonly maxFiles: number
 	private currentStream: fs.WriteStream | null = null
 	private writePromise: Promise<void> = Promise.resolve()
 	private fileIndex = 1
@@ -40,6 +42,7 @@ export class WatcherFileLogger {
 		this.logsDir = options.logsDir
 		this.chrome = options.chrome
 		this.match = options.match
+		this.maxFiles = options.maxFiles
 	}
 
 	writeEvent(event: Omit<LogEvent, 'id'>): void {
@@ -109,6 +112,7 @@ export class WatcherFileLogger {
 			pageTitle: this.currentPageTitle,
 		})
 		await this.writeToStream(header)
+		await this.pruneOldFiles()
 	}
 
 	private buildFilename(): string {
@@ -159,6 +163,36 @@ export class WatcherFileLogger {
 		if (this.currentStream) {
 			this.currentStream.destroy()
 			this.currentStream = null
+		}
+	}
+
+	private async pruneOldFiles(): Promise<void> {
+		if (this.maxFiles <= 0) {
+			return
+		}
+		const prefix = `watcher-${this.watcherId}-${this.startedAtIso}-`
+		let entries: string[]
+		try {
+			entries = await fsPromises.readdir(this.logsDir)
+		} catch {
+			return
+		}
+		const files = entries
+			.filter((entry) => entry.startsWith(prefix) && entry.endsWith('.log'))
+			.map((entry) => ({ name: entry, index: parseFileIndex(entry, prefix) }))
+			.filter((entry): entry is { name: string; index: number } => entry.index !== null)
+			.sort((a, b) => a.index - b.index)
+
+		if (files.length <= this.maxFiles) {
+			return
+		}
+		const toRemove = files.slice(0, files.length - this.maxFiles)
+		for (const file of toRemove) {
+			try {
+				await fsPromises.rm(path.join(this.logsDir, file.name), { force: true })
+			} catch {
+				// best-effort cleanup
+			}
 		}
 	}
 }
@@ -224,4 +258,14 @@ const safeStringify = (value: unknown): string => {
 	} catch {
 		return String(value)
 	}
+}
+
+const parseFileIndex = (name: string, prefix: string): number | null => {
+	const suffix = name.slice(prefix.length)
+	const match = suffix.match(/^(\d+)\.log$/)
+	if (!match) {
+		return null
+	}
+	const value = Number(match[1])
+	return Number.isFinite(value) ? value : null
 }
