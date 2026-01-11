@@ -26,7 +26,7 @@ export type StartWatcherOptions = {
 	fileLogs?: {
 		/** Directory to store watcher logs. Required when fileLogs is set. */
 		logsDir: string
-		/** Max number of log files to keep for this watcher session. Defaults to `5`. */
+		/** Max number of log files to keep for this watcher. Defaults to `5`. */
 		maxFiles?: number
 	}
 }

@@ -170,22 +170,36 @@ export class WatcherFileLogger {
 		if (this.maxFiles <= 0) {
 			return
 		}
-		const prefix = `watcher-${this.watcherId}-${this.startedAtIso}-`
+
+		// Look for all log files belonging to this watcher across all sessions
+		const prefix = `watcher-${this.watcherId}-`
 		let entries: string[]
 		try {
 			entries = await fsPromises.readdir(this.logsDir)
 		} catch {
 			return
 		}
-		const files = entries
-			.filter((entry) => entry.startsWith(prefix) && entry.endsWith('.log'))
-			.map((entry) => ({ name: entry, index: parseFileIndex(entry, prefix) }))
-			.filter((entry): entry is { name: string; index: number } => entry.index !== null)
-			.sort((a, b) => a.index - b.index)
+
+		const filesWithStats = await Promise.all(
+			entries
+				.filter((entry) => entry.startsWith(prefix) && entry.endsWith('.log'))
+				.map(async (entry) => {
+					const filePath = path.join(this.logsDir, entry)
+					try {
+						const stats = await fsPromises.stat(filePath)
+						return { name: entry, mtime: stats.mtimeMs }
+					} catch {
+						return null
+					}
+				}),
+		)
+
+		const files = filesWithStats.filter((f): f is { name: string; mtime: number } => f !== null).sort((a, b) => a.mtime - b.mtime)
 
 		if (files.length <= this.maxFiles) {
 			return
 		}
+
 		const toRemove = files.slice(0, files.length - this.maxFiles)
 		for (const file of toRemove) {
 			try {
@@ -258,14 +272,4 @@ const safeStringify = (value: unknown): string => {
 	} catch {
 		return String(value)
 	}
-}
-
-const parseFileIndex = (name: string, prefix: string): number | null => {
-	const suffix = name.slice(prefix.length)
-	const match = suffix.match(/^(\d+)\.log$/)
-	if (!match) {
-		return null
-	}
-	const value = Number(match[1])
-	return Number.isFinite(value) ? value : null
 }

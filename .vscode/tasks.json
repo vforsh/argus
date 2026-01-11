@@ -1,0 +1,28 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "watcher: start",
+			"detail": "Starts the Argus watcher with optional --page-url argument",
+			"type": "shell",
+			"command": "npx tsx scripts/start-watcher.ts ${input:args}",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		}
+	],
+	"inputs": [
+		{
+			"id": "args",
+			"type": "promptString",
+			"description": "Additional arguments (e.g., --page-url http://...)",
+			"default": ""
+		}
+	]
+}
