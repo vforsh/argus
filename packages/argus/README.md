@@ -5,7 +5,7 @@ CLI for querying local Argus watcher servers.
 ## Install
 
 ```bash
-npm install -g argus
+npm install -g @vforsh/argus
 ```
 
 ## Usage

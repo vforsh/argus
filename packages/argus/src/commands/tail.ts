@@ -1,4 +1,4 @@
-import type { TailResponse } from 'argus-core'
+import type { TailResponse } from '@vforsh/argus-core'
 import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'

@@ -5,7 +5,7 @@ Library for starting a watcher that connects to Chrome DevTools Protocol (CDP), 
 ## Usage
 
 ```js
-import { startWatcher } from 'argus-watcher'
+import { startWatcher } from '@vforsh/argus-watcher'
 
 const watcher = await startWatcher({
 	id: 'app',

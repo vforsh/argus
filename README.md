@@ -2,46 +2,9 @@
 
 Brokerless console-log watcher for Chromium-based browsers via CDP. This repo is an npm workspaces monorepo with:
 
-- `argus`: CLI
-- `argus-watcher`: watcher library
-- `argus-core`: shared types + registry helpers
-
-## What it does (high-level)
-
-Argus **connects to one or more Chromium targets via CDP**, subscribes to runtime/console events, and **streams logs to your terminal**. It’s “brokerless” in the sense that there’s no central server you need to run—each watcher connects directly to Chrome and advertises itself locally so the CLI can discover it.
-
-- **`argus-watcher`**: The programmatic watcher. Connects to Chrome (CDP), collects console output/events, and exposes them over a small HTTP surface.
-- **`argus-core`**: Shared protocol/types + registry utilities used by both the watcher and the CLI.
-- **`argus` (CLI)**: Discovers running watchers via the local registry and lets you `list`, `logs`, or `tail` a watcher’s output.
-
-Diagram (data flow):
-
-```
-            (CDP: WebSocket)
-  ┌───────────────────────────────────┐
-  │ Chromium (Chrome / Edge / etc.)   │
-  │  - console.log / errors / events  │
-  └───────────────┬───────────────────┘
-                  │
-                  ▼
-  ┌───────────────────────────────────┐
-  │ argus-watcher                     │
-  │  - connects to CDP                │
-  │  - buffers/streams log events     │
-  │  - serves logs over HTTP          │
-  └───────────────┬───────────────────┘
-                  │ announces presence
-                  │ (local registry)
-                  ▼
-  ┌───────────────────────────────────┐        ┌───────────────────────────┐
-  │ ~/.argus/registry.json            │◀───────│ argus (CLI)               │
-  │  - running watchers + endpoints   │        │  list / logs / tail       │
-  └───────────────────────────────────┘        └───────────────┬───────────┘
-                                                               │ fetches from watcher
-                                                               │ (HTTP)
-                                                               ▼
-                                                     Your terminal output
-```
+- `@vforsh/argus`: CLI
+- `@vforsh/argus-watcher`: watcher library
+- `@vforsh/argus-core`: shared types + registry helpers
 
 ## Why “Argus”?
 

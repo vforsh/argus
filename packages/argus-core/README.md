@@ -2,6 +2,18 @@
 
 Shared types and registry helpers for Argus packages.
 
+## Install
+
+```bash
+npm install @vforsh/argus-core
+```
+
+## Usage
+
+```ts
+import type { LogEvent } from '@vforsh/argus-core'
+```
+
 ## Exports
 
 - Protocol types: `LogEvent`, response models

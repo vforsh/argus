@@ -1,5 +1,5 @@
-import { DEFAULT_TTL_MS, pruneStaleWatchers, readRegistry, removeWatcherEntry, writeRegistry } from 'argus-core'
-import type { RegistryV1 } from 'argus-core'
+import { DEFAULT_TTL_MS, pruneStaleWatchers, readRegistry, removeWatcherEntry, writeRegistry } from '@vforsh/argus-core'
+import type { RegistryV1 } from '@vforsh/argus-core'
 
 /** Read registry and emit warnings to stderr. */
 export const loadRegistry = async (): Promise<RegistryV1> => {

@@ -1,5 +1,5 @@
 {
-	"name": "argus-watcher",
+	"name": "@vforsh/argus-watcher",
 	"version": "0.1.0",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -13,8 +13,11 @@
 	"files": [
 		"dist"
 	],
+	"publishConfig": {
+		"access": "public"
+	},
 	"dependencies": {
-		"argus-core": "0.1.0"
+		"@vforsh/argus-core": "0.1.0"
 	},
 	"scripts": {
 		"build": "tsc -b",

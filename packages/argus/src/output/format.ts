@@ -1,4 +1,4 @@
-import type { LogEvent, WatcherRecord } from 'argus-core'
+import type { LogEvent, WatcherRecord } from '@vforsh/argus-core'
 
 /** Format a watcher line for human output. */
 export const formatWatcherLine = (

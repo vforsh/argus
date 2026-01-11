@@ -1,4 +1,4 @@
-import type { WatcherMatch, WatcherChrome, WatcherRecord, LogEvent } from 'argus-core'
+import type { WatcherMatch, WatcherChrome, WatcherRecord, LogEvent } from '@vforsh/argus-core'
 import { startCdpWatcher } from './cdp/watcher.js'
 import { LogBuffer } from './buffer/LogBuffer.js'
 import { startHttpServer } from './http/server.js'

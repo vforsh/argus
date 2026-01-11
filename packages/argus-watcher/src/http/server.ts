@@ -1,5 +1,5 @@
 import http from 'node:http'
-import type { ErrorResponse, LogsResponse, StatusResponse, TailResponse, LogLevel, WatcherRecord } from 'argus-core'
+import type { ErrorResponse, LogsResponse, StatusResponse, TailResponse, LogLevel, WatcherRecord } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 
 /** Options for the watcher HTTP server. */

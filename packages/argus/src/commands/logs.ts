@@ -1,4 +1,4 @@
-import type { LogsResponse } from 'argus-core'
+import type { LogsResponse } from '@vforsh/argus-core'
 import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'

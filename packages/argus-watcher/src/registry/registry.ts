@@ -1,5 +1,5 @@
-import { readRegistry, removeWatcherEntry, setWatcherEntry, writeRegistry } from 'argus-core'
-import type { WatcherRecord } from 'argus-core'
+import { readRegistry, removeWatcherEntry, setWatcherEntry, writeRegistry } from '@vforsh/argus-core'
+import type { WatcherRecord } from '@vforsh/argus-core'
 
 /** Write watcher entry to registry. */
 export const announceWatcher = async (watcher: WatcherRecord): Promise<void> => {

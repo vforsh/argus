@@ -1,4 +1,4 @@
-import type { RegistryV1, StatusResponse, WatcherRecord } from 'argus-core'
+import type { RegistryV1, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
 import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatWatcherLine } from '../output/format.js'

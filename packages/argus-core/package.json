@@ -1,5 +1,5 @@
 {
-	"name": "argus-core",
+	"name": "@vforsh/argus-core",
 	"version": "0.1.0",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -13,6 +13,9 @@
 	"files": [
 		"dist"
 	],
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"build": "tsc -b",
 		"typecheck": "tsc -b --pretty false --noEmit"

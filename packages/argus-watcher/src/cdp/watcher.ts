@@ -1,4 +1,4 @@
-import type { LogEvent, LogLevel, WatcherMatch, WatcherChrome } from 'argus-core'
+import type { LogEvent, LogLevel, WatcherMatch, WatcherChrome } from '@vforsh/argus-core'
 
 /** Minimal CDP target metadata needed for attachment. */
 export type CdpTarget = {

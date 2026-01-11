@@ -1,4 +1,4 @@
-import type { LogEvent, LogLevel } from 'argus-core'
+import type { LogEvent, LogLevel } from '@vforsh/argus-core'
 
 /**
  * Filtering options for log retrieval.
