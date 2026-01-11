@@ -21,6 +21,7 @@ argus tail <id>
 - **`argus list`**: Discover running Argus watchers and their IDs.
     - Use this first to find the `<id>` you’ll pass to other commands (often something like `app`).
     - Tip: add `--json` for scripting.
+    - Tip: add `--by-cwd <substring>` to filter watchers by their working directory.
 
 - **`argus logs <id>`**: Fetch a bounded slice of log history for a watcher.
     - Best for “what already happened?” (e.g. “show me errors from the last 10 minutes”).
@@ -52,6 +53,11 @@ argus tail <id>
     - **When**: when you’re hunting for a specific error (“Unhandled”, “ECONNREFUSED”, a request ID, etc.).
     - **Why**: quickly narrows large streams/histories without post-processing.
 
+- **`--by-cwd <substring>`**: filter watchers by working directory.
+    - **What**: only returns watchers whose `cwd` contains the given substring.
+    - **When**: when you have multiple watchers running and only care about those from a specific project or directory.
+    - **Why**: reduces clutter in the `list` output.
+
 - **`--since <duration>`**: time window (history).
     - **What**: limits results to events within the last duration (e.g. `10m`, `2h`, `30s`).
     - **When**: when you only care about “recent” history (typically with `logs`).
@@ -66,6 +72,7 @@ argus tail <id>
 
 ```bash
 argus list --json
+argus list --by-cwd my-project
 argus logs app --since 10m --levels error,warning
 argus tail app --grep "Unhandled"
 ```

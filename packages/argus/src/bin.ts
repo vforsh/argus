@@ -26,7 +26,8 @@ program
 	.command('list')
 	.description('List registered watchers')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus list\n  $ argus list --json\n')
+	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
+	.addHelpText('after', '\nExamples:\n  $ argus list\n  $ argus list --json\n  $ argus list --by-cwd my-project\n')
 	.action(async (options) => {
 		await runList(options)
 	})

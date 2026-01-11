@@ -6,6 +6,7 @@ import { formatWatcherLine } from '../output/format.js'
 /** Options for the list command. */
 export type ListOptions = {
 	json?: boolean
+	byCwd?: string
 }
 
 /** Execute the list command. */
@@ -13,7 +14,13 @@ export const runList = async (options: ListOptions): Promise<void> => {
 	let registry = await loadRegistry()
 	registry = await pruneRegistry(registry)
 
-	const watchers = Object.values(registry.watchers)
+	let watchers = Object.values(registry.watchers)
+
+	if (options.byCwd) {
+		const substring = options.byCwd
+		watchers = watchers.filter((watcher) => watcher.cwd && watcher.cwd.includes(substring))
+	}
+
 	if (watchers.length === 0) {
 		if (options.json) {
 			process.stdout.write(JSON.stringify([]))
