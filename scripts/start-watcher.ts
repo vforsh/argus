@@ -20,6 +20,13 @@ async function main(): Promise<void> {
 			match: { url: matchUrl },
 			chrome: { host: chromeHost, port: chromePort },
 			fileLogs: { logsDir },
+			ignoreList: {
+				enabled: true,
+				rules: ['LogsManager.ts'],
+			},
+			location: {
+				stripUrlPrefixes: ['http://192.168.1.12:3001/'],
+			},
 		})
 
 		console.log(
