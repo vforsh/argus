@@ -8,7 +8,7 @@ copy-env = "npx tsx ./scripts/worktree/ensure-env.ts"
 # Install root dependencies for the worktree.
 install = "npx tsx ./scripts/worktree/install-deps.ts"
 
-# Build workspace packages (contracts/clients/cli).
+# Build workspace packages.
 build-packages = "npm run build:packages"
 
 [pre-merge]
