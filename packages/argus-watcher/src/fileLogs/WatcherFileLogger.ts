@@ -151,9 +151,8 @@ export class WatcherFileLogger {
 		const context: BuildFilenameContext = {
 			watcherId: this.watcherId,
 			startedAt: this.startedAt,
+			startedAtSafe: this.startedAtIso,
 			fileIndex: this.fileIndex,
-			pageUrl: this.currentPageUrl,
-			pageTitle: this.currentPageTitle,
 		}
 
 		let filename: string | undefined | null

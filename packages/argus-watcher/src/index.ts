@@ -13,12 +13,10 @@ export type BuildFilenameContext = {
 	watcherId: string
 	/** Watcher start time as milliseconds since Unix epoch. */
 	startedAt: number
+	/** Watcher start time formatted for use in a filename (ISO but with ":" replaced by "-"). */
+	startedAtSafe: string
 	/** Sequence number of the log file within the current watcher session (starts at 1). */
 	fileIndex: number
-	/** Current page URL if available when the file is created. */
-	pageUrl: string | null
-	/** Current page title if available when the file is created. */
-	pageTitle: string | null
 }
 
 /** Options to start a watcher server. */
