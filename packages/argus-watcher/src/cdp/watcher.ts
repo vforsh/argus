@@ -30,6 +30,7 @@ export type CdpWatcherOptions = {
 	match?: WatcherMatch
 	onLog: (event: Omit<LogEvent, 'id'>) => void
 	onStatus: (status: CdpStatus) => void
+	onPageNavigation?: (info: { url: string; title: string | null }) => void
 }
 
 /** Start CDP polling + websocket subscriptions for console/exception events. */
@@ -89,6 +90,15 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 			}
 			if (payload.method === 'Runtime.exceptionThrown') {
 				options.onLog(toExceptionEvent(payload.params, target))
+				return
+			}
+			if (payload.method === 'Page.frameNavigated') {
+				const navigation = parseNavigation(payload.params)
+				if (!navigation) {
+					return
+				}
+				target.url = navigation.url
+				options.onPageNavigation?.({ url: navigation.url, title: target.title ?? null })
 			}
 		})
 
@@ -106,6 +116,18 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 			socket?.addEventListener('close', () => resolve())
 		})
 	}
+}
+
+const parseNavigation = (params: unknown): { url: string } | null => {
+	const record = params as { frame?: { url?: string; parentId?: string | null } }
+	const url = record.frame?.url
+	if (!url || typeof url !== 'string' || url.trim() === '') {
+		return null
+	}
+	if (record.frame?.parentId) {
+		return null
+	}
+	return { url }
 }
 
 const findTarget = async (chrome: WatcherChrome, match?: WatcherMatch): Promise<CdpTarget> => {

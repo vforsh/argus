@@ -11,6 +11,7 @@ const watcher = await startWatcher({
 	id: 'app',
 	match: { url: 'localhost:3000' },
 	chrome: { host: '127.0.0.1', port: 9222 },
+	fileLogs: { logsDir: '/tmp/argus/watcher-logs' },
 })
 
 // later
@@ -26,3 +27,6 @@ await watcher.close()
 - `match`: URL/title matching for CDP target selection
 - `chrome`: CDP host/port (defaults to `127.0.0.1:9222`)
 - `bufferSize`: max in-memory log count (default `50000`)
+- `fileLogs`: optional persistence for watcher logs
+    - `logsDir`: directory for log files (default `~/.argus/logs/<watcherId>`)
+    - Rotation: a new file is created after each top-level navigation/reload (lazy; created on first log)
