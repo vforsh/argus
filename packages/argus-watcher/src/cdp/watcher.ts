@@ -1,4 +1,5 @@
 import type { LogEvent, LogLevel, WatcherMatch, WatcherChrome } from '@vforsh/argus-core'
+import { resolveSourcemappedLocation } from '../sourcemaps/resolveLocation.js'
 
 /** Minimal CDP target metadata needed for attachment. */
 export type CdpTarget = {
@@ -85,11 +86,11 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 
 			const payload = message as { method?: string; params?: unknown }
 			if (payload.method === 'Runtime.consoleAPICalled') {
-				options.onLog(toConsoleEvent(payload.params, target))
+				void toConsoleEvent(payload.params, target).then((event) => options.onLog(event))
 				return
 			}
 			if (payload.method === 'Runtime.exceptionThrown') {
-				options.onLog(toExceptionEvent(payload.params, target))
+				void toExceptionEvent(payload.params, target).then((event) => options.onLog(event))
 				return
 			}
 			if (payload.method === 'Page.frameNavigated') {
@@ -187,7 +188,7 @@ const fetchTargets = async (chrome: WatcherChrome): Promise<CdpTarget[]> => {
 		.filter((target) => Boolean(target.webSocketDebuggerUrl))
 }
 
-const toConsoleEvent = (params: unknown, target: CdpTarget): Omit<LogEvent, 'id'> => {
+const toConsoleEvent = async (params: unknown, target: CdpTarget): Promise<Omit<LogEvent, 'id'>> => {
 	const record = params as {
 		type?: LogLevel
 		args?: unknown[]
@@ -200,7 +201,7 @@ const toConsoleEvent = (params: unknown, target: CdpTarget): Omit<LogEvent, 'id'
 	const line = frame?.lineNumber != null ? frame.lineNumber + 1 : null
 	const column = frame?.columnNumber != null ? frame.columnNumber + 1 : null
 
-	return {
+	const baseEvent: Omit<LogEvent, 'id'> = {
 		ts: Date.now(),
 		level: normalizeLevel(record.type ?? 'log'),
 		text,
@@ -212,9 +213,11 @@ const toConsoleEvent = (params: unknown, target: CdpTarget): Omit<LogEvent, 'id'
 		pageTitle: target.title ?? null,
 		source: 'console',
 	}
+
+	return applySourcemap(baseEvent)
 }
 
-const toExceptionEvent = (params: unknown, target: CdpTarget): Omit<LogEvent, 'id'> => {
+const toExceptionEvent = async (params: unknown, target: CdpTarget): Promise<Omit<LogEvent, 'id'>> => {
 	const record = params as {
 		exceptionDetails?: {
 			text?: string
@@ -232,7 +235,7 @@ const toExceptionEvent = (params: unknown, target: CdpTarget): Omit<LogEvent, 'i
 	const line = frame?.lineNumber != null ? frame.lineNumber + 1 : null
 	const column = frame?.columnNumber != null ? frame.columnNumber + 1 : null
 
-	return {
+	const baseEvent: Omit<LogEvent, 'id'> = {
 		ts: Date.now(),
 		level: 'exception',
 		text,
@@ -243,6 +246,32 @@ const toExceptionEvent = (params: unknown, target: CdpTarget): Omit<LogEvent, 'i
 		pageUrl: target.url ?? null,
 		pageTitle: target.title ?? null,
 		source: 'exception',
+	}
+
+	return applySourcemap(baseEvent)
+}
+
+const applySourcemap = async (event: Omit<LogEvent, 'id'>): Promise<Omit<LogEvent, 'id'>> => {
+	if (!event.file || event.line == null || event.column == null) {
+		return event
+	}
+	try {
+		const resolved = await resolveSourcemappedLocation({
+			file: event.file,
+			line: event.line,
+			column: event.column,
+		})
+		if (!resolved) {
+			return event
+		}
+		return {
+			...event,
+			file: resolved.file,
+			line: resolved.line,
+			column: resolved.column,
+		}
+	} catch {
+		return event
 	}
 }
 

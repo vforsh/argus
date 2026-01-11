@@ -81,11 +81,17 @@ test('WatcherFileLogger creates files lazily and rotates on navigation', async (
 
 	const secondContents = await fs.readFile(path.join(logsDir, files[0] ?? ''), 'utf8')
 	assert.ok(secondContents.includes('pageUrl: https://example.com/next?x=1'))
+	assert.ok(secondContents.includes('pageSearchParams: x=1'))
+	assert.ok(isBefore(secondContents, 'pageUrl: https://example.com/next?x=1', 'pageSearchParams: x=1'))
+	assert.ok(isBefore(secondContents, 'pageSearchParams: x=1', 'pageTitle: Next'))
 	assert.equal(countOccurrences(secondContents, 'watcherId:'), 1)
 	assert.ok(secondContents.includes('second log'))
 
 	const thirdContents = await fs.readFile(path.join(logsDir, files[1] ?? ''), 'utf8')
 	assert.ok(thirdContents.includes('pageUrl: https://example.com/final?y=1'))
+	assert.ok(thirdContents.includes('pageSearchParams: y=1'))
+	assert.ok(isBefore(thirdContents, 'pageUrl: https://example.com/final?y=1', 'pageSearchParams: y=1'))
+	assert.ok(isBefore(thirdContents, 'pageSearchParams: y=1', 'pageTitle: Final'))
 	assert.equal(countOccurrences(thirdContents, 'watcherId:'), 1)
 	assert.ok(thirdContents.includes('third log'))
 })
@@ -100,3 +106,12 @@ const pathExists = async (target: string): Promise<boolean> => {
 }
 
 const countOccurrences = (value: string, needle: string): number => value.split(needle).length - 1
+
+const isBefore = (value: string, first: string, second: string): boolean => {
+	const firstIndex = value.indexOf(first)
+	const secondIndex = value.indexOf(second)
+	if (firstIndex < 0 || secondIndex < 0) {
+		return false
+	}
+	return firstIndex < secondIndex
+}

@@ -223,6 +223,7 @@ type HeaderContext = {
 const renderHeader = (context: HeaderContext): string => {
 	const matchText = context.match ? safeStringify(context.match) : '(none)'
 	const pageUrl = context.pageUrl ?? '(unknown)'
+	const pageSearchParams = formatPageSearchParams(context.pageUrl)
 	const pageTitle = context.pageTitle ?? '(unknown)'
 	return [
 		'---',
@@ -231,6 +232,7 @@ const renderHeader = (context: HeaderContext): string => {
 		`chrome: ${context.chrome.host}:${context.chrome.port}`,
 		`match: ${matchText}`,
 		`pageUrl: ${pageUrl}`,
+		`pageSearchParams: ${pageSearchParams}`,
 		`pageTitle: ${pageTitle}`,
 		'---',
 		'',
@@ -272,4 +274,20 @@ const safeStringify = (value: unknown): string => {
 	} catch {
 		return String(value)
 	}
+}
+
+const formatPageSearchParams = (pageUrl: string | null): string => {
+	if (!pageUrl || pageUrl === '(unknown)') {
+		return '(unknown)'
+	}
+	let parsedUrl: URL
+	try {
+		parsedUrl = new URL(pageUrl)
+	} catch {
+		return '(unknown)'
+	}
+	if (!parsedUrl.search) {
+		return '(none)'
+	}
+	return parsedUrl.search.startsWith('?') ? parsedUrl.search.slice(1) : parsedUrl.search
 }
