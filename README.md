@@ -1,10 +1,50 @@
 # Argus
 
-Brokerless console-log watcher for Chromium-based browsers via CDP. This repo is an npm workspaces monorepo with:
+Console-log watcher for Chromium-based browsers via CDP. This repo is an npm workspaces monorepo with:
 
 - `@vforsh/argus`: CLI
+- `@vforsh/argus-client`: programmatic Node.js client
 - `@vforsh/argus-watcher`: watcher library
 - `@vforsh/argus-core`: shared types + registry helpers
+
+## What it does (high-level)
+
+Argus **connects to one or more Chromium targets via CDP**, subscribes to runtime/console events, and **streams logs to your terminal**. Each watcher connects directly to Chrome and advertises itself locally so it can be discovered.
+
+- **`@vforsh/argus` (CLI)**: CLI tool for interacting with watchers (`list`, `logs`, `tail`).
+- **`@vforsh/argus-client`**: Programmatic Node.js client for discovering watchers and fetching logs.
+- **`@vforsh/argus-watcher`**: Programmatic watcher. Connects to Chrome (CDP), collects console output, and exposes them over a HTTP surface.
+- **`@vforsh/argus-core`**: Shared protocol/types + registry utilities used across the project.
+
+Diagram (data flow):
+
+```
+            (CDP: WebSocket)
+  ┌───────────────────────────────────┐
+  │ Chromium (Chrome / Edge / etc.)   │
+  │  - console.log / errors / events  │
+  └───────────────┬───────────────────┘
+                  │
+                  ▼
+  ┌───────────────────────────────────┐
+  │ @vforsh/argus-watcher             │
+  │  - connects to CDP                │
+  │  - buffers/streams log events     │
+  │  - serves logs over HTTP          │
+  └───────────────┬───────────────────┘
+                  │ announces presence
+                  │ (local registry)
+                  ▼
+  ┌───────────────────────────────────┐       ┌───────────────────────────┐
+  │ ~/.argus/registry.json            │◀──────│ @vforsh/argus (CLI)       │
+  │  - running watchers + endpoints   │◀──┐   │ OR @vforsh/argus-client   │
+  └───────────────────────────────────┘   │   └───────────────┬───────────┘
+                                          │                   │
+                                          └───────────────────┤ fetches from watcher
+                                                              │ (HTTP)
+                                                              ▼
+                                                     Your terminal / app output
+```
 
 ## Why “Argus”?
 
