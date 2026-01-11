@@ -91,6 +91,11 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 			throw new Error('WebSocket unavailable')
 		}
 
+		const ws = socket
+		const cdp: CdpClient = {
+			sendAndWait: async (method, params) => sendAndWait(ws, pendingRequests, method, params),
+		}
+
 		socket.addEventListener('message', (event) => {
 			const message = parseMessage(event.data)
 			if (!message || typeof message !== 'object') {
@@ -118,11 +123,11 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 				return
 			}
 			if (payload.method === 'Runtime.consoleAPICalled') {
-				void toConsoleEvent(payload.params, target, options).then((event) => options.onLog(event))
+				void toConsoleEvent(payload.params, target, { ...options, cdp }).then((event) => options.onLog(event))
 				return
 			}
 			if (payload.method === 'Runtime.exceptionThrown') {
-				void toExceptionEvent(payload.params, target, options).then((event) => options.onLog(event))
+				void toExceptionEvent(payload.params, target, { ...options, cdp }).then((event) => options.onLog(event))
 				return
 			}
 			if (payload.method === 'Page.frameNavigated') {
@@ -228,14 +233,14 @@ const fetchTargets = async (chrome: WatcherChrome): Promise<CdpTarget[]> => {
 const toConsoleEvent = async (
 	params: unknown,
 	target: CdpTarget,
-	config: { ignoreMatcher?: IgnoreMatcher | null; stripUrlPrefixes?: string[] },
+	config: { ignoreMatcher?: IgnoreMatcher | null; stripUrlPrefixes?: string[]; cdp?: CdpClient },
 ): Promise<Omit<LogEvent, 'id'>> => {
 	const record = params as {
 		type?: LogLevel
 		args?: unknown[]
 		stackTrace?: { callFrames?: CallFrame[] }
 	}
-	const args = Array.isArray(record.args) ? record.args.map(serializeRemoteObject) : []
+	const args = Array.isArray(record.args) ? await serializeRemoteObjects(record.args, config.cdp) : []
 	const text = formatArgs(args)
 	const baseEvent: Omit<LogEvent, 'id'> = {
 		ts: Date.now(),
@@ -262,7 +267,7 @@ const toConsoleEvent = async (
 const toExceptionEvent = async (
 	params: unknown,
 	target: CdpTarget,
-	config: { ignoreMatcher?: IgnoreMatcher | null; stripUrlPrefixes?: string[] },
+	config: { ignoreMatcher?: IgnoreMatcher | null; stripUrlPrefixes?: string[]; cdp?: CdpClient },
 ): Promise<Omit<LogEvent, 'id'>> => {
 	const record = params as {
 		exceptionDetails?: {
@@ -272,7 +277,7 @@ const toExceptionEvent = async (
 		}
 	}
 	const details = record.exceptionDetails
-	const exceptionValue = details?.exception ? serializeRemoteObject(details.exception) : null
+	const exceptionValue = details?.exception ? await serializeRemoteObject(details.exception, config.cdp) : null
 	const args = exceptionValue != null ? [exceptionValue] : []
 	const exceptionDescription = describeExceptionValue(exceptionValue)
 	const text = formatExceptionText(details?.text, exceptionDescription)
@@ -385,19 +390,66 @@ const formatExceptionText = (baseText: string | undefined, description: string |
 	return trimmed
 }
 
-const serializeRemoteObject = (value: unknown): unknown => {
+type CdpClient = {
+	sendAndWait: (method: string, params?: Record<string, unknown>) => Promise<unknown>
+}
+
+type RemoteObjectRecord = {
+	type?: string
+	subtype?: string
+	value?: unknown
+	unserializableValue?: string
+	description?: string
+	preview?: { properties?: Array<{ name: string; value?: string }> }
+	objectId?: string
+}
+
+const serializeRemoteObjects = async (values: unknown[], cdp?: CdpClient): Promise<unknown[]> => {
+	if (!cdp) {
+		return values.map((value) => serializeRemoteObjectSync(value))
+	}
+	return Promise.all(values.map((value) => serializeRemoteObject(value, cdp)))
+}
+
+const serializeRemoteObject = async (value: unknown, cdp?: CdpClient): Promise<unknown> => {
 	if (!value || typeof value !== 'object') {
 		return value
 	}
 
-	const record = value as {
-		type?: string
-		subtype?: string
-		value?: unknown
-		unserializableValue?: string
-		description?: string
-		preview?: { properties?: Array<{ name: string; value?: string }> }
+	const record = value as RemoteObjectRecord
+
+	if (record.unserializableValue) {
+		return record.unserializableValue
 	}
+
+	if (record.value !== undefined) {
+		return record.value
+	}
+
+	if (record.preview?.properties) {
+		const preview: Record<string, string> = {}
+		for (const prop of record.preview.properties) {
+			preview[prop.name] = prop.value ?? ''
+		}
+		return preview
+	}
+
+	if (cdp && record.objectId && record.type === 'object') {
+		const expanded = await expandRemoteObjectViaGetProperties(record, cdp)
+		if (expanded) {
+			return expanded
+		}
+	}
+
+	return record.description ?? record.subtype ?? record.type ?? 'Object'
+}
+
+const serializeRemoteObjectSync = (value: unknown): unknown => {
+	if (!value || typeof value !== 'object') {
+		return value
+	}
+
+	const record = value as RemoteObjectRecord
 
 	if (record.unserializableValue) {
 		return record.unserializableValue
@@ -416,6 +468,54 @@ const serializeRemoteObject = (value: unknown): unknown => {
 	}
 
 	return record.description ?? record.subtype ?? record.type ?? 'Object'
+}
+
+const expandRemoteObjectViaGetProperties = async (record: RemoteObjectRecord, cdp: CdpClient): Promise<Record<string, unknown> | null> => {
+	if (!record.objectId) {
+		return null
+	}
+
+	let result: unknown
+	try {
+		result = await cdp.sendAndWait('Runtime.getProperties', {
+			objectId: record.objectId,
+			ownProperties: true,
+			accessorPropertiesOnly: false,
+		})
+	} catch {
+		return null
+	}
+
+	const payload = result as { result?: Array<{ name?: unknown; value?: unknown }> }
+	if (!Array.isArray(payload.result) || payload.result.length === 0) {
+		return null
+	}
+
+	const out: Record<string, unknown> = {}
+	const limit = 50
+	let added = 0
+	for (const prop of payload.result) {
+		if (added >= limit) {
+			out['…'] = `+${payload.result.length - limit} more`
+			break
+		}
+
+		const name = prop?.name
+		if (typeof name !== 'string' || name.trim() === '' || name === '__proto__') {
+			continue
+		}
+
+		// Keep this shallow and deterministic: use CDP-provided scalar values/previews/descriptions,
+		// but don't recursively expand nested objects (that can be expensive and/or cyclic).
+		out[name] = serializeRemoteObjectSync(prop.value)
+		added += 1
+	}
+
+	if (Object.keys(out).length === 0) {
+		return null
+	}
+
+	return out
 }
 
 const normalizeLevel = (level: LogLevel | string): LogLevel => {

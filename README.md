@@ -71,3 +71,5 @@ npm install --no-audit --no-fund --prefer-offline
 npm ls @vforsh/argus-core --all
 npm run build
 ```
+
+- **Seeing `Object` instead of expanded objects in logs**: this is a CDP quirk. `Runtime.consoleAPICalled` sometimes omits `value`/`preview` for object arguments, so the watcher may fall back to a generic `Object` string. This tends to happen with “non-trivial” objects (e.g. class instances, Proxies, large/complex objects, some platform objects like IDB/DOM-related handles), and can vary across Chrome versions. Even when objects are expanded, values are often shallow previews (nested objects may still appear as `Object`).
