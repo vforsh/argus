@@ -10,15 +10,15 @@ import { startWatcher } from '@vforsh/argus-watcher'
 const watcher = await startWatcher({
 	id: 'app',
 	match: { url: 'localhost:3000' },
-  chrome: { host: '127.0.0.1', port: 9222 },
-  fileLogs: { logsDir: '/tmp/argus/watcher-logs' },
-  ignoreList: {
-    enabled: true,
-    rules: ['webpack:///node_modules/'],
-  },
-  location: {
-    stripUrlPrefixes: ['http://127.0.0.1:3000/'],
-  },
+	chrome: { host: '127.0.0.1', port: 9222 },
+	fileLogs: { logsDir: '/tmp/argus/watcher-logs' },
+	ignoreList: {
+		enabled: true,
+		rules: ['webpack:///node_modules/'],
+	},
+	location: {
+		stripUrlPrefixes: ['http://127.0.0.1:3000/'],
+	},
 })
 
 // later
@@ -43,6 +43,26 @@ await watcher.close()
     - `rules`: regex patterns (as strings) to ignore (merged with built-in defaults)
 - `location`: optional display cleanup settings
     - `stripUrlPrefixes`: literal URL prefixes to remove from `event.file` for display
+
+## Events
+
+The `WatcherHandle` returned by `startWatcher` includes an `events` property which is an [Emittery](https://github.com/sindresorhus/emittery) instance.
+
+```js
+const { watcher, events } = await startWatcher(...)
+
+events.on('cdpAttached', ({ target }) => {
+  console.log(`Attached to ${target.title}`)
+})
+
+events.on('cdpDetached', ({ reason }) => {
+  console.log(`Detached: ${reason}`)
+})
+
+events.on('httpRequested', ({ endpoint, query }) => {
+  console.log(`Client requested ${endpoint} with params ${JSON.stringify(query)}`)
+})
+```
 
 ## File logs
 

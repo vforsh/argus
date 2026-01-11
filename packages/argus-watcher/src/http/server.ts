@@ -2,6 +2,21 @@ import http from 'node:http'
 import type { ErrorResponse, LogsResponse, StatusResponse, TailResponse, LogLevel, WatcherRecord } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 
+/** Optional metadata for the HTTP request event. */
+export type HttpRequestEventMetadata = {
+	endpoint: 'logs' | 'tail'
+	remoteAddress: string | null
+	query: {
+		after?: number
+		limit?: number
+		levels?: LogLevel[]
+		grep?: string
+		sinceTs?: number
+		timeoutMs?: number
+	}
+	ts: number
+}
+
 /** Options for the watcher HTTP server. */
 export type HttpServerOptions = {
 	host: string
@@ -9,6 +24,8 @@ export type HttpServerOptions = {
 	buffer: LogBuffer
 	getWatcher: () => WatcherRecord
 	getCdpStatus: () => { attached: boolean; target: { title: string | null; url: string | null } | null }
+	/** Optional callback invoked when logs or tail are requested. */
+	onRequest?: (event: HttpRequestEventMetadata) => void
 }
 
 /** Handle for the running HTTP server. */
@@ -66,6 +83,13 @@ const handleLogs = (url: URL, res: http.ServerResponse, options: HttpServerOptio
 	const grep = url.searchParams.get('grep') ?? undefined
 	const sinceTs = clampNumber(url.searchParams.get('sinceTs'), undefined)
 
+	options.onRequest?.({
+		endpoint: 'logs',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		query: { after, limit, levels, grep, sinceTs },
+		ts: Date.now(),
+	})
+
 	const events = options.buffer.listAfter(after, { levels, grep, sinceTs }, limit)
 	const nextAfter = events.length > 0 ? (events[events.length - 1]?.id ?? after) : after
 	const response: LogsResponse = { ok: true, events, nextAfter }
@@ -78,6 +102,13 @@ const handleTail = async (url: URL, res: http.ServerResponse, options: HttpServe
 	const timeoutMs = clampNumber(url.searchParams.get('timeoutMs'), 25_000, 1000, 120_000)
 	const levels = parseLevels(url.searchParams.get('levels'))
 	const grep = url.searchParams.get('grep') ?? undefined
+
+	options.onRequest?.({
+		endpoint: 'tail',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		query: { after, limit, levels, grep, timeoutMs },
+		ts: Date.now(),
+	})
 
 	const events = await options.buffer.waitForAfter(after, { levels, grep }, limit, timeoutMs)
 	const nextAfter = events.length > 0 ? (events[events.length - 1]?.id ?? after) : after

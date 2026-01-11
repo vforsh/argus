@@ -1,11 +1,14 @@
 import type { WatcherMatch, WatcherChrome, WatcherRecord, LogEvent } from '@vforsh/argus-core'
 import path from 'node:path'
+import Emittery from 'emittery'
 import { startCdpWatcher } from './cdp/watcher.js'
 import { LogBuffer } from './buffer/LogBuffer.js'
 import { startHttpServer } from './http/server.js'
 import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
 import { WatcherFileLogger } from './fileLogs/WatcherFileLogger.js'
 import { buildIgnoreMatcher } from './cdp/ignoreList.js'
+import type { ArgusWatcherEventMap } from './events.js'
+import type { HttpRequestEvent } from './events.js'
 
 /** Context for the optional log filename builder callback. */
 export type BuildFilenameContext = {
@@ -66,6 +69,11 @@ export type StartWatcherOptions = {
 export type WatcherHandle = {
 	close: () => Promise<void>
 	watcher: WatcherRecord
+	/**
+	 * Event emitter for watcher lifecycle and request events.
+	 * Subscribe to 'cdpAttached', 'cdpDetached', and 'httpRequested'.
+	 */
+	events: Emittery<ArgusWatcherEventMap>
 }
 
 /**
@@ -87,8 +95,13 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const ignoreMatcher = buildIgnoreMatcher(options.ignoreList)
 	const stripUrlPrefixes = options.location?.stripUrlPrefixes
 
+	const events = new Emittery<ArgusWatcherEventMap>()
 	const buffer = new LogBuffer(bufferSize)
-	let cdpStatus = { attached: false, target: null as { title: string | null; url: string | null } | null }
+	let cdpStatus: {
+		attached: boolean
+		target: { title: string | null; url: string | null } | null
+		reason?: string | null
+	} = { attached: false, target: null }
 	const fileLogs = options.fileLogs
 	const logsDir = fileLogs ? resolveLogsDir(fileLogs.logsDir) : null
 	const maxFiles = fileLogs ? resolveMaxFiles(fileLogs.maxFiles) : null
@@ -124,6 +137,12 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		buffer,
 		getWatcher: () => record,
 		getCdpStatus: () => cdpStatus,
+		onRequest: (event) => {
+			void events.emit('httpRequested', {
+				...event,
+				watcherId: options.id,
+			})
+		},
 	})
 
 	record.port = server.port
@@ -146,24 +165,44 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 			fileLogger?.setPageIntl(info)
 		},
 		onStatus: (status) => {
+			const prevAttached = cdpStatus.attached
 			cdpStatus = status
+
+			if (status.attached && !prevAttached) {
+				void events.emit('cdpAttached', {
+					ts: Date.now(),
+					watcherId: options.id,
+					target: status.target,
+				})
+			} else if (!status.attached && prevAttached) {
+				void events.emit('cdpDetached', {
+					ts: Date.now(),
+					watcherId: options.id,
+					target: status.target,
+					reason: status.reason ?? 'unknown',
+				})
+			}
 		},
 	})
 
 	return {
 		watcher: record,
+		events,
 		close: async () => {
 			heartbeat.stop()
 			await cdp.stop()
 			await fileLogger?.close()
 			await server.close()
 			await removeWatcher(record.id)
+			events.clearListeners()
 		},
 	}
 }
 
 /** Log event shape emitted by watchers. */
 export type { LogEvent }
+
+export type { ArgusWatcherEventMap, CdpAttachedEvent, CdpDetachedEvent, HttpRequestEvent, LogRequestQuery } from './events.js'
 
 const resolveLogsDir = (logsDir: string): string => {
 	if (typeof logsDir !== 'string' || logsDir.trim() === '') {

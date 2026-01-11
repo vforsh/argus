@@ -28,6 +28,8 @@ export type CdpStatus = {
 		title: string | null
 		url: string | null
 	} | null
+	/** Best-effort reason for detachment. Null when attached. */
+	reason?: string | null
 }
 
 type PageIntlInfo = {
@@ -70,8 +72,9 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 				await connectOnce()
 				backoffMs = 1_000
 			} catch (error) {
+				const reason = `connect_failed: ${formatError(error)}`
 				options.onLog(createSystemLog(`CDP connection failed: ${formatError(error)}`))
-				options.onStatus({ attached: false, target: null })
+				options.onStatus({ attached: false, target: null, reason })
 				await delay(backoffMs)
 				backoffMs = Math.min(backoffMs * 2, 10_000)
 			}
@@ -142,7 +145,7 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 		})
 
 		socket.addEventListener('close', () => {
-			options.onStatus({ attached: false, target: null })
+			options.onStatus({ attached: false, target: null, reason: stopped ? 'stopped' : 'socket_closed' })
 		})
 
 		const pageIntl = await fetchPageIntl(socket, pendingRequests)
@@ -154,7 +157,11 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 		await sendAndWait(socket, pendingRequests, 'Page.enable')
 
 		// Only signal attached after we've enabled the necessary domains
-		options.onStatus({ attached: true, target: { title: target.title ?? null, url: target.url ?? null } })
+		options.onStatus({
+			attached: true,
+			target: { title: target.title ?? null, url: target.url ?? null },
+			reason: null,
+		})
 
 		await new Promise<void>((resolve) => {
 			socket?.addEventListener('close', () => resolve())

@@ -3,25 +3,31 @@ import { startWatcher } from '@vforsh/argus-watcher'
 import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 
-const DEFAULT_LOGS_DIR = path.resolve('logs')
-
+/** Unique identifier for the watcher instance. */
 const watcherId = readEnv('ARGUS_WATCHER_ID', 'test')
+
+/** URL pattern to match for capturing logs from the Chrome instance. */
 const matchUrl = getArgValue('--page-url') ?? readEnv('ARGUS_MATCH_URL', '192.168.1.12:3001')
+
+/** Hostname for the Chrome Debugging Protocol connection. */
 const chromeHost = readEnv('ARGUS_CHROME_HOST', '127.0.0.1')
+
+/** Port number for the Chrome Debugging Protocol connection. */
 const chromePort = readEnvInt('ARGUS_CHROME_PORT', 9222)
-const logsDir = readEnv('ARGUS_LOGS_DIR', DEFAULT_LOGS_DIR)
-const includeTimestamps = process.argv.includes('--include-timestamps')
+
+/** Directory where log files will be persisted. */
+const logsDir = readEnv('ARGUS_LOGS_DIR', path.resolve('logs'))
 
 guardLogsDir(logsDir)
 
 async function main(): Promise<void> {
 	try {
-		const { watcher } = await startWatcher({
+		const { watcher, events } = await startWatcher({
 			id: watcherId,
 			match: { url: matchUrl },
 			chrome: { host: chromeHost, port: chromePort },
 			fileLogs: { logsDir },
-			includeTimestamps,
+			includeTimestamps: false,
 			ignoreList: {
 				enabled: true,
 				rules: ['LogsManager.ts'],
@@ -29,6 +35,22 @@ async function main(): Promise<void> {
 			location: {
 				stripUrlPrefixes: ['http://192.168.1.12:3001/'],
 			},
+		})
+
+		events.on('cdpAttached', ({ target }) => {
+			console.log(`[${watcher.id}] CDP attached: ${target?.title} (${target?.url})`)
+		})
+
+		events.on('cdpDetached', ({ reason, target }) => {
+			console.log(`[${watcher.id}] CDP detached: ${reason} (last target: ${target?.title})`)
+		})
+
+		events.on('httpRequested', ({ endpoint, remoteAddress, query }) => {
+			const params = Object.entries(query)
+				.filter(([_, v]) => v !== undefined)
+				.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+				.join(', ')
+			console.log(`[${watcher.id}] HTTP requested: /${endpoint} from ${remoteAddress} [${params}]`)
 		})
 
 		console.log(

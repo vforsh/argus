@@ -23,7 +23,8 @@
 	},
 	"dependencies": {
 		"@jridgewell/trace-mapping": "^0.3.31",
-		"@vforsh/argus-core": "0.1.2"
+		"@vforsh/argus-core": "0.1.2",
+		"emittery": "^1.2.0"
 	},
 	"scripts": {
 		"build": "tsc -b",
