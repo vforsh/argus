@@ -2,11 +2,14 @@
 # https://worktrunk.dev/config/#user-config
 
 [post-create]
-# Ensure the worktree has a .env by copying it from the master worktree (if missing).
+# Ensure the worktree has a .env by copying it from the main worktree (if missing).
 copy-env = "npx tsx ./scripts/worktree/ensure-env.ts"
 
 # Install root dependencies for the worktree.
 install = "npx tsx ./scripts/worktree/install-deps.ts"
+
+# Build workspace packages (contracts/clients/cli).
+build-packages = "npm run build:packages"
 
 [pre-merge]
 typecheck = "npm run typecheck"
