@@ -2,6 +2,17 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "build:all",
+			"detail": "Builds all packages in the workspace",
+			"type": "shell",
+			"command": "npm run build:packages",
+			"problemMatcher": ["$tsc"],
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			}
+		},
+		{
 			"label": "watcher: start",
 			"detail": "Starts the Argus watcher with optional --page-url argument",
 			"type": "shell",
