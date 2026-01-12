@@ -13,6 +13,21 @@
 			}
 		},
 		{
+			"label": "chrome: start",
+			"detail": "Launches Chrome with CDP enabled",
+			"type": "shell",
+			"command": "node packages/argus/dist/bin.js chrome start ${input:chromeArgs}",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			}
+		},
+		{
 			"label": "watcher: start",
 			"detail": "Starts the Argus watcher with optional --page-url argument",
 			"type": "shell",
@@ -34,6 +49,12 @@
 			"type": "promptString",
 			"description": "Additional arguments (e.g., --page-url http://...)",
 			"default": ""
+		},
+		{
+			"id": "chromeArgs",
+			"type": "promptString",
+			"description": "Chrome start arguments (e.g., --url http://localhost:3000 --default-profile)",
+			"default": "--default-profile"
 		}
 	]
 }

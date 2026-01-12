@@ -66,6 +66,32 @@ npm run build:packages
 
 3. Start Chrome with CDP enabled:
 
+```bash
+node packages/argus/dist/bin.js chrome start --url http://localhost:3000
+```
+
+This launches Chrome with a fresh temp profile and CDP on port 9222 (or an available port if 9222 is in use). The command runs until you press Ctrl+C.
+
+4. Start a watcher (in a separate terminal):
+
+```bash
+node packages/argus/dist/bin.js watcher start --id app --url localhost:3000
+```
+
+This starts a watcher that captures logs from pages matching the URL pattern.
+
+5. Use the CLI (in another terminal):
+
+```bash
+node packages/argus/dist/bin.js list
+node packages/argus/dist/bin.js logs app
+node packages/argus/dist/bin.js tail app
+```
+
+### Alternative: Manual Chrome launch
+
+If you prefer to launch Chrome manually:
+
 macOS:
 
 ```bash
@@ -82,20 +108,6 @@ Windows (PowerShell):
 
 ```powershell
 & "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222
-```
-
-4. Start a watcher from a Node script:
-
-```bash
-node scripts/start-watcher.mjs
-```
-
-5. Use the CLI:
-
-```bash
-node packages/argus/dist/bin.js list
-node packages/argus/dist/bin.js logs app
-node packages/argus/dist/bin.js tail app
 ```
 
 ## Registry

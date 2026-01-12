@@ -10,6 +10,8 @@ import { runTrace, runTraceStart, runTraceStop } from './commands/trace.js'
 import { runScreenshot } from './commands/screenshot.js'
 import { runDomTree } from './commands/domTree.js'
 import { runDomInfo } from './commands/domInfo.js'
+import { runChromeStart } from './commands/chromeStart.js'
+import { runWatcherStart } from './commands/watcherStart.js'
 
 const collectMatch = (value: string, previous: string[]): string[] => [...previous, value]
 
@@ -140,16 +142,12 @@ const net = program
 	.option('--since <duration>', 'Filter by time window (e.g. 10m, 2h, 30s)')
 	.option('--grep <substring>', 'Substring match over redacted URLs')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus net app --since 5m\n  $ argus net app --grep api\n  $ argus net app --json\n',
-	)
+	.addHelpText('after', '\nExamples:\n  $ argus net app --since 5m\n  $ argus net app --grep api\n  $ argus net app --json\n')
 	.action(async (id, options) => {
 		await runNet(id, options)
 	})
 
-net
-	.command('tail')
+net.command('tail')
 	.argument('<id>', 'Watcher id to follow')
 	.description('Tail network request summaries via long-polling')
 	.option('--after <id>', 'Start after this request id')
@@ -172,10 +170,7 @@ program
 	.option('--timeout <ms>', 'Eval timeout in milliseconds')
 	.option('--json', 'Output JSON for automation')
 	.option('--no-return-by-value', 'Disable returnByValue (use preview)')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch(\\"/ping\\").then(r => r.status)"\n',
-	)
+	.addHelpText('after', '\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch(\\"/ping\\").then(r => r.status)"\n')
 	.action(async (id, expression, options) => {
 		await runEval(id, expression, {
 			json: options.json,
@@ -230,20 +225,14 @@ program
 	.option('--out <file>', 'Output screenshot file path (relative to artifactsDir)')
 	.option('--selector <selector>', 'Optional CSS selector for element-only capture')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus screenshot app --out shot.png\n  $ argus screenshot app --selector "body" --out body.png\n',
-	)
+	.addHelpText('after', '\nExamples:\n  $ argus screenshot app --out shot.png\n  $ argus screenshot app --selector "body" --out body.png\n')
 	.action(async (id, options) => {
 		await runScreenshot(id, options)
 	})
 
-const dom = program
-	.command('dom')
-	.description('Inspect DOM elements in the connected page')
+const dom = program.command('dom').description('Inspect DOM elements in the connected page')
 
-dom
-	.command('tree')
+dom.command('tree')
 	.argument('<id>', 'Watcher id to query')
 	.description('Fetch a DOM subtree rooted at element(s) matching a CSS selector')
 	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
@@ -259,8 +248,7 @@ dom
 		await runDomTree(id, options)
 	})
 
-dom
-	.command('info')
+dom.command('info')
 	.argument('<id>', 'Watcher id to query')
 	.description('Fetch detailed info for element(s) matching a CSS selector')
 	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
@@ -273,6 +261,39 @@ dom
 	)
 	.action(async (id, options) => {
 		await runDomInfo(id, options)
+	})
+
+const chrome = program.command('chrome').description('Chrome/Chromium management commands')
+
+chrome
+	.command('start')
+	.description('Launch Chrome with CDP enabled')
+	.option('--url <url>', 'URL to open in Chrome')
+	.option('--id <watcherId>', 'Use match.url from a registered watcher')
+	.option('--default-profile', 'Use default Chrome profile instead of a temp profile')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --id app\n  $ argus chrome start --default-profile\n  $ argus chrome start --json\n',
+	)
+	.action(async (options) => {
+		await runChromeStart(options)
+	})
+
+const watcher = program.command('watcher').description('Watcher management commands')
+
+watcher
+	.command('start')
+	.description('Start an Argus watcher process')
+	.requiredOption('--id <watcherId>', 'Watcher id to announce in the registry')
+	.requiredOption('--url <url>', 'URL pattern to match for capturing logs')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --url localhost:3000 --json\n',
+	)
+	.action(async (options) => {
+		await runWatcherStart(options)
 	})
 
 program.parseAsync(process.argv)

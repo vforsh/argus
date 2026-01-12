@@ -26,6 +26,7 @@
 	},
 	"dependencies": {
 		"@vforsh/argus-core": "0.1.2",
+		"@vforsh/argus-watcher": "0.1.2",
 		"commander": "14.0.2"
 	},
 	"scripts": {
