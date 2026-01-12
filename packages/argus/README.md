@@ -14,6 +14,7 @@ npm install -g @vforsh/argus
 argus list
 argus logs <id>
 argus tail <id>
+argus eval <id> "<expression>"
 ```
 
 ### Commands
@@ -32,10 +33,43 @@ argus tail <id>
     - With `--json`, emits bounded newline-delimited JSON events (NDJSON) for piping into tools.
     - With `--json-full`, emits full NDJSON events (can be very large).
 
+- **`argus eval <id> <expression>`**: Evaluate a JS expression in the connected page.
+    - Best for quick one-off inspection (“what’s `location.href` right now?”).
+    - Defaults: awaits returned promises; returns values “by value” when possible.
+    - Tip: add `--json` for scripting (and check `.exception`).
+
 #### `logs` vs `tail`
 
 - **`logs`**: one-time query of **past** log events (bounded).
 - **`tail`**: continuous stream of **new** log events (unbounded until you stop it).
+
+#### `eval` gotchas / quirks
+
+- **Shell quoting**: `<expression>` is a single CLI argument.
+    - Use quotes for anything with spaces/special chars (zsh/bash): `argus eval app 'location.href'`.
+    - If you need quotes _inside_ the expression, prefer swapping quote types or escaping.
+
+- **“await” behavior**:
+    - By default, Argus sets CDP `awaitPromise=true`, so if your expression **returns a Promise**, Argus waits for it and prints the resolved value.
+    - You typically don’t need to use the `await` keyword—just return a Promise (e.g. `fetch("/ping").then(r => r.status)`).
+    - With `--no-await`, Argus won’t wait; you’ll get a Promise-ish preview instead.
+
+- **Return value shape is intentionally shallow**:
+    - By default, Argus requests `returnByValue=true` (best effort “JSON-ish” values).
+    - When a value can’t be returned by value, Argus falls back to a **bounded preview** (often shallow object properties, capped; nested objects are not expanded).
+    - You may see truncation markers like `…: "+N more"`.
+    - If you specifically want preview/remote-object behavior, use `--no-return-by-value`.
+
+- **Exceptions don’t currently fail the process**:
+    - If the evaluated expression throws, Argus prints `Exception: ...` but does **not** set a non-zero exit code.
+    - For automation, use `--json` and treat `exception != null` as failure.
+
+- **Timeouts**:
+    - `--timeout <ms>` sets the watcher-side eval timeout (non-numeric / <= 0 is ignored).
+    - The CLI HTTP request timeout includes a small buffer on top of the eval timeout.
+
+- **Watcher registry cleanup**:
+    - If the watcher can’t be reached, Argus removes it from the local registry (so it disappears from the next `argus list`).
 
 ### Options
 
@@ -92,4 +126,7 @@ argus list --by-cwd my-project
 argus logs app --since 10m --levels error,warning
 argus logs app --match "\\[perf\\]" --match "OrderRewards|CustomerMakingOrderSelfService"
 argus tail app --match "Unhandled"
+argus eval app 'location.href'
+argus eval app 'fetch("/ping").then(r => r.status)'
+argus eval app 'document.title' --json | jq
 ```
