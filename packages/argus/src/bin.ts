@@ -12,6 +12,13 @@ import { runDomTree } from './commands/domTree.js'
 import { runDomInfo } from './commands/domInfo.js'
 import { runChromeStart } from './commands/chromeStart.js'
 import { runWatcherStart } from './commands/watcherStart.js'
+import {
+	runStorageLocalGet,
+	runStorageLocalSet,
+	runStorageLocalRemove,
+	runStorageLocalList,
+	runStorageLocalClear,
+} from './commands/storageLocal.js'
 
 const collectMatch = (value: string, previous: string[]): string[] => [...previous, value]
 
@@ -294,6 +301,67 @@ watcher
 	)
 	.action(async (options) => {
 		await runWatcherStart(options)
+	})
+
+const storage = program.command('storage').description('Interact with browser storage APIs')
+
+const storageLocal = storage.command('local').description('Manage localStorage for the attached page')
+
+storageLocal
+	.command('get')
+	.argument('<id>', 'Watcher id')
+	.argument('<key>', 'localStorage key to retrieve')
+	.option('--origin <origin>', 'Validate page origin matches this value')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus storage local get app myKey\n  $ argus storage local get app myKey --json\n')
+	.action(async (id, key, options) => {
+		await runStorageLocalGet(id, key, options)
+	})
+
+storageLocal
+	.command('set')
+	.argument('<id>', 'Watcher id')
+	.argument('<key>', 'localStorage key to set')
+	.argument('<value>', 'Value to store')
+	.option('--origin <origin>', 'Validate page origin matches this value')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus storage local set app myKey "myValue"\n  $ argus storage local set app config \'{"debug":true}\'\n',
+	)
+	.action(async (id, key, value, options) => {
+		await runStorageLocalSet(id, key, value, options)
+	})
+
+storageLocal
+	.command('remove')
+	.argument('<id>', 'Watcher id')
+	.argument('<key>', 'localStorage key to remove')
+	.option('--origin <origin>', 'Validate page origin matches this value')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus storage local remove app myKey\n')
+	.action(async (id, key, options) => {
+		await runStorageLocalRemove(id, key, options)
+	})
+
+storageLocal
+	.command('list')
+	.argument('<id>', 'Watcher id')
+	.option('--origin <origin>', 'Validate page origin matches this value')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus storage local list app\n  $ argus storage local list app --json\n')
+	.action(async (id, options) => {
+		await runStorageLocalList(id, options)
+	})
+
+storageLocal
+	.command('clear')
+	.argument('<id>', 'Watcher id')
+	.option('--origin <origin>', 'Validate page origin matches this value')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus storage local clear app\n')
+	.action(async (id, options) => {
+		await runStorageLocalClear(id, options)
 	})
 
 program.parseAsync(process.argv)

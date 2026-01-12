@@ -22,9 +22,9 @@ export const fetchJson = async <T>(url: string, options: HttpOptions = {}): Prom
 			headers: body ? { 'Content-Type': 'application/json' } : undefined,
 		})
 
-		// For 4xx errors, return the JSON body if returnErrorResponse is enabled
+		// For error responses, return the JSON body if returnErrorResponse is enabled
 		if (!response.ok) {
-			if (options.returnErrorResponse && response.status >= 400 && response.status < 500) {
+			if (options.returnErrorResponse && response.status >= 400) {
 				return (await response.json()) as T
 			}
 			throw new Error(`Request failed (${response.status} ${response.statusText})`)

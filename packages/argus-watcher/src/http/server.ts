@@ -19,6 +19,7 @@ import type {
 	DomTreeResponse,
 	DomInfoRequest,
 	DomInfoResponse,
+	StorageLocalRequest,
 } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
@@ -27,6 +28,7 @@ import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
 import { evaluateExpression } from '../cdp/eval.js'
 import { fetchDomSubtreeBySelector, fetchDomInfoBySelector } from '../cdp/dom.js'
+import { executeStorageLocal } from '../cdp/storageLocal.js'
 import {
 	respondJson,
 	respondInvalidMatch,
@@ -57,6 +59,7 @@ export type HttpRequestEventMetadata = {
 		| 'screenshot'
 		| 'dom/tree'
 		| 'dom/info'
+		| 'storage/local'
 	remoteAddress: string | null
 	query?: {
 		after?: number
@@ -139,6 +142,10 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 
 		if (req.method === 'POST' && url.pathname === '/dom/info') {
 			return handleDomInfo(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/storage/local') {
+			return handleStorageLocal(req, res, options)
 		}
 
 		respondJson(res, { ok: false, error: { message: 'Not found', code: 'not_found' } }, 404)
@@ -476,6 +483,46 @@ const handleDomInfo = async (
 			)
 		}
 
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleStorageLocal = async (
+	req: http.IncomingMessage,
+	res: http.ServerResponse,
+	options: HttpServerOptions,
+): Promise<void> => {
+	const payload = await readJsonBody<StorageLocalRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	// Validate action
+	const validActions = ['get', 'set', 'remove', 'list', 'clear'] as const
+	if (!payload.action || !validActions.includes(payload.action)) {
+		return respondInvalidBody(res, `action must be one of: ${validActions.join(', ')}`)
+	}
+
+	// Validate key is present for get/set/remove
+	if (['get', 'set', 'remove'].includes(payload.action) && (!payload.key || typeof payload.key !== 'string')) {
+		return respondInvalidBody(res, 'key is required for get/set/remove actions')
+	}
+
+	// Validate value is present for set
+	if (payload.action === 'set' && (payload.value === undefined || typeof payload.value !== 'string')) {
+		return respondInvalidBody(res, 'value is required for set action')
+	}
+
+	options.onRequest?.({
+		endpoint: 'storage/local',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const response = await executeStorageLocal(options.cdpSession, payload)
 		respondJson(res, response)
 	} catch (error) {
 		respondError(res, error)
