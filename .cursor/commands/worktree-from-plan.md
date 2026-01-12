@@ -106,7 +106,7 @@ cd NEW_DIR && opencode --prompt "execute PLAN_REL_PATH"
 - Amp:
 
 ```
-cd NEW_DIR && amp --dangerously-allow-all "execute PLAN_REL_PATH"
+cd NEW_DIR && echo "execute PLAN_REL_PATH" | amp
 ```
 
 Notes:
@@ -121,6 +121,6 @@ Present the available tools as a numbered list and ask which one the user would 
 2. **Codex**: `codex --yolo --cd NEW_DIR "execute PLAN_REL_PATH"`
 3. **Claude Code**: `cd NEW_DIR && claude --dangerously-skip-permissions "execute PLAN_REL_PATH"`
 4. **OpenCode**: `cd NEW_DIR && opencode --prompt "execute PLAN_REL_PATH"`
-5. **Amp**: `cd NEW_DIR && amp --dangerously-allow-all "execute PLAN_REL_PATH"`
+5. **Amp**: `cd NEW_DIR && echo "execute PLAN_REL_PATH" | amp`
 
 End with: "Which of these would you like me to execute?"
