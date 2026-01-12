@@ -1,17 +1,21 @@
 export type HttpOptions = {
 	timeoutMs?: number
 	method?: 'GET' | 'POST'
+	body?: unknown
 }
 
 export const fetchJson = async <T>(url: string, options: HttpOptions = {}): Promise<T> => {
 	const controller = new AbortController()
 	const timeoutMs = options.timeoutMs ?? 5_000
 	const timer = setTimeout(() => controller.abort(), timeoutMs)
+	const body = options.body != null ? JSON.stringify(options.body) : undefined
 
 	try {
 		const response = await fetch(url, {
 			method: options.method ?? 'GET',
 			signal: controller.signal,
+			body,
+			headers: body ? { 'Content-Type': 'application/json' } : undefined,
 		})
 
 		if (!response.ok) {

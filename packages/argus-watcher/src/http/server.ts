@@ -1,12 +1,57 @@
 import http from 'node:http'
-import type { ErrorResponse, LogsResponse, StatusResponse, TailResponse, LogLevel, WatcherRecord } from '@vforsh/argus-core'
+import type {
+	LogsResponse,
+	StatusResponse,
+	TailResponse,
+	LogLevel,
+	WatcherRecord,
+	NetResponse,
+	NetTailResponse,
+	EvalRequest,
+	EvalResponse,
+	TraceStartRequest,
+	TraceStartResponse,
+	TraceStopRequest,
+	TraceStopResponse,
+	ScreenshotRequest,
+	ScreenshotResponse,
+} from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
+import type { NetBuffer } from '../buffer/NetBuffer.js'
+import type { CdpSessionHandle } from '../cdp/connection.js'
+import type { TraceRecorder } from '../cdp/tracing.js'
+import type { Screenshotter } from '../cdp/screenshot.js'
+import { evaluateExpression } from '../cdp/eval.js'
+import {
+	respondJson,
+	respondInvalidMatch,
+	respondInvalidMatchCase,
+	respondInvalidBody,
+	respondError,
+	readJsonBody,
+	clampNumber,
+	parseLevels,
+	resolveMatchCase,
+	normalizeMatchPatterns,
+	compileMatchPatterns,
+	normalizeQueryValue,
+	normalizeBoolean,
+	normalizeTimeout,
+} from './httpUtils.js'
 
 /** Optional metadata for the HTTP request event. */
 export type HttpRequestEventMetadata = {
-	endpoint: 'logs' | 'tail'
+	endpoint:
+		| 'logs'
+		| 'tail'
+		| 'net'
+		| 'net/tail'
+		| 'eval'
+		| 'trace/start'
+		| 'trace/stop'
+		| 'screenshot'
 	remoteAddress: string | null
-	query: {
+	query?: {
 		after?: number
 		limit?: number
 		levels?: LogLevel[]
@@ -15,6 +60,7 @@ export type HttpRequestEventMetadata = {
 		source?: string
 		sinceTs?: number
 		timeoutMs?: number
+		grep?: string
 	}
 	ts: number
 }
@@ -24,8 +70,12 @@ export type HttpServerOptions = {
 	host: string
 	port: number
 	buffer: LogBuffer
+	netBuffer: NetBuffer
 	getWatcher: () => WatcherRecord
 	getCdpStatus: () => { attached: boolean; target: { title: string | null; url: string | null } | null }
+	cdpSession: CdpSessionHandle
+	traceRecorder: TraceRecorder
+	screenshotter: Screenshotter
 	/** Optional callback invoked when logs or tail are requested. */
 	onRequest?: (event: HttpRequestEventMetadata) => void
 }
@@ -50,6 +100,30 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 
 		if (req.method === 'GET' && url.pathname === '/tail') {
 			return handleTail(url, res, options)
+		}
+
+		if (req.method === 'GET' && url.pathname === '/net') {
+			return handleNet(url, res, options)
+		}
+
+		if (req.method === 'GET' && url.pathname === '/net/tail') {
+			return handleNetTail(url, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/eval') {
+			return handleEval(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/trace/start') {
+			return handleTraceStart(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/trace/stop') {
+			return handleTraceStop(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/screenshot') {
+			return handleScreenshot(req, res, options)
 		}
 
 		respondJson(res, { ok: false, error: { message: 'Not found', code: 'not_found' } }, 404)
@@ -146,6 +220,146 @@ const handleTail = async (url: URL, res: http.ServerResponse, options: HttpServe
 	respondJson(res, response)
 }
 
+const handleNet = (url: URL, res: http.ServerResponse, options: HttpServerOptions): void => {
+	const after = clampNumber(url.searchParams.get('after'), 0)
+	const limit = clampNumber(url.searchParams.get('limit'), 500, 1, 5000)
+	const sinceTs = clampNumber(url.searchParams.get('sinceTs'), undefined)
+	const grep = normalizeQueryValue(url.searchParams.get('grep'))
+
+	options.onRequest?.({
+		endpoint: 'net',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		query: { after, limit, sinceTs, grep },
+		ts: Date.now(),
+	})
+
+	const requests = options.netBuffer.listAfter(after, { sinceTs, grep }, limit)
+	const nextAfter = requests.length > 0 ? (requests[requests.length - 1]?.id ?? after) : after
+	const response: NetResponse = { ok: true, requests, nextAfter }
+	respondJson(res, response)
+}
+
+const handleNetTail = async (url: URL, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const after = clampNumber(url.searchParams.get('after'), 0)
+	const limit = clampNumber(url.searchParams.get('limit'), 500, 1, 5000)
+	const timeoutMs = clampNumber(url.searchParams.get('timeoutMs'), 25_000, 1000, 120_000)
+	const sinceTs = clampNumber(url.searchParams.get('sinceTs'), undefined)
+	const grep = normalizeQueryValue(url.searchParams.get('grep'))
+
+	options.onRequest?.({
+		endpoint: 'net/tail',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		query: { after, limit, sinceTs, timeoutMs, grep },
+		ts: Date.now(),
+	})
+
+	const requests = await options.netBuffer.waitForAfter(after, { sinceTs, grep }, limit, timeoutMs)
+	const nextAfter = requests.length > 0 ? (requests[requests.length - 1]?.id ?? after) : after
+	const response: NetTailResponse = { ok: true, requests, nextAfter, timedOut: requests.length === 0 }
+	respondJson(res, response)
+}
+
+const handleEval = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<EvalRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.expression || typeof payload.expression !== 'string') {
+		return respondInvalidBody(res, 'expression is required')
+	}
+
+	options.onRequest?.({
+		endpoint: 'eval',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const response: EvalResponse = await evaluateExpression(options.cdpSession, {
+			expression: payload.expression,
+			awaitPromise: normalizeBoolean(payload.awaitPromise, true),
+			returnByValue: normalizeBoolean(payload.returnByValue, true),
+			timeoutMs: normalizeTimeout(payload.timeoutMs),
+		})
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleTraceStart = async (
+	req: http.IncomingMessage,
+	res: http.ServerResponse,
+	options: HttpServerOptions,
+): Promise<void> => {
+	const payload = await readJsonBody<TraceStartRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	options.onRequest?.({
+		endpoint: 'trace/start',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const response: TraceStartResponse = await options.traceRecorder.start(payload)
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleTraceStop = async (
+	req: http.IncomingMessage,
+	res: http.ServerResponse,
+	options: HttpServerOptions,
+): Promise<void> => {
+	const payload = await readJsonBody<TraceStopRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	options.onRequest?.({
+		endpoint: 'trace/stop',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const response: TraceStopResponse = await options.traceRecorder.stop(payload)
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleScreenshot = async (
+	req: http.IncomingMessage,
+	res: http.ServerResponse,
+	options: HttpServerOptions,
+): Promise<void> => {
+	const payload = await readJsonBody<ScreenshotRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	options.onRequest?.({
+		endpoint: 'screenshot',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const response: ScreenshotResponse = await options.screenshotter.capture(payload)
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
 const buildStatus = (options: HttpServerOptions): StatusResponse => {
 	const watcher = options.getWatcher()
 	const buffer = options.buffer.getStats()
@@ -160,129 +374,4 @@ const buildStatus = (options: HttpServerOptions): StatusResponse => {
 		buffer,
 		watcher,
 	}
-}
-
-const respondJson = (res: http.ServerResponse, body: LogsResponse | TailResponse | StatusResponse | ErrorResponse, status = 200): void => {
-	const payload = JSON.stringify(body)
-	res.statusCode = status
-	res.setHeader('Content-Type', 'application/json')
-	res.end(payload)
-}
-
-const clampNumber = (value: string | null, fallback?: number, min?: number, max?: number): number => {
-	if (value == null) {
-		return fallback ?? 0
-	}
-
-	const parsed = Number(value)
-	if (!Number.isFinite(parsed)) {
-		return fallback ?? 0
-	}
-
-	if (min != null && parsed < min) {
-		return min
-	}
-
-	if (max != null && parsed > max) {
-		return max
-	}
-
-	return parsed
-}
-
-const parseLevels = (value: string | null): LogLevel[] | undefined => {
-	if (!value) {
-		return undefined
-	}
-
-	const levels = value
-		.split(',')
-		.map((item) => item.trim())
-		.filter(Boolean)
-
-	if (levels.length === 0) {
-		return undefined
-	}
-
-	return levels as LogLevel[]
-}
-
-const resolveMatchCase = (value: string | null): 'sensitive' | 'insensitive' | null => {
-	if (!value) {
-		return 'insensitive'
-	}
-
-	if (value === 'sensitive' || value === 'insensitive') {
-		return value
-	}
-
-	return null
-}
-
-const normalizeMatchPatterns = (
-	match: string[],
-): { patterns: string[]; error?: string } => {
-	const patterns: string[] = []
-	for (const pattern of match) {
-		const trimmed = pattern.trim()
-		if (!trimmed) {
-			return { patterns: [], error: 'Invalid match pattern "(empty)"' }
-		}
-		patterns.push(trimmed)
-	}
-
-	return { patterns }
-}
-
-const compileMatchPatterns = (
-	patterns: string[],
-	matchCase: 'sensitive' | 'insensitive',
-): { match?: RegExp[]; error?: string } => {
-	if (patterns.length === 0) {
-		return {}
-	}
-
-	const flags = matchCase === 'sensitive' ? '' : 'i'
-	const compiled: RegExp[] = []
-
-	for (const pattern of patterns) {
-		try {
-			compiled.push(new RegExp(pattern, flags))
-		} catch (error) {
-			return { error: `Invalid match pattern "${pattern}": ${formatError(error)}` }
-		}
-	}
-
-	return { match: compiled }
-}
-
-const respondInvalidMatch = (res: http.ServerResponse, message: string): void => {
-	respondJson(res, { ok: false, error: { message, code: 'invalid_match' } }, 400)
-}
-
-const respondInvalidMatchCase = (res: http.ServerResponse): void => {
-	respondJson(res, { ok: false, error: { message: 'Invalid matchCase value', code: 'invalid_match_case' } }, 400)
-}
-
-const normalizeQueryValue = (value: string | null): string | undefined => {
-	if (value == null) {
-		return undefined
-	}
-
-	const trimmed = value.trim()
-	if (!trimmed) {
-		return undefined
-	}
-
-	return trimmed
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

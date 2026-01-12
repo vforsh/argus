@@ -1,2 +1,20 @@
-export type { ArgusClient, ArgusClientOptions, ListOptions, ListResult, LogsMode, LogsOptions, LogsResult } from './types.js'
+export type {
+  ArgusClient,
+  ArgusClientOptions,
+  EvalOptions,
+  EvalResult,
+  ListOptions,
+  ListResult,
+  LogsMode,
+  LogsOptions,
+  LogsResult,
+  NetOptions,
+  NetResult,
+  ScreenshotOptions,
+  ScreenshotResult,
+  TraceStartOptions,
+  TraceStartResult,
+  TraceStopOptions,
+  TraceStopResult,
+} from './types.js'
 export { createArgusClient } from './client/createArgusClient.js'

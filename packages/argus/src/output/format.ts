@@ -1,4 +1,4 @@
-import type { LogEvent, WatcherRecord } from '@vforsh/argus-core'
+import type { LogEvent, NetworkRequestSummary, WatcherRecord } from '@vforsh/argus-core'
 import { formatLogLevelTag } from '@vforsh/argus-core'
 
 /** Format a watcher line for human output. */
@@ -28,6 +28,15 @@ export const formatLogEvent = (event: LogEvent, options?: { includeTimestamps?: 
 	}
 
 	return `${header} at ${location}`
+}
+
+/** Format a network request summary for human output. */
+export const formatNetworkRequest = (request: NetworkRequestSummary): string => {
+	const status = request.status != null ? String(request.status) : request.errorText ? 'ERR' : '...'
+	const duration = request.durationMs != null ? `${request.durationMs}ms` : ''
+	const size = request.encodedDataLength != null ? `${request.encodedDataLength}b` : ''
+	const parts = [request.method, status, duration, size, request.url].filter(Boolean)
+	return parts.join(' ')
 }
 
 const formatMatch = (watcher: WatcherRecord): string => {

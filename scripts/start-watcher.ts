@@ -46,11 +46,14 @@ async function main(): Promise<void> {
 		})
 
 		events.on('httpRequested', ({ endpoint, remoteAddress, query }) => {
-			const params = Object.entries(query)
-				.filter(([_, v]) => v !== undefined)
-				.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-				.join(', ')
-			console.log(`[${watcher.id}] HTTP requested: /${endpoint} from ${remoteAddress} [${params}]`)
+			const params = query
+				? Object.entries(query)
+						.filter(([_, v]) => v !== undefined)
+						.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+						.join(', ')
+				: ''
+			const suffix = params ? ` [${params}]` : ''
+			console.log(`[${watcher.id}] HTTP requested: /${endpoint} from ${remoteAddress}${suffix}`)
 		})
 
 		console.log(

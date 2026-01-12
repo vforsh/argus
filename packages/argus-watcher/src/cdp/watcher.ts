@@ -5,6 +5,9 @@ import { stripUrlPrefixes } from './locationCleanup.js'
 import type { CallFrame, SelectedLocation } from './selectBestFrame.js'
 import { selectBestFrame } from './selectBestFrame.js'
 import { resolveSourcemappedLocation } from '../sourcemaps/resolveLocation.js'
+import { createCdpSessionHandle } from './connection.js'
+import type { CdpSessionController, CdpSessionHandle } from './connection.js'
+import { serializeRemoteObject, serializeRemoteObjects } from './remoteObject.js'
 
 /** Minimal CDP target metadata needed for attachment. */
 export type CdpTarget = {
@@ -45,14 +48,25 @@ export type CdpWatcherOptions = {
 	onStatus: (status: CdpStatus) => void
 	onPageNavigation?: (info: { url: string; title: string | null }) => void
 	onPageIntl?: (info: PageIntlInfo) => void
+	onAttach?: (session: CdpSessionHandle, target: CdpTarget) => Promise<void> | void
+	onDetach?: (reason: string) => void
+	sessionHandle?: CdpSessionController
 	ignoreMatcher?: IgnoreMatcher | null
 	stripUrlPrefixes?: string[]
 }
 
+export type CdpWatcherHandle = {
+	session: CdpSessionHandle
+	stop: () => Promise<void>
+}
+
 /** Start CDP polling + websocket subscriptions for console/exception events. */
-export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promise<void> } => {
+export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle => {
 	let stopped = false
 	let socket: WebSocket | null = null
+	let currentTarget: CdpTarget | null = null
+
+	const { session, attach, detach } = options.sessionHandle ?? createCdpSessionHandle()
 
 	const stop = async (): Promise<void> => {
 		stopped = true
@@ -63,7 +77,33 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 
 	void runLoop()
 
-	return { stop }
+	session.onEvent('Runtime.consoleAPICalled', (params) => {
+		if (!currentTarget) {
+			return
+		}
+		void toConsoleEvent(params, currentTarget, { ...options, cdp: session }).then((event) => options.onLog(event))
+	})
+
+	session.onEvent('Runtime.exceptionThrown', (params) => {
+		if (!currentTarget) {
+			return
+		}
+		void toExceptionEvent(params, currentTarget, { ...options, cdp: session }).then((event) => options.onLog(event))
+	})
+
+	session.onEvent('Page.frameNavigated', (params) => {
+		if (!currentTarget) {
+			return
+		}
+		const navigation = parseNavigation(params)
+		if (!navigation) {
+			return
+		}
+		currentTarget.url = navigation.url
+		options.onPageNavigation?.({ url: navigation.url, title: currentTarget.title ?? null })
+	})
+
+	return { stop, session }
 
 	async function runLoop(): Promise<void> {
 		let backoffMs = 1_000
@@ -75,6 +115,7 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 				const reason = `connect_failed: ${formatError(error)}`
 				options.onLog(createSystemLog(`CDP connection failed: ${formatError(error)}`))
 				options.onStatus({ attached: false, target: null, reason })
+				options.onDetach?.(reason)
 				await delay(backoffMs)
 				backoffMs = Math.min(backoffMs * 2, 10_000)
 			}
@@ -83,8 +124,6 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 
 	async function connectOnce(): Promise<void> {
 		const target = await findTarget(options.chrome, options.match)
-		const pendingRequests = new Map<number, PendingRequest>()
-
 		socket = new WebSocket(target.webSocketDebuggerUrl)
 		await new Promise<void>((resolve, reject) => {
 			socket?.addEventListener('open', () => resolve())
@@ -96,65 +135,29 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 		}
 
 		const ws = socket
-		const cdp: CdpClient = {
-			sendAndWait: async (method, params) => sendAndWait(ws, pendingRequests, method, params),
-		}
+		const connection = attach(ws)
+		currentTarget = target
 
-		socket.addEventListener('message', (event) => {
-			const message = parseMessage(event.data)
-			if (!message || typeof message !== 'object') {
-				return
-			}
-
-			const payload = message as {
-				id?: number
-				result?: unknown
-				error?: { message?: string } | null
-				method?: string
-				params?: unknown
-			}
-			if (payload.id != null) {
-				const pending = pendingRequests.get(payload.id)
-				if (!pending) {
-					return
-				}
-				pendingRequests.delete(payload.id)
-				if (payload.error) {
-					pending.reject(new Error(payload.error.message ?? 'CDP request failed'))
-					return
-				}
-				pending.resolve(payload.result)
-				return
-			}
-			if (payload.method === 'Runtime.consoleAPICalled') {
-				void toConsoleEvent(payload.params, target, { ...options, cdp }).then((event) => options.onLog(event))
-				return
-			}
-			if (payload.method === 'Runtime.exceptionThrown') {
-				void toExceptionEvent(payload.params, target, { ...options, cdp }).then((event) => options.onLog(event))
-				return
-			}
-			if (payload.method === 'Page.frameNavigated') {
-				const navigation = parseNavigation(payload.params)
-				if (!navigation) {
-					return
-				}
-				target.url = navigation.url
-				options.onPageNavigation?.({ url: navigation.url, title: target.title ?? null })
-			}
+		ws.addEventListener('message', (event) => {
+			connection.handleMessage(event.data)
 		})
 
-		socket.addEventListener('close', () => {
-			options.onStatus({ attached: false, target: null, reason: stopped ? 'stopped' : 'socket_closed' })
+		ws.addEventListener('close', () => {
+			const reason = stopped ? 'stopped' : 'socket_closed'
+			currentTarget = null
+			detach(reason)
+			options.onStatus({ attached: false, target: null, reason })
+			options.onDetach?.(reason)
 		})
 
-		const pageIntl = await fetchPageIntl(socket, pendingRequests)
+		const pageIntl = await fetchPageIntl(session)
 		if (pageIntl) {
 			options.onPageIntl?.(pageIntl)
 		}
 
-		await sendAndWait(socket, pendingRequests, 'Runtime.enable')
-		await sendAndWait(socket, pendingRequests, 'Page.enable')
+		await session.sendAndWait('Runtime.enable')
+		await session.sendAndWait('Page.enable')
+		await options.onAttach?.(session, target)
 
 		// Only signal attached after we've enabled the necessary domains
 		options.onStatus({
@@ -164,7 +167,7 @@ export const startCdpWatcher = (options: CdpWatcherOptions): { stop: () => Promi
 		})
 
 		await new Promise<void>((resolve) => {
-			socket?.addEventListener('close', () => resolve())
+			ws.addEventListener('close', () => resolve())
 		})
 	}
 }
@@ -241,14 +244,16 @@ const fetchTargets = async (chrome: WatcherChrome): Promise<CdpTarget[]> => {
 const toConsoleEvent = async (
 	params: unknown,
 	target: CdpTarget,
-	config: { ignoreMatcher?: IgnoreMatcher | null; stripUrlPrefixes?: string[]; cdp?: CdpClient },
+	config: { ignoreMatcher?: IgnoreMatcher | null; stripUrlPrefixes?: string[]; cdp?: CdpSessionHandle },
 ): Promise<Omit<LogEvent, 'id'>> => {
 	const record = params as {
 		type?: LogLevel
 		args?: unknown[]
 		stackTrace?: { callFrames?: CallFrame[] }
 	}
-	const args = Array.isArray(record.args) ? await serializeRemoteObjects(record.args, config.cdp) : []
+	const cdp = config.cdp
+	const runtimeClient = cdp ? { sendAndWait: (method: string, params?: Record<string, unknown>) => cdp.sendAndWait(method, params) } : undefined
+	const args = Array.isArray(record.args) ? await serializeRemoteObjects(record.args, runtimeClient) : []
 	const text = formatArgs(args)
 	const baseEvent: Omit<LogEvent, 'id'> = {
 		ts: Date.now(),
@@ -275,7 +280,7 @@ const toConsoleEvent = async (
 const toExceptionEvent = async (
 	params: unknown,
 	target: CdpTarget,
-	config: { ignoreMatcher?: IgnoreMatcher | null; stripUrlPrefixes?: string[]; cdp?: CdpClient },
+	config: { ignoreMatcher?: IgnoreMatcher | null; stripUrlPrefixes?: string[]; cdp?: CdpSessionHandle },
 ): Promise<Omit<LogEvent, 'id'>> => {
 	const record = params as {
 		exceptionDetails?: {
@@ -285,7 +290,9 @@ const toExceptionEvent = async (
 		}
 	}
 	const details = record.exceptionDetails
-	const exceptionValue = details?.exception ? await serializeRemoteObject(details.exception, config.cdp) : null
+	const cdp = config.cdp
+	const runtimeClient = cdp ? { sendAndWait: (method: string, params?: Record<string, unknown>) => cdp.sendAndWait(method, params) } : undefined
+	const exceptionValue = details?.exception ? await serializeRemoteObject(details.exception, runtimeClient) : null
 	const args = exceptionValue != null ? [exceptionValue] : []
 	const exceptionDescription = describeExceptionValue(exceptionValue)
 	const text = formatExceptionText(details?.text, exceptionDescription)
@@ -398,134 +405,6 @@ const formatExceptionText = (baseText: string | undefined, description: string |
 	return trimmed
 }
 
-type CdpClient = {
-	sendAndWait: (method: string, params?: Record<string, unknown>) => Promise<unknown>
-}
-
-type RemoteObjectRecord = {
-	type?: string
-	subtype?: string
-	value?: unknown
-	unserializableValue?: string
-	description?: string
-	preview?: { properties?: Array<{ name: string; value?: string }> }
-	objectId?: string
-}
-
-const serializeRemoteObjects = async (values: unknown[], cdp?: CdpClient): Promise<unknown[]> => {
-	if (!cdp) {
-		return values.map((value) => serializeRemoteObjectSync(value))
-	}
-	return Promise.all(values.map((value) => serializeRemoteObject(value, cdp)))
-}
-
-const serializeRemoteObject = async (value: unknown, cdp?: CdpClient): Promise<unknown> => {
-	if (!value || typeof value !== 'object') {
-		return value
-	}
-
-	const record = value as RemoteObjectRecord
-
-	if (record.unserializableValue) {
-		return record.unserializableValue
-	}
-
-	if (record.value !== undefined) {
-		return record.value
-	}
-
-	if (record.preview?.properties) {
-		const preview: Record<string, string> = {}
-		for (const prop of record.preview.properties) {
-			preview[prop.name] = prop.value ?? ''
-		}
-		return preview
-	}
-
-	if (cdp && record.objectId && record.type === 'object') {
-		const expanded = await expandRemoteObjectViaGetProperties(record, cdp)
-		if (expanded) {
-			return expanded
-		}
-	}
-
-	return record.description ?? record.subtype ?? record.type ?? 'Object'
-}
-
-const serializeRemoteObjectSync = (value: unknown): unknown => {
-	if (!value || typeof value !== 'object') {
-		return value
-	}
-
-	const record = value as RemoteObjectRecord
-
-	if (record.unserializableValue) {
-		return record.unserializableValue
-	}
-
-	if (record.value !== undefined) {
-		return record.value
-	}
-
-	if (record.preview?.properties) {
-		const preview: Record<string, string> = {}
-		for (const prop of record.preview.properties) {
-			preview[prop.name] = prop.value ?? ''
-		}
-		return preview
-	}
-
-	return record.description ?? record.subtype ?? record.type ?? 'Object'
-}
-
-const expandRemoteObjectViaGetProperties = async (record: RemoteObjectRecord, cdp: CdpClient): Promise<Record<string, unknown> | null> => {
-	if (!record.objectId) {
-		return null
-	}
-
-	let result: unknown
-	try {
-		result = await cdp.sendAndWait('Runtime.getProperties', {
-			objectId: record.objectId,
-			ownProperties: true,
-			accessorPropertiesOnly: false,
-		})
-	} catch {
-		return null
-	}
-
-	const payload = result as { result?: Array<{ name?: unknown; value?: unknown }> }
-	if (!Array.isArray(payload.result) || payload.result.length === 0) {
-		return null
-	}
-
-	const out: Record<string, unknown> = {}
-	const limit = 50
-	let added = 0
-	for (const prop of payload.result) {
-		if (added >= limit) {
-			out['…'] = `+${payload.result.length - limit} more`
-			break
-		}
-
-		const name = prop?.name
-		if (typeof name !== 'string' || name.trim() === '' || name === '__proto__') {
-			continue
-		}
-
-		// Keep this shallow and deterministic: use CDP-provided scalar values/previews/descriptions,
-		// but don't recursively expand nested objects (that can be expensive and/or cyclic).
-		out[name] = serializeRemoteObjectSync(prop.value)
-		added += 1
-	}
-
-	if (Object.keys(out).length === 0) {
-		return null
-	}
-
-	return out
-}
-
 const normalizeLevel = (level: LogLevel | string): LogLevel => {
 	if (level === 'warn') {
 		return 'warning'
@@ -550,49 +429,9 @@ const formatArgs = (args: unknown[]): string => {
 	return args.map((arg) => previewStringify(arg)).join(' ')
 }
 
-const parseMessage = (data: unknown): unknown => {
-	if (typeof data === 'string') {
-		try {
-			return JSON.parse(data)
-		} catch {
-			return null
-		}
-	}
-
-	if (data instanceof ArrayBuffer) {
-		return parseMessage(new TextDecoder().decode(data))
-	}
-
-	return null
-}
-
-type PendingRequest = {
-	resolve: (result: unknown) => void
-	reject: (error: Error) => void
-}
-
-let nextId = 1
-const sendAndWait = (
-	socket: WebSocket,
-	pendingRequests: Map<number, PendingRequest>,
-	method: string,
-	params?: Record<string, unknown>,
-): Promise<unknown> => {
-	const id = nextId++
-	return new Promise((resolve, reject) => {
-		pendingRequests.set(id, { resolve, reject })
-		try {
-			socket.send(JSON.stringify({ id, method, params }))
-		} catch (error) {
-			pendingRequests.delete(id)
-			reject(error instanceof Error ? error : new Error(String(error)))
-		}
-	})
-}
-
-const fetchPageIntl = async (socket: WebSocket, pendingRequests: Map<number, PendingRequest>): Promise<PageIntlInfo | null> => {
+const fetchPageIntl = async (session: CdpSessionHandle): Promise<PageIntlInfo | null> => {
 	try {
-		const result = await sendAndWait(socket, pendingRequests, 'Runtime.evaluate', {
+		const result = await session.sendAndWait('Runtime.evaluate', {
 			expression:
 				'(() => { const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? null; const locale = navigator.language ?? null; return { timezone, locale }; })()',
 			returnByValue: true,

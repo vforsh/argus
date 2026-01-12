@@ -3,10 +3,15 @@ import path from 'node:path'
 import Emittery from 'emittery'
 import { startCdpWatcher } from './cdp/watcher.js'
 import { LogBuffer } from './buffer/LogBuffer.js'
+import { NetBuffer } from './buffer/NetBuffer.js'
 import { startHttpServer } from './http/server.js'
 import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
 import { WatcherFileLogger } from './fileLogs/WatcherFileLogger.js'
 import { buildIgnoreMatcher } from './cdp/ignoreList.js'
+import { createNetworkCapture } from './cdp/networkCapture.js'
+import { createTraceRecorder } from './cdp/tracing.js'
+import { createScreenshotter } from './cdp/screenshot.js'
+import { createCdpSessionHandle } from './cdp/connection.js'
 import type { ArgusWatcherEventMap } from './events.js'
 import type { HttpRequestEvent } from './events.js'
 
@@ -56,6 +61,8 @@ export type StartWatcherOptions = {
 	}
 	/** Whether to include ISO timestamps in log records. Defaults to `false`. */
 	includeTimestamps?: boolean
+	/** Base directory for trace/screenshot artifacts. Defaults to fileLogs.logsDir when set. */
+	artifactsDir?: string
 	location?: {
 		/**
 		 * Strip these literal prefixes from event.file for display/logging.
@@ -90,6 +97,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const port = options.port ?? 0
 	const chrome = options.chrome ?? { host: '127.0.0.1', port: 9222 }
 	const bufferSize = options.bufferSize ?? 50_000
+	const netBufferSize = options.bufferSize ?? 50_000
 	const startedAt = Date.now()
 	const includeTimestamps = options.includeTimestamps ?? false
 	const ignoreMatcher = buildIgnoreMatcher(options.ignoreList)
@@ -97,6 +105,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 
 	const events = new Emittery<ArgusWatcherEventMap>()
 	const buffer = new LogBuffer(bufferSize)
+	const netBuffer = new NetBuffer(netBufferSize)
 	let cdpStatus: {
 		attached: boolean
 		target: { title: string | null; url: string | null } | null
@@ -104,6 +113,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	} = { attached: false, target: null }
 	const fileLogs = options.fileLogs
 	const logsDir = fileLogs ? resolveLogsDir(fileLogs.logsDir) : null
+	const artifactsDir = resolveArtifactsDir(options.artifactsDir, logsDir)
 	const maxFiles = fileLogs ? resolveMaxFiles(fileLogs.maxFiles) : null
 	const fileLogger = logsDir
 		? new WatcherFileLogger({
@@ -131,25 +141,13 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		includeTimestamps,
 	}
 
-	const server = await startHttpServer({
-		host,
-		port,
-		buffer,
-		getWatcher: () => record,
-		getCdpStatus: () => cdpStatus,
-		onRequest: (event) => {
-			void events.emit('httpRequested', {
-				...event,
-				watcherId: options.id,
-			})
-		},
-	})
+	const sessionHandle = createCdpSessionHandle()
+	const networkCapture = createNetworkCapture({ session: sessionHandle.session, buffer: netBuffer })
+	const traceRecorder = createTraceRecorder({ session: sessionHandle.session, artifactsDir })
+	const screenshotter = createScreenshotter({ session: sessionHandle.session, artifactsDir })
 
-	record.port = server.port
-	await announceWatcher(record)
-
-	const heartbeat = startRegistryHeartbeat(() => record, options.heartbeatMs ?? 15_000)
 	const cdp = startCdpWatcher({
+		sessionHandle,
 		chrome,
 		match: options.match,
 		ignoreMatcher,
@@ -163,6 +161,13 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		},
 		onPageIntl: (info) => {
 			fileLogger?.setPageIntl(info)
+		},
+		onAttach: async () => {
+			await networkCapture.onAttached()
+		},
+		onDetach: (reason) => {
+			networkCapture.onDetached()
+			traceRecorder.onDetached(reason)
 		},
 		onStatus: (status) => {
 			const prevAttached = cdpStatus.attached
@@ -185,6 +190,29 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		},
 	})
 
+	const server = await startHttpServer({
+		host,
+		port,
+		buffer,
+		netBuffer,
+		getWatcher: () => record,
+		getCdpStatus: () => cdpStatus,
+		cdpSession: sessionHandle.session,
+		traceRecorder,
+		screenshotter,
+		onRequest: (event) => {
+			void events.emit('httpRequested', {
+				...event,
+				watcherId: options.id,
+			})
+		},
+	})
+
+	record.port = server.port
+	await announceWatcher(record)
+
+	const heartbeat = startRegistryHeartbeat(() => record, options.heartbeatMs ?? 15_000)
+
 	return {
 		watcher: record,
 		events,
@@ -192,6 +220,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 			heartbeat.stop()
 			await cdp.stop()
 			await fileLogger?.close()
+			traceRecorder.onDetached('watcher_stopped')
 			await server.close()
 			await removeWatcher(record.id)
 			events.clearListeners()
@@ -202,7 +231,14 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 /** Log event shape emitted by watchers. */
 export type { LogEvent }
 
-export type { ArgusWatcherEventMap, CdpAttachedEvent, CdpDetachedEvent, HttpRequestEvent, LogRequestQuery } from './events.js'
+export type {
+	ArgusWatcherEventMap,
+	CdpAttachedEvent,
+	CdpDetachedEvent,
+	HttpRequestEvent,
+	LogRequestQuery,
+	NetRequestQuery,
+} from './events.js'
 
 const resolveLogsDir = (logsDir: string): string => {
 	if (typeof logsDir !== 'string' || logsDir.trim() === '') {
@@ -219,4 +255,14 @@ const resolveMaxFiles = (maxFiles?: number): number => {
 		throw new Error('fileLogs.maxFiles must be an integer >= 1')
 	}
 	return maxFiles
+}
+
+const resolveArtifactsDir = (artifactsDir: string | undefined, logsDir: string | null): string => {
+	if (artifactsDir && artifactsDir.trim() !== '') {
+		return path.resolve(artifactsDir)
+	}
+	if (logsDir) {
+		return path.resolve(logsDir)
+	}
+	return path.resolve(process.cwd(), 'argus-artifacts')
 }

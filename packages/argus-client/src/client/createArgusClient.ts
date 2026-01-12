@@ -1,6 +1,32 @@
-import type { LogsResponse, RegistryV1, StatusResponse } from '@vforsh/argus-core'
+import type {
+	EvalResponse,
+	LogsResponse,
+	NetResponse,
+	RegistryV1,
+	ScreenshotResponse,
+	StatusResponse,
+	TraceStartResponse,
+	TraceStopResponse,
+} from '@vforsh/argus-core'
 import { DEFAULT_TTL_MS } from '@vforsh/argus-core'
-import type { ArgusClient, ArgusClientOptions, ListOptions, ListResult, LogsOptions, LogsResult } from '../types.js'
+import type {
+	ArgusClient,
+	ArgusClientOptions,
+	EvalOptions,
+	EvalResult,
+	ListOptions,
+	ListResult,
+	LogsOptions,
+	LogsResult,
+	NetOptions,
+	NetResult,
+	ScreenshotOptions,
+	ScreenshotResult,
+	TraceStartOptions,
+	TraceStartResult,
+	TraceStopOptions,
+	TraceStopResult,
+} from '../types.js'
 import { fetchJson } from '../http/fetchJson.js'
 import { previewLogEvent } from '../logs/previewLogEvent.js'
 import { readAndPruneRegistry, removeWatcherAndPersist } from '../registry/readAndPruneRegistry.js'
@@ -70,6 +96,126 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 				nextAfter: response.nextAfter,
 			}
 		},
+		net: async (watcherId: string, netOptions: NetOptions = {}): Promise<NetResult> => {
+			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const watcher = registry.watchers[watcherId]
+			if (!watcher) {
+				throw new Error(`Watcher not found: ${watcherId}`)
+			}
+
+			const params = buildNetParams(netOptions)
+			const url = buildNetUrl(watcher.host, watcher.port, params)
+
+			let response: NetResponse
+			try {
+				response = await fetchJson<NetResponse>(url, { timeoutMs: logsTimeoutMs })
+			} catch (error) {
+				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			}
+
+			return {
+				requests: response.requests,
+				nextAfter: response.nextAfter,
+			}
+		},
+		eval: async (watcherId: string, evalOptions: EvalOptions): Promise<EvalResult> => {
+			if (!evalOptions || !evalOptions.expression || evalOptions.expression.trim() === '') {
+				throw new Error('expression is required')
+			}
+
+			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const watcher = registry.watchers[watcherId]
+			if (!watcher) {
+				throw new Error(`Watcher not found: ${watcherId}`)
+			}
+
+			const url = buildEvalUrl(watcher.host, watcher.port)
+			const timeoutMs = evalOptions.timeoutMs ?? logsTimeoutMs
+			let response: EvalResponse
+			try {
+				response = await fetchJson<EvalResponse>(url, {
+					timeoutMs,
+					method: 'POST',
+					body: evalOptions,
+				})
+			} catch (error) {
+				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			}
+
+			return {
+				result: response.result,
+				type: response.type,
+				exception: response.exception,
+			}
+		},
+		traceStart: async (watcherId: string, traceOptions: TraceStartOptions = {}): Promise<TraceStartResult> => {
+			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const watcher = registry.watchers[watcherId]
+			if (!watcher) {
+				throw new Error(`Watcher not found: ${watcherId}`)
+			}
+
+			const url = buildTraceStartUrl(watcher.host, watcher.port)
+			let response: TraceStartResponse
+			try {
+				response = await fetchJson<TraceStartResponse>(url, {
+					timeoutMs: 10_000,
+					method: 'POST',
+					body: traceOptions,
+				})
+			} catch (error) {
+				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			}
+
+			return { traceId: response.traceId, outFile: response.outFile }
+		},
+		traceStop: async (watcherId: string, traceOptions: TraceStopOptions = {}): Promise<TraceStopResult> => {
+			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const watcher = registry.watchers[watcherId]
+			if (!watcher) {
+				throw new Error(`Watcher not found: ${watcherId}`)
+			}
+
+			const url = buildTraceStopUrl(watcher.host, watcher.port)
+			let response: TraceStopResponse
+			try {
+				response = await fetchJson<TraceStopResponse>(url, {
+					timeoutMs: 20_000,
+					method: 'POST',
+					body: traceOptions,
+				})
+			} catch (error) {
+				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			}
+
+			return { outFile: response.outFile }
+		},
+		screenshot: async (watcherId: string, screenshotOptions: ScreenshotOptions = {}): Promise<ScreenshotResult> => {
+			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const watcher = registry.watchers[watcherId]
+			if (!watcher) {
+				throw new Error(`Watcher not found: ${watcherId}`)
+			}
+
+			const url = buildScreenshotUrl(watcher.host, watcher.port)
+			let response: ScreenshotResponse
+			try {
+				response = await fetchJson<ScreenshotResponse>(url, {
+					timeoutMs: logsTimeoutMs,
+					method: 'POST',
+					body: screenshotOptions,
+				})
+			} catch (error) {
+				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			}
+
+			return { outFile: response.outFile, clipped: response.clipped }
+		},
 	}
 }
 
@@ -95,6 +241,19 @@ const buildLogsUrl = (host: string, port: number, params: URLSearchParams): stri
 	const query = params.toString()
 	return query ? `http://${host}:${port}/logs?${query}` : `http://${host}:${port}/logs`
 }
+
+const buildNetUrl = (host: string, port: number, params: URLSearchParams): string => {
+	const query = params.toString()
+	return query ? `http://${host}:${port}/net?${query}` : `http://${host}:${port}/net`
+}
+
+const buildEvalUrl = (host: string, port: number): string => `http://${host}:${port}/eval`
+
+const buildTraceStartUrl = (host: string, port: number): string => `http://${host}:${port}/trace/start`
+
+const buildTraceStopUrl = (host: string, port: number): string => `http://${host}:${port}/trace/stop`
+
+const buildScreenshotUrl = (host: string, port: number): string => `http://${host}:${port}/screenshot`
 
 const buildLogsParams = (options: LogsOptions): URLSearchParams => {
 	const params = new URLSearchParams()
@@ -131,6 +290,26 @@ const buildLogsParams = (options: LogsOptions): URLSearchParams => {
 	return params
 }
 
+const buildNetParams = (options: NetOptions): URLSearchParams => {
+	const params = new URLSearchParams()
+	const after = normalizeNonNegativeNumber('after', options.after)
+	if (after != null) {
+		params.set('after', String(after))
+	}
+	const limit = normalizeNonNegativeNumber('limit', options.limit)
+	if (limit != null) {
+		params.set('limit', String(limit))
+	}
+	const sinceTs = resolveSinceTs(options.since)
+	if (sinceTs != null) {
+		params.set('sinceTs', String(sinceTs))
+	}
+	const grep = normalizeQueryValue(options.grep)
+	if (grep) {
+		params.set('grep', grep)
+	}
+	return params
+}
 const normalizeLevels = (levels?: string | string[]): string | undefined => {
 	if (levels == null) {
 		return undefined

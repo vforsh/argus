@@ -51,6 +51,17 @@ export type LogRequestQuery = {
 }
 
 /**
+ * Query parameters for network/tail requests.
+ */
+export type NetRequestQuery = {
+	after?: number
+	limit?: number
+	sinceTs?: number
+	timeoutMs?: number
+	grep?: string
+}
+
+/**
  * Event payload for when a client requests logs or tail via HTTP.
  */
 export type HttpRequestEvent = {
@@ -59,11 +70,11 @@ export type HttpRequestEvent = {
 	/** Unique watcher identifier. */
 	watcherId: string
 	/** The requested endpoint. */
-	endpoint: 'logs' | 'tail'
+	endpoint: 'logs' | 'tail' | 'net' | 'net/tail' | 'eval' | 'trace/start' | 'trace/stop' | 'screenshot'
 	/** IP address of the requester (best-effort). */
 	remoteAddress: string | null
 	/** Parsed query parameters. */
-	query: LogRequestQuery
+	query?: LogRequestQuery | NetRequestQuery
 }
 
 /**
