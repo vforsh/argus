@@ -4,6 +4,8 @@ export type WatcherStartOptions = {
 	id?: string
 	url?: string
 	json?: boolean
+	chromeHost?: string
+	chromePort?: string | number
 }
 
 type WatcherStartResult = {
@@ -12,6 +14,15 @@ type WatcherStartResult = {
 	port: number
 	pid: number
 	matchUrl: string
+	chromeHost: string
+	chromePort: number
+}
+
+const isValidPort = (port: number): boolean => Number.isFinite(port) && port >= 1 && port <= 65535
+
+const parsePort = (value: string | number): number | null => {
+	const port = typeof value === 'string' ? parseInt(value, 10) : value
+	return isValidPort(port) ? port : null
 }
 
 export const runWatcherStart = async (options: WatcherStartOptions): Promise<void> => {
@@ -27,6 +38,18 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		return
 	}
 
+	const chromeHost = options.chromeHost?.trim() || '127.0.0.1'
+	let chromePort = 9222
+	if (options.chromePort != null) {
+		const parsed = parsePort(options.chromePort)
+		if (parsed === null) {
+			console.error(`Invalid --chrome-port: ${options.chromePort}. Must be an integer 1-65535.`)
+			process.exitCode = 2
+			return
+		}
+		chromePort = parsed
+	}
+
 	const watcherId = options.id.trim()
 	const matchUrl = options.url.trim()
 
@@ -35,7 +58,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		handle = await startWatcher({
 			id: watcherId,
 			match: { url: matchUrl },
-			chrome: { host: '127.0.0.1', port: 9222 },
+			chrome: { host: chromeHost, port: chromePort },
 			host: '127.0.0.1',
 			port: 0,
 		})
@@ -51,6 +74,8 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		port: handle.watcher.port,
 		pid: handle.watcher.pid,
 		matchUrl,
+		chromeHost,
+		chromePort,
 	}
 
 	const cleanup = async () => {
@@ -82,6 +107,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		console.log(`  host=${result.host}`)
 		console.log(`  port=${result.port}`)
 		console.log(`  matchUrl=${result.matchUrl}`)
+		console.log(`  chrome=${result.chromeHost}:${result.chromePort}`)
 	}
 
 	await new Promise(() => {})

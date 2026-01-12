@@ -1,7 +1,7 @@
 /** Fetch options for watcher HTTP calls. */
 export type HttpOptions = {
 	timeoutMs?: number
-	method?: 'GET' | 'POST'
+	method?: 'GET' | 'POST' | 'PUT'
 	body?: unknown
 	/** If true, return JSON body for 4xx responses instead of throwing. Default: false. */
 	returnErrorResponse?: boolean
@@ -47,4 +47,34 @@ const isAbortError = (error: unknown): boolean => {
 	}
 
 	return (error as { name: string }).name === 'AbortError'
+}
+
+/** Fetch text with timeout. */
+export const fetchText = async (url: string, options: HttpOptions = {}): Promise<string> => {
+	const controller = new AbortController()
+	const timeoutMs = options.timeoutMs ?? 5_000
+	const timer = setTimeout(() => controller.abort(), timeoutMs)
+	const body = options.body != null ? JSON.stringify(options.body) : undefined
+
+	try {
+		const response = await fetch(url, {
+			method: options.method ?? 'GET',
+			signal: controller.signal,
+			body,
+			headers: body ? { 'Content-Type': 'application/json' } : undefined,
+		})
+
+		if (!response.ok) {
+			throw new Error(`Request failed (${response.status} ${response.statusText})`)
+		}
+
+		return await response.text()
+	} catch (error) {
+		if (isAbortError(error)) {
+			throw new Error(`Request timed out after ${timeoutMs}ms`)
+		}
+		throw error
+	} finally {
+		clearTimeout(timer)
+	}
 }

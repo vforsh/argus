@@ -11,6 +11,14 @@ import { runScreenshot } from './commands/screenshot.js'
 import { runDomTree } from './commands/domTree.js'
 import { runDomInfo } from './commands/domInfo.js'
 import { runChromeStart } from './commands/chromeStart.js'
+import {
+	runChromeVersion,
+	runChromeStatus,
+	runChromeTargets,
+	runChromeOpen,
+	runChromeActivate,
+	runChromeClose,
+} from './commands/chrome.js'
 import { runWatcherStart } from './commands/watcherStart.js'
 import {
 	runStorageLocalGet,
@@ -287,6 +295,130 @@ chrome
 		await runChromeStart(options)
 	})
 
+chrome
+	.command('version')
+	.description('Show Chrome version info from CDP endpoint')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus chrome version\n  $ argus chrome version --host 127.0.0.1 --port 9222\n  $ argus chrome version --id app\n  $ argus chrome version --json\n',
+	)
+	.action(async (options) => {
+		await runChromeVersion(options)
+	})
+
+chrome
+	.command('status')
+	.description('Check if Chrome CDP endpoint is reachable')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus chrome status\n  $ argus chrome status --host 127.0.0.1 --port 9222\n  $ argus chrome status --id app\n',
+	)
+	.action(async (options) => {
+		await runChromeStatus(options)
+	})
+
+chrome
+	.command('targets')
+	.description('List Chrome targets (tabs, extensions, etc.)')
+	.option('--type <type>', 'Filter by target type (e.g. page, worker)')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus chrome targets\n  $ argus chrome targets --type page\n  $ argus chrome targets --json\n  $ argus chrome targets --id app\n',
+	)
+	.action(async (options) => {
+		await runChromeTargets(options)
+	})
+
+chrome
+	.command('list')
+	.description('List Chrome targets (alias for targets)')
+	.option('--type <type>', 'Filter by target type (e.g. page, worker)')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.action(async (options) => {
+		await runChromeTargets(options)
+	})
+
+chrome
+	.command('ls')
+	.description('List Chrome targets (alias for targets)')
+	.option('--type <type>', 'Filter by target type (e.g. page, worker)')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.action(async (options) => {
+		await runChromeTargets(options)
+	})
+
+chrome
+	.command('open')
+	.description('Open a new tab in Chrome')
+	.requiredOption('--url <url>', 'URL to open')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus chrome open --url http://localhost:3000\n  $ argus chrome open --url localhost:3000\n  $ argus chrome open --url http://example.com --json\n',
+	)
+	.action(async (options) => {
+		await runChromeOpen(options)
+	})
+
+chrome
+	.command('new')
+	.description('Open a new tab in Chrome (alias for open)')
+	.requiredOption('--url <url>', 'URL to open')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.action(async (options) => {
+		await runChromeOpen(options)
+	})
+
+chrome
+	.command('activate')
+	.description('Activate (focus) a Chrome target')
+	.argument('<targetId>', 'Target ID to activate')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus chrome activate ABCD1234\n  $ argus chrome activate ABCD1234 --json\n')
+	.action(async (targetId, options) => {
+		await runChromeActivate({ ...options, targetId })
+	})
+
+chrome
+	.command('close')
+	.description('Close a Chrome target')
+	.argument('<targetId>', 'Target ID to close')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus chrome close ABCD1234\n  $ argus chrome close ABCD1234 --json\n')
+	.action(async (targetId, options) => {
+		await runChromeClose({ ...options, targetId })
+	})
+
 const watcher = program.command('watcher').description('Watcher management commands')
 
 watcher
@@ -294,10 +426,12 @@ watcher
 	.description('Start an Argus watcher process')
 	.requiredOption('--id <watcherId>', 'Watcher id to announce in the registry')
 	.requiredOption('--url <url>', 'URL pattern to match for capturing logs')
+	.option('--chrome-host <host>', 'Chrome CDP host (default: 127.0.0.1)')
+	.option('--chrome-port <port>', 'Chrome CDP port (default: 9222)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --url localhost:3000 --json\n',
+		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --url localhost:3000 --chrome-port 9223\n  $ argus watcher start --id app --url localhost:3000 --json\n',
 	)
 	.action(async (options) => {
 		await runWatcherStart(options)

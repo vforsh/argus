@@ -15,6 +15,8 @@ argus list
 argus logs <id>
 argus tail <id>
 argus eval <id> "<expression>"
+argus chrome <subcommand>
+argus watcher start --id <id> --url <pattern>
 ```
 
 ### Commands
@@ -37,6 +39,48 @@ argus eval <id> "<expression>"
     - Best for quick one-off inspection (“what’s `location.href` right now?”).
     - Defaults: awaits returned promises; returns values “by value” when possible.
     - Tip: add `--json` for scripting (and check `.exception`).
+
+#### Chrome commands
+
+Manage and query a running Chrome instance with remote debugging enabled (CDP).
+
+- **`argus chrome start`**: Launch Chrome with CDP enabled.
+    - Options: `--url <url>`, `--id <watcherId>`, `--default-profile`, `--json`.
+    - Example: `argus chrome start --url http://localhost:3000`.
+
+- **`argus chrome version`**: Show Chrome version info from the CDP endpoint.
+    - Options: `--host`, `--port`, `--id <watcherId>`, `--json`.
+
+- **`argus chrome status`**: Check if Chrome CDP endpoint is reachable.
+    - Prints `ok <host>:<port> <browser>` on success; exits with code 1 if unreachable.
+
+- **`argus chrome targets`**: List all Chrome targets (tabs, workers, extensions).
+    - Aliases: `list`, `ls`.
+    - Options: `--type <type>` to filter (e.g. `--type page` for tabs only), `--json`.
+    - Example: `argus chrome targets --type page`.
+
+- **`argus chrome open --url <url>`**: Open a new tab in Chrome.
+    - Alias: `new`.
+    - URL normalization: if no scheme, `http://` is prepended.
+    - Example: `argus chrome open --url localhost:3000`.
+
+- **`argus chrome activate <targetId>`**: Activate (focus) a Chrome target.
+    - Example: `argus chrome activate E63A3ED201BFC02DA06134F506A7498C`.
+
+- **`argus chrome close <targetId>`**: Close a Chrome target.
+    - Example: `argus chrome close E63A3ED201BFC02DA06134F506A7498C`.
+
+**CDP endpoint resolution** (applies to all chrome commands except `start`):
+- `--host <host> --port <port>`: Use explicit host/port (both required together).
+- `--id <watcherId>`: Use chrome config from a registered watcher's `chrome.host`/`chrome.port`.
+- Default: `127.0.0.1:9222`.
+
+#### Watcher commands
+
+- **`argus watcher start`**: Start an Argus watcher process.
+    - Required: `--id <watcherId>`, `--url <pattern>`.
+    - Optional: `--chrome-host <host>` (default: `127.0.0.1`), `--chrome-port <port>` (default: `9222`), `--json`.
+    - Example: `argus watcher start --id app --url localhost:3000 --chrome-port 9223`.
 
 #### `logs` vs `tail`
 
@@ -129,4 +173,17 @@ argus tail app --match "Unhandled"
 argus eval app 'location.href'
 argus eval app 'fetch("/ping").then(r => r.status)'
 argus eval app 'document.title' --json | jq
+
+# Chrome commands
+argus chrome status
+argus chrome version --json
+argus chrome targets --type page
+argus chrome ls --type page --json
+argus chrome open --url localhost:3000
+argus chrome activate E63A3ED201BFC02DA06134F506A7498C
+argus chrome close E63A3ED201BFC02DA06134F506A7498C
+
+# Watcher with custom Chrome port
+argus chrome start --json  # note the cdpPort in output
+argus watcher start --id app --url localhost:3000 --chrome-port 9223
 ```
