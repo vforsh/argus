@@ -4,6 +4,5 @@ coverage
 *.tsbuildinfo
 .env
 .DS_Store
-.cursor
 
 logs/*.log
