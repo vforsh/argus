@@ -16,6 +16,7 @@
 		"typecheck:packages": "tsc -b packages/* --pretty false",
 		"build": "tsc -b",
 		"build:packages": "tsc -b packages/*",
+		"chrome:start": "npx tsx packages/argus/src/bin.ts chrome start",
 		"test:e2e": "npm run build:packages && npx tsx --test e2e/**/*.test.ts",
 		"prepare": "husky"
 	},

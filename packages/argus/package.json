@@ -31,6 +31,7 @@
 	},
 	"scripts": {
 		"build": "tsc -b",
-		"typecheck": "tsc -b --pretty false"
+		"typecheck": "tsc -b --pretty false",
+		"chrome:start": "tsx src/bin.ts chrome start"
 	}
 }
