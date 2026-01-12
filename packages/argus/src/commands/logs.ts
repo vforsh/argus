@@ -10,7 +10,10 @@ export type LogsOptions = {
 	json?: boolean
 	jsonFull?: boolean
 	levels?: string
-	grep?: string
+	match?: string[]
+	ignoreCase?: boolean
+	caseSensitive?: boolean
+	source?: string
 	since?: string
 	after?: string
 	limit?: string
@@ -40,8 +43,24 @@ export const runLogs = async (id: string, options: LogsOptions): Promise<void> =
 	if (options.levels) {
 		params.set('levels', options.levels)
 	}
-	if (options.grep) {
-		params.set('grep', options.grep)
+	const normalizedMatch = normalizeMatch(options.match)
+	if (normalizedMatch.error) {
+		console.error(normalizedMatch.error)
+		process.exitCode = 2
+		return
+	}
+	if (normalizedMatch.match) {
+		for (const pattern of normalizedMatch.match) {
+			params.append('match', pattern)
+		}
+	}
+	const matchCase = resolveMatchCase(options)
+	if (matchCase) {
+		params.set('matchCase', matchCase)
+	}
+	const source = normalizeQueryValue(options.source)
+	if (source) {
+		params.set('source', source)
 	}
 	if (options.since) {
 		const duration = parseDurationMs(options.since)
@@ -105,4 +124,41 @@ const formatError = (error: unknown): string => {
 		return error.message
 	}
 	return String(error)
+}
+
+const normalizeMatch = (match?: string[]): { match?: string[]; error?: string } => {
+	if (!match || match.length === 0) {
+		return {}
+	}
+
+	const normalized = match.map((value) => value.trim())
+	const invalid = normalized.find((value) => value.length === 0)
+	if (invalid != null) {
+		return { error: 'Invalid --match value: empty pattern.' }
+	}
+
+	return { match: normalized }
+}
+
+const resolveMatchCase = (options: { ignoreCase?: boolean; caseSensitive?: boolean }): 'sensitive' | 'insensitive' | undefined => {
+	if (options.caseSensitive) {
+		return 'sensitive'
+	}
+	if (options.ignoreCase) {
+		return 'insensitive'
+	}
+	return undefined
+}
+
+const normalizeQueryValue = (value?: string): string | undefined => {
+	if (value == null) {
+		return undefined
+	}
+
+	const trimmed = value.trim()
+	if (!trimmed) {
+		return undefined
+	}
+
+	return trimmed
 }

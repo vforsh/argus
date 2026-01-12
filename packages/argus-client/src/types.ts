@@ -35,7 +35,12 @@ export type LogsMode = 'preview' | 'full'
 export type LogsOptions = {
 	mode?: LogsMode
 	levels?: string | LogLevel[]
-	grep?: string
+	/** Regex match patterns (repeatable). */
+	match?: string | string[]
+	/** Regex case handling for `match` patterns. */
+	matchCase?: 'sensitive' | 'insensitive'
+	/** Filter by log event source substring. */
+	source?: string
 	after?: number
 	limit?: number
 	/**

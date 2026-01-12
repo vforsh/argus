@@ -110,8 +110,19 @@ const buildLogsParams = (options: LogsOptions): URLSearchParams => {
 	if (levels) {
 		params.set('levels', levels)
 	}
-	if (options.grep) {
-		params.set('grep', options.grep)
+	const match = normalizeMatch(options.match)
+	if (match) {
+		for (const pattern of match) {
+			params.append('match', pattern)
+		}
+	}
+	const matchCase = normalizeMatchCase(options.matchCase)
+	if (matchCase) {
+		params.set('matchCase', matchCase)
+	}
+	const source = normalizeQueryValue(options.source)
+	if (source) {
+		params.set('source', source)
 	}
 	const sinceTs = resolveSinceTs(options.since)
 	if (sinceTs != null) {
@@ -137,6 +148,32 @@ const normalizeLevels = (levels?: string | string[]): string | undefined => {
 	return trimmed ? trimmed : undefined
 }
 
+const normalizeMatch = (match?: string | string[]): string[] | undefined => {
+	if (match == null) {
+		return undefined
+	}
+
+	const values = Array.isArray(match) ? match : [match]
+	const normalized = values.map((value) => value.trim())
+	const invalid = normalized.find((value) => value.length === 0)
+	if (invalid != null) {
+		throw new Error('Invalid match value: empty pattern.')
+	}
+	return normalized
+}
+
+const normalizeMatchCase = (matchCase?: 'sensitive' | 'insensitive'): 'sensitive' | 'insensitive' | undefined => {
+	if (matchCase == null) {
+		return undefined
+	}
+
+	if (matchCase !== 'sensitive' && matchCase !== 'insensitive') {
+		throw new Error(`Invalid matchCase value: ${matchCase}`)
+	}
+
+	return matchCase
+}
+
 const resolveSinceTs = (value?: string | number): number | undefined => {
 	if (value == null) {
 		return undefined
@@ -148,6 +185,15 @@ const resolveSinceTs = (value?: string | number): number | undefined => {
 	}
 
 	return Date.now() - durationMs
+}
+
+const normalizeQueryValue = (value?: string): string | undefined => {
+	if (value == null) {
+		return undefined
+	}
+
+	const trimmed = value.trim()
+	return trimmed ? trimmed : undefined
 }
 
 const parseDurationOrThrow = (value: string): number => {

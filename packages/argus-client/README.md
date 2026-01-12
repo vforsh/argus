@@ -60,7 +60,9 @@ type ListResult = {
 type LogsOptions = {
 	mode?: 'preview' | 'full'
 	levels?: string | LogLevel[]
-	grep?: string
+	match?: string | string[]
+	matchCase?: 'sensitive' | 'insensitive'
+	source?: string
 	after?: number
 	limit?: number
 	since?: string | number
@@ -75,6 +77,9 @@ type LogsResult = {
 - `mode: 'preview'` (default) returns events with `args` bounded via `previewValue`.
 - `mode: 'full'` returns raw events from the watcher.
 - `levels` accepts comma-separated string or array; maps to watcher `/logs` query.
+- `match` accepts regex patterns (string or array); multiple patterns use OR semantics.
+- `matchCase` controls regex case-sensitivity (`insensitive` by default server-side).
+- `source` filters by `LogEvent.source` substring.
 - `since` accepts a duration string (e.g. `"10m"`, `"2h"`, `"30s"`) or a duration in ms.
 
 ## Errors

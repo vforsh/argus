@@ -25,7 +25,7 @@ argus tail <id>
 
 - **`argus logs <id>`**: Fetch a bounded slice of log history for a watcher.
     - Best for “what already happened?” (e.g. “show me errors from the last 10 minutes”).
-    - Combine with `--since`, `--levels`, and `--grep` to narrow results.
+    - Combine with `--since`, `--levels`, `--match`, and `--source` to narrow results.
 
 - **`argus tail <id>`**: Stream logs as they arrive (follow mode).
     - Best for “what’s happening right now?” while you reproduce an issue.
@@ -54,10 +54,20 @@ argus tail <id>
     - **When**: when you want to focus on signal (errors/warnings) and ignore noisy `log`/`debug` output.
     - **Why**: reduces volume so important events don’t get buried.
 
-- **`--grep <substring>`**: filter by message content.
-    - **What**: only returns/emits events whose text contains the given substring.
-    - **When**: when you’re hunting for a specific error (“Unhandled”, “ECONNREFUSED”, a request ID, etc.).
-    - **Why**: quickly narrows large streams/histories without post-processing.
+- **`--match <regex>`**: filter by message content (repeatable).
+    - **What**: only returns/emits events whose text matches any provided regex pattern.
+    - **When**: when you need server-side regex filtering (e.g. multiple tokens or alternation).
+    - **Why**: reduces client-side `rg`/`tail` loops.
+
+- **`--ignore-case` / `--case-sensitive`**: toggle regex case sensitivity.
+    - **What**: controls how `--match` compares text.
+    - **When**: when you need strict casing or want to avoid missing matches.
+    - **Why**: keeps filtering predictable across environments.
+
+- **`--source <substring>`**: filter by log source.
+    - **What**: only returns/emits events whose `source` contains the given substring (e.g. `console`, `exception`, `system`).
+    - **When**: when you only want console logs or only exceptions.
+    - **Why**: reduces noise without post-processing.
 
 - **`--by-cwd <substring>`**: filter watchers by working directory.
     - **What**: only returns watchers whose `cwd` contains the given substring.
@@ -80,5 +90,6 @@ argus tail <id>
 argus list --json
 argus list --by-cwd my-project
 argus logs app --since 10m --levels error,warning
-argus tail app --grep "Unhandled"
+argus logs app --match "\\[perf\\]" --match "OrderRewards|CustomerMakingOrderSelfService"
+argus tail app --match "Unhandled"
 ```

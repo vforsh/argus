@@ -43,7 +43,9 @@ export type LogRequestQuery = {
 	after?: number
 	limit?: number
 	levels?: LogLevel[]
-	grep?: string
+	match?: string[]
+	matchCase?: 'sensitive' | 'insensitive'
+	source?: string
 	sinceTs?: number
 	timeoutMs?: number
 }

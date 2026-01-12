@@ -10,7 +10,9 @@ export type HttpRequestEventMetadata = {
 		after?: number
 		limit?: number
 		levels?: LogLevel[]
-		grep?: string
+		match?: string[]
+		matchCase?: 'sensitive' | 'insensitive'
+		source?: string
 		sinceTs?: number
 		timeoutMs?: number
 	}
@@ -80,17 +82,31 @@ const handleLogs = (url: URL, res: http.ServerResponse, options: HttpServerOptio
 	const after = clampNumber(url.searchParams.get('after'), 0)
 	const limit = clampNumber(url.searchParams.get('limit'), 500, 1, 5000)
 	const levels = parseLevels(url.searchParams.get('levels'))
-	const grep = url.searchParams.get('grep') ?? undefined
+	const match = url.searchParams.getAll('match')
+	const matchCase = resolveMatchCase(url.searchParams.get('matchCase'))
+	if (!matchCase) {
+		return respondInvalidMatchCase(res)
+	}
+	const source = normalizeQueryValue(url.searchParams.get('source'))
 	const sinceTs = clampNumber(url.searchParams.get('sinceTs'), undefined)
+
+	const matchPatterns = normalizeMatchPatterns(match)
+	if (matchPatterns.error) {
+		return respondInvalidMatch(res, matchPatterns.error)
+	}
+	const compiledMatch = compileMatchPatterns(matchPatterns.patterns, matchCase)
+	if (compiledMatch.error) {
+		return respondInvalidMatch(res, compiledMatch.error)
+	}
 
 	options.onRequest?.({
 		endpoint: 'logs',
 		remoteAddress: res.req.socket.remoteAddress ?? null,
-		query: { after, limit, levels, grep, sinceTs },
+		query: { after, limit, levels, match: matchPatterns.patterns, matchCase, source, sinceTs },
 		ts: Date.now(),
 	})
 
-	const events = options.buffer.listAfter(after, { levels, grep, sinceTs }, limit)
+	const events = options.buffer.listAfter(after, { levels, match: compiledMatch.match, source, sinceTs }, limit)
 	const nextAfter = events.length > 0 ? (events[events.length - 1]?.id ?? after) : after
 	const response: LogsResponse = { ok: true, events, nextAfter }
 	respondJson(res, response)
@@ -101,16 +117,30 @@ const handleTail = async (url: URL, res: http.ServerResponse, options: HttpServe
 	const limit = clampNumber(url.searchParams.get('limit'), 500, 1, 5000)
 	const timeoutMs = clampNumber(url.searchParams.get('timeoutMs'), 25_000, 1000, 120_000)
 	const levels = parseLevels(url.searchParams.get('levels'))
-	const grep = url.searchParams.get('grep') ?? undefined
+	const match = url.searchParams.getAll('match')
+	const matchCase = resolveMatchCase(url.searchParams.get('matchCase'))
+	if (!matchCase) {
+		return respondInvalidMatchCase(res)
+	}
+	const source = normalizeQueryValue(url.searchParams.get('source'))
+
+	const matchPatterns = normalizeMatchPatterns(match)
+	if (matchPatterns.error) {
+		return respondInvalidMatch(res, matchPatterns.error)
+	}
+	const compiledMatch = compileMatchPatterns(matchPatterns.patterns, matchCase)
+	if (compiledMatch.error) {
+		return respondInvalidMatch(res, compiledMatch.error)
+	}
 
 	options.onRequest?.({
 		endpoint: 'tail',
 		remoteAddress: res.req.socket.remoteAddress ?? null,
-		query: { after, limit, levels, grep, timeoutMs },
+		query: { after, limit, levels, match: matchPatterns.patterns, matchCase, source, timeoutMs },
 		ts: Date.now(),
 	})
 
-	const events = await options.buffer.waitForAfter(after, { levels, grep }, limit, timeoutMs)
+	const events = await options.buffer.waitForAfter(after, { levels, match: compiledMatch.match, source }, limit, timeoutMs)
 	const nextAfter = events.length > 0 ? (events[events.length - 1]?.id ?? after) : after
 	const response: TailResponse = { ok: true, events, nextAfter, timedOut: events.length === 0 }
 	respondJson(res, response)
@@ -175,4 +205,84 @@ const parseLevels = (value: string | null): LogLevel[] | undefined => {
 	}
 
 	return levels as LogLevel[]
+}
+
+const resolveMatchCase = (value: string | null): 'sensitive' | 'insensitive' | null => {
+	if (!value) {
+		return 'insensitive'
+	}
+
+	if (value === 'sensitive' || value === 'insensitive') {
+		return value
+	}
+
+	return null
+}
+
+const normalizeMatchPatterns = (
+	match: string[],
+): { patterns: string[]; error?: string } => {
+	const patterns: string[] = []
+	for (const pattern of match) {
+		const trimmed = pattern.trim()
+		if (!trimmed) {
+			return { patterns: [], error: 'Invalid match pattern "(empty)"' }
+		}
+		patterns.push(trimmed)
+	}
+
+	return { patterns }
+}
+
+const compileMatchPatterns = (
+	patterns: string[],
+	matchCase: 'sensitive' | 'insensitive',
+): { match?: RegExp[]; error?: string } => {
+	if (patterns.length === 0) {
+		return {}
+	}
+
+	const flags = matchCase === 'sensitive' ? '' : 'i'
+	const compiled: RegExp[] = []
+
+	for (const pattern of patterns) {
+		try {
+			compiled.push(new RegExp(pattern, flags))
+		} catch (error) {
+			return { error: `Invalid match pattern "${pattern}": ${formatError(error)}` }
+		}
+	}
+
+	return { match: compiled }
+}
+
+const respondInvalidMatch = (res: http.ServerResponse, message: string): void => {
+	respondJson(res, { ok: false, error: { message, code: 'invalid_match' } }, 400)
+}
+
+const respondInvalidMatchCase = (res: http.ServerResponse): void => {
+	respondJson(res, { ok: false, error: { message: 'Invalid matchCase value', code: 'invalid_match_case' } }, 400)
+}
+
+const normalizeQueryValue = (value: string | null): string | undefined => {
+	if (value == null) {
+		return undefined
+	}
+
+	const trimmed = value.trim()
+	if (!trimmed) {
+		return undefined
+	}
+
+	return trimmed
+}
+
+const formatError = (error: unknown): string => {
+	if (!error) {
+		return 'unknown error'
+	}
+	if (error instanceof Error) {
+		return error.message
+	}
+	return String(error)
 }

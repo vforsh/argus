@@ -81,9 +81,11 @@ test('watcher + CLI e2e', async (t) => {
 
 	// 5. Emit log and assert `argus logs`
 	const testMsg = `hello from e2e ${Date.now()}`
+	const caseMsg = `CaseSensitiveToken-${Date.now()}`
 	// Give it another moment to ensure Runtime.enable is active
 	await new Promise((r) => setTimeout(r, 1000))
 	await page.evaluate((msg) => console.log(msg), testMsg)
+	await page.evaluate((msg) => console.log(msg), caseMsg)
 
 	// Give it a moment to buffer
 	await new Promise((r) => setTimeout(r, 1000))
@@ -95,6 +97,47 @@ test('watcher + CLI e2e', async (t) => {
 		logs.some((l) => l.text === testMsg),
 		`Logs should contain "${testMsg}"`,
 	)
+	assert.ok(
+		logs.some((l) => l.text === caseMsg),
+		`Logs should contain "${caseMsg}"`,
+	)
+
+	// 5b. Assert match/source filters
+	const { stdout: matchOut } = await runCommand(
+		'node',
+		[BIN_PATH, 'logs', watcherId, '--json', '--match', 'nope', '--match', caseMsg],
+		{ env },
+	)
+	const matchLogs = JSON.parse(matchOut) as Array<{ text: string }>
+	assert.ok(matchLogs.some((l) => l.text === caseMsg), 'Expected OR match to include case message')
+
+	const { stdout: caseSensitiveOut } = await runCommand(
+		'node',
+		[BIN_PATH, 'logs', watcherId, '--json', '--match', caseMsg.toLowerCase(), '--case-sensitive'],
+		{ env },
+	)
+	const caseSensitiveLogs = JSON.parse(caseSensitiveOut) as Array<{ text: string }>
+	assert.ok(
+		caseSensitiveLogs.every((l) => l.text !== caseMsg),
+		'Case-sensitive match should not include case message for lower-case pattern',
+	)
+
+	const { stdout: ignoreCaseOut } = await runCommand(
+		'node',
+		[BIN_PATH, 'logs', watcherId, '--json', '--match', caseMsg.toLowerCase(), '--ignore-case'],
+		{ env },
+	)
+	const ignoreCaseLogs = JSON.parse(ignoreCaseOut) as Array<{ text: string }>
+	assert.ok(
+		ignoreCaseLogs.some((l) => l.text === caseMsg),
+		'Ignore-case match should include case message',
+	)
+
+	const { stdout: sourceOut } = await runCommand('node', [BIN_PATH, 'logs', watcherId, '--json', '--source', 'console'], {
+		env,
+	})
+	const sourceLogs = JSON.parse(sourceOut) as Array<{ source: string; text: string }>
+	assert.ok(sourceLogs.some((l) => l.text === testMsg && l.source === 'console'), 'Expected console source filter to include log')
 
 	// 6. Emit page errors and assert `argus logs`
 	const exceptionMarker = `e2e-uncaught-${Date.now()}`
@@ -129,6 +172,17 @@ test('watcher + CLI e2e', async (t) => {
 	assert.ok(
 		exceptionLogs.some((event) => event.text.includes(rejectionMarker) || JSON.stringify(event.args ?? []).includes(rejectionMarker)),
 		`Expected unhandled rejection marker "${rejectionMarker}" in logs`,
+	)
+
+	const { stdout: exceptionSourceOut } = await runCommand(
+		'node',
+		[BIN_PATH, 'logs', watcherId, '--json', '--source', 'exception'],
+		{ env },
+	)
+	const exceptionSourceLogs = JSON.parse(exceptionSourceOut) as Array<{ source: string; level: string }>
+	assert.ok(
+		exceptionSourceLogs.every((event) => event.source === 'exception'),
+		'Expected exception source filter to exclude non-exception events',
 	)
 
 	// 7. Assert `argus tail`

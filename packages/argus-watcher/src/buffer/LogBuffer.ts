@@ -10,10 +10,16 @@ export type LogFilters = {
 	levels?: LogLevel[]
 
 	/**
-	 * Case-insensitive substring match against `LogEvent.text`.
-	 * If provided, only include events whose text contains this value.
+	 * Match event text against any of these regex patterns.
+	 * If provided, only include events that match at least one pattern.
 	 */
-	grep?: string
+	match?: RegExp[]
+
+	/**
+	 * Case-insensitive substring match against `LogEvent.source`.
+	 * If provided, only include events whose source contains this value.
+	 */
+	source?: string
 
 	/**
 	 * Only include events with `event.ts >= sinceTs`.
@@ -127,7 +133,16 @@ const matchesFilters = (event: LogEvent, filters: LogFilters): boolean => {
 		return false
 	}
 
-	if (filters.grep && !event.text.toLowerCase().includes(filters.grep.toLowerCase())) {
+	if (filters.source && !event.source.toLowerCase().includes(filters.source.toLowerCase())) {
+		return false
+	}
+
+	if (filters.match && filters.match.length > 0) {
+		for (const pattern of filters.match) {
+			if (pattern.test(event.text)) {
+				return true
+			}
+		}
 		return false
 	}
 
