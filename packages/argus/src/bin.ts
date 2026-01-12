@@ -8,6 +8,8 @@ import { runNetTail } from './commands/netTail.js'
 import { runEval } from './commands/eval.js'
 import { runTrace, runTraceStart, runTraceStop } from './commands/trace.js'
 import { runScreenshot } from './commands/screenshot.js'
+import { runDomTree } from './commands/domTree.js'
+import { runDomInfo } from './commands/domInfo.js'
 
 const collectMatch = (value: string, previous: string[]): string[] => [...previous, value]
 
@@ -234,6 +236,43 @@ program
 	)
 	.action(async (id, options) => {
 		await runScreenshot(id, options)
+	})
+
+const dom = program
+	.command('dom')
+	.description('Inspect DOM elements in the connected page')
+
+dom
+	.command('tree')
+	.argument('<id>', 'Watcher id to query')
+	.description('Fetch a DOM subtree rooted at element(s) matching a CSS selector')
+	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
+	.option('--depth <n>', 'Max depth to traverse (default: 2)')
+	.option('--max-nodes <n>', 'Max total nodes to return (default: 5000)')
+	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom tree app --selector "body"\n  $ argus dom tree app --selector "div" --all --depth 3\n  $ argus dom tree app --selector "#root" --json\n',
+	)
+	.action(async (id, options) => {
+		await runDomTree(id, options)
+	})
+
+dom
+	.command('info')
+	.argument('<id>', 'Watcher id to query')
+	.description('Fetch detailed info for element(s) matching a CSS selector')
+	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
+	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--outer-html-max <n>', 'Max characters for outerHTML (default: 50000)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom info app --selector "body"\n  $ argus dom info app --selector "div" --all\n  $ argus dom info app --selector "#root" --json\n',
+	)
+	.action(async (id, options) => {
+		await runDomInfo(id, options)
 	})
 
 program.parseAsync(process.argv)

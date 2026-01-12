@@ -3,6 +3,8 @@ export type HttpOptions = {
 	timeoutMs?: number
 	method?: 'GET' | 'POST'
 	body?: unknown
+	/** If true, return JSON body for 4xx responses instead of throwing. Default: false. */
+	returnErrorResponse?: boolean
 }
 
 /** Fetch JSON with timeout and typed response. */
@@ -20,7 +22,11 @@ export const fetchJson = async <T>(url: string, options: HttpOptions = {}): Prom
 			headers: body ? { 'Content-Type': 'application/json' } : undefined,
 		})
 
+		// For 4xx errors, return the JSON body if returnErrorResponse is enabled
 		if (!response.ok) {
+			if (options.returnErrorResponse && response.status >= 400 && response.status < 500) {
+				return (await response.json()) as T
+			}
 			throw new Error(`Request failed (${response.status} ${response.statusText})`)
 		}
 

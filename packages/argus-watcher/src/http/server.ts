@@ -15,6 +15,10 @@ import type {
 	TraceStopResponse,
 	ScreenshotRequest,
 	ScreenshotResponse,
+	DomTreeRequest,
+	DomTreeResponse,
+	DomInfoRequest,
+	DomInfoResponse,
 } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
@@ -22,6 +26,7 @@ import type { CdpSessionHandle } from '../cdp/connection.js'
 import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
 import { evaluateExpression } from '../cdp/eval.js'
+import { fetchDomSubtreeBySelector, fetchDomInfoBySelector } from '../cdp/dom.js'
 import {
 	respondJson,
 	respondInvalidMatch,
@@ -50,6 +55,8 @@ export type HttpRequestEventMetadata = {
 		| 'trace/start'
 		| 'trace/stop'
 		| 'screenshot'
+		| 'dom/tree'
+		| 'dom/info'
 	remoteAddress: string | null
 	query?: {
 		after?: number
@@ -124,6 +131,14 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 
 		if (req.method === 'POST' && url.pathname === '/screenshot') {
 			return handleScreenshot(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/dom/tree') {
+			return handleDomTree(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/dom/info') {
+			return handleDomInfo(req, res, options)
 		}
 
 		respondJson(res, { ok: false, error: { message: 'Not found', code: 'not_found' } }, 404)
@@ -354,6 +369,113 @@ const handleScreenshot = async (
 
 	try {
 		const response: ScreenshotResponse = await options.screenshotter.capture(payload)
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleDomTree = async (
+	req: http.IncomingMessage,
+	res: http.ServerResponse,
+	options: HttpServerOptions,
+): Promise<void> => {
+	const payload = await readJsonBody<DomTreeRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.selector || typeof payload.selector !== 'string') {
+		return respondInvalidBody(res, 'selector is required')
+	}
+
+	const all = payload.all ?? false
+	if (typeof all !== 'boolean') {
+		return respondInvalidBody(res, 'all must be a boolean')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/tree',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const response: DomTreeResponse = await fetchDomSubtreeBySelector(options.cdpSession, {
+			selector: payload.selector,
+			depth: payload.depth,
+			maxNodes: payload.maxNodes,
+			all,
+		})
+
+		// Enforce "single match" policy server-side when all=false
+		if (!all && response.matches > 1) {
+			return respondJson(
+				res,
+				{
+					ok: false,
+					error: {
+						message: `Selector matched ${response.matches} elements; pass all=true to return all matches`,
+						code: 'multiple_matches',
+					},
+				},
+				400,
+			)
+		}
+
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleDomInfo = async (
+	req: http.IncomingMessage,
+	res: http.ServerResponse,
+	options: HttpServerOptions,
+): Promise<void> => {
+	const payload = await readJsonBody<DomInfoRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.selector || typeof payload.selector !== 'string') {
+		return respondInvalidBody(res, 'selector is required')
+	}
+
+	const all = payload.all ?? false
+	if (typeof all !== 'boolean') {
+		return respondInvalidBody(res, 'all must be a boolean')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/info',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const response: DomInfoResponse = await fetchDomInfoBySelector(options.cdpSession, {
+			selector: payload.selector,
+			all,
+			outerHtmlMaxChars: payload.outerHtmlMaxChars,
+		})
+
+		// Enforce "single match" policy server-side when all=false
+		if (!all && response.matches > 1) {
+			return respondJson(
+				res,
+				{
+					ok: false,
+					error: {
+						message: `Selector matched ${response.matches} elements; pass all=true to return all matches`,
+						code: 'multiple_matches',
+					},
+				},
+				400,
+			)
+		}
+
 		respondJson(res, response)
 	} catch (error) {
 		respondError(res, error)

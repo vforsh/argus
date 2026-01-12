@@ -128,3 +128,94 @@ export type ErrorResponse = {
 		code?: string
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOM inspection types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A node in the DOM element tree.
+ * Only contains element nodes (nodeType === 1); text/comment nodes are filtered out.
+ */
+export type DomNode = {
+	/** CDP node ID. */
+	nodeId: number
+	/** Lowercased tag name (e.g. "div", "span"). */
+	tag: string
+	/** Attribute key-value pairs. */
+	attributes: Record<string, string>
+	/** Child element nodes. Omitted or empty if no children or truncated. */
+	children?: DomNode[]
+	/** True if children were omitted due to depth/maxNodes limits. */
+	truncated?: boolean
+}
+
+/**
+ * Detailed info about a single DOM element.
+ */
+export type DomElementInfo = {
+	/** CDP node ID. */
+	nodeId: number
+	/** Lowercased tag name. */
+	tag: string
+	/** Attribute key-value pairs. */
+	attributes: Record<string, string>
+	/** Number of direct child element nodes. */
+	childElementCount: number
+	/** Element's outerHTML (may be truncated or null on error). */
+	outerHTML: string | null
+	/** True if outerHTML was truncated due to size limits. */
+	outerHTMLTruncated: boolean
+}
+
+/**
+ * Request payload for POST /dom/tree.
+ */
+export type DomTreeRequest = {
+	/** CSS selector to match element(s). */
+	selector: string
+	/** Max depth to traverse (0 = root only). Default: 2. */
+	depth?: number
+	/** Max total nodes to return. Default: 5000. */
+	maxNodes?: number
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+}
+
+/**
+ * Response payload for POST /dom/tree.
+ */
+export type DomTreeResponse = {
+	ok: true
+	/** Number of elements matched by selector. */
+	matches: number
+	/** Subtree roots (one per match). Empty if no matches. */
+	roots: DomNode[]
+	/** True if output was truncated due to maxNodes or depth. */
+	truncated: boolean
+	/** Reason for truncation if truncated is true. */
+	truncatedReason?: 'max_nodes' | 'depth'
+}
+
+/**
+ * Request payload for POST /dom/info.
+ */
+export type DomInfoRequest = {
+	/** CSS selector to match element(s). */
+	selector: string
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+	/** Max characters for outerHTML. Default: 50000. */
+	outerHtmlMaxChars?: number
+}
+
+/**
+ * Response payload for POST /dom/info.
+ */
+export type DomInfoResponse = {
+	ok: true
+	/** Number of elements matched by selector. */
+	matches: number
+	/** Element info (one per match). Empty if no matches. */
+	elements: DomElementInfo[]
+}
