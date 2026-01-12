@@ -1,10 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
+import { fetchJson } from '../httpClient.js'
 import { loadRegistry, pruneRegistry } from '../registry.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
 import { getCdpPort } from '../utils/ports.js'
+import type { ChromeVersionResponse } from './chrome.js'
 
 export type ChromeStartOptions = {
 	url?: string
@@ -19,6 +21,101 @@ type ChromeStartResult = {
 	cdpPort: number
 	userDataDir: string | null
 	startupUrl: string | null
+}
+
+type ChromeStartReadyResult = {
+	ready: true
+	version: string
+}
+
+type ChromeStartNotReadyResult = {
+	ready: false
+	error: string
+}
+
+type ChromeStartReadyCheck = ChromeStartReadyResult | ChromeStartNotReadyResult
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+const resolveChromeUserDataDir = (): string | null => {
+	if (process.env.ARGUS_CHROME_USER_DATA_DIR) {
+		const override = process.env.ARGUS_CHROME_USER_DATA_DIR.trim()
+		if (override && existsSync(override)) {
+			return override
+		}
+	}
+
+	const platform = process.platform
+	if (platform === 'darwin') {
+		const candidates = [
+			path.join(homedir(), 'Library/Application Support/Google/Chrome'),
+			path.join(homedir(), 'Library/Application Support/Chromium'),
+		]
+		return candidates.find((candidate) => existsSync(candidate)) ?? null
+	}
+
+	if (platform === 'linux') {
+		const candidates = [path.join(homedir(), '.config/google-chrome'), path.join(homedir(), '.config/chromium')]
+		return candidates.find((candidate) => existsSync(candidate)) ?? null
+	}
+
+	if (platform === 'win32') {
+		const base = process.env.LOCALAPPDATA
+		if (!base) {
+			return null
+		}
+		const candidates = [path.join(base, 'Google/Chrome/User Data'), path.join(base, 'Chromium/User Data')]
+		return candidates.find((candidate) => existsSync(candidate)) ?? null
+	}
+
+	return null
+}
+
+const copyDefaultProfile = (sourceDir: string): string => {
+	const destRoot = mkdtempSync(path.join(tmpdir(), 'argus-chrome-profile-'))
+	mkdirSync(destRoot, { recursive: true })
+
+	const entries = ['Default', 'Local State', 'First Run', 'Last Version']
+	for (const entry of entries) {
+		const source = path.join(sourceDir, entry)
+		if (!existsSync(source)) {
+			continue
+		}
+		const dest = path.join(destRoot, entry)
+		if (entry === 'Default') {
+			cpSync(source, dest, { recursive: true })
+		} else {
+			copyFileSync(source, dest)
+		}
+	}
+
+	return destRoot
+}
+
+const waitForCdpReady = async (host: string, port: number, chrome: ChildProcess): Promise<ChromeStartReadyCheck> => {
+	const deadline = Date.now() + 5_000
+	const url = `http://${host}:${port}/json/version`
+	let lastError: string | null = null
+
+	while (Date.now() < deadline) {
+		if (chrome.exitCode !== null) {
+			return { ready: false, error: 'Chrome exited before CDP became reachable.' }
+		}
+
+		try {
+			const response = await fetchJson<ChromeVersionResponse>(url, { timeoutMs: 500 })
+			if (response.Browser) {
+				return { ready: true, version: response.Browser }
+			}
+			lastError = 'Chrome responded without Browser version.'
+		} catch (error) {
+			lastError = error instanceof Error ? error.message : String(error)
+		}
+
+		await delay(150)
+	}
+
+	return { ready: false, error: lastError ?? 'Timed out waiting for CDP.' }
 }
 
 export const runChromeStart = async (options: ChromeStartOptions): Promise<void> => {
@@ -58,9 +155,28 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		return
 	}
 
+	let userDataDir: string | null = null
+	if (options.defaultProfile) {
+		const sourceDir = resolveChromeUserDataDir()
+		if (!sourceDir) {
+			console.error('Chrome user data dir not found. Set ARGUS_CHROME_USER_DATA_DIR.')
+			process.exitCode = 1
+			return
+		}
+		try {
+			userDataDir = copyDefaultProfile(sourceDir)
+		} catch (error) {
+			console.error(`Failed to copy default Chrome profile: ${error instanceof Error ? error.message : error}`)
+			process.exitCode = 1
+			return
+		}
+	}
+
 	const cdpPort = await getCdpPort()
 	const cdpHost = '127.0.0.1'
-	const userDataDir = options.defaultProfile ? null : mkdtempSync(path.join(tmpdir(), 'argus-chrome-'))
+	if (!userDataDir) {
+		userDataDir = mkdtempSync(path.join(tmpdir(), 'argus-chrome-'))
+	}
 
 	const args = [`--remote-debugging-port=${cdpPort}`]
 	if (userDataDir) {
@@ -102,6 +218,22 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		cdpPort,
 		userDataDir,
 		startupUrl,
+	}
+
+	const ready = await waitForCdpReady(cdpHost, cdpPort, chrome)
+	if (!ready.ready) {
+		console.error(`Chrome started but CDP is unavailable at ${cdpHost}:${cdpPort}.`)
+		console.error(`Reason: ${ready.error}`)
+		if (userDataDir) {
+			try {
+				rmSync(userDataDir, { recursive: true, force: true })
+			} catch {}
+		}
+		try {
+			chrome.kill()
+		} catch {}
+		process.exitCode = 1
+		return
 	}
 
 	const cleanup = () => {

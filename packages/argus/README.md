@@ -47,6 +47,12 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
 - **`argus chrome start`**: Launch Chrome with CDP enabled.
     - Options: `--url <url>`, `--id <watcherId>`, `--default-profile`, `--json`.
     - Example: `argus chrome start --url http://localhost:3000`.
+    - Note: `--default-profile` launches Chrome with a copied snapshot of your default profile.
+    - Why: recent Chrome versions require a non-default user data dir to expose `--remote-debugging-port`, so Argus copies your default profile into a temp directory and launches Chrome from that copy (keeps your real default profile closed + untouched).
+    - Reference:
+        ```
+        https://developer.chrome.com/blog/remote-debugging-port
+        ```
 
 - **`argus chrome version`**: Show Chrome version info from the CDP endpoint.
     - Options: `--host`, `--port`, `--id <watcherId>`, `--json`.
@@ -69,8 +75,14 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
 
 - **`argus chrome close <targetId>`**: Close a Chrome target.
     - Example: `argus chrome close E63A3ED201BFC02DA06134F506A7498C`.
+- **`argus chrome reload <targetId>`**: Reload a Chrome target.
+    - Example: `argus chrome reload E63A3ED201BFC02DA06134F506A7498C`.
+- **`argus chrome stop`**: Close the Chrome instance via CDP.
+    - Alias: `quit`.
+    - Example: `argus chrome stop`.
 
 **CDP endpoint resolution** (applies to all chrome commands except `start`):
+
 - `--host <host> --port <port>`: Use explicit host/port (both required together).
 - `--id <watcherId>`: Use chrome config from a registered watcher's `chrome.host`/`chrome.port`.
 - Default: `127.0.0.1:9222`.
@@ -182,6 +194,8 @@ argus chrome ls --type page --json
 argus chrome open --url localhost:3000
 argus chrome activate E63A3ED201BFC02DA06134F506A7498C
 argus chrome close E63A3ED201BFC02DA06134F506A7498C
+argus chrome reload E63A3ED201BFC02DA06134F506A7498C
+argus chrome stop
 
 # Watcher with custom Chrome port
 argus chrome start --json  # note the cdpPort in output

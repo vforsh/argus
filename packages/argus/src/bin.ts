@@ -18,15 +18,11 @@ import {
 	runChromeOpen,
 	runChromeActivate,
 	runChromeClose,
+	runChromeReload,
+	runChromeStop,
 } from './commands/chrome.js'
 import { runWatcherStart } from './commands/watcherStart.js'
-import {
-	runStorageLocalGet,
-	runStorageLocalSet,
-	runStorageLocalRemove,
-	runStorageLocalList,
-	runStorageLocalClear,
-} from './commands/storageLocal.js'
+import { runStorageLocalGet, runStorageLocalSet, runStorageLocalRemove, runStorageLocalList, runStorageLocalClear } from './commands/storageLocal.js'
 
 const collectMatch = (value: string, previous: string[]): string[] => [...previous, value]
 
@@ -419,6 +415,42 @@ chrome
 		await runChromeClose({ ...options, targetId })
 	})
 
+chrome
+	.command('stop')
+	.description('Close the Chrome instance via CDP')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus chrome stop\n  $ argus chrome stop --id app\n  $ argus chrome stop --json\n')
+	.action(async (options) => {
+		await runChromeStop(options)
+	})
+
+chrome
+	.command('quit')
+	.description('Close the Chrome instance via CDP (alias for stop)')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.action(async (options) => {
+		await runChromeStop(options)
+	})
+
+chrome
+	.command('reload')
+	.description('Reload a Chrome target')
+	.argument('<targetId>', 'Target ID to reload')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus chrome reload ABCD1234\n  $ argus chrome reload ABCD1234 --json\n')
+	.action(async (targetId, options) => {
+		await runChromeReload({ ...options, targetId })
+	})
+
 const watcher = program.command('watcher').description('Watcher management commands')
 
 watcher
@@ -459,10 +491,7 @@ storageLocal
 	.argument('<value>', 'Value to store')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus storage local set app myKey "myValue"\n  $ argus storage local set app config \'{"debug":true}\'\n',
-	)
+	.addHelpText('after', '\nExamples:\n  $ argus storage local set app myKey "myValue"\n  $ argus storage local set app config \'{"debug":true}\'\n')
 	.action(async (id, key, value, options) => {
 		await runStorageLocalSet(id, key, value, options)
 	})
