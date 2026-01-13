@@ -5,7 +5,7 @@ import os from 'node:os'
 import fs from 'node:fs/promises'
 import { chromium } from 'playwright'
 import { getFreePort } from './helpers/ports.js'
-import { runCommand, spawnAndWait } from './helpers/process.js'
+import { runCommand, runCommandWithExit, spawnAndWait } from './helpers/process.js'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -185,7 +185,65 @@ test('watcher + CLI e2e', async (t) => {
 		'Expected exception source filter to exclude non-exception events',
 	)
 
-	// 7. Assert `argus tail`
+	// 7. Eval CLI behaviors
+	const { stdout: silentOut, stderr: silentErr, code: silentCode } = await runCommandWithExit(
+		'node',
+		[BIN_PATH, 'eval', watcherId, '1+1', '--silent'],
+		{ env },
+	)
+	assert.equal(silentCode, 0)
+	assert.equal(silentOut.trim(), '', 'Silent eval should not emit stdout on success')
+	assert.equal(silentErr.trim(), '', 'Silent eval should not emit stderr on success')
+
+	const { stdout: failOut, stderr: failErr, code: failCode } = await runCommandWithExit(
+		'node',
+		[BIN_PATH, 'eval', watcherId, 'throw new Error("e2e-fail")', '--fail-on-exception'],
+		{ env },
+	)
+	assert.equal(failCode, 1)
+	assert.equal(failOut.trim(), '', 'Fail-on-exception should not emit stdout for non-JSON errors')
+	assert.match(failErr, /Exception:/)
+
+	const retryExpr =
+		'globalThis.__argusEvalRetry = (globalThis.__argusEvalRetry ?? 0) + 1; if (globalThis.__argusEvalRetry < 2) { throw new Error(\"retry\"); } \"ok\"'
+	const { stdout: retryOut, stderr: retryErr, code: retryCode } = await runCommandWithExit(
+		'node',
+		[BIN_PATH, 'eval', watcherId, retryExpr, '--retry', '1', '--fail-on-exception'],
+		{ env },
+	)
+	assert.equal(retryCode, 0)
+	assert.match(retryOut, /ok/)
+	assert.equal(retryErr.trim(), '', 'Retry success should not emit stderr')
+
+	const countExpr =
+		'globalThis.__argusEvalCount = (globalThis.__argusEvalCount ?? 0) + 1; globalThis.__argusEvalCount'
+	const { stdout: countOut, code: countCode } = await runCommandWithExit(
+		'node',
+		[BIN_PATH, 'eval', watcherId, countExpr, '--interval', '50', '--count', '3'],
+		{ env },
+	)
+	assert.equal(countCode, 0)
+	const countLines = countOut
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean)
+	assert.equal(countLines.length, 3, 'Interval count should emit 3 iterations')
+
+	const untilExpr =
+		'globalThis.__argusEvalUntil = (globalThis.__argusEvalUntil ?? 0) + 1; globalThis.__argusEvalUntil'
+	const { stdout: untilOut, code: untilCode } = await runCommandWithExit(
+		'node',
+		[BIN_PATH, 'eval', watcherId, untilExpr, '--interval', '50', '--until', 'result >= 2'],
+		{ env },
+	)
+	assert.equal(untilCode, 0)
+	const untilLines = untilOut
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean)
+	assert.equal(untilLines.length, 2, 'Interval until should stop once condition is truthy')
+
+	// 8. Assert `argus tail`
 	const tailMsg = `tail message ${Date.now()}`
 
 	const tailProcPromise = spawnAndWait('node', [BIN_PATH, 'tail', watcherId, '--json'], { env }, new RegExp(tailMsg))

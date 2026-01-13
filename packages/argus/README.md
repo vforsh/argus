@@ -39,6 +39,7 @@ argus watcher start --id <id> --url <pattern>
     - Best for quick one-off inspection (“what’s `location.href` right now?”).
     - Defaults: awaits returned promises; returns values “by value” when possible.
     - Tip: add `--json` for scripting (and check `.exception`).
+    - Tip: add `--fail-on-exception` to exit non-zero when the expression throws.
 
 #### Chrome commands
 
@@ -117,8 +118,9 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
     - If you specifically want preview/remote-object behavior, use `--no-return-by-value`.
 
 - **Exceptions don’t currently fail the process**:
-    - If the evaluated expression throws, Argus prints `Exception: ...` but does **not** set a non-zero exit code.
-    - For automation, use `--json` and treat `exception != null` as failure.
+    - By default, exceptions are printed but do **not** set a non-zero exit code.
+    - Use `--fail-on-exception` to exit with code 1 and route exceptions to stderr.
+    - For automation, prefer `--json` and check `.exception`.
 
 - **Timeouts**:
     - `--timeout <ms>` sets the watcher-side eval timeout (non-numeric / <= 0 is ignored).
@@ -126,6 +128,17 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
 
 - **Watcher registry cleanup**:
     - If the watcher can’t be reached, Argus removes it from the local registry (so it disappears from the next `argus list`).
+
+#### `eval` options
+
+- **`--fail-on-exception`**: exit with code 1 when the evaluation throws.
+- **`--retry <n>`**: retry failed evaluations (transport failures always; exceptions only when `--fail-on-exception` is set).
+- **`-q, --silent`**: suppress success output; still emits errors.
+- **`--interval <ms|duration>`**: re-evaluate on a fixed cadence (e.g. `500`, `250ms`, `3s`).
+- **`--count <n>`**: stop after N iterations (requires `--interval`).
+- **`--until <condition>`**: stop when local condition becomes truthy (requires `--interval`).
+    - Evaluated locally in Node with context `{ result, exception, iteration, attempt }`.
+    - **Warning**: executes arbitrary local JS; don’t paste untrusted input.
 
 ### Options
 
@@ -185,6 +198,10 @@ argus tail app --match "Unhandled"
 argus eval app 'location.href'
 argus eval app 'fetch("/ping").then(r => r.status)'
 argus eval app 'document.title' --json | jq
+argus eval app 'throw new Error("boom")' --fail-on-exception
+argus eval app '1+1' --silent
+argus eval app 'Date.now()' --interval 500 --count 3
+argus eval app 'document.title' --interval 250 --until 'result === "argus-e2e"'
 
 # Chrome commands
 argus chrome status

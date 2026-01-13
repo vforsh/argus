@@ -24,6 +24,32 @@ export async function runCommand(cmd: string, args: string[], options: SpawnOpti
 	})
 }
 
+export interface CommandResultWithExit extends CommandResult {
+	code: number | null
+}
+
+export async function runCommandWithExit(
+	cmd: string,
+	args: string[],
+	options: SpawnOptions = {},
+): Promise<CommandResultWithExit> {
+	return new Promise((resolve, reject) => {
+		const proc = spawn(cmd, args, { stdio: 'pipe', ...options })
+		let stdout = ''
+		let stderr = ''
+		proc.stdout?.on('data', (data) => {
+			stdout += data
+		})
+		proc.stderr?.on('data', (data) => {
+			stderr += data
+		})
+		proc.on('close', (code) => {
+			resolve({ stdout, stderr, code })
+		})
+		proc.on('error', reject)
+	})
+}
+
 export interface SpawnedProcess {
 	proc: ChildProcess
 	stdout: string

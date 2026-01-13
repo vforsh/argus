@@ -181,13 +181,28 @@ program
 	.option('--timeout <ms>', 'Eval timeout in milliseconds')
 	.option('--json', 'Output JSON for automation')
 	.option('--no-return-by-value', 'Disable returnByValue (use preview)')
-	.addHelpText('after', '\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch(\\"/ping\\").then(r => r.status)"\n')
+	.option('--fail-on-exception', 'Exit with code 1 if the evaluation throws')
+	.option('--retry <n>', 'Retry failed evaluations up to N times')
+	.option('-q, --silent', 'Suppress success output; only emit output on error')
+	.option('--interval <ms|duration>', 'Re-evaluate every interval (e.g. 500, 3s)')
+	.option('--count <n>', 'Stop after N iterations (requires --interval)')
+	.option('--until <condition>', 'Stop when local condition becomes truthy (requires --interval)')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch(\\"/ping\\").then(r => r.status)"\n  $ argus eval app "document.title" --fail-on-exception\n  $ argus eval app "1+1" --retry 3\n  $ argus eval app "1+1" --silent\n  $ argus eval app "Date.now()" --interval 500 --count 10\n  $ argus eval app "document.title" --interval 250 --until \'result === \"ready\"\'\n',
+	)
 	.action(async (id, expression, options) => {
 		await runEval(id, expression, {
 			json: options.json,
 			await: options.await,
 			timeout: options.timeout,
 			returnByValue: options.returnByValue,
+			failOnException: options.failOnException,
+			retry: options.retry,
+			silent: options.silent,
+			interval: options.interval,
+			count: options.count,
+			until: options.until,
 		})
 	})
 
