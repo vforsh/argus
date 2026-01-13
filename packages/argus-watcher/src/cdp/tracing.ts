@@ -3,7 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import type { TraceStartRequest, TraceStartResponse, TraceStopResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
-import { ensureArtifactsDir, resolveArtifactPath } from '../artifacts.js'
+import { ensureArtifactsDir, ensureParentDir, resolveArtifactPath } from '../artifacts.js'
 
 type TraceState = {
 	traceId: string
@@ -85,8 +85,9 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 
 		await ensureArtifactsDir(options.artifactsDir)
 		const traceId = crypto.randomUUID()
-		const defaultName = `trace-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+		const defaultName = `traces/trace-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
 		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
+		await ensureParentDir(absolutePath)
 
 		const stream = fs.createWriteStream(path.resolve(absolutePath), { encoding: 'utf8' })
 		stream.write('{"traceEvents":[', 'utf8')

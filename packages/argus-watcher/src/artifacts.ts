@@ -5,6 +5,11 @@ export const ensureArtifactsDir = async (dir: string): Promise<void> => {
 	await fs.mkdir(dir, { recursive: true })
 }
 
+export const ensureParentDir = async (filePath: string): Promise<void> => {
+	const dir = path.dirname(filePath)
+	await fs.mkdir(dir, { recursive: true })
+}
+
 export const resolveArtifactPath = (
 	artifactsDir: string,
 	outFile: string | undefined,

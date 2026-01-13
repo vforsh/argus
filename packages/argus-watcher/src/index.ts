@@ -33,6 +33,42 @@ export type BuildFilenameContext = {
 	fileIndex: number
 }
 
+/** Configuration for artifacts storage (logs, traces, screenshots). */
+export type ArtifactsOptions = {
+	/**
+	 * Base directory for all artifacts.
+	 * Defaults to `<cwd>/argus-artifacts`.
+	 */
+	base?: string
+	/** Optional file log persistence settings. Disabled by default. */
+	logs?: {
+		/** Enable file logging. Defaults to `false`. */
+		enabled?: boolean
+		/** Whether to include ISO timestamps in log records. Defaults to `false`. */
+		includeTimestamps?: boolean
+		/** Max number of log files to keep for this watcher. Defaults to `5`. */
+		maxFiles?: number
+		/** Optional callback to customize the log filename. Return null/undefined to use default. */
+		buildFilename?: (context: BuildFilenameContext) => string | undefined | null
+	}
+	/** Trace recording settings. Enabled by default. */
+	traces?: {
+		/** Enable trace recording. Defaults to `true`. */
+		enabled?: boolean
+	}
+	/** Screenshot capture settings. Enabled by default. */
+	screenshots?: {
+		/** Enable screenshot capture. Defaults to `true`. */
+		enabled?: boolean
+	}
+}
+
+/** Configuration for network request capture. */
+export type NetOptions = {
+	/** Enable network request capture. Defaults to `false`. */
+	enabled?: boolean
+}
+
 /** Options to start a watcher server. */
 export type StartWatcherOptions = {
 	/** Unique watcher identifier (used for registry presence and removal on shutdown). */
@@ -49,15 +85,12 @@ export type StartWatcherOptions = {
 	bufferSize?: number
 	/** How often (in ms) to refresh the watcher record in the registry. Defaults to `15_000`. */
 	heartbeatMs?: number
-	/** Optional file log persistence settings. */
-	fileLogs?: {
-		/** Directory to store watcher logs. Required when fileLogs is set. */
-		logsDir: string
-		/** Max number of log files to keep for this watcher. Defaults to `5`. */
-		maxFiles?: number
-		/** Optional callback to customize the log filename. Return null/undefined to use default. */
-		buildFilename?: (context: BuildFilenameContext) => string | undefined | null
-	}
+	/**
+	 * Artifacts storage configuration for logs, traces, and screenshots.
+	 * All artifacts are stored under `artifacts.base` (default: `<cwd>/argus-artifacts`).
+	 * Subdirectories: `logs/`, `traces/`, `screenshots/`.
+	 */
+	artifacts?: ArtifactsOptions
 	/** Optional ignore list filtering when selecting log/exception locations. */
 	ignoreList?: {
 		/** Enable ignore list filtering for log/exception locations. */
@@ -65,10 +98,6 @@ export type StartWatcherOptions = {
 		/** Regex patterns (as strings) to ignore when selecting a stack frame. */
 		rules?: string[]
 	}
-	/** Whether to include ISO timestamps in log records. Defaults to `false`. */
-	includeTimestamps?: boolean
-	/** Base directory for trace/screenshot artifacts. Defaults to fileLogs.logsDir when set. */
-	artifactsDir?: string
 	location?: {
 		/**
 		 * Strip these literal prefixes from event.file for display/logging.
@@ -82,6 +111,12 @@ export type StartWatcherOptions = {
 	 * The indicator auto-removes via TTL if the watcher dies without cleanup.
 	 */
 	pageIndicator?: PageIndicatorOptions
+	/**
+	 * Network request capture configuration.
+	 * When enabled, captures HTTP requests and exposes them via `/net` and `/net/tail` endpoints.
+	 * Disabled by default.
+	 */
+	net?: NetOptions
 }
 
 /** Handle returned by startWatcher. */
@@ -111,32 +146,38 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const bufferSize = options.bufferSize ?? 50_000
 	const netBufferSize = options.bufferSize ?? 50_000
 	const startedAt = Date.now()
-	const includeTimestamps = options.includeTimestamps ?? false
 	const ignoreMatcher = buildIgnoreMatcher(options.ignoreList)
 	const stripUrlPrefixes = options.location?.stripUrlPrefixes
 
+	// Resolve artifacts configuration
+	const artifactsBaseDir = resolveArtifactsBaseDir(options.artifacts?.base)
+	const logsEnabled = options.artifacts?.logs?.enabled === true
+	const logsDir = path.join(artifactsBaseDir, 'logs')
+	const includeTimestamps = options.artifacts?.logs?.includeTimestamps ?? false
+	const maxFiles = resolveMaxFiles(options.artifacts?.logs?.maxFiles)
+
+	// Network capture is opt-in (disabled by default)
+	const netEnabled = options.net?.enabled === true
+
 	const events = new Emittery<ArgusWatcherEventMap>()
 	const buffer = new LogBuffer(bufferSize)
-	const netBuffer = new NetBuffer(netBufferSize)
+	const netBuffer = netEnabled ? new NetBuffer(netBufferSize) : null
 	let cdpStatus: {
 		attached: boolean
 		target: { title: string | null; url: string | null } | null
 		reason?: string | null
 	} = { attached: false, target: null }
-	const fileLogs = options.fileLogs
-	const logsDir = fileLogs ? resolveLogsDir(fileLogs.logsDir) : null
-	const artifactsDir = resolveArtifactsDir(options.artifactsDir, logsDir)
-	const maxFiles = fileLogs ? resolveMaxFiles(fileLogs.maxFiles) : null
-	const fileLogger = logsDir
+
+	const fileLogger = logsEnabled
 		? new WatcherFileLogger({
 				watcherId: options.id,
 				startedAt,
 				logsDir,
 				chrome,
 				match: options.match,
-				maxFiles: maxFiles ?? 5,
+				maxFiles,
 				includeTimestamps,
-				buildFilename: fileLogs?.buildFilename,
+				buildFilename: options.artifacts?.logs?.buildFilename,
 			})
 		: null
 
@@ -154,9 +195,9 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	}
 
 	const sessionHandle = createCdpSessionHandle()
-	const networkCapture = createNetworkCapture({ session: sessionHandle.session, buffer: netBuffer })
-	const traceRecorder = createTraceRecorder({ session: sessionHandle.session, artifactsDir })
-	const screenshotter = createScreenshotter({ session: sessionHandle.session, artifactsDir })
+	const networkCapture = netBuffer ? createNetworkCapture({ session: sessionHandle.session, buffer: netBuffer }) : null
+	const traceRecorder = createTraceRecorder({ session: sessionHandle.session, artifactsDir: artifactsBaseDir })
+	const screenshotter = createScreenshotter({ session: sessionHandle.session, artifactsDir: artifactsBaseDir })
 
 	validatePageIndicatorOptions(options.pageIndicator)
 	const indicatorEnabled = options.pageIndicator?.enabled === true
@@ -197,14 +238,14 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 			fileLogger?.setPageIntl(info)
 		},
 		onAttach: async (session, target) => {
-			await networkCapture.onAttached()
+			await networkCapture?.onAttached()
 			if (indicatorController) {
 				indicatorAttachedAt = Date.now()
 				indicatorController.onAttach(session, target, buildIndicatorInfo({ title: target.title, url: target.url }))
 			}
 		},
 		onDetach: (reason) => {
-			networkCapture.onDetached()
+			networkCapture?.onDetached()
 			traceRecorder.onDetached(reason)
 			indicatorController?.onDetach()
 		},
@@ -282,11 +323,14 @@ export type {
 
 export type { PageIndicatorOptions, PageIndicatorPosition } from './cdp/pageIndicator.js'
 
-const resolveLogsDir = (logsDir: string): string => {
-	if (typeof logsDir !== 'string' || logsDir.trim() === '') {
-		throw new Error('fileLogs.logsDir is required')
+const resolveArtifactsBaseDir = (base: string | undefined): string => {
+	if (base !== undefined && base !== null) {
+		if (typeof base !== 'string' || base.trim() === '') {
+			throw new Error('artifacts.base must be a non-empty string when provided')
+		}
+		return path.resolve(base)
 	}
-	return path.resolve(logsDir)
+	return path.resolve(process.cwd(), 'argus-artifacts')
 }
 
 const resolveMaxFiles = (maxFiles?: number): number => {
@@ -294,17 +338,7 @@ const resolveMaxFiles = (maxFiles?: number): number => {
 		return 5
 	}
 	if (!Number.isInteger(maxFiles) || maxFiles < 1) {
-		throw new Error('fileLogs.maxFiles must be an integer >= 1')
+		throw new Error('artifacts.logs.maxFiles must be an integer >= 1')
 	}
 	return maxFiles
-}
-
-const resolveArtifactsDir = (artifactsDir: string | undefined, logsDir: string | null): string => {
-	if (artifactsDir && artifactsDir.trim() !== '') {
-		return path.resolve(artifactsDir)
-	}
-	if (logsDir) {
-		return path.resolve(logsDir)
-	}
-	return path.resolve(process.cwd(), 'argus-artifacts')
 }

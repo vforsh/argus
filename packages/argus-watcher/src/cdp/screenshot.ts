@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import type { ScreenshotRequest, ScreenshotResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
-import { ensureArtifactsDir, resolveArtifactPath } from '../artifacts.js'
+import { ensureArtifactsDir, ensureParentDir, resolveArtifactPath } from '../artifacts.js'
 
 type Clip = { x: number; y: number; width: number; height: number; scale: number }
 
@@ -22,8 +22,9 @@ export const createScreenshotter = (options: { session: CdpSessionHandle; artifa
 		}
 
 		await ensureArtifactsDir(options.artifactsDir)
-		const defaultName = `screenshot-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
+		const defaultName = `screenshots/screenshot-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
 		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
+		await ensureParentDir(absolutePath)
 
 		const result = await captureScreenshot(options.session, {
 			selector: request.selector,

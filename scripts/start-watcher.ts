@@ -1,6 +1,5 @@
 import 'dotenv/config'
 import { startWatcher } from '@vforsh/argus-watcher'
-import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 /** Unique identifier for the watcher instance. */
@@ -15,10 +14,8 @@ const chromeHost = readEnv('ARGUS_CHROME_HOST', '127.0.0.1')
 /** Port number for the Chrome Debugging Protocol connection. */
 const chromePort = readEnvInt('ARGUS_CHROME_PORT', 9222)
 
-/** Directory where log files will be persisted. */
-const logsDir = readEnv('ARGUS_LOGS_DIR', path.resolve('logs'))
-
-guardLogsDir(logsDir)
+/** Base directory for artifacts (logs, traces, screenshots). */
+const artifactsBase = path.resolve('argus-artifacts')
 
 async function main(): Promise<void> {
 	try {
@@ -26,8 +23,10 @@ async function main(): Promise<void> {
 			id: watcherId,
 			match: { url: matchUrl },
 			chrome: { host: chromeHost, port: chromePort },
-			fileLogs: { logsDir },
-			includeTimestamps: false,
+			artifacts: {
+				base: artifactsBase,
+				logs: { enabled: true },
+			},
 			ignoreList: {
 				enabled: true,
 				rules: ['LogsManager.ts'],
@@ -65,7 +64,7 @@ async function main(): Promise<void> {
 				`  id=${watcher.id}\n` +
 				`  matchUrl=${matchUrl}\n` +
 				`  chrome=${chromeHost}:${chromePort}\n` +
-				`  logsDir=${logsDir}\n` +
+				`  artifactsBase=${artifactsBase}\n` +
 				`  host=${watcher.host}\n` +
 				`  port=${watcher.port}`,
 		)
@@ -112,40 +111,6 @@ function readEnvInt(name: string, fallback: number): number {
 	}
 
 	return value
-}
-
-function guardLogsDir(dir: string): void {
-	if (!dir || typeof dir !== 'string') {
-		console.error('ARGUS_LOGS_DIR is required and must be a string.')
-		process.exit(1)
-	}
-
-	if (!existsSync(dir)) {
-		console.error(`ARGUS_LOGS_DIR missing: ${dir}`)
-		process.exit(1)
-	}
-
-	let stats
-	try {
-		stats = statSync(dir)
-	} catch (error) {
-		console.error(`ARGUS_LOGS_DIR not accessible: ${dir}`)
-		logError(error)
-		process.exit(1)
-	}
-
-	if (!stats.isDirectory()) {
-		console.error(`ARGUS_LOGS_DIR must be a directory: ${dir}`)
-		process.exit(1)
-	}
-
-	try {
-		accessSync(dir, constants.W_OK)
-	} catch (error) {
-		console.error(`ARGUS_LOGS_DIR not writable: ${dir}`)
-		logError(error)
-		process.exit(1)
-	}
 }
 
 function logError(error: unknown): void {

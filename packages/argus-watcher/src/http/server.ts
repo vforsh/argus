@@ -80,7 +80,8 @@ export type HttpServerOptions = {
 	host: string
 	port: number
 	buffer: LogBuffer
-	netBuffer: NetBuffer
+	/** Network buffer for /net endpoints. Null when net capture is disabled. */
+	netBuffer: NetBuffer | null
 	getWatcher: () => WatcherRecord
 	getCdpStatus: () => { attached: boolean; target: { title: string | null; url: string | null } | null }
 	cdpSession: CdpSessionHandle
@@ -243,6 +244,10 @@ const handleTail = async (url: URL, res: http.ServerResponse, options: HttpServe
 }
 
 const handleNet = (url: URL, res: http.ServerResponse, options: HttpServerOptions): void => {
+	if (!options.netBuffer) {
+		return respondJson(res, { ok: false, error: { code: 'net_disabled', message: 'Network capture is disabled for this watcher' } }, 400)
+	}
+
 	const after = clampNumber(url.searchParams.get('after'), 0)
 	const limit = clampNumber(url.searchParams.get('limit'), 500, 1, 5000)
 	const sinceTs = clampNumber(url.searchParams.get('sinceTs'), undefined)
@@ -262,6 +267,10 @@ const handleNet = (url: URL, res: http.ServerResponse, options: HttpServerOption
 }
 
 const handleNetTail = async (url: URL, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	if (!options.netBuffer) {
+		return respondJson(res, { ok: false, error: { code: 'net_disabled', message: 'Network capture is disabled for this watcher' } }, 400)
+	}
+
 	const after = clampNumber(url.searchParams.get('after'), 0)
 	const limit = clampNumber(url.searchParams.get('limit'), 500, 1, 5000)
 	const timeoutMs = clampNumber(url.searchParams.get('timeoutMs'), 25_000, 1000, 120_000)
