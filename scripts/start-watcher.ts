@@ -7,7 +7,7 @@ import path from 'node:path'
 const watcherId = readEnv('ARGUS_WATCHER_ID', 'test')
 
 /** URL pattern to match for capturing logs from the Chrome instance. */
-const matchUrl = getArgValue('--page-url') ?? readEnv('ARGUS_MATCH_URL', '192.168.1.12:3001')
+const matchUrl = getArgValue('--page-url') ?? readEnv('ARGUS_MATCH_URL', 'localhost:7456')
 
 /** Hostname for the Chrome Debugging Protocol connection. */
 const chromeHost = readEnv('ARGUS_CHROME_HOST', '127.0.0.1')
@@ -37,7 +37,7 @@ async function main(): Promise<void> {
 			},
 			pageIndicator: {
 				enabled: true,
-				position: 'right',
+				position: 'bottom-right',
 			},
 		})
 
