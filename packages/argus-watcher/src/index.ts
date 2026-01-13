@@ -12,6 +12,12 @@ import { createNetworkCapture } from './cdp/networkCapture.js'
 import { createTraceRecorder } from './cdp/tracing.js'
 import { createScreenshotter } from './cdp/screenshot.js'
 import { createCdpSessionHandle } from './cdp/connection.js'
+import {
+	createPageIndicatorController,
+	validatePageIndicatorOptions,
+	type PageIndicatorOptions,
+	type PageIndicatorController,
+} from './cdp/pageIndicator.js'
 import type { ArgusWatcherEventMap } from './events.js'
 import type { HttpRequestEvent } from './events.js'
 
@@ -70,6 +76,12 @@ export type StartWatcherOptions = {
 		 */
 		stripUrlPrefixes?: string[]
 	}
+	/**
+	 * Optional in-page indicator showing that the watcher is attached.
+	 * When enabled, a small badge is injected into the page. Clicking it shows watcher info.
+	 * The indicator auto-removes via TTL if the watcher dies without cleanup.
+	 */
+	pageIndicator?: PageIndicatorOptions
 }
 
 /** Handle returned by startWatcher. */
@@ -146,6 +158,25 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const traceRecorder = createTraceRecorder({ session: sessionHandle.session, artifactsDir })
 	const screenshotter = createScreenshotter({ session: sessionHandle.session, artifactsDir })
 
+	validatePageIndicatorOptions(options.pageIndicator)
+	const indicatorEnabled = options.pageIndicator?.enabled === true
+	let indicatorController: PageIndicatorController | null = null
+	let indicatorAttachedAt: number | null = null
+
+	if (indicatorEnabled) {
+		indicatorController = createPageIndicatorController(options.pageIndicator!)
+	}
+
+	const buildIndicatorInfo = (target: { title: string | null; url: string | null } | null) => ({
+		watcherId: options.id,
+		watcherHost: host,
+		watcherPort: record.port,
+		watcherPid: process.pid,
+		targetTitle: target?.title ?? null,
+		targetUrl: target?.url ?? null,
+		attachedAt: indicatorAttachedAt ?? Date.now(),
+	})
+
 	const cdp = startCdpWatcher({
 		sessionHandle,
 		chrome,
@@ -158,16 +189,24 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		},
 		onPageNavigation: (info) => {
 			fileLogger?.rotate(info)
+			if (indicatorController) {
+				indicatorController.onNavigation(sessionHandle.session, buildIndicatorInfo({ title: null, url: info.url }))
+			}
 		},
 		onPageIntl: (info) => {
 			fileLogger?.setPageIntl(info)
 		},
-		onAttach: async () => {
+		onAttach: async (session, target) => {
 			await networkCapture.onAttached()
+			if (indicatorController) {
+				indicatorAttachedAt = Date.now()
+				indicatorController.onAttach(session, target, buildIndicatorInfo({ title: target.title, url: target.url }))
+			}
 		},
 		onDetach: (reason) => {
 			networkCapture.onDetached()
 			traceRecorder.onDetached(reason)
+			indicatorController?.onDetach()
 		},
 		onStatus: (status) => {
 			const prevAttached = cdpStatus.attached
@@ -218,6 +257,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		events,
 		close: async () => {
 			heartbeat.stop()
+			indicatorController?.stop()
 			await cdp.stop()
 			await fileLogger?.close()
 			traceRecorder.onDetached('watcher_stopped')
@@ -239,6 +279,8 @@ export type {
 	LogRequestQuery,
 	NetRequestQuery,
 } from './events.js'
+
+export type { PageIndicatorOptions, PageIndicatorPosition } from './cdp/pageIndicator.js'
 
 const resolveLogsDir = (logsDir: string): string => {
 	if (typeof logsDir !== 'string' || logsDir.trim() === '') {

@@ -35,6 +35,10 @@ async function main(): Promise<void> {
 			location: {
 				stripUrlPrefixes: ['http://192.168.1.12:3001/'],
 			},
+			pageIndicator: {
+				enabled: true,
+				position: 'right',
+			},
 		})
 
 		events.on('cdpAttached', ({ target }) => {

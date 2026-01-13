@@ -43,6 +43,11 @@ await watcher.close()
     - `rules`: regex patterns (as strings) to ignore (merged with built-in defaults)
 - `location`: optional display cleanup settings
     - `stripUrlPrefixes`: literal URL prefixes to remove from `event.file` for display
+- `pageIndicator`: optional in-page indicator showing watcher attachment (opt-in)
+    - `enabled`: enable the indicator (default `false`)
+    - `position`: `'left'` | `'center'` | `'right'` (default `'left'`, at bottom of page)
+    - `heartbeatMs`: how often Node pings the page (default `2000`)
+    - `ttlMs`: how long the page keeps the indicator without pings (default `6000`)
 
 ## Events
 
