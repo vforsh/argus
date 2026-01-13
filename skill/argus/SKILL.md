@@ -82,6 +82,7 @@ argus chrome start --json
 
 ```bash
 argus watcher start --id app --url localhost:3000
+argus watcher start --id app --url localhost:3000 --no-page-indicator
 argus watcher start --id app --url localhost:3000 --chrome-host 127.0.0.1 --chrome-port 9222
 argus watcher start --id app --url localhost:3000 --json
 ```
@@ -90,6 +91,7 @@ Notes:
 
 - **Chrome must already be running** with CDP enabled at `--chrome-host:--chrome-port`.
 - The watcher process runs until Ctrl+C.
+- The in-page watcher indicator badge is **enabled by default**; use `--no-page-indicator` to disable.
 
 ## Page commands (open, reload)
 
@@ -166,7 +168,7 @@ argus eval app 'document.title' --json
 
 Useful flags:
 
-- **`--fail-on-exception`**: exit code 1 when the evaluation throws.
+- **`--no-fail-on-exception`**: keep exit code 0 when the evaluation throws.
 - **`--retry <n>`**: retry failed evaluations up to N times.
 - **`--timeout <ms>`**: watcher-side eval timeout.
 - **`--no-await`**: don’t await returned promises.

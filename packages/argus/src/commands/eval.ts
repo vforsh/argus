@@ -84,7 +84,7 @@ export const runEval = async (id: string, expression: string, options: EvalOptio
 			awaitPromise: options.await ?? true,
 			returnByValue: options.returnByValue ?? true,
 			timeoutMs,
-			failOnException: options.failOnException ?? false,
+			failOnException: options.failOnException ?? true,
 			retryCount: retryCount.value,
 		})
 
@@ -118,7 +118,7 @@ export const runEval = async (id: string, expression: string, options: EvalOptio
 			awaitPromise: options.await ?? true,
 			returnByValue: options.returnByValue ?? true,
 			timeoutMs,
-			failOnException: options.failOnException ?? false,
+			failOnException: options.failOnException ?? true,
 			retryCount: retryCount.value,
 		})
 

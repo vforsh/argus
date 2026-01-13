@@ -39,7 +39,7 @@ argus watcher start --id <id> --url <pattern>
     - Best for quick one-off inspection (“what’s `location.href` right now?”).
     - Defaults: awaits returned promises; returns values “by value” when possible.
     - Tip: add `--json` for scripting (and check `.exception`).
-    - Tip: add `--fail-on-exception` to exit non-zero when the expression throws.
+    - Tip: add `--no-fail-on-exception` to keep exit code 0 when the expression throws.
 
 #### Chrome commands
 
@@ -92,7 +92,8 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
 
 - **`argus watcher start`**: Start an Argus watcher process.
     - Required: `--id <watcherId>`, `--url <pattern>`.
-    - Optional: `--chrome-host <host>` (default: `127.0.0.1`), `--chrome-port <port>` (default: `9222`), `--json`.
+    - Optional: `--chrome-host <host>` (default: `127.0.0.1`), `--chrome-port <port>` (default: `9222`), `--no-page-indicator`, `--json`.
+    - Note: the in-page watcher indicator badge is enabled by default.
     - Example: `argus watcher start --id app --url localhost:3000 --chrome-port 9223`.
 
 #### `logs` vs `tail`
@@ -117,9 +118,9 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
     - You may see truncation markers like `…: "+N more"`.
     - If you specifically want preview/remote-object behavior, use `--no-return-by-value`.
 
-- **Exceptions don’t currently fail the process**:
-    - By default, exceptions are printed but do **not** set a non-zero exit code.
-    - Use `--fail-on-exception` to exit with code 1 and route exceptions to stderr.
+- **Exceptions fail the process by default**:
+    - By default, exceptions set exit code 1 and are routed to stderr.
+    - Use `--no-fail-on-exception` to keep exit code 0 and treat exceptions as successful output.
     - For automation, prefer `--json` and check `.exception`.
 
 - **Timeouts**:
@@ -131,8 +132,8 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
 
 #### `eval` options
 
-- **`--fail-on-exception`**: exit with code 1 when the evaluation throws.
-- **`--retry <n>`**: retry failed evaluations (transport failures always; exceptions only when `--fail-on-exception` is set).
+- **`--no-fail-on-exception`**: keep exit code 0 when the evaluation throws.
+- **`--retry <n>`**: retry failed evaluations (transport failures always; exceptions only when `--no-fail-on-exception` is not set).
 - **`-q, --silent`**: suppress success output; still emits errors.
 - **`--interval <ms|duration>`**: re-evaluate on a fixed cadence (e.g. `500`, `250ms`, `3s`).
 - **`--count <n>`**: stop after N iterations (requires `--interval`).
@@ -198,7 +199,7 @@ argus tail app --match "Unhandled"
 argus eval app 'location.href'
 argus eval app 'fetch("/ping").then(r => r.status)'
 argus eval app 'document.title' --json | jq
-argus eval app 'throw new Error("boom")' --fail-on-exception
+argus eval app 'throw new Error("boom")'
 argus eval app '1+1' --silent
 argus eval app 'Date.now()' --interval 500 --count 3
 argus eval app 'document.title' --interval 250 --until 'result === "argus-e2e"'

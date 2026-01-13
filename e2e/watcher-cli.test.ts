@@ -42,6 +42,7 @@ test('watcher + CLI e2e', async (t) => {
 		match: { title: 'argus-e2e' },
 		host: '127.0.0.1',
 		port: 0,
+		net: { enabled: true },
 	}
 
 	const { proc: watcherProc, stdout: watcherStdout } = await spawnAndWait(
@@ -197,18 +198,27 @@ test('watcher + CLI e2e', async (t) => {
 
 	const { stdout: failOut, stderr: failErr, code: failCode } = await runCommandWithExit(
 		'node',
-		[BIN_PATH, 'eval', watcherId, 'throw new Error("e2e-fail")', '--fail-on-exception'],
+		[BIN_PATH, 'eval', watcherId, 'throw new Error("e2e-fail")'],
 		{ env },
 	)
 	assert.equal(failCode, 1)
-	assert.equal(failOut.trim(), '', 'Fail-on-exception should not emit stdout for non-JSON errors')
+	assert.equal(failOut.trim(), '', 'Exceptions should not emit stdout for non-JSON errors')
 	assert.match(failErr, /Exception:/)
+
+	const { stdout: noFailOut, stderr: noFailErr, code: noFailCode } = await runCommandWithExit(
+		'node',
+		[BIN_PATH, 'eval', watcherId, 'throw new Error("e2e-no-fail")', '--no-fail-on-exception'],
+		{ env },
+	)
+	assert.equal(noFailCode, 0)
+	assert.match(noFailOut, /Exception:/, 'No-fail exceptions should emit stdout')
+	assert.equal(noFailErr.trim(), '', 'No-fail exceptions should not emit stderr')
 
 	const retryExpr =
 		'globalThis.__argusEvalRetry = (globalThis.__argusEvalRetry ?? 0) + 1; if (globalThis.__argusEvalRetry < 2) { throw new Error(\"retry\"); } \"ok\"'
 	const { stdout: retryOut, stderr: retryErr, code: retryCode } = await runCommandWithExit(
 		'node',
-		[BIN_PATH, 'eval', watcherId, retryExpr, '--retry', '1', '--fail-on-exception'],
+		[BIN_PATH, 'eval', watcherId, retryExpr, '--retry', '1'],
 		{ env },
 	)
 	assert.equal(retryCode, 0)

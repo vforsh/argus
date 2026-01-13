@@ -176,7 +176,7 @@ program
 	.option('--timeout <ms>', 'Eval timeout in milliseconds')
 	.option('--json', 'Output JSON for automation')
 	.option('--no-return-by-value', 'Disable returnByValue (use preview)')
-	.option('--fail-on-exception', 'Exit with code 1 if the evaluation throws')
+	.option('--no-fail-on-exception', 'Do not exit with code 1 when the evaluation throws')
 	.option('--retry <n>', 'Retry failed evaluations up to N times')
 	.option('-q, --silent', 'Suppress success output; only emit output on error')
 	.option('--interval <ms|duration>', 'Re-evaluate every interval (e.g. 500, 3s)')
@@ -184,7 +184,7 @@ program
 	.option('--until <condition>', 'Stop when local condition becomes truthy (requires --interval)')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch(\\"/ping\\").then(r => r.status)"\n  $ argus eval app "document.title" --fail-on-exception\n  $ argus eval app "1+1" --retry 3\n  $ argus eval app "1+1" --silent\n  $ argus eval app "Date.now()" --interval 500 --count 10\n  $ argus eval app "document.title" --interval 250 --until \'result === \"ready\"\'\n',
+		'\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch(\\"/ping\\").then(r => r.status)"\n  $ argus eval app "document.title" --no-fail-on-exception\n  $ argus eval app "1+1" --retry 3\n  $ argus eval app "1+1" --silent\n  $ argus eval app "Date.now()" --interval 500 --count 10\n  $ argus eval app "document.title" --interval 250 --until \'result === \"ready\"\'\n',
 	)
 	.action(async (id, expression, options) => {
 		await runEval(id, expression, {
@@ -430,10 +430,11 @@ watcher
 	.requiredOption('--url <url>', 'URL pattern to match for capturing logs')
 	.option('--chrome-host <host>', 'Chrome CDP host (default: 127.0.0.1)')
 	.option('--chrome-port <port>', 'Chrome CDP port (default: 9222)')
+	.option('--no-page-indicator', 'Disable the in-page watcher indicator')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --url localhost:3000 --chrome-port 9223\n  $ argus watcher start --id app --url localhost:3000 --json\n',
+		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --url localhost:3000 --no-page-indicator\n  $ argus watcher start --id app --url localhost:3000 --chrome-port 9223\n  $ argus watcher start --id app --url localhost:3000 --json\n',
 	)
 	.action(async (options) => {
 		await runWatcherStart(options)

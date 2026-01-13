@@ -6,6 +6,7 @@ export type WatcherStartOptions = {
 	json?: boolean
 	chromeHost?: string
 	chromePort?: string | number
+	pageIndicator?: boolean
 }
 
 type WatcherStartResult = {
@@ -61,6 +62,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 			chrome: { host: chromeHost, port: chromePort },
 			host: '127.0.0.1',
 			port: 0,
+			pageIndicator: options.pageIndicator === false ? { enabled: false } : { enabled: true },
 		})
 	} catch (error) {
 		console.error(`Failed to start watcher: ${error instanceof Error ? error.message : error}`)
