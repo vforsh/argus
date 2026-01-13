@@ -20,6 +20,7 @@ import type {
 	DomInfoRequest,
 	DomInfoResponse,
 	StorageLocalRequest,
+	ShutdownResponse,
 } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
@@ -60,6 +61,7 @@ export type HttpRequestEventMetadata = {
 		| 'dom/tree'
 		| 'dom/info'
 		| 'storage/local'
+		| 'shutdown'
 	remoteAddress: string | null
 	query?: {
 		after?: number
@@ -89,6 +91,8 @@ export type HttpServerOptions = {
 	screenshotter: Screenshotter
 	/** Optional callback invoked when logs or tail are requested. */
 	onRequest?: (event: HttpRequestEventMetadata) => void
+	/** Optional callback invoked when a shutdown request is received. */
+	onShutdown?: () => void | Promise<void>
 }
 
 /** Handle for the running HTTP server. */
@@ -149,6 +153,10 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 			return handleStorageLocal(req, res, options)
 		}
 
+		if (req.method === 'POST' && url.pathname === '/shutdown') {
+			return handleShutdown(res, options)
+		}
+
 		respondJson(res, { ok: false, error: { message: 'Not found', code: 'not_found' } }, 404)
 	})
 
@@ -207,6 +215,23 @@ const handleLogs = (url: URL, res: http.ServerResponse, options: HttpServerOptio
 	const nextAfter = events.length > 0 ? (events[events.length - 1]?.id ?? after) : after
 	const response: LogsResponse = { ok: true, events, nextAfter }
 	respondJson(res, response)
+}
+
+const handleShutdown = (res: http.ServerResponse, options: HttpServerOptions): void => {
+	options.onRequest?.({
+		endpoint: 'shutdown',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	const response: ShutdownResponse = { ok: true }
+	respondJson(res, response)
+
+	if (options.onShutdown) {
+		queueMicrotask(() => {
+			void options.onShutdown?.()
+		})
+	}
 }
 
 const handleTail = async (url: URL, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {

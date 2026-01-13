@@ -20,6 +20,11 @@ export type StatusResponse = {
 	watcher: WatcherRecord
 }
 
+/** Response payload for POST /shutdown. */
+export type ShutdownResponse = {
+	ok: true
+}
+
 /** Response payload for GET /logs. */
 export type LogsResponse = {
 	ok: true

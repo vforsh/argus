@@ -16,6 +16,9 @@ argus logs <id>
 argus tail <id>
 argus eval <id> "<expression>"
 argus chrome <subcommand>
+argus watcher list
+argus watcher status <id>
+argus watcher stop <id>
 argus watcher start --id <id> --url <pattern>
 ```
 
@@ -89,6 +92,18 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
 - Default: `127.0.0.1:9222`.
 
 #### Watcher commands
+
+- **`argus watcher list`**: Same output as `argus list`, but namespaced under `watcher`.
+    - Aliases: `ls`.
+    - Example: `argus watcher list --by-cwd my-project`.
+
+- **`argus watcher status <id>`**: Check whether a watcher is reachable.
+    - Alias: `ping`.
+    - Example: `argus watcher status app`.
+
+- **`argus watcher stop <id>`**: Ask a watcher to shut down (falls back to SIGTERM).
+    - Alias: `kill`.
+    - Example: `argus watcher stop app`.
 
 - **`argus watcher start`**: Start an Argus watcher process.
     - Required: `--id <watcherId>`, `--url <pattern>`.

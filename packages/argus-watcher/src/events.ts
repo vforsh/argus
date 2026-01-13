@@ -70,7 +70,19 @@ export type HttpRequestEvent = {
 	/** Unique watcher identifier. */
 	watcherId: string
 	/** The requested endpoint. */
-	endpoint: 'logs' | 'tail' | 'net' | 'net/tail' | 'eval' | 'trace/start' | 'trace/stop' | 'screenshot' | 'dom/tree' | 'dom/info' | 'storage/local'
+	endpoint:
+		| 'logs'
+		| 'tail'
+		| 'net'
+		| 'net/tail'
+		| 'eval'
+		| 'trace/start'
+		| 'trace/stop'
+		| 'screenshot'
+		| 'dom/tree'
+		| 'dom/info'
+		| 'storage/local'
+		| 'shutdown'
 	/** IP address of the requester (best-effort). */
 	remoteAddress: string | null
 	/** Parsed query parameters. */

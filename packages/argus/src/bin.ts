@@ -14,6 +14,8 @@ import { runChromeStart } from './commands/chromeStart.js'
 import { runChromeVersion, runChromeStatus, runChromeTargets, runChromeOpen, runChromeActivate, runChromeClose, runChromeStop } from './commands/chrome.js'
 import { runPageReload } from './commands/page.js'
 import { runWatcherStart } from './commands/watcherStart.js'
+import { runWatcherStatus } from './commands/watcherStatus.js'
+import { runWatcherStop } from './commands/watcherStop.js'
 import { runStorageLocalGet, runStorageLocalSet, runStorageLocalRemove, runStorageLocalList, runStorageLocalClear } from './commands/storageLocal.js'
 
 const collectMatch = (value: string, previous: string[]): string[] => [...previous, value]
@@ -422,6 +424,38 @@ page.command('reload')
 	})
 
 const watcher = program.command('watcher').description('Watcher management commands')
+
+watcher
+	.command('list')
+	.alias('ls')
+	.description('List registered watchers')
+	.option('--json', 'Output JSON for automation')
+	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
+	.addHelpText('after', '\nExamples:\n  $ argus watcher list\n  $ argus watcher list --json\n  $ argus watcher list --by-cwd my-project\n')
+	.action(async (options) => {
+		await runList(options)
+	})
+
+watcher
+	.command('status')
+	.alias('ping')
+	.argument('<id>', 'Watcher id to query')
+	.description('Check watcher status')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus watcher status app\n  $ argus watcher status app --json\n')
+	.action(async (id, options) => {
+		await runWatcherStatus(id, options)
+	})
+
+watcher
+	.command('stop')
+	.alias('kill')
+	.argument('<id>', 'Watcher id to stop')
+	.description('Stop a watcher')
+	.addHelpText('after', '\nExamples:\n  $ argus watcher stop app\n  $ argus watcher kill app\n')
+	.action(async (id, options) => {
+		await runWatcherStop(id, options)
+	})
 
 watcher
 	.command('start')

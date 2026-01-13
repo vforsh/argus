@@ -162,6 +162,10 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const events = new Emittery<ArgusWatcherEventMap>()
 	const buffer = new LogBuffer(bufferSize)
 	const netBuffer = netEnabled ? new NetBuffer(netBufferSize) : null
+	let closing = false
+	let readyForShutdown = false
+	let shutdownRequested = false
+	let closeOnce: (() => Promise<void>) | null = null
 	let cdpStatus: {
 		attached: boolean
 		target: { title: string | null; url: string | null } | null
@@ -286,25 +290,43 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 				watcherId: options.id,
 			})
 		},
+		onShutdown: () => {
+			if (!readyForShutdown || !closeOnce) {
+				shutdownRequested = true
+				return
+			}
+			void closeOnce()
+		},
 	})
 
 	record.port = server.port
 	await announceWatcher(record)
 
 	const heartbeat = startRegistryHeartbeat(() => record, options.heartbeatMs ?? 15_000)
+	closeOnce = async () => {
+		if (closing) {
+			return
+		}
+		closing = true
+		heartbeat.stop()
+		indicatorController?.stop()
+		await cdp.stop()
+		await fileLogger?.close()
+		traceRecorder.onDetached('watcher_stopped')
+		await server.close()
+		await removeWatcher(record.id)
+		events.clearListeners()
+	}
+	readyForShutdown = true
+	if (shutdownRequested) {
+		void closeOnce()
+	}
 
 	return {
 		watcher: record,
 		events,
 		close: async () => {
-			heartbeat.stop()
-			indicatorController?.stop()
-			await cdp.stop()
-			await fileLogger?.close()
-			traceRecorder.onDetached('watcher_stopped')
-			await server.close()
-			await removeWatcher(record.id)
-			events.clearListeners()
+			await closeOnce?.()
 		},
 	}
 }
