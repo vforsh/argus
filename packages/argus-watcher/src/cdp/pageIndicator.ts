@@ -1,12 +1,24 @@
 import type { CdpSessionHandle } from './connection.js'
 import type { CdpTarget } from './watcher.js'
 
-export type PageIndicatorPosition = 'left' | 'center' | 'right'
+export type PageIndicatorPosition =
+	| 'top-left'
+	| 'top-center'
+	| 'top-right'
+	| 'bottom-left'
+	| 'bottom-center'
+	| 'bottom-right'
+	| 'left-center'
+	| 'right-center'
 
 export type PageIndicatorOptions = {
+	/** Whether the in-page indicator is enabled. */
 	enabled?: boolean
+	/** The predefined position of the indicator on the page. */
 	position?: PageIndicatorPosition
+	/** The interval in milliseconds at which the watcher sends a heartbeat to keep the indicator alive. */
 	heartbeatMs?: number
+	/** The time-to-live in milliseconds for the indicator. If no heartbeat is received within this time, the indicator is removed from the page. */
 	ttlMs?: number
 	/** Background color for the indicator badge. Defaults to 'rgba(0, 0, 0, 0.75)'. */
 	bgColor?: string
@@ -64,7 +76,7 @@ const DEFAULT_MARGIN = 8
 const DEFAULT_SIZE = 19
 
 export const createPageIndicatorController = (options: PageIndicatorOptions): PageIndicatorController => {
-	const position = options.position ?? 'left'
+	const position = options.position ?? 'bottom-right'
 	const heartbeatMs = options.heartbeatMs ?? 2000
 	const ttlMs = options.ttlMs ?? 6000
 	const bgColor = options.bgColor ?? DEFAULT_BG_COLOR
@@ -183,9 +195,14 @@ const buildInstallExpression = (params: {
 	const svgEscaped = svgWithSize.replace(/'/g, "\\'")
 
 	const positionStyles: Record<PageIndicatorPosition, string> = {
-		left: `left: ${margin}px;`,
-		center: 'left: 50%; transform: translateX(-50%);',
-		right: `right: ${margin}px;`,
+		'top-left': `top: ${margin}px; left: ${margin}px;`,
+		'top-center': `top: ${margin}px; left: 50%; transform: translateX(-50%);`,
+		'top-right': `top: ${margin}px; right: ${margin}px;`,
+		'bottom-left': `bottom: ${margin}px; left: ${margin}px;`,
+		'bottom-center': `bottom: ${margin}px; left: 50%; transform: translateX(-50%);`,
+		'bottom-right': `bottom: ${margin}px; right: ${margin}px;`,
+		'left-center': `top: 50%; left: ${margin}px; transform: translateY(-50%);`,
+		'right-center': `top: 50%; right: ${margin}px; transform: translateY(-50%);`,
 	}
 
 	const posStyle = positionStyles[position]
@@ -212,7 +229,7 @@ const buildInstallExpression = (params: {
   el.id = INDICATOR_ID;
   el.setAttribute('data-testid', INDICATOR_ID);
   el.setAttribute('title', '${tooltipText}');
-  el.style.cssText = 'position: fixed; bottom: ${margin}px; ${posStyle} z-index: 2147483647; ' +
+  el.style.cssText = 'position: fixed; ${posStyle} z-index: 2147483647; ' +
     'background: ${bgColor}; color: ${iconColor}; ' +
     'padding: 6px; border-radius: 6px; ' +
     'cursor: pointer; display: flex; align-items: center; justify-content: center; ' +
