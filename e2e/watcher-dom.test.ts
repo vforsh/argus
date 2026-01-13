@@ -295,4 +295,28 @@ test('dom tree and dom info e2e', async (t) => {
 		const response2 = JSON.parse(stdout2) as DomInfoResponse
 		assert.equal(response2.elements[0].childElementCount, 1, 'article-2 has 1 paragraph child')
 	})
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// html alias tests (alias for dom)
+	// ─────────────────────────────────────────────────────────────────────────
+
+	await t.test('html tree alias works like dom tree', async () => {
+		const { stdout } = await runCommand('node', [BIN_PATH, 'html', 'tree', watcherId, '--selector', '#root', '--json'], {
+			env,
+		})
+		const response = JSON.parse(stdout) as DomTreeResponse
+		assert.equal(response.ok, true)
+		assert.equal(response.roots[0].tag, 'div')
+		assert.equal(response.roots[0].attributes.id, 'root')
+	})
+
+	await t.test('html info alias works like dom info', async () => {
+		const { stdout } = await runCommand('node', [BIN_PATH, 'html', 'info', watcherId, '--selector', '#title', '--json'], {
+			env,
+		})
+		const response = JSON.parse(stdout) as DomInfoResponse
+		assert.equal(response.ok, true)
+		assert.equal(response.elements[0].tag, 'h1')
+		assert.equal(response.elements[0].attributes.id, 'title')
+	})
 })

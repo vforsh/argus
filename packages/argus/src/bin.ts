@@ -70,6 +70,7 @@ program
 
 program
 	.command('list')
+	.alias('ls')
 	.description('List registered watchers')
 	.option('--json', 'Output JSON for automation')
 	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
@@ -80,6 +81,7 @@ program
 
 program
 	.command('logs')
+	.alias('log')
 	.argument('<id>', 'Watcher id to query')
 	.description('Fetch recent logs from a watcher')
 	.option('--levels <levels>', 'Comma-separated log levels')
@@ -146,6 +148,7 @@ program
 
 const net = program
 	.command('net')
+	.alias('network')
 	.argument('<id>', 'Watcher id to query')
 	.description('Fetch recent network request summaries from a watcher')
 	.option('--after <id>', 'Only return requests after this id')
@@ -256,7 +259,7 @@ program
 		await runScreenshot(id, options)
 	})
 
-const dom = program.command('dom').description('Inspect DOM elements in the connected page')
+const dom = program.command('dom').alias('html').description('Inspect DOM elements in the connected page')
 
 dom.command('tree')
 	.argument('<id>', 'Watcher id to query')
@@ -289,7 +292,7 @@ dom.command('info')
 		await runDomInfo(id, options)
 	})
 
-const chrome = program.command('chrome').description('Chrome/Chromium management commands')
+const chrome = program.command('chrome').alias('browser').description('Chrome/Chromium management commands')
 
 chrome
 	.command('start')
@@ -338,6 +341,7 @@ chrome
 
 chrome
 	.command('targets')
+	.aliases(['list', 'ls'])
 	.description('List Chrome targets (tabs, extensions, etc.)')
 	.option('--type <type>', 'Filter by target type (e.g. page, worker)')
 	.option('--host <host>', 'CDP host')
@@ -353,31 +357,8 @@ chrome
 	})
 
 chrome
-	.command('list')
-	.description('List Chrome targets (alias for targets)')
-	.option('--type <type>', 'Filter by target type (e.g. page, worker)')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.action(async (options) => {
-		await runChromeTargets(options)
-	})
-
-chrome
-	.command('ls')
-	.description('List Chrome targets (alias for targets)')
-	.option('--type <type>', 'Filter by target type (e.g. page, worker)')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.action(async (options) => {
-		await runChromeTargets(options)
-	})
-
-chrome
 	.command('open')
+	.alias('new')
 	.description('Open a new tab in Chrome')
 	.requiredOption('--url <url>', 'URL to open')
 	.option('--host <host>', 'CDP host')
@@ -388,18 +369,6 @@ chrome
 		'after',
 		'\nExamples:\n  $ argus chrome open --url http://localhost:3000\n  $ argus chrome open --url localhost:3000\n  $ argus chrome open --url http://example.com --json\n',
 	)
-	.action(async (options) => {
-		await runChromeOpen(options)
-	})
-
-chrome
-	.command('new')
-	.description('Open a new tab in Chrome (alias for open)')
-	.requiredOption('--url <url>', 'URL to open')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
 	.action(async (options) => {
 		await runChromeOpen(options)
 	})
@@ -432,23 +401,13 @@ chrome
 
 chrome
 	.command('stop')
+	.alias('quit')
 	.description('Close the Chrome instance via CDP')
 	.option('--host <host>', 'CDP host')
 	.option('--port <port>', 'CDP port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText('after', '\nExamples:\n  $ argus chrome stop\n  $ argus chrome stop --id app\n  $ argus chrome stop --json\n')
-	.action(async (options) => {
-		await runChromeStop(options)
-	})
-
-chrome
-	.command('quit')
-	.description('Close the Chrome instance via CDP (alias for stop)')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
 	.action(async (options) => {
 		await runChromeStop(options)
 	})

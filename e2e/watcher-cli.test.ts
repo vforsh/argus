@@ -255,4 +255,29 @@ test('watcher + CLI e2e', async (t) => {
 
 	const { proc: tailProc } = await tailProcPromise
 	tailProc.kill('SIGINT')
+
+	// 8. Assert top-level command aliases
+	// 8a. `argus ls` should return the same output as `argus list`
+	const { stdout: lsOut } = await runCommand('node', [BIN_PATH, 'ls'], { env })
+	assert.match(lsOut, new RegExp(watcherId), 'argus ls should list watchers')
+	assert.match(lsOut, /\[attached\]/, 'argus ls should show attached status')
+
+	// 8b. `argus log <id> --json` should behave like `argus logs <id> --json`
+	const { stdout: logOut } = await runCommand('node', [BIN_PATH, 'log', watcherId, '--json'], { env })
+	const logLogs = JSON.parse(logOut) as Array<{ text: string }>
+	assert.ok(Array.isArray(logLogs), 'argus log should return a JSON array')
+
+	// 8c. `argus network <id> --json` should behave like `argus net <id> --json`
+	const { stdout: networkOut } = await runCommand('node', [BIN_PATH, 'network', watcherId, '--json'], { env })
+	const netResult = JSON.parse(networkOut) as unknown[]
+	assert.ok(Array.isArray(netResult), 'argus network should return a JSON array')
+
+	// 8d. `argus browser status` should work like `argus chrome status`
+	const { stdout: browserStatusOut } = await runCommand(
+		'node',
+		[BIN_PATH, 'browser', 'status', '--host', '127.0.0.1', '--port', String(debugPort), '--json'],
+		{ env },
+	)
+	const browserStatus = JSON.parse(browserStatusOut) as { Browser?: string }
+	assert.ok(browserStatus.Browser, 'argus browser status should return Chrome version info')
 })
