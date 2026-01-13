@@ -1,4 +1,5 @@
 import { startWatcher, type WatcherHandle } from '@vforsh/argus-watcher'
+import { createOutput } from '../output/io.js'
 
 export type WatcherStartOptions = {
 	id?: string
@@ -27,14 +28,15 @@ const parsePort = (value: string | number): number | null => {
 }
 
 export const runWatcherStart = async (options: WatcherStartOptions): Promise<void> => {
+	const output = createOutput(options)
 	if (!options.id || options.id.trim() === '') {
-		console.error('--id is required.')
+		output.writeWarn('--id is required.')
 		process.exitCode = 2
 		return
 	}
 
 	if (!options.url || options.url.trim() === '') {
-		console.error('--url is required.')
+		output.writeWarn('--url is required.')
 		process.exitCode = 2
 		return
 	}
@@ -44,7 +46,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 	if (options.chromePort != null) {
 		const parsed = parsePort(options.chromePort)
 		if (parsed === null) {
-			console.error(`Invalid --chrome-port: ${options.chromePort}. Must be an integer 1-65535.`)
+			output.writeWarn(`Invalid --chrome-port: ${options.chromePort}. Must be an integer 1-65535.`)
 			process.exitCode = 2
 			return
 		}
@@ -65,7 +67,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 			pageIndicator: options.pageIndicator === false ? { enabled: false } : { enabled: true },
 		})
 	} catch (error) {
-		console.error(`Failed to start watcher: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to start watcher: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
@@ -94,22 +96,22 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 	})
 
 	handle.events.on('cdpAttached', ({ target }) => {
-		console.log(`[${handle.watcher.id}] CDP attached: ${target?.title} (${target?.url})`)
+		output.writeHuman(`[${handle.watcher.id}] CDP attached: ${target?.title} (${target?.url})`)
 	})
 
 	handle.events.on('cdpDetached', ({ reason, target }) => {
-		console.log(`[${handle.watcher.id}] CDP detached: ${reason} (last target: ${target?.title})`)
+		output.writeHuman(`[${handle.watcher.id}] CDP detached: ${reason} (last target: ${target?.title})`)
 	})
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(result) + '\n')
+		output.writeJson(result)
 	} else {
-		console.log(`Watcher started:`)
-		console.log(`  id=${result.id}`)
-		console.log(`  host=${result.host}`)
-		console.log(`  port=${result.port}`)
-		console.log(`  matchUrl=${result.matchUrl}`)
-		console.log(`  chrome=${result.chromeHost}:${result.chromePort}`)
+		output.writeHuman(`Watcher started:`)
+		output.writeHuman(`  id=${result.id}`)
+		output.writeHuman(`  host=${result.host}`)
+		output.writeHuman(`  port=${result.port}`)
+		output.writeHuman(`  matchUrl=${result.matchUrl}`)
+		output.writeHuman(`  chrome=${result.chromeHost}:${result.chromePort}`)
 	}
 
 	await new Promise(() => {})

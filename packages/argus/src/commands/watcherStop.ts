@@ -1,42 +1,43 @@
 import type { ShutdownResponse } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
+import { createOutput } from '../output/io.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the watcher stop command. */
 export type WatcherStopOptions = Record<string, never>
 
 /** Execute the watcher stop command. */
-export const runWatcherStop = async (id: string, _options: WatcherStopOptions): Promise<void> => {
-	const watcherId = id?.trim()
-	if (!watcherId) {
-		console.error('Watcher id is required.')
-		process.exitCode = 2
+export const runWatcherStop = async (id: string | undefined, _options: WatcherStopOptions): Promise<void> => {
+	const output = createOutput({ json: false })
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
 		return
 	}
 
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[watcherId]
-	if (!watcher) {
-		console.error(`Watcher not found: ${watcherId}`)
-		process.exitCode = 1
-		return
-	}
+	const { watcher } = resolved
+	let registry = resolved.registry
 
 	const shutdownUrl = `http://${watcher.host}:${watcher.port}/shutdown`
 	try {
 		const response = await fetchJson<ShutdownResponse>(shutdownUrl, { method: 'POST', timeoutMs: 2_000 })
 		if (response.ok) {
-			process.stdout.write(`stopped ${watcher.id}\n`)
+			output.writeHuman(`stopped ${watcher.id}`)
 			return
 		}
 	} catch (error) {
-		console.error(`warn: shutdown endpoint failed; falling back to SIGTERM (${formatError(error)})`)
+		output.writeWarn(`warn: shutdown endpoint failed; falling back to SIGTERM (${formatError(error)})`)
 	}
 
 	if (watcher.pid == null) {
-		console.error(`warn: missing pid for watcher ${watcher.id}; registry entry preserved`)
+		output.writeWarn(`warn: missing pid for watcher ${watcher.id}; registry entry preserved`)
 		process.exitCode = 1
 		return
 	}
@@ -47,10 +48,10 @@ export const runWatcherStop = async (id: string, _options: WatcherStopOptions): 
 	} catch (error) {
 		if (isNoSuchProcessError(error)) {
 			registry = await removeWatcherAndPersist(registry, watcher.id)
-			process.stdout.write(`stopped ${watcher.id}\n`)
+			output.writeHuman(`stopped ${watcher.id}`)
 			return
 		}
-		console.error(`warn: failed to stop watcher ${watcher.id}; registry entry preserved (${formatError(error)})`)
+		output.writeWarn(`warn: failed to stop watcher ${watcher.id}; registry entry preserved (${formatError(error)})`)
 		process.exitCode = 1
 		return
 	}
@@ -58,12 +59,12 @@ export const runWatcherStop = async (id: string, _options: WatcherStopOptions): 
 	const waitResult = await waitForProcessExit(pid, 2_000, 100)
 	if (waitResult.state === 'dead') {
 		registry = await removeWatcherAndPersist(registry, watcher.id)
-		process.stdout.write(`stopped ${watcher.id}\n`)
+		output.writeHuman(`stopped ${watcher.id}`)
 		return
 	}
 
 	const reason = waitResult.error ? ` (${waitResult.error})` : ''
-	console.error(`warn: failed to stop watcher ${watcher.id}; registry entry preserved${reason}`)
+	output.writeWarn(`warn: failed to stop watcher ${watcher.id}; registry entry preserved${reason}`)
 	process.exitCode = 1
 }
 

@@ -1,7 +1,10 @@
 import type { DomInfoResponse, ErrorResponse } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatDomInfo } from '../output/dom.js'
+import { createOutput } from '../output/io.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the dom info command. */
 export type DomInfoOptions = {
@@ -9,32 +12,38 @@ export type DomInfoOptions = {
 	all?: boolean
 	outerHtmlMax?: string
 	json?: boolean
+	pruneDead?: boolean
 }
 
 /** Execute the dom info command for a watcher id. */
-export const runDomInfo = async (id: string, options: DomInfoOptions): Promise<void> => {
+export const runDomInfo = async (id: string | undefined, options: DomInfoOptions): Promise<void> => {
+	const output = createOutput(options)
 	if (!options.selector || options.selector.trim() === '') {
-		console.error('--selector is required')
+		output.writeWarn('--selector is required')
 		process.exitCode = 2
 		return
 	}
 
 	const outerHtmlMaxChars = parsePositiveInt(options.outerHtmlMax)
 	if (options.outerHtmlMax !== undefined && outerHtmlMaxChars === undefined) {
-		console.error('--outer-html-max must be a positive integer')
+		output.writeWarn('--outer-html-max must be a positive integer')
 		process.exitCode = 2
 		return
 	}
 
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[id]
-	if (!watcher) {
-		console.error(`Watcher not found: ${id}`)
-		process.exitCode = 1
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
 		return
 	}
+
+	const { watcher } = resolved
+	let registry = resolved.registry
 
 	const url = `http://${watcher.host}:${watcher.port}/dom/info`
 	let response: DomInfoResponse | ErrorResponse
@@ -50,8 +59,10 @@ export const runDomInfo = async (id: string, options: DomInfoOptions): Promise<v
 			returnErrorResponse: true,
 		})
 	} catch (error) {
-		console.error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		registry = await removeWatcherAndPersist(registry, watcher.id)
+		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+		if (options.pruneDead) {
+			registry = await removeWatcherAndPersist(registry, watcher.id)
+		}
 		process.exitCode = 1
 		return
 	}
@@ -59,9 +70,9 @@ export const runDomInfo = async (id: string, options: DomInfoOptions): Promise<v
 	if (!response.ok) {
 		const errorResp = response as ErrorResponse
 		if (options.json) {
-			process.stdout.write(JSON.stringify(response))
+			output.writeJson(response)
 		} else {
-			console.error(`Error: ${errorResp.error.message}`)
+			output.writeWarn(`Error: ${errorResp.error.message}`)
 		}
 		process.exitCode = 1
 		return
@@ -70,18 +81,18 @@ export const runDomInfo = async (id: string, options: DomInfoOptions): Promise<v
 	const successResp = response as DomInfoResponse
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(successResp))
+		output.writeJson(successResp)
 		return
 	}
 
 	if (successResp.matches === 0) {
-		console.error(`No element found for selector: ${options.selector}`)
+		output.writeWarn(`No element found for selector: ${options.selector}`)
 		process.exitCode = 1
 		return
 	}
 
-	const output = formatDomInfo(successResp.elements)
-	process.stdout.write(output + '\n')
+	const formatted = formatDomInfo(successResp.elements)
+	output.writeHuman(formatted)
 }
 
 const parsePositiveInt = (value?: string): number | undefined => {

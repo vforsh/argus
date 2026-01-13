@@ -13,6 +13,7 @@ import { runDomInfo } from './commands/domInfo.js'
 import { runChromeStart } from './commands/chromeStart.js'
 import { runChromeVersion, runChromeStatus, runChromeTargets, runChromeOpen, runChromeActivate, runChromeClose, runChromeStop } from './commands/chrome.js'
 import { runPageReload } from './commands/page.js'
+import { runDoctor } from './commands/doctor.js'
 import { runWatcherStart } from './commands/watcherStart.js'
 import { runWatcherStatus } from './commands/watcherStatus.js'
 import { runWatcherStop } from './commands/watcherStop.js'
@@ -68,15 +69,26 @@ program
 	.description('List registered watchers')
 	.option('--json', 'Output JSON for automation')
 	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus list\n  $ argus list --json\n  $ argus list --by-cwd my-project\n')
 	.action(async (options) => {
 		await runList(options)
 	})
 
 program
+	.command('doctor')
+	.description('Run environment diagnostics for Argus')
+	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
+	.addHelpText('after', '\nExamples:\n  $ argus doctor\n  $ argus doctor --json\n')
+	.action(async (options) => {
+		await runDoctor(options)
+	})
+
+program
 	.command('logs')
 	.alias('log')
-	.argument('<id>', 'Watcher id to query')
+	.argument('[id]', 'Watcher id to query')
 	.description('Fetch recent logs from a watcher')
 	.option('--levels <levels>', 'Comma-separated log levels')
 	.option('--match <regex>', 'Filter by regex (repeatable)', collectMatch, [])
@@ -88,6 +100,7 @@ program
 	.option('--limit <count>', 'Maximum number of events')
 	.option('--json', 'Output bounded JSON preview for automation')
 	.option('--json-full', 'Output full JSON (can be very large)')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus logs app\n  $ argus logs app --since 10m --levels error,warning\n  $ argus logs app --json\n  $ argus logs app --json-full\n',
@@ -109,7 +122,7 @@ program
 
 program
 	.command('tail')
-	.argument('<id>', 'Watcher id to follow')
+	.argument('[id]', 'Watcher id to follow')
 	.description('Tail logs from a watcher via long-polling')
 	.option('--levels <levels>', 'Comma-separated log levels')
 	.option('--match <regex>', 'Filter by regex (repeatable)', collectMatch, [])
@@ -121,6 +134,7 @@ program
 	.option('--timeout <ms>', 'Long-poll timeout in milliseconds')
 	.option('--json', 'Output bounded newline-delimited JSON events')
 	.option('--json-full', 'Output full newline-delimited JSON events (can be very large)')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus tail app\n  $ argus tail app --levels error\n  $ argus tail app --json\n  $ argus tail app --json-full\n',
@@ -143,20 +157,21 @@ program
 const net = program
 	.command('net')
 	.alias('network')
-	.argument('<id>', 'Watcher id to query')
+	.argument('[id]', 'Watcher id to query')
 	.description('Fetch recent network request summaries from a watcher')
 	.option('--after <id>', 'Only return requests after this id')
 	.option('--limit <count>', 'Maximum number of requests')
 	.option('--since <duration>', 'Filter by time window (e.g. 10m, 2h, 30s)')
 	.option('--grep <substring>', 'Substring match over redacted URLs')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus net app --since 5m\n  $ argus net app --grep api\n  $ argus net app --json\n')
 	.action(async (id, options) => {
 		await runNet(id, options)
 	})
 
 net.command('tail')
-	.argument('<id>', 'Watcher id to follow')
+	.argument('[id]', 'Watcher id to follow')
 	.description('Tail network request summaries via long-polling')
 	.option('--after <id>', 'Start after this request id')
 	.option('--limit <count>', 'Maximum number of requests per poll')
@@ -164,6 +179,7 @@ net.command('tail')
 	.option('--since <duration>', 'Filter by time window (e.g. 10m, 2h, 30s)')
 	.option('--grep <substring>', 'Substring match over redacted URLs')
 	.option('--json', 'Output newline-delimited JSON requests')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus net tail app\n  $ argus net tail app --grep api\n  $ argus net tail app --json\n')
 	.action(async (id, options) => {
 		await runNetTail(id, options)
@@ -171,7 +187,7 @@ net.command('tail')
 
 program
 	.command('eval')
-	.argument('<id>', 'Watcher id to query')
+	.argument('[id]', 'Watcher id to query')
 	.argument('<expression>', 'JS expression to evaluate')
 	.description('Evaluate a JS expression in the connected page')
 	.option('--no-await', 'Do not await promises')
@@ -184,6 +200,7 @@ program
 	.option('--interval <ms|duration>', 'Re-evaluate every interval (e.g. 500, 3s)')
 	.option('--count <n>', 'Stop after N iterations (requires --interval)')
 	.option('--until <condition>', 'Stop when local condition becomes truthy (requires --interval)')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch(\\"/ping\\").then(r => r.status)"\n  $ argus eval app "document.title" --no-fail-on-exception\n  $ argus eval app "1+1" --retry 3\n  $ argus eval app "1+1" --silent\n  $ argus eval app "Date.now()" --interval 500 --count 10\n  $ argus eval app "document.title" --interval 250 --until \'result === \"ready\"\'\n',
@@ -205,13 +222,14 @@ program
 
 const trace = program
 	.command('trace')
-	.argument('<id>', 'Watcher id to query')
+	.argument('[id]', 'Watcher id to query')
 	.description('Capture a Chrome trace to disk on the watcher')
 	.option('--duration <duration>', 'Capture for duration (e.g. 3s, 500ms)')
 	.option('--out <file>', 'Output trace file path (relative to artifacts base directory)')
 	.option('--categories <categories>', 'Comma-separated tracing categories')
 	.option('--options <options>', 'Tracing options string')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus trace app --duration 3s --out trace.json\n')
 	.action(async (id, options) => {
 		await runTrace(id, options)
@@ -219,12 +237,13 @@ const trace = program
 
 trace
 	.command('start')
-	.argument('<id>', 'Watcher id to query')
+	.argument('[id]', 'Watcher id to query')
 	.description('Start Chrome tracing')
 	.option('--out <file>', 'Output trace file path (relative to artifacts base directory)')
 	.option('--categories <categories>', 'Comma-separated tracing categories')
 	.option('--options <options>', 'Tracing options string')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus trace start app --out trace.json\n')
 	.action(async (id, options) => {
 		await runTraceStart(id, options)
@@ -232,10 +251,11 @@ trace
 
 trace
 	.command('stop')
-	.argument('<id>', 'Watcher id to query')
+	.argument('[id]', 'Watcher id to query')
 	.description('Stop Chrome tracing')
 	.option('--trace-id <id>', 'Trace id returned from start')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus trace stop app\n')
 	.action(async (id, options) => {
 		await runTraceStop(id, options)
@@ -243,11 +263,12 @@ trace
 
 program
 	.command('screenshot')
-	.argument('<id>', 'Watcher id to query')
+	.argument('[id]', 'Watcher id to query')
 	.description('Capture a screenshot to disk on the watcher')
 	.option('--out <file>', 'Output screenshot file path (relative to artifacts base directory)')
 	.option('--selector <selector>', 'Optional CSS selector for element-only capture')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus screenshot app --out shot.png\n  $ argus screenshot app --selector "body" --out body.png\n')
 	.action(async (id, options) => {
 		await runScreenshot(id, options)
@@ -256,13 +277,14 @@ program
 const dom = program.command('dom').alias('html').description('Inspect DOM elements in the connected page')
 
 dom.command('tree')
-	.argument('<id>', 'Watcher id to query')
+	.argument('[id]', 'Watcher id to query')
 	.description('Fetch a DOM subtree rooted at element(s) matching a CSS selector')
 	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
 	.option('--depth <n>', 'Max depth to traverse (default: 2)')
 	.option('--max-nodes <n>', 'Max total nodes to return (default: 5000)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus dom tree app --selector "body"\n  $ argus dom tree app --selector "div" --all --depth 3\n  $ argus dom tree app --selector "#root" --json\n',
@@ -272,12 +294,13 @@ dom.command('tree')
 	})
 
 dom.command('info')
-	.argument('<id>', 'Watcher id to query')
+	.argument('[id]', 'Watcher id to query')
 	.description('Fetch detailed info for element(s) matching a CSS selector')
 	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
 	.option('--outer-html-max <n>', 'Max characters for outerHTML (default: 50000)')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus dom info app --selector "body"\n  $ argus dom info app --selector "div" --all\n  $ argus dom info app --selector "#root" --json\n',
@@ -306,13 +329,12 @@ chrome
 chrome
 	.command('version')
 	.description('Show Chrome version info from CDP endpoint')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
+	.option('--cdp <host:port>', 'CDP host:port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus chrome version\n  $ argus chrome version --host 127.0.0.1 --port 9222\n  $ argus chrome version --id app\n  $ argus chrome version --json\n',
+		'\nExamples:\n  $ argus chrome version\n  $ argus chrome version --cdp 127.0.0.1:9222\n  $ argus chrome version --id app\n  $ argus chrome version --json\n',
 	)
 	.action(async (options) => {
 		await runChromeVersion(options)
@@ -321,13 +343,12 @@ chrome
 chrome
 	.command('status')
 	.description('Check if Chrome CDP endpoint is reachable')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
+	.option('--cdp <host:port>', 'CDP host:port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus chrome status\n  $ argus chrome status --host 127.0.0.1 --port 9222\n  $ argus chrome status --id app\n',
+		'\nExamples:\n  $ argus chrome status\n  $ argus chrome status --cdp 127.0.0.1:9222\n  $ argus chrome status --id app\n',
 	)
 	.action(async (options) => {
 		await runChromeStatus(options)
@@ -337,8 +358,7 @@ chrome
 	.command('stop')
 	.alias('quit')
 	.description('Close the Chrome instance via CDP')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
+	.option('--cdp <host:port>', 'CDP host:port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText('after', '\nExamples:\n  $ argus chrome stop\n  $ argus chrome stop --id app\n  $ argus chrome stop --json\n')
@@ -354,8 +374,7 @@ page.command('targets')
 	.aliases(['list', 'ls'])
 	.description('List Chrome targets (tabs, extensions, etc.)')
 	.option('--type <type>', 'Filter by target type (e.g. page, worker)')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
+	.option('--cdp <host:port>', 'CDP host:port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
@@ -370,8 +389,7 @@ page.command('open')
 	.alias('new')
 	.description('Open a new tab in Chrome')
 	.requiredOption('--url <url>', 'URL to open')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
+	.option('--cdp <host:port>', 'CDP host:port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
@@ -384,12 +402,17 @@ page.command('open')
 
 page.command('activate')
 	.description('Activate (focus) a Chrome target')
-	.argument('<targetId>', 'Target ID to activate')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
+	.argument('[targetId]', 'Target ID to activate')
+	.option('--title <substring>', 'Case-insensitive substring match against target title')
+	.option('--url <substring>', 'Case-insensitive substring match against target URL')
+	.option('--match <substring>', 'Case-insensitive substring match against title + URL')
+	.option('--cdp <host:port>', 'CDP host:port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus page activate ABCD1234\n  $ argus page activate ABCD1234 --json\n')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus page activate ABCD1234\n  $ argus page activate --title \"Docs\"\n  $ argus page activate --url localhost:3000\n  $ argus page activate --match \"Argus\" --json\n',
+	)
 	.action(async (targetId, options) => {
 		await runChromeActivate({ ...options, targetId })
 	})
@@ -397,8 +420,7 @@ page.command('activate')
 page.command('close')
 	.description('Close a Chrome target')
 	.argument('<targetId>', 'Target ID to close')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
+	.option('--cdp <host:port>', 'CDP host:port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText('after', '\nExamples:\n  $ argus page close ABCD1234\n  $ argus page close ABCD1234 --json\n')
@@ -408,16 +430,16 @@ page.command('close')
 
 page.command('reload')
 	.description('Reload a Chrome target')
-	.argument('<targetId>', 'Target ID to reload')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
+	.argument('[targetId]', 'Target ID to reload')
+	.option('--attached', 'Reload the attached page for a watcher (requires --id)')
+	.option('--cdp <host:port>', 'CDP host:port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--param <key=value>', 'Update query param (repeatable, overwrite semantics)', collectParam, [])
 	.option('--params <a=b&c=d>', 'Update query params from string (overwrite semantics)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus page reload ABCD1234\n  $ argus page reload ABCD1234 --json\n  $ argus page reload ABCD1234 --param foo=bar\n  $ argus page reload ABCD1234 --param foo=bar --param baz=qux\n  $ argus page reload ABCD1234 --params "a=1&b=2"\n',
+		'\nExamples:\n  $ argus page reload ABCD1234\n  $ argus page reload --attached --id app\n  $ argus page reload ABCD1234 --json\n  $ argus page reload ABCD1234 --param foo=bar\n  $ argus page reload ABCD1234 --param foo=bar --param baz=qux\n  $ argus page reload ABCD1234 --params "a=1&b=2"\n',
 	)
 	.action(async (targetId, options) => {
 		await runPageReload({ ...options, targetId })
@@ -431,6 +453,7 @@ watcher
 	.description('List registered watchers')
 	.option('--json', 'Output JSON for automation')
 	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus watcher list\n  $ argus watcher list --json\n  $ argus watcher list --by-cwd my-project\n')
 	.action(async (options) => {
 		await runList(options)
@@ -439,9 +462,10 @@ watcher
 watcher
 	.command('status')
 	.alias('ping')
-	.argument('<id>', 'Watcher id to query')
+	.argument('[id]', 'Watcher id to query')
 	.description('Check watcher status')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus watcher status app\n  $ argus watcher status app --json\n')
 	.action(async (id, options) => {
 		await runWatcherStatus(id, options)
@@ -450,7 +474,7 @@ watcher
 watcher
 	.command('stop')
 	.alias('kill')
-	.argument('<id>', 'Watcher id to stop')
+	.argument('[id]', 'Watcher id to stop')
 	.description('Stop a watcher')
 	.addHelpText('after', '\nExamples:\n  $ argus watcher stop app\n  $ argus watcher kill app\n')
 	.action(async (id, options) => {
@@ -480,10 +504,11 @@ const storageLocal = storage.command('local').description('Manage localStorage f
 
 storageLocal
 	.command('get')
-	.argument('<id>', 'Watcher id')
+	.argument('[id]', 'Watcher id')
 	.argument('<key>', 'localStorage key to retrieve')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus storage local get app myKey\n  $ argus storage local get app myKey --json\n')
 	.action(async (id, key, options) => {
 		await runStorageLocalGet(id, key, options)
@@ -491,11 +516,12 @@ storageLocal
 
 storageLocal
 	.command('set')
-	.argument('<id>', 'Watcher id')
+	.argument('[id]', 'Watcher id')
 	.argument('<key>', 'localStorage key to set')
 	.argument('<value>', 'Value to store')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus storage local set app myKey "myValue"\n  $ argus storage local set app config \'{"debug":true}\'\n')
 	.action(async (id, key, value, options) => {
 		await runStorageLocalSet(id, key, value, options)
@@ -503,10 +529,11 @@ storageLocal
 
 storageLocal
 	.command('remove')
-	.argument('<id>', 'Watcher id')
+	.argument('[id]', 'Watcher id')
 	.argument('<key>', 'localStorage key to remove')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus storage local remove app myKey\n')
 	.action(async (id, key, options) => {
 		await runStorageLocalRemove(id, key, options)
@@ -514,9 +541,10 @@ storageLocal
 
 storageLocal
 	.command('list')
-	.argument('<id>', 'Watcher id')
+	.argument('[id]', 'Watcher id')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus storage local list app\n  $ argus storage local list app --json\n')
 	.action(async (id, options) => {
 		await runStorageLocalList(id, options)
@@ -524,9 +552,10 @@ storageLocal
 
 storageLocal
 	.command('clear')
-	.argument('<id>', 'Watcher id')
+	.argument('[id]', 'Watcher id')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
+	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus storage local clear app\n')
 	.action(async (id, options) => {
 		await runStorageLocalClear(id, options)

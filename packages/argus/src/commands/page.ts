@@ -1,64 +1,54 @@
-import type { RegistryV1 } from '@vforsh/argus-core'
+import type { StatusResponse } from '@vforsh/argus-core'
+import type { ChromeTargetResponse } from '../cdp/types.js'
+import type { CdpEndpointOptions } from '../cdp/resolveCdpEndpoint.js'
+import { resolveCdpEndpoint } from '../cdp/resolveCdpEndpoint.js'
+import { selectTargetFromCandidates } from '../cdp/selectTarget.js'
 import { fetchJson } from '../httpClient.js'
-import { loadRegistry, pruneRegistry } from '../registry.js'
+import { createOutput } from '../output/io.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
-export type PageEndpointOptions = {
-	host?: string
-	port?: string | number
-	id?: string
+export type PageEndpointOptions = CdpEndpointOptions
+
+export type PageCommandOptions = PageEndpointOptions & {
+	json?: boolean
 }
 
-export type ChromeTargetResponse = {
-	id: string
-	type: string
-	title: string
-	url: string
-	webSocketDebuggerUrl?: string
-	devtoolsFrontendUrl?: string
-	description?: string
-	faviconUrl?: string
+const parseParamPair = (value: string): { key: string; value: string } | { error: string } => {
+	const eqIdx = value.indexOf('=')
+	if (eqIdx === -1) {
+		return { error: `Invalid --param "${value}": missing "=".` }
+	}
+	const key = value.slice(0, eqIdx)
+	if (key === '') {
+		return { error: `Invalid --param "${value}": empty key.` }
+	}
+	return { key, value: value.slice(eqIdx + 1) }
 }
 
-type CdpEndpointResult = { ok: true; host: string; port: number } | { ok: false; error: string; exitCode: 1 | 2 }
-
-const isValidPort = (port: number): boolean => Number.isFinite(port) && port >= 1 && port <= 65535
-
-const parsePort = (value: string | number): number | null => {
-	const port = typeof value === 'string' ? parseInt(value, 10) : value
-	return isValidPort(port) ? port : null
-}
-
-const resolveCdpEndpoint = async (options: PageEndpointOptions): Promise<CdpEndpointResult> => {
-	if (options.host != null || options.port != null) {
-		if (options.host == null || options.port == null) {
-			return { ok: false, error: 'Both --host and --port must be specified together.', exitCode: 2 }
-		}
-		const port = parsePort(options.port)
-		if (port === null) {
-			return { ok: false, error: `Invalid port: ${options.port}. Must be an integer 1-65535.`, exitCode: 2 }
-		}
-		return { ok: true, host: options.host, port }
+const parseParamsString = (value: string): URLSearchParams | { error: string } => {
+	const params = new URLSearchParams()
+	if (value.trim() === '') {
+		return params
 	}
 
-	if (options.id != null) {
-		let registry: RegistryV1
-		try {
-			registry = await pruneRegistry(await loadRegistry())
-		} catch (error) {
-			return { ok: false, error: `Failed to load registry: ${error instanceof Error ? error.message : error}`, exitCode: 1 }
+	const pairs = value.split('&')
+	for (const pair of pairs) {
+		const eqIdx = pair.indexOf('=')
+		if (eqIdx === -1) {
+			return { error: `Invalid --params "${pair}": missing "=".` }
 		}
-
-		const watcher = registry.watchers[options.id]
-		if (!watcher) {
-			return { ok: false, error: `Watcher not found: ${options.id}`, exitCode: 2 }
+		const key = pair.slice(0, eqIdx)
+		if (key === '') {
+			return { error: `Invalid --params "${pair}": empty key.` }
 		}
-		if (!watcher.chrome) {
-			return { ok: false, error: `Watcher "${options.id}" has no chrome connection configured.`, exitCode: 2 }
-		}
-		return { ok: true, host: watcher.chrome.host, port: watcher.chrome.port }
+		params.set(decodeURIComponent(key), decodeURIComponent(pair.slice(eqIdx + 1)))
 	}
+	return params
+}
 
-	return { ok: true, host: '127.0.0.1', port: 9222 }
+const isHttpUrl = (url: string): boolean => {
+	return url.startsWith('http://') || url.startsWith('https://')
 }
 
 type WebSocketLike = {
@@ -181,63 +171,108 @@ const sendCdpCommand = async (
 	})
 }
 
-export type PageCommandOptions = PageEndpointOptions & {
-	json?: boolean
-}
-
-const parseParamPair = (value: string): { key: string; value: string } | { error: string } => {
-	const eqIdx = value.indexOf('=')
-	if (eqIdx === -1) {
-		return { error: `Invalid --param "${value}": missing "=".` }
-	}
-	const key = value.slice(0, eqIdx)
-	if (key === '') {
-		return { error: `Invalid --param "${value}": empty key.` }
-	}
-	return { key, value: value.slice(eqIdx + 1) }
-}
-
-const parseParamsString = (value: string): URLSearchParams | { error: string } => {
-	const params = new URLSearchParams()
-	if (value.trim() === '') {
-		return params
-	}
-
-	const pairs = value.split('&')
-	for (const pair of pairs) {
-		const eqIdx = pair.indexOf('=')
-		if (eqIdx === -1) {
-			return { error: `Invalid --params "${pair}": missing "=".` }
-		}
-		const key = pair.slice(0, eqIdx)
-		if (key === '') {
-			return { error: `Invalid --params "${pair}": empty key.` }
-		}
-		params.set(decodeURIComponent(key), decodeURIComponent(pair.slice(eqIdx + 1)))
-	}
-	return params
-}
-
-const isHttpUrl = (url: string): boolean => {
-	return url.startsWith('http://') || url.startsWith('https://')
-}
-
 export type PageReloadOptions = PageCommandOptions & {
-	targetId: string
+	targetId?: string
 	param?: string[]
 	params?: string
+	attached?: boolean
 }
 
 export const runPageReload = async (options: PageReloadOptions): Promise<void> => {
+	const output = createOutput(options)
+	const hasParamFlag = (options.param?.length ?? 0) > 0
+	const hasParamsFlag = options.params != null
+
+	if (options.attached) {
+		if (options.targetId) {
+			output.writeWarn('Do not provide targetId when using --attached.')
+			process.exitCode = 2
+			return
+		}
+		if (!options.id) {
+			output.writeWarn('--attached requires --id <watcherId>.')
+			process.exitCode = 2
+			return
+		}
+		if (options.cdp) {
+			output.writeWarn('--attached cannot be combined with --cdp. Use --id to resolve the endpoint.')
+			process.exitCode = 2
+			return
+		}
+
+		const resolvedWatcher = await resolveWatcher({ id: options.id })
+		if (!resolvedWatcher.ok) {
+			output.writeWarn(resolvedWatcher.error)
+			if (resolvedWatcher.candidates && resolvedWatcher.candidates.length > 0) {
+				writeWatcherCandidates(resolvedWatcher.candidates, output)
+				output.writeWarn('Hint: run `argus list` to see all watchers.')
+			}
+			process.exitCode = resolvedWatcher.exitCode
+			return
+		}
+
+		const statusUrl = `http://${resolvedWatcher.watcher.host}:${resolvedWatcher.watcher.port}/status`
+		let status: StatusResponse
+		try {
+			status = await fetchJson<StatusResponse>(statusUrl, { timeoutMs: 2_000 })
+		} catch (error) {
+			output.writeWarn(
+				`${resolvedWatcher.watcher.id}: failed to reach watcher (${error instanceof Error ? error.message : error})`,
+			)
+			process.exitCode = 1
+			return
+		}
+
+		if (!status.attached || !status.target) {
+			output.writeWarn(`Watcher ${resolvedWatcher.watcher.id} is not attached to a target.`)
+			process.exitCode = 1
+			return
+		}
+
+		const endpoint = await resolveCdpEndpoint({ id: resolvedWatcher.watcher.id })
+		if (!endpoint.ok) {
+			output.writeWarn(endpoint.error)
+			process.exitCode = endpoint.exitCode
+			return
+		}
+
+		const targetsUrl = `http://${endpoint.host}:${endpoint.port}/json/list`
+		let targets: ChromeTargetResponse[]
+		try {
+			targets = await fetchJson<ChromeTargetResponse[]>(targetsUrl)
+		} catch (error) {
+			output.writeWarn(`Failed to load targets from ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+			process.exitCode = 1
+			return
+		}
+
+		const candidates = findTargetsByAttached(status.target, targets)
+		const selection = await selectTargetFromCandidates(candidates, output, {
+			interactive: process.stdin.isTTY === true,
+			messages: {
+				empty: 'No targets matched the attached page.',
+				ambiguous: 'Multiple targets matched the attached page.',
+			},
+		})
+		if (!selection.ok) {
+			output.writeWarn(selection.error)
+			process.exitCode = selection.exitCode
+			return
+		}
+
+		await reloadTarget(selection.target, { hasParamFlag, hasParamsFlag, options, output })
+		return
+	}
+
 	if (!options.targetId || options.targetId.trim() === '') {
-		console.error('targetId is required.')
+		output.writeWarn('targetId is required.')
 		process.exitCode = 2
 		return
 	}
 
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
-		console.error(endpoint.error)
+		output.writeWarn(endpoint.error)
 		process.exitCode = endpoint.exitCode
 		return
 	}
@@ -249,52 +284,62 @@ export const runPageReload = async (options: PageReloadOptions): Promise<void> =
 	try {
 		targets = await fetchJson<ChromeTargetResponse[]>(targetsUrl)
 	} catch (error) {
-		console.error(`Failed to load targets from ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to load targets from ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
 
 	const target = targets.find((entry) => entry.id === targetId)
 	if (!target) {
-		console.error(`Target not found: ${targetId}`)
+		output.writeWarn(`Target not found: ${targetId}`)
 		process.exitCode = 2
 		return
 	}
 
+	await reloadTarget(target, { hasParamFlag, hasParamsFlag, options, output })
+}
+
+type ReloadContext = {
+	hasParamFlag: boolean
+	hasParamsFlag: boolean
+	options: PageReloadOptions
+	output: ReturnType<typeof createOutput>
+}
+
+const reloadTarget = async (target: ChromeTargetResponse, context: ReloadContext): Promise<void> => {
+	const { options, output } = context
+
 	if (!target.webSocketDebuggerUrl) {
-		console.error(`Target ${targetId} has no webSocketDebuggerUrl.`)
+		output.writeWarn(`Target ${target.id} has no webSocketDebuggerUrl.`)
 		process.exitCode = 1
 		return
 	}
 
-	const hasParamFlag = options.param && options.param.length > 0
-	const hasParamsFlag = options.params != null
-
-	if (!hasParamFlag && !hasParamsFlag) {
+	if (!context.hasParamFlag && !context.hasParamsFlag) {
 		try {
 			await sendCdpCommand(target.webSocketDebuggerUrl, { id: 1, method: 'Page.reload' })
 		} catch (error) {
-			console.error(`Failed to reload target ${targetId}: ${error instanceof Error ? error.message : error}`)
+			output.writeWarn(`Failed to reload target ${target.id}: ${error instanceof Error ? error.message : error}`)
 			process.exitCode = 1
 			return
 		}
 
 		if (options.json) {
-			process.stdout.write(JSON.stringify({ reloaded: targetId, url: target.url }) + '\n')
+			output.writeJson({ reloaded: target.id, url: target.url })
 		} else {
-			console.log(`reloaded ${targetId}`)
+			output.writeHuman(`reloaded ${target.id}`)
 		}
 		return
 	}
 
 	if (!target.url || target.url.trim() === '') {
-		console.error(`Target ${targetId} has no URL.`)
+		output.writeWarn(`Target ${target.id} has no URL.`)
 		process.exitCode = 2
 		return
 	}
 
 	if (!isHttpUrl(target.url)) {
-		console.error(`Target URL "${target.url}" is not http/https. Cannot update query params.`)
+		output.writeWarn(`Target URL "${target.url}" is not http/https. Cannot update query params.`)
 		process.exitCode = 2
 		return
 	}
@@ -303,17 +348,17 @@ export const runPageReload = async (options: PageReloadOptions): Promise<void> =
 	try {
 		parsedUrl = new URL(target.url)
 	} catch (error) {
-		console.error(`Invalid target URL "${target.url}": ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Invalid target URL "${target.url}": ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 2
 		return
 	}
 
 	const previousUrl = target.url
 
-	if (hasParamsFlag) {
+	if (context.hasParamsFlag) {
 		const parsed = parseParamsString(options.params!)
 		if ('error' in parsed) {
-			console.error(parsed.error)
+			output.writeWarn(parsed.error)
 			process.exitCode = 2
 			return
 		}
@@ -322,11 +367,11 @@ export const runPageReload = async (options: PageReloadOptions): Promise<void> =
 		}
 	}
 
-	if (hasParamFlag) {
+	if (context.hasParamFlag) {
 		for (const paramPair of options.param!) {
 			const parsed = parseParamPair(paramPair)
 			if ('error' in parsed) {
-				console.error(parsed.error)
+				output.writeWarn(parsed.error)
 				process.exitCode = 2
 				return
 			}
@@ -339,14 +384,32 @@ export const runPageReload = async (options: PageReloadOptions): Promise<void> =
 	try {
 		await sendCdpCommand(target.webSocketDebuggerUrl, { id: 1, method: 'Page.navigate', params: { url: nextUrl } })
 	} catch (error) {
-		console.error(`Failed to navigate target ${targetId}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to navigate target ${target.id}: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify({ reloaded: targetId, url: nextUrl, previousUrl }) + '\n')
+		output.writeJson({ reloaded: target.id, url: nextUrl, previousUrl })
 	} else {
-		console.log(`reloaded ${targetId} ${nextUrl}`)
+		output.writeHuman(`reloaded ${target.id} ${nextUrl}`)
 	}
+}
+
+const findTargetsByAttached = (
+	attached: { title: string | null; url: string | null },
+	targets: ChromeTargetResponse[],
+): ChromeTargetResponse[] => {
+	if (attached.url) {
+		const urlMatches = targets.filter((target) => target.url === attached.url)
+		if (urlMatches.length > 0) {
+			return urlMatches
+		}
+	}
+
+	if (attached.title) {
+		return targets.filter((target) => target.title === attached.title)
+	}
+
+	return []
 }

@@ -1,25 +1,34 @@
 import type { ScreenshotResponse } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
+import { createOutput } from '../output/io.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the screenshot command. */
 export type ScreenshotOptions = {
 	json?: boolean
 	out?: string
 	selector?: string
+	pruneDead?: boolean
 }
 
 /** Execute the screenshot command for a watcher id. */
-export const runScreenshot = async (id: string, options: ScreenshotOptions): Promise<void> => {
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[id]
-	if (!watcher) {
-		console.error(`Watcher not found: ${id}`)
-		process.exitCode = 1
+export const runScreenshot = async (id: string | undefined, options: ScreenshotOptions): Promise<void> => {
+	const output = createOutput(options)
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
 		return
 	}
+
+	const { watcher } = resolved
+	let registry = resolved.registry
 
 	const url = `http://${watcher.host}:${watcher.port}/screenshot`
 	let response: ScreenshotResponse
@@ -34,18 +43,20 @@ export const runScreenshot = async (id: string, options: ScreenshotOptions): Pro
 			timeoutMs: 15_000,
 		})
 	} catch (error) {
-		console.error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		registry = await removeWatcherAndPersist(registry, watcher.id)
+		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+		if (options.pruneDead) {
+			registry = await removeWatcherAndPersist(registry, watcher.id)
+		}
 		process.exitCode = 1
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(response))
+		output.writeJson(response)
 		return
 	}
 
-	process.stdout.write(`Screenshot saved: ${response.outFile}\n`)
+	output.writeHuman(`Screenshot saved: ${response.outFile}`)
 }
 
 const formatError = (error: unknown): string => {

@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { fetchJson } from '../httpClient.js'
 import { loadRegistry, pruneRegistry } from '../registry.js'
+import { createOutput } from '../output/io.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
 import { getCdpPort } from '../utils/ports.js'
 import type { ChromeVersionResponse } from './chrome.js'
@@ -119,8 +120,9 @@ const waitForCdpReady = async (host: string, port: number, chrome: ChildProcess)
 }
 
 export const runChromeStart = async (options: ChromeStartOptions): Promise<void> => {
+	const output = createOutput(options)
 	if (options.url && options.id) {
-		console.error('Cannot combine --url with --id. Use one or the other.')
+		output.writeWarn('Cannot combine --url with --id. Use one or the other.')
 		process.exitCode = 2
 		return
 	}
@@ -131,12 +133,12 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		const registry = await pruneRegistry(await loadRegistry())
 		const watcher = registry.watchers[options.id]
 		if (!watcher) {
-			console.error(`Watcher not found: ${options.id}`)
+			output.writeWarn(`Watcher not found: ${options.id}`)
 			process.exitCode = 1
 			return
 		}
 		if (!watcher.match?.url) {
-			console.error(`Watcher "${options.id}" has no match.url configured.`)
+			output.writeWarn(`Watcher "${options.id}" has no match.url configured.`)
 			process.exitCode = 2
 			return
 		}
@@ -150,7 +152,7 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 
 	const chromeBin = resolveChromeBin()
 	if (!chromeBin) {
-		console.error('Chrome executable not found. Set ARGUS_CHROME_BIN environment variable.')
+		output.writeWarn('Chrome executable not found. Set ARGUS_CHROME_BIN environment variable.')
 		process.exitCode = 1
 		return
 	}
@@ -159,14 +161,14 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 	if (options.defaultProfile) {
 		const sourceDir = resolveChromeUserDataDir()
 		if (!sourceDir) {
-			console.error('Chrome user data dir not found. Set ARGUS_CHROME_USER_DATA_DIR.')
+			output.writeWarn('Chrome user data dir not found. Set ARGUS_CHROME_USER_DATA_DIR.')
 			process.exitCode = 1
 			return
 		}
 		try {
 			userDataDir = copyDefaultProfile(sourceDir)
 		} catch (error) {
-			console.error(`Failed to copy default Chrome profile: ${error instanceof Error ? error.message : error}`)
+			output.writeWarn(`Failed to copy default Chrome profile: ${error instanceof Error ? error.message : error}`)
 			process.exitCode = 1
 			return
 		}
@@ -195,7 +197,7 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 			detached: false,
 		})
 	} catch (error) {
-		console.error(`Failed to spawn Chrome: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to spawn Chrome: ${error instanceof Error ? error.message : error}`)
 		if (userDataDir) {
 			rmSync(userDataDir, { recursive: true, force: true })
 		}
@@ -204,7 +206,7 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 	}
 
 	if (!chrome.pid) {
-		console.error('Failed to start Chrome: no PID returned.')
+		output.writeWarn('Failed to start Chrome: no PID returned.')
 		if (userDataDir) {
 			rmSync(userDataDir, { recursive: true, force: true })
 		}
@@ -222,8 +224,8 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 
 	const ready = await waitForCdpReady(cdpHost, cdpPort, chrome)
 	if (!ready.ready) {
-		console.error(`Chrome started but CDP is unavailable at ${cdpHost}:${cdpPort}.`)
-		console.error(`Reason: ${ready.error}`)
+		output.writeWarn(`Chrome started but CDP is unavailable at ${cdpHost}:${cdpPort}.`)
+		output.writeWarn(`Reason: ${ready.error}`)
 		if (userDataDir) {
 			try {
 				rmSync(userDataDir, { recursive: true, force: true })
@@ -266,14 +268,14 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 	})
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(result) + '\n')
+		output.writeJson(result)
 	} else {
-		console.log(`Chrome started:`)
-		console.log(`  pid=${result.chromePid}`)
-		console.log(`  cdp=${result.cdpHost}:${result.cdpPort}`)
-		console.log(`  userDataDir=${result.userDataDir}`)
+		output.writeHuman(`Chrome started:`)
+		output.writeHuman(`  pid=${result.chromePid}`)
+		output.writeHuman(`  cdp=${result.cdpHost}:${result.cdpPort}`)
+		output.writeHuman(`  userDataDir=${result.userDataDir}`)
 		if (result.startupUrl) {
-			console.log(`  url=${result.startupUrl}`)
+			output.writeHuman(`  url=${result.startupUrl}`)
 		}
 	}
 

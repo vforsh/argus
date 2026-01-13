@@ -2,15 +2,18 @@ import type { RegistryV1, StatusResponse, WatcherRecord } from '@vforsh/argus-co
 import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatWatcherLine } from '../output/format.js'
+import { createOutput } from '../output/io.js'
 
 /** Options for the list command. */
 export type ListOptions = {
 	json?: boolean
 	byCwd?: string
+	pruneDead?: boolean
 }
 
 /** Execute the list command. */
 export const runList = async (options: ListOptions): Promise<void> => {
+	const output = createOutput(options)
 	let registry = await loadRegistry()
 	registry = await pruneRegistry(registry)
 
@@ -23,7 +26,7 @@ export const runList = async (options: ListOptions): Promise<void> => {
 
 	if (watchers.length === 0) {
 		if (options.json) {
-			process.stdout.write(JSON.stringify([]))
+			output.writeJson([])
 		}
 		return
 	}
@@ -36,18 +39,22 @@ export const runList = async (options: ListOptions): Promise<void> => {
 			const status = await fetchJson<StatusResponse>(url, { timeoutMs: 2_000 })
 			results.push({ watcher, status })
 		} catch (error) {
-			console.error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-			registry = await removeWatcherAndPersist(registry, watcher.id)
+			output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			if (options.pruneDead) {
+				registry = await removeWatcherAndPersist(registry, watcher.id)
+			} else {
+				results.push({ watcher })
+			}
 		}
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(results.map((entry) => entry.status?.watcher ?? entry.watcher)))
+		output.writeJson(results.map((entry) => entry.status?.watcher ?? entry.watcher))
 		return
 	}
 
 	for (const entry of results) {
-		process.stdout.write(`${formatWatcherLine(entry.watcher, entry.status)}\n`)
+		output.writeHuman(formatWatcherLine(entry.watcher, entry.status))
 	}
 }
 

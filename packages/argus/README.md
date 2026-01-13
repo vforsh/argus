@@ -12,33 +12,37 @@ npm install -g @vforsh/argus
 
 ```bash
 argus list
-argus logs <id>
-argus tail <id>
-argus eval <id> "<expression>"
+argus logs [id]
+argus tail [id]
+argus eval [id] "<expression>"
+argus page <subcommand>
 argus chrome <subcommand>
 argus watcher list
-argus watcher status <id>
-argus watcher stop <id>
+argus watcher status [id]
+argus watcher stop [id]
 argus watcher start --id <id> --url <pattern>
+argus doctor
 ```
 
 ### Commands
 
-- **`argus list`**: Discover running Argus watchers and their IDs.
+- **`argus list`**: Discover registered Argus watchers and their IDs.
     - Use this first to find the `<id>` you’ll pass to other commands (often something like `app`).
     - Tip: add `--json` for scripting.
     - Tip: add `--by-cwd <substring>` to filter watchers by their working directory.
+    - Tip: add `--prune-dead` to remove unreachable watchers from the registry.
 
-- **`argus logs <id>`**: Fetch a bounded slice of log history for a watcher.
+- **`argus logs [id]`**: Fetch a bounded slice of log history for a watcher.
     - Best for “what already happened?” (e.g. “show me errors from the last 10 minutes”).
     - Combine with `--since`, `--levels`, `--match`, and `--source` to narrow results.
+    - If `<id>` is omitted, Argus tries the watcher in your current `cwd`, then the only reachable watcher.
 
-- **`argus tail <id>`**: Stream logs as they arrive (follow mode).
+- **`argus tail [id]`**: Stream logs as they arrive (follow mode).
     - Best for “what’s happening right now?” while you reproduce an issue.
     - With `--json`, emits bounded newline-delimited JSON events (NDJSON) for piping into tools.
     - With `--json-full`, emits full NDJSON events (can be very large).
 
-- **`argus eval <id> <expression>`**: Evaluate a JS expression in the connected page.
+- **`argus eval [id] <expression>`**: Evaluate a JS expression in the connected page.
     - Best for quick one-off inspection (“what’s `location.href` right now?”).
     - Defaults: awaits returned promises; returns values “by value” when possible.
     - Tip: add `--json` for scripting (and check `.exception`).
@@ -59,37 +63,48 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
         ```
 
 - **`argus chrome version`**: Show Chrome version info from the CDP endpoint.
-    - Options: `--host`, `--port`, `--id <watcherId>`, `--json`.
+    - Options: `--cdp <host:port>`, `--id <watcherId>`, `--json`.
 
 - **`argus chrome status`**: Check if Chrome CDP endpoint is reachable.
     - Prints `ok <host>:<port> <browser>` on success; exits with code 1 if unreachable.
 
-- **`argus chrome targets`**: List all Chrome targets (tabs, workers, extensions).
-    - Aliases: `list`, `ls`.
-    - Options: `--type <type>` to filter (e.g. `--type page` for tabs only), `--json`.
-    - Example: `argus chrome targets --type page`.
-
-- **`argus chrome open --url <url>`**: Open a new tab in Chrome.
-    - Alias: `new`.
-    - URL normalization: if no scheme, `http://` is prepended.
-    - Example: `argus chrome open --url localhost:3000`.
-
-- **`argus chrome activate <targetId>`**: Activate (focus) a Chrome target.
-    - Example: `argus chrome activate E63A3ED201BFC02DA06134F506A7498C`.
-
-- **`argus chrome close <targetId>`**: Close a Chrome target.
-    - Example: `argus chrome close E63A3ED201BFC02DA06134F506A7498C`.
-- **`argus chrome reload <targetId>`**: Reload a Chrome target.
-    - Example: `argus chrome reload E63A3ED201BFC02DA06134F506A7498C`.
 - **`argus chrome stop`**: Close the Chrome instance via CDP.
     - Alias: `quit`.
     - Example: `argus chrome stop`.
 
-**CDP endpoint resolution** (applies to all chrome commands except `start`):
+#### Page commands
 
-- `--host <host> --port <port>`: Use explicit host/port (both required together).
+Manage tabs/targets via CDP (aliases: `tab`).
+
+- **`argus page targets`**: List all Chrome targets (tabs, workers, extensions).
+    - Aliases: `list`, `ls`.
+    - Options: `--type <type>` to filter (e.g. `--type page` for tabs only), `--json`.
+    - Example: `argus page targets --type page`.
+
+- **`argus page open --url <url>`**: Open a new tab in Chrome.
+    - Alias: `new`.
+    - URL normalization: if no scheme, `http://` is prepended.
+    - Example: `argus page open --url localhost:3000`.
+
+- **`argus page activate [targetId]`**: Activate (focus) a Chrome target.
+    - Fuzzy selection: `--title`, `--url`, or `--match` (case-insensitive substring).
+    - If multiple matches and TTY: interactive picker. If non-TTY: prints candidates and exits 2.
+    - Example: `argus page activate --title "Docs"`.
+
+- **`argus page close <targetId>`**: Close a Chrome target.
+    - Example: `argus page close E63A3ED201BFC02DA06134F506A7498C`.
+
+- **`argus page reload [targetId]`**: Reload a Chrome target.
+    - Use `--attached --id <watcherId>` to reload the attached page without a target ID.
+    - Use `--param`/`--params` to update query params before reload.
+    - Example: `argus page reload --attached --id app`.
+
+**CDP endpoint resolution** (applies to `chrome version/status/stop` and all `page` commands):
+
+- `--cdp <host:port>`: Use explicit host/port.
 - `--id <watcherId>`: Use chrome config from a registered watcher's `chrome.host`/`chrome.port`.
 - Default: `127.0.0.1:9222`.
+- `--cdp` and `--id` are mutually exclusive.
 
 #### Watcher commands
 
@@ -97,11 +112,11 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
     - Aliases: `ls`.
     - Example: `argus watcher list --by-cwd my-project`.
 
-- **`argus watcher status <id>`**: Check whether a watcher is reachable.
+- **`argus watcher status [id]`**: Check whether a watcher is reachable.
     - Alias: `ping`.
     - Example: `argus watcher status app`.
 
-- **`argus watcher stop <id>`**: Ask a watcher to shut down (falls back to SIGTERM).
+- **`argus watcher stop [id]`**: Ask a watcher to shut down (falls back to SIGTERM).
     - Alias: `kill`.
     - Example: `argus watcher stop app`.
 
@@ -110,6 +125,18 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
     - Optional: `--chrome-host <host>` (default: `127.0.0.1`), `--chrome-port <port>` (default: `9222`), `--no-page-indicator`, `--json`.
     - Note: the in-page watcher indicator badge is enabled by default.
     - Example: `argus watcher start --id app --url localhost:3000 --chrome-port 9223`.
+
+- **`argus doctor`**: Run environment diagnostics for registry, watchers, WebSocket availability, Chrome bin, and CDP.
+    - Tip: add `--json` for scripting.
+
+#### Watcher selection defaults
+
+For commands that accept `[id]`:
+
+- If `<id>` is provided, Argus uses it.
+- Else if exactly one watcher has `cwd === process.cwd()`, Argus uses it.
+- Else if exactly one reachable watcher exists, Argus uses it.
+- Otherwise Argus exits with an error and lists candidates (TTY prompts are only used for page target selection, not watcher IDs).
 
 #### `logs` vs `tail`
 
@@ -143,7 +170,8 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
     - The CLI HTTP request timeout includes a small buffer on top of the eval timeout.
 
 - **Watcher registry cleanup**:
-    - If the watcher can’t be reached, Argus removes it from the local registry (so it disappears from the next `argus list`).
+    - Argus does **not** remove watchers on single failures by default.
+    - Use `--prune-dead` to explicitly remove unreachable watchers from the registry.
 
 #### `eval` options
 
@@ -158,13 +186,15 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
 
 ### Options
 
-- **`--json`**: output bounded, machine-readable JSON preview.
-    - **What**: switches from human text formatting to JSON; for `tail`, this is newline-delimited JSON (NDJSON) so each event is one line.
-    - **When**: when piping into tools like `jq`, writing to a file, or building scripts around Argus without risking megabytes-per-line.
-    - **Why**: stable structure is easier to parse than terminal-friendly text, and large payloads stay capped.
+- **`--json`**: output machine-readable JSON.
+    - **What**: switches from human text formatting to JSON.
+    - **Streaming**: commands that can emit multiple objects use **NDJSON** (one JSON object per line).
+    - **Stderr**: when `--json` is set, all non-machine logs go to **stderr**.
+    - **When**: when piping into tools like `jq`, writing to a file, or building scripts around Argus.
+    - **Why**: stable structure is easier to parse than terminal-friendly text.
 
 - **`--json-full`**: output full, raw JSON.
-    - **What**: emits the full event payload with no preview caps; for `tail`, this is NDJSON.
+    - **What**: emits the full event payload with no preview caps; for streaming commands this is NDJSON.
     - **When**: when you need exact fidelity and are ok with large output.
     - **Why**: preserves complete structures for deep debugging or archival.
 
@@ -198,6 +228,11 @@ Manage and query a running Chrome instance with remote debugging enabled (CDP).
     - **When**: when you only care about “recent” history (typically with `logs`).
     - **Why**: avoids dumping an entire backlog when you only need the latest slice.
 
+- **`--prune-dead`**: remove unreachable watchers from the registry.
+    - **What**: deletes registry entries only when explicitly requested.
+    - **When**: when you know a watcher is gone and want `argus list` to be clean.
+    - **Why**: prevents accidental registry churn on transient failures.
+
 ## Output
 
 - Text output uses 4-character level tags (e.g. `LOG `, `DEBG`, `WARN`, `ERR `, `INFO`, `EXCP`).
@@ -220,17 +255,20 @@ argus eval app 'Date.now()' --interval 500 --count 3
 argus eval app 'document.title' --interval 250 --until 'result === "argus-e2e"'
 
 # Chrome commands
-argus chrome status
+argus chrome status --cdp 127.0.0.1:9222
 argus chrome version --json
-argus chrome targets --type page
-argus chrome ls --type page --json
-argus chrome open --url localhost:3000
-argus chrome activate E63A3ED201BFC02DA06134F506A7498C
-argus chrome close E63A3ED201BFC02DA06134F506A7498C
-argus chrome reload E63A3ED201BFC02DA06134F506A7498C
 argus chrome stop
+
+# Page commands
+argus page targets --type page
+argus page ls --type page --json
+argus page open --url localhost:3000
+argus page activate --title \"Docs\"
+argus page close E63A3ED201BFC02DA06134F506A7498C
+argus page reload --attached --id app
 
 # Watcher with custom Chrome port
 argus chrome start --json  # note the cdpPort in output
 argus watcher start --id app --url localhost:3000 --chrome-port 9223
+argus doctor
 ```

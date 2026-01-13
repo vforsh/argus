@@ -1,7 +1,10 @@
-import type { TraceStartResponse, TraceStopResponse } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import type { RegistryV1, TraceStartResponse, TraceStopResponse, WatcherRecord } from '@vforsh/argus-core'
+import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
+import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the trace command (start + stop). */
 export type TraceOptions = {
@@ -10,6 +13,7 @@ export type TraceOptions = {
 	out?: string
 	categories?: string
 	options?: string
+	pruneDead?: boolean
 }
 
 /** Options for the trace start command. */
@@ -18,102 +22,130 @@ export type TraceStartOptions = {
 	out?: string
 	categories?: string
 	options?: string
+	pruneDead?: boolean
 }
 
 /** Options for the trace stop command. */
 export type TraceStopOptions = {
 	json?: boolean
 	traceId?: string
+	pruneDead?: boolean
 }
 
 /** Execute trace start + stop with duration. */
-export const runTrace = async (id: string, options: TraceOptions): Promise<void> => {
+export const runTrace = async (id: string | undefined, options: TraceOptions): Promise<void> => {
+	const output = createOutput(options)
 	if (!options.duration) {
-		console.error('Missing --duration value')
+		output.writeWarn('Missing --duration value')
 		process.exitCode = 2
 		return
 	}
 
 	const durationMs = parseDurationMs(options.duration)
 	if (!durationMs) {
-		console.error(`Invalid --duration value: ${options.duration}`)
+		output.writeWarn(`Invalid --duration value: ${options.duration}`)
 		process.exitCode = 2
 		return
 	}
 
-	const start = await runTraceStartInternal(id, {
-		out: options.out,
-		categories: options.categories,
-		options: options.options,
-	})
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
+		return
+	}
+
+	let registry = resolved.registry
+	const watcher = resolved.watcher
+
+	const start = await runTraceStartInternal(watcher, registry, options, output)
 	if (!start) {
 		return
 	}
 
 	await delay(durationMs)
 
-	const stop = await runTraceStopInternal(id, { traceId: start.traceId })
+	const stop = await runTraceStopInternal(watcher, registry, options, output)
 	if (!stop) {
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify({ start, stop }))
+		output.writeJson({ start, stop })
 		return
 	}
 
-	process.stdout.write(`Trace saved: ${stop.outFile}\n`)
+	output.writeHuman(`Trace saved: ${stop.outFile}`)
 }
 
 /** Execute the trace start command for a watcher id. */
-export const runTraceStart = async (id: string, options: TraceStartOptions): Promise<void> => {
-	const start = await runTraceStartInternal(id, options)
+export const runTraceStart = async (id: string | undefined, options: TraceStartOptions): Promise<void> => {
+	const output = createOutput(options)
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
+		return
+	}
+
+	const start = await runTraceStartInternal(resolved.watcher, resolved.registry, options, output)
 	if (!start) {
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(start))
+		output.writeJson(start)
 		return
 	}
 
-	process.stdout.write(`Trace started: ${start.traceId}\n`)
-	process.stdout.write(`Output: ${start.outFile}\n`)
+	output.writeHuman(`Trace started: ${start.traceId}`)
+	output.writeHuman(`Output: ${start.outFile}`)
 }
 
 /** Execute the trace stop command for a watcher id. */
-export const runTraceStop = async (id: string, options: TraceStopOptions): Promise<void> => {
-	const stop = await runTraceStopInternal(id, options)
+export const runTraceStop = async (id: string | undefined, options: TraceStopOptions): Promise<void> => {
+	const output = createOutput(options)
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
+		return
+	}
+
+	const stop = await runTraceStopInternal(resolved.watcher, resolved.registry, options, output)
 	if (!stop) {
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(stop))
+		output.writeJson(stop)
 		return
 	}
 
-	process.stdout.write(`Trace saved: ${stop.outFile}\n`)
+	output.writeHuman(`Trace saved: ${stop.outFile}`)
 }
 
 const runTraceStartInternal = async (
-	id: string,
-	options: { out?: string; categories?: string; options?: string },
+	watcher: WatcherRecord,
+	registry: RegistryV1,
+	options: { out?: string; categories?: string; options?: string; pruneDead?: boolean },
+	output: ReturnType<typeof createOutput>,
 ): Promise<TraceStartResponse | null> => {
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[id]
-	if (!watcher) {
-		console.error(`Watcher not found: ${id}`)
-		process.exitCode = 1
-		return null
-	}
-
 	const url = `http://${watcher.host}:${watcher.port}/trace/start`
-	let response: TraceStartResponse
 	try {
-		response = await fetchJson<TraceStartResponse>(url, {
+		const response = await fetchJson<TraceStartResponse>(url, {
 			method: 'POST',
 			body: {
 				outFile: options.out,
@@ -122,46 +154,39 @@ const runTraceStartInternal = async (
 			},
 			timeoutMs: 10_000,
 		})
+		return response
 	} catch (error) {
-		console.error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		registry = await removeWatcherAndPersist(registry, watcher.id)
+		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+		if (options.pruneDead) {
+			await removeWatcherAndPersist(registry, watcher.id)
+		}
 		process.exitCode = 1
 		return null
 	}
-
-	return response
 }
 
 const runTraceStopInternal = async (
-	id: string,
-	options: { traceId?: string },
+	watcher: WatcherRecord,
+	registry: RegistryV1,
+	options: { traceId?: string; pruneDead?: boolean },
+	output: ReturnType<typeof createOutput>,
 ): Promise<TraceStopResponse | null> => {
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[id]
-	if (!watcher) {
-		console.error(`Watcher not found: ${id}`)
-		process.exitCode = 1
-		return null
-	}
-
 	const url = `http://${watcher.host}:${watcher.port}/trace/stop`
-	let response: TraceStopResponse
 	try {
-		response = await fetchJson<TraceStopResponse>(url, {
+		const response = await fetchJson<TraceStopResponse>(url, {
 			method: 'POST',
 			body: { traceId: options.traceId },
 			timeoutMs: 20_000,
 		})
+		return response
 	} catch (error) {
-		console.error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		registry = await removeWatcherAndPersist(registry, watcher.id)
+		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+		if (options.pruneDead) {
+			await removeWatcherAndPersist(registry, watcher.id)
+		}
 		process.exitCode = 1
 		return null
 	}
-
-	return response
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

@@ -1,8 +1,11 @@
 import type { EvalResponse } from '@vforsh/argus-core'
 import { previewStringify } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
+import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the eval command. */
 export type EvalOptions = {
@@ -16,64 +19,70 @@ export type EvalOptions = {
 	interval?: string
 	count?: string
 	until?: string
+	pruneDead?: boolean
 }
 
 /** Execute the eval command for a watcher id. */
-export const runEval = async (id: string, expression: string, options: EvalOptions): Promise<void> => {
+export const runEval = async (id: string | undefined, expression: string, options: EvalOptions): Promise<void> => {
+	const output = createOutput(options)
 	if (!expression || expression.trim() === '') {
-		console.error('Expression is required')
+		output.writeWarn('Expression is required')
 		process.exitCode = 2
 		return
 	}
 
 	const retryCount = parseRetryCount(options.retry)
 	if (retryCount.error) {
-		console.error(retryCount.error)
+		output.writeWarn(retryCount.error)
 		process.exitCode = 2
 		return
 	}
 
 	const intervalMs = parseIntervalMs(options.interval)
 	if (intervalMs.error) {
-		console.error(intervalMs.error)
+		output.writeWarn(intervalMs.error)
 		process.exitCode = 2
 		return
 	}
 
 	const countValue = parseCount(options.count)
 	if (countValue.error) {
-		console.error(countValue.error)
+		output.writeWarn(countValue.error)
 		process.exitCode = 2
 		return
 	}
 	if (countValue.value != null && intervalMs.value == null) {
-		console.error('Invalid --count usage: --count requires --interval')
+		output.writeWarn('Invalid --count usage: --count requires --interval')
 		process.exitCode = 2
 		return
 	}
 
 	if (options.until && intervalMs.value == null) {
-		console.error('Invalid --until usage: --until requires --interval')
+		output.writeWarn('Invalid --until usage: --until requires --interval')
 		process.exitCode = 2
 		return
 	}
 
 	const untilEvaluator = compileUntil(options.until)
 	if (untilEvaluator.error) {
-		console.error(untilEvaluator.error)
+		output.writeWarn(untilEvaluator.error)
 		process.exitCode = 2
 		return
 	}
 
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[id]
-	if (!watcher) {
-		console.error(`Watcher not found: ${id}`)
-		process.exitCode = 1
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
 		return
 	}
+
+	const { watcher } = resolved
+	let registry = resolved.registry
 
 	const timeoutMs = parseNumber(options.timeout)
 
@@ -90,14 +99,16 @@ export const runEval = async (id: string, expression: string, options: EvalOptio
 
 		if (!singleResult.ok) {
 			if (singleResult.kind === 'transport') {
-				registry = await removeWatcherAndPersist(registry, watcher.id)
+				if (options.pruneDead) {
+					registry = await removeWatcherAndPersist(registry, watcher.id)
+				}
 			}
-			printError(singleResult, options)
+			printError(singleResult, options, output)
 			process.exitCode = 1
 			return
 		}
 
-		printSuccess(singleResult.response, options)
+		printSuccess(singleResult.response, options, output, false)
 		return
 	}
 
@@ -124,14 +135,16 @@ export const runEval = async (id: string, expression: string, options: EvalOptio
 
 		if (!iterationResult.ok) {
 			if (iterationResult.kind === 'transport') {
-				registry = await removeWatcherAndPersist(registry, watcher.id)
+				if (options.pruneDead) {
+					registry = await removeWatcherAndPersist(registry, watcher.id)
+				}
 			}
-			printError(iterationResult, options)
+			printError(iterationResult, options, output)
 			process.exitCode = 1
 			return
 		}
 
-		printSuccess(iterationResult.response, options)
+		printSuccess(iterationResult.response, options, output, true)
 
 		if (untilEvaluator.evaluator) {
 			const untilResult = untilEvaluator.evaluator({
@@ -141,7 +154,7 @@ export const runEval = async (id: string, expression: string, options: EvalOptio
 				attempt: iterationResult.attempt,
 			})
 			if (!untilResult.ok) {
-				printError({ kind: 'until', error: untilResult.error }, options)
+				printError({ kind: 'until', error: untilResult.error }, options, output)
 				process.exitCode = 1
 				return
 			}
@@ -356,35 +369,43 @@ const evalOnce = async (input: Omit<EvalAttemptInput, 'retryCount'>): Promise<Ev
 	return { ok: true, response }
 }
 
-const printSuccess = (response: EvalResponse, options: EvalOptions): void => {
+const printSuccess = (response: EvalResponse, options: EvalOptions, output: ReturnType<typeof createOutput>, streaming: boolean): void => {
 	if (options.silent) {
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(response))
+		if (streaming) {
+			output.writeJsonLine(response)
+		} else {
+			output.writeJson(response)
+		}
 		return
 	}
 
 	if (response.exception) {
-		writeException(process.stdout, response)
+		output.writeHuman(formatException(response))
 		return
 	}
 
-	process.stdout.write(`${previewStringify(response.result)}\n`)
+	output.writeHuman(previewStringify(response.result))
 }
 
-const printError = (error: EvalAttemptFailure | { kind: 'until'; error: string }, options: EvalOptions): void => {
+const printError = (
+	error: EvalAttemptFailure | { kind: 'until'; error: string },
+	options: EvalOptions,
+	output: ReturnType<typeof createOutput>,
+): void => {
 	if (options.json && 'response' in error && error.response) {
-		process.stdout.write(JSON.stringify(error.response))
+		output.writeJsonLine(error.response)
 	}
 
 	if (error.kind === 'exception' && 'response' in error && error.response?.exception) {
-		writeException(process.stderr, error.response)
+		output.writeWarn(formatException(error.response))
 		return
 	}
 
-	process.stderr.write(`${error.error}\n`)
+	output.writeWarn(error.error)
 }
 
 const formatExceptionMessage = (response: EvalResponse): string => {
@@ -394,14 +415,14 @@ const formatExceptionMessage = (response: EvalResponse): string => {
 	return `Exception: ${response.exception.text}`
 }
 
-const writeException = (stream: NodeJS.WriteStream, response: EvalResponse): void => {
+const formatException = (response: EvalResponse): string => {
 	if (!response.exception) {
-		return
+		return ''
 	}
-	stream.write(`Exception: ${response.exception.text}\n`)
 	if (response.exception.details) {
-		stream.write(`${previewStringify(response.exception.details)}\n`)
+		return `Exception: ${response.exception.text}\n${previewStringify(response.exception.details)}`
 	}
+	return `Exception: ${response.exception.text}`
 }
 
 const sleep = async (durationMs: number): Promise<void> => {

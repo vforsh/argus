@@ -1,8 +1,11 @@
 import type { NetTailResponse } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatNetworkRequest } from '../output/format.js'
+import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the net tail command. */
 export type NetTailOptions = {
@@ -12,26 +15,32 @@ export type NetTailOptions = {
 	timeout?: string
 	since?: string
 	grep?: string
+	pruneDead?: boolean
 }
 
 /** Execute the net tail command for a watcher id. */
-export const runNetTail = async (id: string, options: NetTailOptions): Promise<void> => {
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[id]
-	if (!watcher) {
-		console.error(`Watcher not found: ${id}`)
-		process.exitCode = 1
+export const runNetTail = async (id: string | undefined, options: NetTailOptions): Promise<void> => {
+	const output = createOutput(options)
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
 		return
 	}
+
+	const { watcher } = resolved
+	let registry = resolved.registry
 
 	let after = parseNumber(options.after) ?? 0
 	const timeoutMs = parseNumber(options.timeout) ?? 25_000
 	const limit = parseNumber(options.limit)
 	const sinceTsResult = resolveSinceTs(options.since)
 	if (sinceTsResult.error) {
-		console.error(sinceTsResult.error)
+		output.writeWarn(sinceTsResult.error)
 		process.exitCode = 2
 		return
 	}
@@ -65,8 +74,10 @@ export const runNetTail = async (id: string, options: NetTailOptions): Promise<v
 		try {
 			response = await fetchJson<NetTailResponse>(url, { timeoutMs: timeoutMs + 5_000 })
 		} catch (error) {
-			console.error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-			registry = await removeWatcherAndPersist(registry, watcher.id)
+			output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			if (options.pruneDead) {
+				registry = await removeWatcherAndPersist(registry, watcher.id)
+			}
 			process.exitCode = 1
 			return
 		}
@@ -74,10 +85,10 @@ export const runNetTail = async (id: string, options: NetTailOptions): Promise<v
 		if (response.requests.length > 0) {
 			for (const request of response.requests) {
 				if (options.json) {
-					process.stdout.write(`${JSON.stringify({ watcher: watcher.id, request })}\n`)
+					output.writeJsonLine({ watcher: watcher.id, request })
 					continue
 				}
-				process.stdout.write(`${formatNetworkRequest(request)}\n`)
+				output.writeHuman(formatNetworkRequest(request))
 			}
 		}
 

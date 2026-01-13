@@ -1,8 +1,11 @@
 import type { NetResponse } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatNetworkRequest } from '../output/format.js'
+import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the net command. */
 export type NetOptions = {
@@ -11,19 +14,25 @@ export type NetOptions = {
 	limit?: string
 	since?: string
 	grep?: string
+	pruneDead?: boolean
 }
 
 /** Execute the net command for a watcher id. */
-export const runNet = async (id: string, options: NetOptions): Promise<void> => {
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[id]
-	if (!watcher) {
-		console.error(`Watcher not found: ${id}`)
-		process.exitCode = 1
+export const runNet = async (id: string | undefined, options: NetOptions): Promise<void> => {
+	const output = createOutput(options)
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
 		return
 	}
+
+	const { watcher } = resolved
+	let registry = resolved.registry
 
 	const params = new URLSearchParams()
 	const after = parseNumber(options.after)
@@ -37,7 +46,7 @@ export const runNet = async (id: string, options: NetOptions): Promise<void> => 
 	if (options.since) {
 		const duration = parseDurationMs(options.since)
 		if (!duration) {
-			console.error(`Invalid --since value: ${options.since}`)
+			output.writeWarn(`Invalid --since value: ${options.since}`)
 			process.exitCode = 2
 			return
 		}
@@ -53,19 +62,21 @@ export const runNet = async (id: string, options: NetOptions): Promise<void> => 
 	try {
 		response = await fetchJson<NetResponse>(url, { timeoutMs: 5_000 })
 	} catch (error) {
-		console.error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		registry = await removeWatcherAndPersist(registry, watcher.id)
+		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+		if (options.pruneDead) {
+			registry = await removeWatcherAndPersist(registry, watcher.id)
+		}
 		process.exitCode = 1
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(response.requests))
+		output.writeJson(response.requests)
 		return
 	}
 
 	for (const request of response.requests) {
-		process.stdout.write(`${formatNetworkRequest(request)}\n`)
+		output.writeHuman(formatNetworkRequest(request))
 	}
 }
 

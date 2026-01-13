@@ -1,9 +1,12 @@
 import type { LogsResponse } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
+import { createOutput } from '../output/io.js'
 import { previewLogEvent } from '../output/preview.js'
 import { parseDurationMs } from '../time.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the logs command. */
 export type LogsOptions = {
@@ -17,19 +20,25 @@ export type LogsOptions = {
 	since?: string
 	after?: string
 	limit?: string
+	pruneDead?: boolean
 }
 
 /** Execute the logs command for a watcher id. */
-export const runLogs = async (id: string, options: LogsOptions): Promise<void> => {
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[id]
-	if (!watcher) {
-		console.error(`Watcher not found: ${id}`)
-		process.exitCode = 1
+export const runLogs = async (id: string | undefined, options: LogsOptions): Promise<void> => {
+	const output = createOutput(options)
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
 		return
 	}
+
+	const { watcher } = resolved
+	let registry = resolved.registry
 
 	const params = new URLSearchParams()
 	const after = parseNumber(options.after)
@@ -45,7 +54,7 @@ export const runLogs = async (id: string, options: LogsOptions): Promise<void> =
 	}
 	const normalizedMatch = normalizeMatch(options.match)
 	if (normalizedMatch.error) {
-		console.error(normalizedMatch.error)
+		output.writeWarn(normalizedMatch.error)
 		process.exitCode = 2
 		return
 	}
@@ -65,7 +74,7 @@ export const runLogs = async (id: string, options: LogsOptions): Promise<void> =
 	if (options.since) {
 		const duration = parseDurationMs(options.since)
 		if (!duration) {
-			console.error(`Invalid --since value: ${options.since}`)
+			output.writeWarn(`Invalid --since value: ${options.since}`)
 			process.exitCode = 2
 			return
 		}
@@ -77,28 +86,30 @@ export const runLogs = async (id: string, options: LogsOptions): Promise<void> =
 	try {
 		response = await fetchJson<LogsResponse>(url, { timeoutMs: 5_000 })
 	} catch (error) {
-		console.error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		registry = await removeWatcherAndPersist(registry, watcher.id)
+		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+		if (options.pruneDead) {
+			registry = await removeWatcherAndPersist(registry, watcher.id)
+		}
 		process.exitCode = 1
 		return
 	}
 
 	if (options.jsonFull) {
-		process.stdout.write(JSON.stringify(response.events))
+		output.writeJson(response.events)
 		return
 	}
 
 	if (options.json) {
 		const previewEvents = response.events.map((event) => previewLogEvent(event))
-		process.stdout.write(JSON.stringify(previewEvents))
+		output.writeJson(previewEvents)
 		return
 	}
 
 	for (const event of response.events) {
-		process.stdout.write(
-			`${formatLogEvent(event, {
+		output.writeHuman(
+			formatLogEvent(event, {
 				includeTimestamps: watcher.includeTimestamps,
-			})}\n`,
+			}),
 		)
 	}
 }

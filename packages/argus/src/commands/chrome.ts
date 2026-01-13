@@ -1,12 +1,11 @@
-import type { RegistryV1, WatcherChrome } from '@vforsh/argus-core'
+import type { ChromeTargetResponse } from '../cdp/types.js'
+import type { CdpEndpointOptions } from '../cdp/resolveCdpEndpoint.js'
+import { resolveCdpEndpoint } from '../cdp/resolveCdpEndpoint.js'
+import { filterTargets, selectTargetFromCandidates } from '../cdp/selectTarget.js'
 import { fetchJson, fetchText } from '../httpClient.js'
-import { loadRegistry, pruneRegistry } from '../registry.js'
+import { createOutput } from '../output/io.js'
 
-export type ChromeEndpointOptions = {
-	host?: string
-	port?: string | number
-	id?: string
-}
+export type ChromeEndpointOptions = CdpEndpointOptions
 
 export type ChromeVersionResponse = {
 	Browser: string
@@ -15,59 +14,6 @@ export type ChromeVersionResponse = {
 	'V8-Version': string
 	'WebKit-Version': string
 	webSocketDebuggerUrl: string
-}
-
-export type ChromeTargetResponse = {
-	id: string
-	type: string
-	title: string
-	url: string
-	webSocketDebuggerUrl?: string
-	devtoolsFrontendUrl?: string
-	description?: string
-	faviconUrl?: string
-}
-
-type CdpEndpointResult = { ok: true; host: string; port: number } | { ok: false; error: string; exitCode: 1 | 2 }
-
-const isValidPort = (port: number): boolean => Number.isFinite(port) && port >= 1 && port <= 65535
-
-const parsePort = (value: string | number): number | null => {
-	const port = typeof value === 'string' ? parseInt(value, 10) : value
-	return isValidPort(port) ? port : null
-}
-
-const resolveCdpEndpoint = async (options: ChromeEndpointOptions): Promise<CdpEndpointResult> => {
-	if (options.host != null || options.port != null) {
-		if (options.host == null || options.port == null) {
-			return { ok: false, error: 'Both --host and --port must be specified together.', exitCode: 2 }
-		}
-		const port = parsePort(options.port)
-		if (port === null) {
-			return { ok: false, error: `Invalid port: ${options.port}. Must be an integer 1-65535.`, exitCode: 2 }
-		}
-		return { ok: true, host: options.host, port }
-	}
-
-	if (options.id != null) {
-		let registry: RegistryV1
-		try {
-			registry = await pruneRegistry(await loadRegistry())
-		} catch (error) {
-			return { ok: false, error: `Failed to load registry: ${error instanceof Error ? error.message : error}`, exitCode: 1 }
-		}
-
-		const watcher = registry.watchers[options.id]
-		if (!watcher) {
-			return { ok: false, error: `Watcher not found: ${options.id}`, exitCode: 2 }
-		}
-		if (!watcher.chrome) {
-			return { ok: false, error: `Watcher "${options.id}" has no chrome connection configured.`, exitCode: 2 }
-		}
-		return { ok: true, host: watcher.chrome.host, port: watcher.chrome.port }
-	}
-
-	return { ok: true, host: '127.0.0.1', port: 9222 }
 }
 
 const normalizeUrl = (url: string): string => {
@@ -202,9 +148,10 @@ export type ChromeCommandOptions = ChromeEndpointOptions & {
 }
 
 export const runChromeVersion = async (options: ChromeCommandOptions): Promise<void> => {
+	const output = createOutput(options)
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
-		console.error(endpoint.error)
+		output.writeWarn(endpoint.error)
 		process.exitCode = endpoint.exitCode
 		return
 	}
@@ -215,23 +162,24 @@ export const runChromeVersion = async (options: ChromeCommandOptions): Promise<v
 	try {
 		response = await fetchJson<ChromeVersionResponse>(url)
 	} catch (error) {
-		console.error(`Failed to connect to Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to connect to Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(response) + '\n')
+		output.writeJson(response)
 	} else {
-		console.log(`Browser: ${response.Browser}`)
-		console.log(`WebSocket: ${response.webSocketDebuggerUrl}`)
+		output.writeHuman(`Browser: ${response.Browser}`)
+		output.writeHuman(`WebSocket: ${response.webSocketDebuggerUrl}`)
 	}
 }
 
 export const runChromeStatus = async (options: ChromeCommandOptions): Promise<void> => {
+	const output = createOutput(options)
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
-		console.error(endpoint.error)
+		output.writeWarn(endpoint.error)
 		process.exitCode = endpoint.exitCode
 		return
 	}
@@ -242,21 +190,21 @@ export const runChromeStatus = async (options: ChromeCommandOptions): Promise<vo
 	try {
 		response = await fetchJson<ChromeVersionResponse>(url)
 	} catch (error) {
-		console.error(`unreachable ${endpoint.host}:${endpoint.port}`)
+		output.writeWarn(`unreachable ${endpoint.host}:${endpoint.port}`)
 		process.exitCode = 1
 		return
 	}
 
 	if (!response.Browser) {
-		console.error(`invalid response from ${endpoint.host}:${endpoint.port}`)
+		output.writeWarn(`invalid response from ${endpoint.host}:${endpoint.port}`)
 		process.exitCode = 1
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(response) + '\n')
+		output.writeJson(response)
 	} else {
-		console.log(`ok ${endpoint.host}:${endpoint.port} ${response.Browser}`)
+		output.writeHuman(`ok ${endpoint.host}:${endpoint.port} ${response.Browser}`)
 	}
 }
 
@@ -265,9 +213,10 @@ export type ChromeTargetsOptions = ChromeCommandOptions & {
 }
 
 export const runChromeTargets = async (options: ChromeTargetsOptions): Promise<void> => {
+	const output = createOutput(options)
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
-		console.error(endpoint.error)
+		output.writeWarn(endpoint.error)
 		process.exitCode = endpoint.exitCode
 		return
 	}
@@ -278,7 +227,7 @@ export const runChromeTargets = async (options: ChromeTargetsOptions): Promise<v
 	try {
 		targets = await fetchJson<ChromeTargetResponse[]>(url)
 	} catch (error) {
-		console.error(`Failed to connect to Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to connect to Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
@@ -288,12 +237,12 @@ export const runChromeTargets = async (options: ChromeTargetsOptions): Promise<v
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(targets) + '\n')
+		output.writeJson(targets)
 	} else {
 		for (const target of targets) {
 			const title = target.title ? ` ${target.title}` : ''
 			const targetUrl = target.url ? ` ${target.url}` : ''
-			console.log(`${target.id} ${target.type}${title}${targetUrl}`)
+			output.writeHuman(`${target.id} ${target.type}${title}${targetUrl}`)
 		}
 	}
 }
@@ -303,15 +252,16 @@ export type ChromeOpenOptions = ChromeCommandOptions & {
 }
 
 export const runChromeOpen = async (options: ChromeOpenOptions): Promise<void> => {
+	const output = createOutput(options)
 	if (!options.url || options.url.trim() === '') {
-		console.error('--url is required.')
+		output.writeWarn('--url is required.')
 		process.exitCode = 2
 		return
 	}
 
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
-		console.error(endpoint.error)
+		output.writeWarn(endpoint.error)
 		process.exitCode = endpoint.exitCode
 		return
 	}
@@ -324,51 +274,91 @@ export const runChromeOpen = async (options: ChromeOpenOptions): Promise<void> =
 	try {
 		target = await fetchJson<ChromeTargetResponse>(url, { method: 'PUT' })
 	} catch (error) {
-		console.error(`Failed to open tab: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to open tab: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(target) + '\n')
+		output.writeJson(target)
 	} else {
-		console.log(`${target.id} ${target.url}`)
+		output.writeHuman(`${target.id} ${target.url}`)
 	}
 }
 
 export type ChromeActivateOptions = ChromeCommandOptions & {
-	targetId: string
+	targetId?: string
+	title?: string
+	url?: string
+	match?: string
 }
 
 export const runChromeActivate = async (options: ChromeActivateOptions): Promise<void> => {
-	if (!options.targetId || options.targetId.trim() === '') {
-		console.error('targetId is required.')
+	const output = createOutput(options)
+	const targetIdInput = options.targetId?.trim()
+	const hasTargetId = Boolean(targetIdInput)
+	const hasFilters = Boolean(options.title || options.url || options.match)
+	if (hasTargetId && hasFilters) {
+		output.writeWarn('Cannot combine targetId with --title/--url/--match.')
+		process.exitCode = 2
+		return
+	}
+
+	if (!hasTargetId && !hasFilters) {
+		output.writeWarn('targetId or --title/--url/--match is required.')
 		process.exitCode = 2
 		return
 	}
 
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
-		console.error(endpoint.error)
+		output.writeWarn(endpoint.error)
 		process.exitCode = endpoint.exitCode
 		return
 	}
 
-	const targetId = options.targetId.trim()
-	const url = `http://${endpoint.host}:${endpoint.port}/json/activate/${targetId}`
+	let targetId = targetIdInput
 
+	if (!targetId) {
+		const url = `http://${endpoint.host}:${endpoint.port}/json/list`
+		let targets: ChromeTargetResponse[]
+		try {
+			targets = await fetchJson<ChromeTargetResponse[]>(url)
+		} catch (error) {
+			output.writeWarn(`Failed to load targets from ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+			process.exitCode = 1
+			return
+		}
+
+		const candidates = filterTargets(targets, { title: options.title, url: options.url, match: options.match })
+		const selection = await selectTargetFromCandidates(candidates, output, {
+			interactive: process.stdin.isTTY === true,
+			messages: {
+				empty: 'No targets matched the provided filters.',
+				ambiguous: 'Multiple targets matched. Provide a narrower filter or a targetId.',
+			},
+		})
+		if (!selection.ok) {
+			output.writeWarn(selection.error)
+			process.exitCode = selection.exitCode
+			return
+		}
+		targetId = selection.target.id
+	}
+
+	const activateUrl = `http://${endpoint.host}:${endpoint.port}/json/activate/${targetId}`
 	try {
-		await fetchText(url)
+		await fetchText(activateUrl)
 	} catch (error) {
-		console.error(`Failed to activate target: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to activate target: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify({ activated: targetId }) + '\n')
+		output.writeJson({ activated: targetId })
 	} else {
-		console.log(`activated ${targetId}`)
+		output.writeHuman(`activated ${targetId}`)
 	}
 }
 
@@ -377,15 +367,16 @@ export type ChromeCloseOptions = ChromeCommandOptions & {
 }
 
 export const runChromeClose = async (options: ChromeCloseOptions): Promise<void> => {
+	const output = createOutput(options)
 	if (!options.targetId || options.targetId.trim() === '') {
-		console.error('targetId is required.')
+		output.writeWarn('targetId is required.')
 		process.exitCode = 2
 		return
 	}
 
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
-		console.error(endpoint.error)
+		output.writeWarn(endpoint.error)
 		process.exitCode = endpoint.exitCode
 		return
 	}
@@ -396,22 +387,23 @@ export const runChromeClose = async (options: ChromeCloseOptions): Promise<void>
 	try {
 		await fetchText(url)
 	} catch (error) {
-		console.error(`Failed to close target: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to close target: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify({ closed: targetId }) + '\n')
+		output.writeJson({ closed: targetId })
 	} else {
-		console.log(`closed ${targetId}`)
+		output.writeHuman(`closed ${targetId}`)
 	}
 }
 
 export const runChromeStop = async (options: ChromeCommandOptions): Promise<void> => {
+	const output = createOutput(options)
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
-		console.error(endpoint.error)
+		output.writeWarn(endpoint.error)
 		process.exitCode = endpoint.exitCode
 		return
 	}
@@ -422,13 +414,13 @@ export const runChromeStop = async (options: ChromeCommandOptions): Promise<void
 	try {
 		response = await fetchJson<ChromeVersionResponse>(url)
 	} catch (error) {
-		console.error(`Failed to connect to Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to connect to Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
 
 	if (!response.webSocketDebuggerUrl) {
-		console.error(`No browser WebSocket endpoint exposed at ${endpoint.host}:${endpoint.port}.`)
+		output.writeWarn(`No browser WebSocket endpoint exposed at ${endpoint.host}:${endpoint.port}.`)
 		process.exitCode = 1
 		return
 	}
@@ -436,15 +428,15 @@ export const runChromeStop = async (options: ChromeCommandOptions): Promise<void
 	try {
 		await sendCdpCommand(response.webSocketDebuggerUrl, { id: 1, method: 'Browser.close' })
 	} catch (error) {
-		console.error(`Failed to close Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to close Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify({ closed: true, host: endpoint.host, port: endpoint.port }) + '\n')
+		output.writeJson({ closed: true, host: endpoint.host, port: endpoint.port })
 	} else {
-		console.log(`closed ${endpoint.host}:${endpoint.port}`)
+		output.writeHuman(`closed ${endpoint.host}:${endpoint.port}`)
 	}
 }
 
@@ -453,15 +445,16 @@ export type ChromeReloadOptions = ChromeCommandOptions & {
 }
 
 export const runChromeReload = async (options: ChromeReloadOptions): Promise<void> => {
+	const output = createOutput(options)
 	if (!options.targetId || options.targetId.trim() === '') {
-		console.error('targetId is required.')
+		output.writeWarn('targetId is required.')
 		process.exitCode = 2
 		return
 	}
 
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
-		console.error(endpoint.error)
+		output.writeWarn(endpoint.error)
 		process.exitCode = endpoint.exitCode
 		return
 	}
@@ -473,20 +466,20 @@ export const runChromeReload = async (options: ChromeReloadOptions): Promise<voi
 	try {
 		targets = await fetchJson<ChromeTargetResponse[]>(targetsUrl)
 	} catch (error) {
-		console.error(`Failed to load targets from ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to load targets from ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
 
 	const target = targets.find((entry) => entry.id === targetId)
 	if (!target) {
-		console.error(`Target not found: ${targetId}`)
+		output.writeWarn(`Target not found: ${targetId}`)
 		process.exitCode = 2
 		return
 	}
 
 	if (!target.webSocketDebuggerUrl) {
-		console.error(`Target ${targetId} has no webSocketDebuggerUrl.`)
+		output.writeWarn(`Target ${targetId} has no webSocketDebuggerUrl.`)
 		process.exitCode = 1
 		return
 	}
@@ -494,14 +487,14 @@ export const runChromeReload = async (options: ChromeReloadOptions): Promise<voi
 	try {
 		await sendCdpCommand(target.webSocketDebuggerUrl, { id: 1, method: 'Page.reload' })
 	} catch (error) {
-		console.error(`Failed to reload target ${targetId}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to reload target ${targetId}: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify({ reloaded: targetId, url: target.url }) + '\n')
+		output.writeJson({ reloaded: targetId, url: target.url })
 	} else {
-		console.log(`reloaded ${targetId}`)
+		output.writeHuman(`reloaded ${targetId}`)
 	}
 }

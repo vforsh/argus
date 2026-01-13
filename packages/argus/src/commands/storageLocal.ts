@@ -7,33 +7,37 @@ import type {
 	StorageLocalClearResponse,
 	ErrorResponse,
 } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
+import { createOutput } from '../output/io.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for storage local commands. */
 export type StorageLocalOptions = {
 	origin?: string
 	json?: boolean
+	pruneDead?: boolean
 }
 
 /** Execute the storage local get command. */
-export const runStorageLocalGet = async (id: string, key: string, options: StorageLocalOptions): Promise<void> => {
-	const response = await callStorageLocal(id, { action: 'get', key, origin: options.origin })
+export const runStorageLocalGet = async (id: string | undefined, key: string, options: StorageLocalOptions): Promise<void> => {
+	const output = createOutput(options)
+	const response = await callStorageLocal(id, { action: 'get', key, origin: options.origin }, options, output)
 	if (!response) return
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(response) + '\n')
+		output.writeJson(response)
 		return
 	}
 
 	const r = response as StorageLocalGetResponse
-	process.stdout.write(r.value ?? 'null')
-	process.stdout.write('\n')
+	output.writeHuman(r.value ?? 'null')
 }
 
 /** Execute the storage local set command. */
 export const runStorageLocalSet = async (
-	id: string,
+	id: string | undefined,
 	key: string,
 	value: string,
 	options: StorageLocalOptions & { raw?: boolean },
@@ -45,60 +49,64 @@ export const runStorageLocalSet = async (
 	// --raw means treat value as raw string (default)
 	// If neither --raw nor --json: default is raw string
 
-	const response = await callStorageLocal(id, { action: 'set', key, value, origin: options.origin })
+	const output = createOutput(options)
+	const response = await callStorageLocal(id, { action: 'set', key, value, origin: options.origin }, options, output)
 	if (!response) return
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(response) + '\n')
+		output.writeJson(response)
 		return
 	}
 
 	const r = response as StorageLocalSetResponse
-	process.stdout.write(`Set ${r.key} on ${r.origin}\n`)
+	output.writeHuman(`Set ${r.key} on ${r.origin}`)
 }
 
 /** Execute the storage local remove command. */
-export const runStorageLocalRemove = async (id: string, key: string, options: StorageLocalOptions): Promise<void> => {
-	const response = await callStorageLocal(id, { action: 'remove', key, origin: options.origin })
+export const runStorageLocalRemove = async (id: string | undefined, key: string, options: StorageLocalOptions): Promise<void> => {
+	const output = createOutput(options)
+	const response = await callStorageLocal(id, { action: 'remove', key, origin: options.origin }, options, output)
 	if (!response) return
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(response) + '\n')
+		output.writeJson(response)
 		return
 	}
 
 	const r = response as StorageLocalRemoveResponse
-	process.stdout.write(`Removed ${r.key} from ${r.origin}\n`)
+	output.writeHuman(`Removed ${r.key} from ${r.origin}`)
 }
 
 /** Execute the storage local list command. */
-export const runStorageLocalList = async (id: string, options: StorageLocalOptions): Promise<void> => {
-	const response = await callStorageLocal(id, { action: 'list', origin: options.origin })
+export const runStorageLocalList = async (id: string | undefined, options: StorageLocalOptions): Promise<void> => {
+	const output = createOutput(options)
+	const response = await callStorageLocal(id, { action: 'list', origin: options.origin }, options, output)
 	if (!response) return
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(response) + '\n')
+		output.writeJson(response)
 		return
 	}
 
 	const r = response as StorageLocalListResponse
 	for (const key of r.keys) {
-		process.stdout.write(key + '\n')
+		output.writeHuman(key)
 	}
 }
 
 /** Execute the storage local clear command. */
-export const runStorageLocalClear = async (id: string, options: StorageLocalOptions): Promise<void> => {
-	const response = await callStorageLocal(id, { action: 'clear', origin: options.origin })
+export const runStorageLocalClear = async (id: string | undefined, options: StorageLocalOptions): Promise<void> => {
+	const output = createOutput(options)
+	const response = await callStorageLocal(id, { action: 'clear', origin: options.origin }, options, output)
 	if (!response) return
 
 	if (options.json) {
-		process.stdout.write(JSON.stringify(response) + '\n')
+		output.writeJson(response)
 		return
 	}
 
 	const r = response as StorageLocalClearResponse
-	process.stdout.write(`Cleared ${r.cleared} item(s) from ${r.origin}\n`)
+	output.writeHuman(`Cleared ${r.cleared} item(s) from ${r.origin}`)
 }
 
 type StorageLocalRequestPayload = {
@@ -108,16 +116,25 @@ type StorageLocalRequestPayload = {
 	origin?: string
 }
 
-const callStorageLocal = async (id: string, payload: StorageLocalRequestPayload): Promise<StorageLocalResponse | null> => {
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[id]
-	if (!watcher) {
-		console.error(`Watcher not found: ${id}`)
-		process.exitCode = 1
+const callStorageLocal = async (
+	id: string | undefined,
+	payload: StorageLocalRequestPayload,
+	options: StorageLocalOptions,
+	output: ReturnType<typeof createOutput>,
+): Promise<StorageLocalResponse | null> => {
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
 		return null
 	}
+
+	const { watcher } = resolved
+	let registry = resolved.registry
 
 	const url = `http://${watcher.host}:${watcher.port}/storage/local`
 	try {
@@ -130,15 +147,17 @@ const callStorageLocal = async (id: string, payload: StorageLocalRequestPayload)
 
 		if (!response.ok) {
 			const err = response as ErrorResponse
-			console.error(`Error: ${err.error.message}`)
+			output.writeWarn(`Error: ${err.error.message}`)
 			process.exitCode = 1
 			return null
 		}
 
 		return response as StorageLocalResponse
 	} catch (error) {
-		console.error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		registry = await removeWatcherAndPersist(registry, watcher.id)
+		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+		if (options.pruneDead) {
+			registry = await removeWatcherAndPersist(registry, watcher.id)
+		}
 		process.exitCode = 1
 		return null
 	}

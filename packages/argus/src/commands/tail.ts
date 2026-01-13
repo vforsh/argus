@@ -1,8 +1,11 @@
 import type { TailResponse } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
+import { createOutput } from '../output/io.js'
 import { previewLogEvent } from '../output/preview.js'
+import { writeWatcherCandidates } from '../watchers/candidates.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the tail command. */
 export type TailOptions = {
@@ -16,19 +19,25 @@ export type TailOptions = {
 	after?: string
 	timeout?: string
 	limit?: string
+	pruneDead?: boolean
 }
 
 /** Execute the tail command for a watcher id. */
-export const runTail = async (id: string, options: TailOptions): Promise<void> => {
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
-
-	const watcher = registry.watchers[id]
-	if (!watcher) {
-		console.error(`Watcher not found: ${id}`)
-		process.exitCode = 1
+export const runTail = async (id: string | undefined, options: TailOptions): Promise<void> => {
+	const output = createOutput(options)
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) {
+		output.writeWarn(resolved.error)
+		if (resolved.candidates && resolved.candidates.length > 0) {
+			writeWatcherCandidates(resolved.candidates, output)
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
+		process.exitCode = resolved.exitCode
 		return
 	}
+
+	const { watcher } = resolved
+	let registry = resolved.registry
 
 	let after = parseNumber(options.after) ?? 0
 	const timeoutMs = parseNumber(options.timeout) ?? 25_000
@@ -54,7 +63,7 @@ export const runTail = async (id: string, options: TailOptions): Promise<void> =
 		}
 		const normalizedMatch = normalizeMatch(options.match)
 		if (normalizedMatch.error) {
-			console.error(normalizedMatch.error)
+			output.writeWarn(normalizedMatch.error)
 			process.exitCode = 2
 			return
 		}
@@ -77,8 +86,10 @@ export const runTail = async (id: string, options: TailOptions): Promise<void> =
 		try {
 			response = await fetchJson<TailResponse>(url, { timeoutMs: timeoutMs + 5_000 })
 		} catch (error) {
-			console.error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-			registry = await removeWatcherAndPersist(registry, watcher.id)
+			output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			if (options.pruneDead) {
+				registry = await removeWatcherAndPersist(registry, watcher.id)
+			}
 			process.exitCode = 1
 			return
 		}
@@ -86,18 +97,18 @@ export const runTail = async (id: string, options: TailOptions): Promise<void> =
 		if (response.events.length > 0) {
 			for (const event of response.events) {
 				if (options.jsonFull) {
-					process.stdout.write(`${JSON.stringify({ watcher: watcher.id, event })}\n`)
+					output.writeJsonLine({ watcher: watcher.id, event })
 					continue
 				}
 				if (options.json) {
 					const previewEvent = previewLogEvent(event)
-					process.stdout.write(`${JSON.stringify({ watcher: watcher.id, event: previewEvent })}\n`)
+					output.writeJsonLine({ watcher: watcher.id, event: previewEvent })
 					continue
 				}
-				process.stdout.write(
-					`${formatLogEvent(event, {
+				output.writeHuman(
+					formatLogEvent(event, {
 						includeTimestamps: watcher.includeTimestamps,
-					})}\n`,
+					}),
 				)
 			}
 		}
