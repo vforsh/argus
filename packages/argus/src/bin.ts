@@ -11,16 +11,8 @@ import { runScreenshot } from './commands/screenshot.js'
 import { runDomTree } from './commands/domTree.js'
 import { runDomInfo } from './commands/domInfo.js'
 import { runChromeStart } from './commands/chromeStart.js'
-import {
-	runChromeVersion,
-	runChromeStatus,
-	runChromeTargets,
-	runChromeOpen,
-	runChromeActivate,
-	runChromeClose,
-	runChromeReload,
-	runChromeStop,
-} from './commands/chrome.js'
+import { runChromeVersion, runChromeStatus, runChromeTargets, runChromeOpen, runChromeActivate, runChromeClose, runChromeStop } from './commands/chrome.js'
+import { runPageReload } from './commands/page.js'
 import { runWatcherStart } from './commands/watcherStart.js'
 import { runStorageLocalGet, runStorageLocalSet, runStorageLocalRemove, runStorageLocalList, runStorageLocalClear } from './commands/storageLocal.js'
 
@@ -340,66 +332,6 @@ chrome
 	})
 
 chrome
-	.command('targets')
-	.aliases(['list', 'ls'])
-	.description('List Chrome targets (tabs, extensions, etc.)')
-	.option('--type <type>', 'Filter by target type (e.g. page, worker)')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus chrome targets\n  $ argus chrome targets --type page\n  $ argus chrome targets --json\n  $ argus chrome targets --id app\n',
-	)
-	.action(async (options) => {
-		await runChromeTargets(options)
-	})
-
-chrome
-	.command('open')
-	.alias('new')
-	.description('Open a new tab in Chrome')
-	.requiredOption('--url <url>', 'URL to open')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus chrome open --url http://localhost:3000\n  $ argus chrome open --url localhost:3000\n  $ argus chrome open --url http://example.com --json\n',
-	)
-	.action(async (options) => {
-		await runChromeOpen(options)
-	})
-
-chrome
-	.command('activate')
-	.description('Activate (focus) a Chrome target')
-	.argument('<targetId>', 'Target ID to activate')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus chrome activate ABCD1234\n  $ argus chrome activate ABCD1234 --json\n')
-	.action(async (targetId, options) => {
-		await runChromeActivate({ ...options, targetId })
-	})
-
-chrome
-	.command('close')
-	.description('Close a Chrome target')
-	.argument('<targetId>', 'Target ID to close')
-	.option('--host <host>', 'CDP host')
-	.option('--port <port>', 'CDP port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus chrome close ABCD1234\n  $ argus chrome close ABCD1234 --json\n')
-	.action(async (targetId, options) => {
-		await runChromeClose({ ...options, targetId })
-	})
-
-chrome
 	.command('stop')
 	.alias('quit')
 	.description('Close the Chrome instance via CDP')
@@ -412,17 +344,81 @@ chrome
 		await runChromeStop(options)
 	})
 
-chrome
-	.command('reload')
+const collectParam = (value: string, previous: string[]): string[] => [...previous, value]
+
+const page = program.command('page').alias('tab').description('Page/tab management commands')
+
+page.command('targets')
+	.aliases(['list', 'ls'])
+	.description('List Chrome targets (tabs, extensions, etc.)')
+	.option('--type <type>', 'Filter by target type (e.g. page, worker)')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus page targets\n  $ argus page targets --type page\n  $ argus page targets --json\n  $ argus page targets --id app\n',
+	)
+	.action(async (options) => {
+		await runChromeTargets(options)
+	})
+
+page.command('open')
+	.alias('new')
+	.description('Open a new tab in Chrome')
+	.requiredOption('--url <url>', 'URL to open')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus page open --url http://localhost:3000\n  $ argus page open --url localhost:3000\n  $ argus page open --url http://example.com --json\n',
+	)
+	.action(async (options) => {
+		await runChromeOpen(options)
+	})
+
+page.command('activate')
+	.description('Activate (focus) a Chrome target')
+	.argument('<targetId>', 'Target ID to activate')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus page activate ABCD1234\n  $ argus page activate ABCD1234 --json\n')
+	.action(async (targetId, options) => {
+		await runChromeActivate({ ...options, targetId })
+	})
+
+page.command('close')
+	.description('Close a Chrome target')
+	.argument('<targetId>', 'Target ID to close')
+	.option('--host <host>', 'CDP host')
+	.option('--port <port>', 'CDP port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus page close ABCD1234\n  $ argus page close ABCD1234 --json\n')
+	.action(async (targetId, options) => {
+		await runChromeClose({ ...options, targetId })
+	})
+
+page.command('reload')
 	.description('Reload a Chrome target')
 	.argument('<targetId>', 'Target ID to reload')
 	.option('--host <host>', 'CDP host')
 	.option('--port <port>', 'CDP port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--param <key=value>', 'Update query param (repeatable, overwrite semantics)', collectParam, [])
+	.option('--params <a=b&c=d>', 'Update query params from string (overwrite semantics)')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus chrome reload ABCD1234\n  $ argus chrome reload ABCD1234 --json\n')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus page reload ABCD1234\n  $ argus page reload ABCD1234 --json\n  $ argus page reload ABCD1234 --param foo=bar\n  $ argus page reload ABCD1234 --param foo=bar --param baz=qux\n  $ argus page reload ABCD1234 --params "a=1&b=2"\n',
+	)
 	.action(async (targetId, options) => {
-		await runChromeReload({ ...options, targetId })
+		await runPageReload({ ...options, targetId })
 	})
 
 const watcher = program.command('watcher').description('Watcher management commands')
