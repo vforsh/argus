@@ -3,13 +3,12 @@ import type { RegistryV1, StatusResponse } from '@vforsh/argus-core'
 import type { ChromeVersionResponse } from './chrome.js'
 import { getArgusHomeDir, getRegistryPath } from '@vforsh/argus-core'
 import { fetchJson } from '../httpClient.js'
-import { loadRegistry, removeWatcherAndPersist } from '../registry.js'
+import { loadRegistry } from '../registry.js'
 import { createOutput } from '../output/io.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
 
 export type DoctorOptions = {
 	json?: boolean
-	pruneDead?: boolean
 }
 
 type DoctorStatus = 'ok' | 'warn' | 'fail'
@@ -62,23 +61,17 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 		message: string
 		attached?: boolean
 		target?: { title: string | null; url: string | null } | null
-		pruned?: boolean
 	}>
 
 	for (const watcher of watcherEntries) {
 		const statusResult = await checkWatcherStatus(watcher.host, watcher.port)
 		if (!statusResult.ok) {
-			const shouldPrune = options.pruneDead === true
-			if (shouldPrune && registry) {
-				await removeWatcherAndPersist(registry, watcher.id)
-			}
 			watcherReports.push({
 				id: watcher.id,
 				host: watcher.host,
 				port: watcher.port,
 				status: 'warn',
 				message: `unreachable (${statusResult.error})`,
-				pruned: shouldPrune,
 			})
 			continue
 		}
@@ -133,9 +126,8 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 		const targetLabel = report.target?.title || report.target?.url
 			? ` (${report.target?.title ?? ''}${report.target?.title && report.target?.url ? ' • ' : ''}${report.target?.url ?? ''})`
 			: ''
-		const prunedLabel = report.pruned ? ' pruned' : ''
 		output.writeHuman(
-			`${formatStatus(report.status)} watcher ${report.id} ${report.host}:${report.port} ${report.message}${targetLabel}${prunedLabel}`.trim(),
+			`${formatStatus(report.status)} watcher ${report.id} ${report.host}:${report.port} ${report.message}${targetLabel}`.trim(),
 		)
 	}
 }

@@ -1,5 +1,4 @@
 import type { TailResponse } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
 import { createOutput } from '../output/io.js'
@@ -19,7 +18,6 @@ export type TailOptions = {
 	after?: string
 	timeout?: string
 	limit?: string
-	pruneDead?: boolean
 }
 
 /** Execute the tail command for a watcher id. */
@@ -37,7 +35,6 @@ export const runTail = async (id: string | undefined, options: TailOptions): Pro
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	let after = parseNumber(options.after) ?? 0
 	const timeoutMs = parseNumber(options.timeout) ?? 25_000
@@ -87,9 +84,6 @@ export const runTail = async (id: string | undefined, options: TailOptions): Pro
 			response = await fetchJson<TailResponse>(url, { timeoutMs: timeoutMs + 5_000 })
 		} catch (error) {
 			output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-			if (options.pruneDead) {
-				registry = await removeWatcherAndPersist(registry, watcher.id)
-			}
 			process.exitCode = 1
 			return
 		}

@@ -1,5 +1,4 @@
 import type { LogsResponse } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
 import { createOutput } from '../output/io.js'
@@ -20,7 +19,6 @@ export type LogsOptions = {
 	since?: string
 	after?: string
 	limit?: string
-	pruneDead?: boolean
 }
 
 /** Execute the logs command for a watcher id. */
@@ -38,7 +36,6 @@ export const runLogs = async (id: string | undefined, options: LogsOptions): Pro
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	const params = new URLSearchParams()
 	const after = parseNumber(options.after)
@@ -87,9 +84,6 @@ export const runLogs = async (id: string | undefined, options: LogsOptions): Pro
 		response = await fetchJson<LogsResponse>(url, { timeoutMs: 5_000 })
 	} catch (error) {
 		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		if (options.pruneDead) {
-			registry = await removeWatcherAndPersist(registry, watcher.id)
-		}
 		process.exitCode = 1
 		return
 	}

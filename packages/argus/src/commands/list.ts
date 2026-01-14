@@ -1,5 +1,5 @@
-import type { RegistryV1, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import type { StatusResponse, WatcherRecord } from '@vforsh/argus-core'
+import { loadRegistry, pruneRegistry } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatWatcherLine } from '../output/format.js'
 import { createOutput } from '../output/io.js'
@@ -8,7 +8,6 @@ import { createOutput } from '../output/io.js'
 export type ListOptions = {
 	json?: boolean
 	byCwd?: string
-	pruneDead?: boolean
 }
 
 /** Execute the list command. */
@@ -40,11 +39,7 @@ export const runList = async (options: ListOptions): Promise<void> => {
 			results.push({ watcher, status })
 		} catch (error) {
 			output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-			if (options.pruneDead) {
-				registry = await removeWatcherAndPersist(registry, watcher.id)
-			} else {
-				results.push({ watcher })
-			}
+			results.push({ watcher })
 		}
 	}
 

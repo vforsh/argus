@@ -1,5 +1,4 @@
 import type { DomInfoResponse, ErrorResponse } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatDomInfo } from '../output/dom.js'
 import { createOutput } from '../output/io.js'
@@ -12,7 +11,6 @@ export type DomInfoOptions = {
 	all?: boolean
 	outerHtmlMax?: string
 	json?: boolean
-	pruneDead?: boolean
 }
 
 /** Execute the dom info command for a watcher id. */
@@ -43,7 +41,6 @@ export const runDomInfo = async (id: string | undefined, options: DomInfoOptions
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	const url = `http://${watcher.host}:${watcher.port}/dom/info`
 	let response: DomInfoResponse | ErrorResponse
@@ -60,9 +57,6 @@ export const runDomInfo = async (id: string | undefined, options: DomInfoOptions
 		})
 	} catch (error) {
 		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		if (options.pruneDead) {
-			registry = await removeWatcherAndPersist(registry, watcher.id)
-		}
 		process.exitCode = 1
 		return
 	}

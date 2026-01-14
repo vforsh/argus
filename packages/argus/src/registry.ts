@@ -25,3 +25,16 @@ export const removeWatcherAndPersist = async (registry: RegistryV1, id: string):
 	await writeRegistry(next)
 	return next
 }
+
+/** Remove multiple watcher entries and persist registry once. */
+export const removeWatchersAndPersist = async (registry: RegistryV1, ids: string[]): Promise<RegistryV1> => {
+	if (ids.length === 0) {
+		return registry
+	}
+	let next = registry
+	for (const id of ids) {
+		next = removeWatcherEntry(next, id)
+	}
+	await writeRegistry(next)
+	return next
+}

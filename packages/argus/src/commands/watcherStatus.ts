@@ -1,5 +1,4 @@
 import type { StatusResponse } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
 import { writeWatcherCandidates } from '../watchers/candidates.js'
@@ -8,7 +7,6 @@ import { resolveWatcher } from '../watchers/resolveWatcher.js'
 /** Options for the watcher status command. */
 export type WatcherStatusOptions = {
 	json?: boolean
-	pruneDead?: boolean
 }
 
 /** Execute the watcher status command. */
@@ -26,7 +24,6 @@ export const runWatcherStatus = async (id: string | undefined, options: WatcherS
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	const url = `http://${watcher.host}:${watcher.port}/status`
 	let status: StatusResponse
@@ -34,9 +31,6 @@ export const runWatcherStatus = async (id: string | undefined, options: WatcherS
 		status = await fetchJson<StatusResponse>(url, { timeoutMs: 2_000 })
 	} catch (error) {
 		output.writeWarn(`unreachable ${watcher.id} ${watcher.host}:${watcher.port} (${formatError(error)})`)
-		if (options.pruneDead) {
-			registry = await removeWatcherAndPersist(registry, watcher.id)
-		}
 		process.exitCode = 1
 		return
 	}

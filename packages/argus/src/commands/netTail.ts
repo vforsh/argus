@@ -1,5 +1,4 @@
 import type { NetTailResponse } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatNetworkRequest } from '../output/format.js'
 import { createOutput } from '../output/io.js'
@@ -15,7 +14,6 @@ export type NetTailOptions = {
 	timeout?: string
 	since?: string
 	grep?: string
-	pruneDead?: boolean
 }
 
 /** Execute the net tail command for a watcher id. */
@@ -33,7 +31,6 @@ export const runNetTail = async (id: string | undefined, options: NetTailOptions
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	let after = parseNumber(options.after) ?? 0
 	const timeoutMs = parseNumber(options.timeout) ?? 25_000
@@ -75,9 +72,6 @@ export const runNetTail = async (id: string | undefined, options: NetTailOptions
 			response = await fetchJson<NetTailResponse>(url, { timeoutMs: timeoutMs + 5_000 })
 		} catch (error) {
 			output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-			if (options.pruneDead) {
-				registry = await removeWatcherAndPersist(registry, watcher.id)
-			}
 			process.exitCode = 1
 			return
 		}

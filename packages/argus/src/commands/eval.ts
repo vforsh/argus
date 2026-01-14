@@ -1,6 +1,5 @@
 import type { EvalResponse } from '@vforsh/argus-core'
 import { previewStringify } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
@@ -19,7 +18,6 @@ export type EvalOptions = {
 	interval?: string
 	count?: string
 	until?: string
-	pruneDead?: boolean
 }
 
 /** Execute the eval command for a watcher id. */
@@ -82,7 +80,6 @@ export const runEval = async (id: string | undefined, expression: string, option
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	const timeoutMs = parseNumber(options.timeout)
 
@@ -98,11 +95,6 @@ export const runEval = async (id: string | undefined, expression: string, option
 		})
 
 		if (!singleResult.ok) {
-			if (singleResult.kind === 'transport') {
-				if (options.pruneDead) {
-					registry = await removeWatcherAndPersist(registry, watcher.id)
-				}
-			}
 			printError(singleResult, options, output)
 			process.exitCode = 1
 			return
@@ -134,11 +126,6 @@ export const runEval = async (id: string | undefined, expression: string, option
 		})
 
 		if (!iterationResult.ok) {
-			if (iterationResult.kind === 'transport') {
-				if (options.pruneDead) {
-					registry = await removeWatcherAndPersist(registry, watcher.id)
-				}
-			}
 			printError(iterationResult, options, output)
 			process.exitCode = 1
 			return

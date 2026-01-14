@@ -1,5 +1,4 @@
 import type { NetResponse } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatNetworkRequest } from '../output/format.js'
 import { createOutput } from '../output/io.js'
@@ -14,7 +13,6 @@ export type NetOptions = {
 	limit?: string
 	since?: string
 	grep?: string
-	pruneDead?: boolean
 }
 
 /** Execute the net command for a watcher id. */
@@ -32,7 +30,6 @@ export const runNet = async (id: string | undefined, options: NetOptions): Promi
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	const params = new URLSearchParams()
 	const after = parseNumber(options.after)
@@ -63,9 +60,6 @@ export const runNet = async (id: string | undefined, options: NetOptions): Promi
 		response = await fetchJson<NetResponse>(url, { timeoutMs: 5_000 })
 	} catch (error) {
 		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		if (options.pruneDead) {
-			registry = await removeWatcherAndPersist(registry, watcher.id)
-		}
 		process.exitCode = 1
 		return
 	}

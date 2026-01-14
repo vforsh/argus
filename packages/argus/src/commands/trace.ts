@@ -1,5 +1,4 @@
-import type { RegistryV1, TraceStartResponse, TraceStopResponse, WatcherRecord } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
+import type { TraceStartResponse, TraceStopResponse, WatcherRecord } from '@vforsh/argus-core'
 import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
@@ -13,7 +12,6 @@ export type TraceOptions = {
 	out?: string
 	categories?: string
 	options?: string
-	pruneDead?: boolean
 }
 
 /** Options for the trace start command. */
@@ -22,14 +20,12 @@ export type TraceStartOptions = {
 	out?: string
 	categories?: string
 	options?: string
-	pruneDead?: boolean
 }
 
 /** Options for the trace stop command. */
 export type TraceStopOptions = {
 	json?: boolean
 	traceId?: string
-	pruneDead?: boolean
 }
 
 /** Execute trace start + stop with duration. */
@@ -59,17 +55,16 @@ export const runTrace = async (id: string | undefined, options: TraceOptions): P
 		return
 	}
 
-	let registry = resolved.registry
 	const watcher = resolved.watcher
 
-	const start = await runTraceStartInternal(watcher, registry, options, output)
+	const start = await runTraceStartInternal(watcher, options, output)
 	if (!start) {
 		return
 	}
 
 	await delay(durationMs)
 
-	const stop = await runTraceStopInternal(watcher, registry, options, output)
+	const stop = await runTraceStopInternal(watcher, {}, output)
 	if (!stop) {
 		return
 	}
@@ -96,7 +91,7 @@ export const runTraceStart = async (id: string | undefined, options: TraceStartO
 		return
 	}
 
-	const start = await runTraceStartInternal(resolved.watcher, resolved.registry, options, output)
+	const start = await runTraceStartInternal(resolved.watcher, options, output)
 	if (!start) {
 		return
 	}
@@ -124,7 +119,7 @@ export const runTraceStop = async (id: string | undefined, options: TraceStopOpt
 		return
 	}
 
-	const stop = await runTraceStopInternal(resolved.watcher, resolved.registry, options, output)
+	const stop = await runTraceStopInternal(resolved.watcher, options, output)
 	if (!stop) {
 		return
 	}
@@ -139,8 +134,7 @@ export const runTraceStop = async (id: string | undefined, options: TraceStopOpt
 
 const runTraceStartInternal = async (
 	watcher: WatcherRecord,
-	registry: RegistryV1,
-	options: { out?: string; categories?: string; options?: string; pruneDead?: boolean },
+	options: { out?: string; categories?: string; options?: string },
 	output: ReturnType<typeof createOutput>,
 ): Promise<TraceStartResponse | null> => {
 	const url = `http://${watcher.host}:${watcher.port}/trace/start`
@@ -157,9 +151,6 @@ const runTraceStartInternal = async (
 		return response
 	} catch (error) {
 		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		if (options.pruneDead) {
-			await removeWatcherAndPersist(registry, watcher.id)
-		}
 		process.exitCode = 1
 		return null
 	}
@@ -167,8 +158,7 @@ const runTraceStartInternal = async (
 
 const runTraceStopInternal = async (
 	watcher: WatcherRecord,
-	registry: RegistryV1,
-	options: { traceId?: string; pruneDead?: boolean },
+	options: { traceId?: string },
 	output: ReturnType<typeof createOutput>,
 ): Promise<TraceStopResponse | null> => {
 	const url = `http://${watcher.host}:${watcher.port}/trace/stop`
@@ -181,9 +171,6 @@ const runTraceStopInternal = async (
 		return response
 	} catch (error) {
 		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		if (options.pruneDead) {
-			await removeWatcherAndPersist(registry, watcher.id)
-		}
 		process.exitCode = 1
 		return null
 	}

@@ -27,10 +27,10 @@ argus doctor
 ### Commands
 
 - **`argus list`**: Discover registered Argus watchers and their IDs.
-    - Use this first to find the `<id>` you’ll pass to other commands (often something like `app`).
+    - Use this first to find the `<id>` you'll pass to other commands (often something like `app`).
     - Tip: add `--json` for scripting.
     - Tip: add `--by-cwd <substring>` to filter watchers by their working directory.
-    - Tip: add `--prune-dead` to remove unreachable watchers from the registry.
+    - Tip: use `argus watcher prune` to remove unreachable watchers from the registry.
 
 - **`argus logs [id]`**: Fetch a bounded slice of log history for a watcher.
     - Best for “what already happened?” (e.g. “show me errors from the last 10 minutes”).
@@ -108,6 +108,8 @@ Manage tabs/targets via CDP (aliases: `tab`).
 
 #### Watcher commands
 
+Also available via `argus watchers` (plural alias).
+
 - **`argus watcher list`**: Same output as `argus list`, but namespaced under `watcher`.
     - Aliases: `ls`.
     - Example: `argus watcher list --by-cwd my-project`.
@@ -125,6 +127,17 @@ Manage tabs/targets via CDP (aliases: `tab`).
     - Optional: `--chrome-host <host>` (default: `127.0.0.1`), `--chrome-port <port>` (default: `9222`), `--no-page-indicator`, `--json`.
     - Note: the in-page watcher indicator badge is enabled by default.
     - Example: `argus watcher start --id app --url localhost:3000 --chrome-port 9223`.
+
+- **`argus watcher prune`**: Remove unreachable watchers from the registry.
+    - Alias: `clean`.
+    - Options: `--by-cwd <substring>` to filter candidates, `--dry-run` to preview without removing, `--json`.
+    - Examples:
+        - `argus watcher prune`
+        - `argus watcher prune --by-cwd my-project`
+        - `argus watcher prune --dry-run`
+        - `argus watcher prune --dry-run --json`
+
+#### Diagnostics
 
 - **`argus doctor`**: Run environment diagnostics for registry, watchers, WebSocket availability, Chrome bin, and CDP.
     - Tip: add `--json` for scripting.
@@ -171,7 +184,8 @@ For commands that accept `[id]`:
 
 - **Watcher registry cleanup**:
     - Argus does **not** remove watchers on single failures by default.
-    - Use `--prune-dead` to explicitly remove unreachable watchers from the registry.
+    - Use `argus watcher prune` to explicitly remove unreachable watchers from the registry.
+    - Use `argus watcher prune --dry-run` to preview what would be removed.
 
 #### `eval` options
 
@@ -225,13 +239,8 @@ For commands that accept `[id]`:
 
 - **`--since <duration>`**: time window (history).
     - **What**: limits results to events within the last duration (e.g. `10m`, `2h`, `30s`).
-    - **When**: when you only care about “recent” history (typically with `logs`).
+    - **When**: when you only care about "recent" history (typically with `logs`).
     - **Why**: avoids dumping an entire backlog when you only need the latest slice.
-
-- **`--prune-dead`**: remove unreachable watchers from the registry.
-    - **What**: deletes registry entries only when explicitly requested.
-    - **When**: when you know a watcher is gone and want `argus list` to be clean.
-    - **Why**: prevents accidental registry churn on transient failures.
 
 ## Output
 

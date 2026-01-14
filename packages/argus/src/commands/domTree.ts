@@ -1,5 +1,4 @@
 import type { DomTreeResponse, ErrorResponse } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatDomTree } from '../output/dom.js'
 import { createOutput } from '../output/io.js'
@@ -13,7 +12,6 @@ export type DomTreeOptions = {
 	maxNodes?: string
 	all?: boolean
 	json?: boolean
-	pruneDead?: boolean
 }
 
 /** Execute the dom tree command for a watcher id. */
@@ -51,7 +49,6 @@ export const runDomTree = async (id: string | undefined, options: DomTreeOptions
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	const url = `http://${watcher.host}:${watcher.port}/dom/tree`
 	let response: DomTreeResponse | ErrorResponse
@@ -69,9 +66,6 @@ export const runDomTree = async (id: string | undefined, options: DomTreeOptions
 		})
 	} catch (error) {
 		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		if (options.pruneDead) {
-			registry = await removeWatcherAndPersist(registry, watcher.id)
-		}
 		process.exitCode = 1
 		return
 	}

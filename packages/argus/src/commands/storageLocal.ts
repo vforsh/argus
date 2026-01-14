@@ -7,7 +7,6 @@ import type {
 	StorageLocalClearResponse,
 	ErrorResponse,
 } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
 import { writeWatcherCandidates } from '../watchers/candidates.js'
@@ -17,7 +16,6 @@ import { resolveWatcher } from '../watchers/resolveWatcher.js'
 export type StorageLocalOptions = {
 	origin?: string
 	json?: boolean
-	pruneDead?: boolean
 }
 
 /** Execute the storage local get command. */
@@ -134,7 +132,6 @@ const callStorageLocal = async (
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	const url = `http://${watcher.host}:${watcher.port}/storage/local`
 	try {
@@ -155,9 +152,6 @@ const callStorageLocal = async (
 		return response as StorageLocalResponse
 	} catch (error) {
 		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		if (options.pruneDead) {
-			registry = await removeWatcherAndPersist(registry, watcher.id)
-		}
 		process.exitCode = 1
 		return null
 	}

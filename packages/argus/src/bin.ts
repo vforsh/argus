@@ -17,6 +17,7 @@ import { runDoctor } from './commands/doctor.js'
 import { runWatcherStart } from './commands/watcherStart.js'
 import { runWatcherStatus } from './commands/watcherStatus.js'
 import { runWatcherStop } from './commands/watcherStop.js'
+import { runWatcherPrune } from './commands/watcherPrune.js'
 import { runStorageLocalGet, runStorageLocalSet, runStorageLocalRemove, runStorageLocalList, runStorageLocalClear } from './commands/storageLocal.js'
 
 const collectMatch = (value: string, previous: string[]): string[] => [...previous, value]
@@ -69,7 +70,6 @@ program
 	.description('List registered watchers')
 	.option('--json', 'Output JSON for automation')
 	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus list\n  $ argus list --json\n  $ argus list --by-cwd my-project\n')
 	.action(async (options) => {
 		await runList(options)
@@ -79,7 +79,6 @@ program
 	.command('doctor')
 	.description('Run environment diagnostics for Argus')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus doctor\n  $ argus doctor --json\n')
 	.action(async (options) => {
 		await runDoctor(options)
@@ -100,7 +99,6 @@ program
 	.option('--limit <count>', 'Maximum number of events')
 	.option('--json', 'Output bounded JSON preview for automation')
 	.option('--json-full', 'Output full JSON (can be very large)')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus logs app\n  $ argus logs app --since 10m --levels error,warning\n  $ argus logs app --json\n  $ argus logs app --json-full\n',
@@ -134,7 +132,6 @@ program
 	.option('--timeout <ms>', 'Long-poll timeout in milliseconds')
 	.option('--json', 'Output bounded newline-delimited JSON events')
 	.option('--json-full', 'Output full newline-delimited JSON events (can be very large)')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus tail app\n  $ argus tail app --levels error\n  $ argus tail app --json\n  $ argus tail app --json-full\n',
@@ -164,7 +161,6 @@ const net = program
 	.option('--since <duration>', 'Filter by time window (e.g. 10m, 2h, 30s)')
 	.option('--grep <substring>', 'Substring match over redacted URLs')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus net app --since 5m\n  $ argus net app --grep api\n  $ argus net app --json\n')
 	.action(async (id, options) => {
 		await runNet(id, options)
@@ -179,7 +175,6 @@ net.command('tail')
 	.option('--since <duration>', 'Filter by time window (e.g. 10m, 2h, 30s)')
 	.option('--grep <substring>', 'Substring match over redacted URLs')
 	.option('--json', 'Output newline-delimited JSON requests')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus net tail app\n  $ argus net tail app --grep api\n  $ argus net tail app --json\n')
 	.action(async (id, options) => {
 		await runNetTail(id, options)
@@ -200,7 +195,6 @@ program
 	.option('--interval <ms|duration>', 'Re-evaluate every interval (e.g. 500, 3s)')
 	.option('--count <n>', 'Stop after N iterations (requires --interval)')
 	.option('--until <condition>', 'Stop when local condition becomes truthy (requires --interval)')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch(\\"/ping\\").then(r => r.status)"\n  $ argus eval app "document.title" --no-fail-on-exception\n  $ argus eval app "1+1" --retry 3\n  $ argus eval app "1+1" --silent\n  $ argus eval app "Date.now()" --interval 500 --count 10\n  $ argus eval app "document.title" --interval 250 --until \'result === \"ready\"\'\n',
@@ -229,7 +223,6 @@ const trace = program
 	.option('--categories <categories>', 'Comma-separated tracing categories')
 	.option('--options <options>', 'Tracing options string')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus trace app --duration 3s --out trace.json\n')
 	.action(async (id, options) => {
 		await runTrace(id, options)
@@ -243,7 +236,6 @@ trace
 	.option('--categories <categories>', 'Comma-separated tracing categories')
 	.option('--options <options>', 'Tracing options string')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus trace start app --out trace.json\n')
 	.action(async (id, options) => {
 		await runTraceStart(id, options)
@@ -255,7 +247,6 @@ trace
 	.description('Stop Chrome tracing')
 	.option('--trace-id <id>', 'Trace id returned from start')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus trace stop app\n')
 	.action(async (id, options) => {
 		await runTraceStop(id, options)
@@ -268,7 +259,6 @@ program
 	.option('--out <file>', 'Output screenshot file path (relative to artifacts base directory)')
 	.option('--selector <selector>', 'Optional CSS selector for element-only capture')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus screenshot app --out shot.png\n  $ argus screenshot app --selector "body" --out body.png\n')
 	.action(async (id, options) => {
 		await runScreenshot(id, options)
@@ -284,7 +274,6 @@ dom.command('tree')
 	.option('--max-nodes <n>', 'Max total nodes to return (default: 5000)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus dom tree app --selector "body"\n  $ argus dom tree app --selector "div" --all --depth 3\n  $ argus dom tree app --selector "#root" --json\n',
@@ -300,7 +289,6 @@ dom.command('info')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
 	.option('--outer-html-max <n>', 'Max characters for outerHTML (default: 50000)')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus dom info app --selector "body"\n  $ argus dom info app --selector "div" --all\n  $ argus dom info app --selector "#root" --json\n',
@@ -445,7 +433,7 @@ page.command('reload')
 		await runPageReload({ ...options, targetId })
 	})
 
-const watcher = program.command('watcher').description('Watcher management commands')
+const watcher = program.command('watcher').alias('watchers').description('Watcher management commands')
 
 watcher
 	.command('list')
@@ -453,7 +441,6 @@ watcher
 	.description('List registered watchers')
 	.option('--json', 'Output JSON for automation')
 	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus watcher list\n  $ argus watcher list --json\n  $ argus watcher list --by-cwd my-project\n')
 	.action(async (options) => {
 		await runList(options)
@@ -465,7 +452,6 @@ watcher
 	.argument('[id]', 'Watcher id to query')
 	.description('Check watcher status')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus watcher status app\n  $ argus watcher status app --json\n')
 	.action(async (id, options) => {
 		await runWatcherStatus(id, options)
@@ -498,6 +484,21 @@ watcher
 		await runWatcherStart(options)
 	})
 
+watcher
+	.command('prune')
+	.alias('clean')
+	.description('Remove unreachable watchers from the registry')
+	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
+	.option('--dry-run', 'Preview what would be removed without changing the registry')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus watcher prune\n  $ argus watcher prune --by-cwd my-project\n  $ argus watcher prune --dry-run\n  $ argus watcher prune --dry-run --json\n',
+	)
+	.action(async (options) => {
+		await runWatcherPrune(options)
+	})
+
 const storage = program.command('storage').description('Interact with browser storage APIs')
 
 const storageLocal = storage.command('local').description('Manage localStorage for the attached page')
@@ -508,7 +509,6 @@ storageLocal
 	.argument('<key>', 'localStorage key to retrieve')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus storage local get app myKey\n  $ argus storage local get app myKey --json\n')
 	.action(async (id, key, options) => {
 		await runStorageLocalGet(id, key, options)
@@ -521,7 +521,6 @@ storageLocal
 	.argument('<value>', 'Value to store')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus storage local set app myKey "myValue"\n  $ argus storage local set app config \'{"debug":true}\'\n')
 	.action(async (id, key, value, options) => {
 		await runStorageLocalSet(id, key, value, options)
@@ -533,7 +532,6 @@ storageLocal
 	.argument('<key>', 'localStorage key to remove')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus storage local remove app myKey\n')
 	.action(async (id, key, options) => {
 		await runStorageLocalRemove(id, key, options)
@@ -544,7 +542,6 @@ storageLocal
 	.argument('[id]', 'Watcher id')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus storage local list app\n  $ argus storage local list app --json\n')
 	.action(async (id, options) => {
 		await runStorageLocalList(id, options)
@@ -555,7 +552,6 @@ storageLocal
 	.argument('[id]', 'Watcher id')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
-	.option('--prune-dead', 'Remove unreachable watchers from the registry')
 	.addHelpText('after', '\nExamples:\n  $ argus storage local clear app\n')
 	.action(async (id, options) => {
 		await runStorageLocalClear(id, options)

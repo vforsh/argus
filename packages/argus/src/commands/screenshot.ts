@@ -1,5 +1,4 @@
 import type { ScreenshotResponse } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
 import { writeWatcherCandidates } from '../watchers/candidates.js'
@@ -10,7 +9,6 @@ export type ScreenshotOptions = {
 	json?: boolean
 	out?: string
 	selector?: string
-	pruneDead?: boolean
 }
 
 /** Execute the screenshot command for a watcher id. */
@@ -28,7 +26,6 @@ export const runScreenshot = async (id: string | undefined, options: ScreenshotO
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	const url = `http://${watcher.host}:${watcher.port}/screenshot`
 	let response: ScreenshotResponse
@@ -44,9 +41,6 @@ export const runScreenshot = async (id: string | undefined, options: ScreenshotO
 		})
 	} catch (error) {
 		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		if (options.pruneDead) {
-			registry = await removeWatcherAndPersist(registry, watcher.id)
-		}
 		process.exitCode = 1
 		return
 	}
