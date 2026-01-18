@@ -24,5 +24,11 @@
 	"scripts": {
 		"build": "tsc -b",
 		"typecheck": "tsc -b --pretty false --noEmit"
+	},
+	"peerDependencies": {
+		"commander": "^14.0.0"
+	},
+	"devDependencies": {
+		"commander": "^14.0.2"
 	}
 }
