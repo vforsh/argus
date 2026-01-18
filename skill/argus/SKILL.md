@@ -38,6 +38,13 @@ If you want a snapshot of your default profile (copied into a temp dir):
 argus chrome start --default-profile
 ```
 
+If you want DevTools opened immediately:
+
+```bash
+argus chrome start --dev-tools
+argus chrome start --dev-tools-panel console
+```
+
 If Argus can’t find your Chrome user data dir for `--default-profile`, set:
 
 ```bash
@@ -71,11 +78,15 @@ argus screenshot app --out shot.png
 argus chrome start
 argus chrome start --url http://localhost:3000
 argus chrome start --id app
+argus chrome start --dev-tools
+argus chrome start --dev-tools-panel console
 argus chrome start --json
 ```
 
 - **`--url <url>`**: open this URL on launch.
 - **`--id <watcherId>`**: looks up the watcher in the local registry and uses its `match.url` as the startup URL.
+- **`--dev-tools`**: auto-open DevTools for new tabs.
+- **`--dev-tools-panel <panel>`**: open DevTools with a specific panel (`console`, `network`, `elements`).
 - **`--json`**: prints `{ chromePid, cdpHost, cdpPort, userDataDir, startupUrl }`.
 
 ## Starting the watcher (details)
@@ -92,6 +103,43 @@ Notes:
 - **Chrome must already be running** with CDP enabled at `--chrome-host:--chrome-port`.
 - The watcher process runs until Ctrl+C.
 - The in-page watcher indicator badge is **enabled by default**; use `--no-page-indicator` to disable.
+
+## Programmatic watcher (Node API)
+
+Use `@vforsh/argus-watcher` when you want to create/start watchers from code (tests, scripts, custom tooling) instead of running `argus watcher start`.
+
+```js
+import { startWatcher } from '@vforsh/argus-watcher'
+
+const { watcher, events, close } = await startWatcher({
+	// Same concept as `argus watcher start --id <id>`
+	id: 'app',
+
+	// Same concept as `--url` matching (controls which pages to attach to)
+	match: { url: 'localhost:3000' },
+
+	// CDP endpoint for the already-running Chrome instance
+	chrome: { host: '127.0.0.1', port: 9222 },
+
+	// Optional: persist artifacts (logs/traces/screenshots)
+	artifacts: {
+		base: '/tmp/argus/artifacts',
+		logs: { enabled: true },
+	},
+
+	// Optional knobs:
+	// bufferSize, host/port (bind), net, ignoreList, location, pageIndicator, ...
+})
+
+events.on('cdpAttached', ({ target }) => {
+	console.log(`Attached to ${target?.title ?? '(unknown)'}`)
+})
+
+// later
+await close()
+```
+
+For the full `startWatcher(options)` surface (and the `WatcherHandle.events` emitter), see `packages/argus-watcher/README.md`.
 
 ## Page commands (open, reload)
 

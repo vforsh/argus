@@ -11,7 +11,15 @@ import { runScreenshot } from './commands/screenshot.js'
 import { runDomTree } from './commands/domTree.js'
 import { runDomInfo } from './commands/domInfo.js'
 import { runChromeStart } from './commands/chromeStart.js'
-import { runChromeVersion, runChromeStatus, runChromeTargets, runChromeOpen, runChromeActivate, runChromeClose, runChromeStop } from './commands/chrome.js'
+import {
+	runChromeVersion,
+	runChromeStatus,
+	runChromeTargets,
+	runChromeOpen,
+	runChromeActivate,
+	runChromeClose,
+	runChromeStop,
+} from './commands/chrome.js'
 import { runPageReload } from './commands/page.js'
 import { runDoctor } from './commands/doctor.js'
 import { runWatcherStart } from './commands/watcherStart.js'
@@ -305,10 +313,12 @@ chrome
 	.option('--url <url>', 'URL to open in Chrome')
 	.option('--id <watcherId>', 'Use match.url from a registered watcher')
 	.option('--default-profile', 'Use default Chrome profile instead of a temp profile')
+	.option('--dev-tools', 'Open DevTools for new tabs')
+	.option('--dev-tools-panel <panel>', 'Open DevTools with a specific panel (e.g. console)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --id app\n  $ argus chrome start --default-profile\n  $ argus chrome start --json\n',
+		'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --id app\n  $ argus chrome start --default-profile\n  $ argus chrome start --dev-tools\n  $ argus chrome start --dev-tools-panel console\n  $ argus chrome start --json\n',
 	)
 	.action(async (options) => {
 		await runChromeStart(options)
@@ -334,10 +344,7 @@ chrome
 	.option('--cdp <host:port>', 'CDP host:port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus chrome status\n  $ argus chrome status --cdp 127.0.0.1:9222\n  $ argus chrome status --id app\n',
-	)
+	.addHelpText('after', '\nExamples:\n  $ argus chrome status\n  $ argus chrome status --cdp 127.0.0.1:9222\n  $ argus chrome status --id app\n')
 	.action(async (options) => {
 		await runChromeStatus(options)
 	})

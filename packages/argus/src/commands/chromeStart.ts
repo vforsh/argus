@@ -8,12 +8,15 @@ import { createOutput } from '../output/io.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
 import { getCdpPort } from '../utils/ports.js'
 import type { ChromeVersionResponse } from './chrome.js'
+import type { ChromeTargetResponse } from '../cdp/types.js'
 
 export type ChromeStartOptions = {
 	url?: string
 	id?: string
 	json?: boolean
 	defaultProfile?: boolean
+	devTools?: boolean
+	devToolsPanel?: string
 }
 
 type ChromeStartResult = {
@@ -119,6 +122,84 @@ const waitForCdpReady = async (host: string, port: number, chrome: ChildProcess)
 	return { ready: false, error: lastError ?? 'Timed out waiting for CDP.' }
 }
 
+const normalizeDevToolsPanel = (panel?: string): string | null => {
+	if (!panel) {
+		return null
+	}
+	const trimmed = panel.trim()
+	if (!trimmed) {
+		return null
+	}
+	return trimmed
+}
+
+const loadPageTargets = async (host: string, port: number): Promise<ChromeTargetResponse[]> => {
+	const url = `http://${host}:${port}/json/list`
+	const targets = await fetchJson<ChromeTargetResponse[]>(url)
+	return targets.filter((target) => target.type === 'page')
+}
+
+const selectDevToolsTarget = (targets: ChromeTargetResponse[], startupUrl: string | null): ChromeTargetResponse | null => {
+	if (targets.length === 0) {
+		return null
+	}
+	if (startupUrl) {
+		const match = targets.find((target) => target.url === startupUrl)
+		if (match) {
+			return match
+		}
+	}
+	return targets[0] ?? null
+}
+
+const buildDevToolsUrl = (panel: string, target: ChromeTargetResponse): string | null => {
+	if (!target.webSocketDebuggerUrl) {
+		return null
+	}
+	const wsUrl = new URL(target.webSocketDebuggerUrl)
+	const wsParam = `${wsUrl.host}${wsUrl.pathname}`
+	return `chrome-devtools://devtools/bundled/devtools_app.html?panel=${encodeURIComponent(panel)}&ws=${wsParam}`
+}
+
+const openDevToolsPanel = async (
+	host: string,
+	port: number,
+	panel: string,
+	startupUrl: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+	let targets: ChromeTargetResponse[]
+	try {
+		targets = await loadPageTargets(host, port)
+	} catch (error) {
+		return {
+			ok: false,
+			error: `Failed to load targets for DevTools: ${error instanceof Error ? error.message : error}`,
+		}
+	}
+
+	const target = selectDevToolsTarget(targets, startupUrl)
+	if (!target) {
+		return { ok: false, error: 'No page targets available for DevTools.' }
+	}
+
+	const devToolsUrl = buildDevToolsUrl(panel, target)
+	if (!devToolsUrl) {
+		return { ok: false, error: `Target ${target.id} has no webSocketDebuggerUrl.` }
+	}
+
+	const encodedUrl = encodeURIComponent(devToolsUrl)
+	const url = `http://${host}:${port}/json/new?${encodedUrl}`
+	try {
+		await fetchJson<ChromeTargetResponse>(url, { method: 'PUT' })
+		return { ok: true }
+	} catch (error) {
+		return {
+			ok: false,
+			error: `Failed to open DevTools panel: ${error instanceof Error ? error.message : error}`,
+		}
+	}
+}
+
 export const runChromeStart = async (options: ChromeStartOptions): Promise<void> => {
 	const output = createOutput(options)
 	if (options.url && options.id) {
@@ -186,6 +267,9 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		args.push('--no-first-run')
 		args.push('--no-default-browser-check')
 	}
+	if (options.devTools) {
+		args.push('--auto-open-devtools-for-tabs')
+	}
 	if (startupUrl) {
 		args.push(startupUrl)
 	}
@@ -236,6 +320,14 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		} catch {}
 		process.exitCode = 1
 		return
+	}
+
+	const devToolsPanel = normalizeDevToolsPanel(options.devToolsPanel)
+	if (devToolsPanel) {
+		const opened = await openDevToolsPanel(cdpHost, cdpPort, devToolsPanel, startupUrl)
+		if (!opened.ok) {
+			output.writeWarn(opened.error)
+		}
 	}
 
 	const cleanup = () => {
