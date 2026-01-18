@@ -481,11 +481,12 @@ watcher
 	.requiredOption('--url <url>', 'URL pattern to match for capturing logs')
 	.option('--chrome-host <host>', 'Chrome CDP host (default: 127.0.0.1)')
 	.option('--chrome-port <port>', 'Chrome CDP port (default: 9222)')
+	.option('--artifacts <dir>', 'Artifacts base directory (default: <cwd>/argus-artifacts)')
 	.option('--no-page-indicator', 'Disable the in-page watcher indicator')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --url localhost:3000 --no-page-indicator\n  $ argus watcher start --id app --url localhost:3000 --chrome-port 9223\n  $ argus watcher start --id app --url localhost:3000 --json\n',
+		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --url localhost:3000 --no-page-indicator\n  $ argus watcher start --id app --url localhost:3000 --chrome-port 9223\n  $ argus watcher start --id app --url localhost:3000 --artifacts ./artifacts\n  $ argus watcher start --id app --url localhost:3000 --json\n',
 	)
 	.action(async (options) => {
 		await runWatcherStart(options)

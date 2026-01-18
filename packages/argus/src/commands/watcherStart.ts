@@ -1,4 +1,5 @@
 import { startWatcher, type WatcherHandle } from '@vforsh/argus-watcher'
+import path from 'node:path'
 import { createOutput } from '../output/io.js'
 
 export type WatcherStartOptions = {
@@ -8,6 +9,7 @@ export type WatcherStartOptions = {
 	chromeHost?: string
 	chromePort?: string | number
 	pageIndicator?: boolean
+	artifacts?: string
 }
 
 type WatcherStartResult = {
@@ -18,6 +20,7 @@ type WatcherStartResult = {
 	matchUrl: string
 	chromeHost: string
 	chromePort: number
+	artifactsBaseDir?: string
 }
 
 const isValidPort = (port: number): boolean => Number.isFinite(port) && port >= 1 && port <= 65535
@@ -55,6 +58,16 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 
 	const watcherId = options.id.trim()
 	const matchUrl = options.url.trim()
+	let artifactsBaseDir: string | undefined
+	if (options.artifacts != null) {
+		const trimmed = options.artifacts.trim()
+		if (trimmed === '') {
+			output.writeWarn('--artifacts must be a non-empty path when provided.')
+			process.exitCode = 2
+			return
+		}
+		artifactsBaseDir = path.resolve(process.cwd(), trimmed)
+	}
 
 	let handle: WatcherHandle
 	try {
@@ -65,6 +78,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 			host: '127.0.0.1',
 			port: 0,
 			pageIndicator: options.pageIndicator === false ? { enabled: false } : { enabled: true },
+			artifacts: artifactsBaseDir ? { base: artifactsBaseDir } : undefined,
 		})
 	} catch (error) {
 		output.writeWarn(`Failed to start watcher: ${error instanceof Error ? error.message : error}`)
@@ -80,6 +94,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		matchUrl,
 		chromeHost,
 		chromePort,
+		artifactsBaseDir,
 	}
 
 	const cleanup = async () => {
@@ -112,6 +127,9 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		output.writeHuman(`  port=${result.port}`)
 		output.writeHuman(`  matchUrl=${result.matchUrl}`)
 		output.writeHuman(`  chrome=${result.chromeHost}:${result.chromePort}`)
+		if (result.artifactsBaseDir) {
+			output.writeHuman(`  artifacts=${result.artifactsBaseDir}`)
+		}
 	}
 
 	await new Promise(() => {})
