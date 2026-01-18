@@ -112,15 +112,3 @@ cd NEW_DIR && echo "execute PLAN_REL_PATH" | amp
 Notes:
 
 - `PLAN_REL_PATH` is the **repo-relative path** derived in step 2 (e.g. `tasks/impl-plan-editorctl-discover.md`).
-
-8. Execution options
-
-Present the available tools as a numbered list and ask which one the user would like to execute:
-
-1. **Cursor**: `cursor NEW_DIR`
-2. **Codex**: `codex --yolo --cd NEW_DIR "execute PLAN_REL_PATH"`
-3. **Claude Code**: `cd NEW_DIR && claude --dangerously-skip-permissions "execute PLAN_REL_PATH"`
-4. **OpenCode**: `cd NEW_DIR && opencode --prompt "execute PLAN_REL_PATH"`
-5. **Amp**: `cd NEW_DIR && echo "execute PLAN_REL_PATH" | amp`
-
-End with: "Which of these would you like me to execute?"
