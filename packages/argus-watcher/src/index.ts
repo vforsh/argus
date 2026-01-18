@@ -121,13 +121,28 @@ export type StartWatcherOptions = {
 
 /** Handle returned by startWatcher. */
 export type WatcherHandle = {
-	close: () => Promise<void>
+	/**
+	 * The current watcher record (including id/bind address/port and CDP match settings).
+	 *
+	 * This is the shape announced in the local registry and the same metadata served via the HTTP API.
+	 */
 	watcher: WatcherRecord
+
 	/**
 	 * Event emitter for watcher lifecycle and request events.
 	 * Subscribe to 'cdpAttached', 'cdpDetached', and 'httpRequested'.
 	 */
 	events: Emittery<ArgusWatcherEventMap>
+
+	/**
+	 * Stop the watcher and release resources.
+	 *
+	 * Shuts down CDP attachment, stops the HTTP server, closes any artifact writers (file logs),
+	 * clears event listeners, and removes the watcher from the local registry.
+	 *
+	 * Safe to call multiple times.
+	 */
+	close: () => Promise<void>
 }
 
 /**
@@ -334,14 +349,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 /** Log event shape emitted by watchers. */
 export type { LogEvent }
 
-export type {
-	ArgusWatcherEventMap,
-	CdpAttachedEvent,
-	CdpDetachedEvent,
-	HttpRequestEvent,
-	LogRequestQuery,
-	NetRequestQuery,
-} from './events.js'
+export type { ArgusWatcherEventMap, CdpAttachedEvent, CdpDetachedEvent, HttpRequestEvent, LogRequestQuery, NetRequestQuery } from './events.js'
 
 export type { PageIndicatorOptions, PageIndicatorPosition } from './cdp/pageIndicator.js'
 
