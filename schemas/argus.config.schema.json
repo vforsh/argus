@@ -1,0 +1,114 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"title": "Argus config",
+	"type": "object",
+	"additionalProperties": false,
+	"properties": {
+		"$schema": {
+			"type": "string",
+			"description": "Path or URL to the Argus config schema."
+		},
+		"chrome": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"start": {
+					"type": "object",
+					"additionalProperties": false,
+					"description": "Defaults for `argus chrome start`.",
+					"properties": {
+						"url": {
+							"type": "string",
+							"description": "URL to open in Chrome."
+						},
+						"watcherId": {
+							"type": "string",
+							"description": "Use match.url from the watcher registry."
+						},
+						"defaultProfile": {
+							"type": "boolean",
+							"description": "Use a snapshot of the default Chrome profile."
+						},
+						"devTools": {
+							"type": "boolean",
+							"description": "Auto-open DevTools for new tabs."
+						},
+						"devToolsPanel": {
+							"type": "string",
+							"description": "Open DevTools with a specific panel (e.g. console)."
+						}
+					},
+					"allOf": [
+						{
+							"not": {
+								"required": ["url", "watcherId"]
+							}
+						}
+					]
+				}
+			}
+		},
+		"watcher": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"start": {
+					"type": "object",
+					"additionalProperties": false,
+					"description": "Defaults for `argus watcher start`.",
+					"properties": {
+						"id": {
+							"type": "string",
+							"description": "Watcher id to announce in the registry."
+						},
+						"url": {
+							"type": "string",
+							"description": "URL pattern to match for capturing logs."
+						},
+						"chromeHost": {
+							"type": "string",
+							"description": "Chrome CDP host."
+						},
+						"chromePort": {
+							"type": "integer",
+							"minimum": 1,
+							"maximum": 65535,
+							"description": "Chrome CDP port."
+						},
+						"artifacts": {
+							"type": "string",
+							"description": "Artifacts base directory, resolved relative to the config file."
+						},
+						"pageIndicator": {
+							"type": "boolean",
+							"description": "Enable the in-page watcher indicator badge."
+						}
+					}
+				}
+			}
+		}
+	},
+	"examples": [
+		{
+			"$schema": "../schemas/argus.config.schema.json",
+			"chrome": {
+				"start": {
+					"url": "http://localhost:3000",
+					"defaultProfile": false,
+					"devTools": true,
+					"devToolsPanel": "console"
+				}
+			},
+			"watcher": {
+				"start": {
+					"id": "app",
+					"url": "localhost:3000",
+					"chromeHost": "127.0.0.1",
+					"chromePort": 9222,
+					"artifacts": "./artifacts",
+					"pageIndicator": true
+				}
+			}
+		}
+	]
+}

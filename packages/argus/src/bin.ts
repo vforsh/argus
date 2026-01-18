@@ -27,6 +27,13 @@ import { runWatcherStatus } from './commands/watcherStatus.js'
 import { runWatcherStop } from './commands/watcherStop.js'
 import { runWatcherPrune } from './commands/watcherPrune.js'
 import { runStorageLocalGet, runStorageLocalSet, runStorageLocalRemove, runStorageLocalList, runStorageLocalClear } from './commands/storageLocal.js'
+import { runConfigInit } from './commands/configInit.js'
+import {
+	loadArgusConfig,
+	mergeChromeStartOptionsWithConfig,
+	mergeWatcherStartOptionsWithConfig,
+	resolveArgusConfigPath,
+} from './config/argusConfig.js'
 
 const collectMatch = (value: string, previous: string[]): string[] => [...previous, value]
 
@@ -90,6 +97,18 @@ program
 	.addHelpText('after', '\nExamples:\n  $ argus doctor\n  $ argus doctor --json\n')
 	.action(async (options) => {
 		await runDoctor(options)
+	})
+
+const config = program.command('config').description('Manage Argus config files')
+
+config
+	.command('init')
+	.description('Create an Argus config file')
+	.option('--path <file>', 'Path to write the config file (default: .argus/config.json)')
+	.option('--force', 'Overwrite existing config file')
+	.addHelpText('after', '\nExamples:\n  $ argus config init\n  $ argus config init --path argus.config.json\n')
+	.action(async (options) => {
+		await runConfigInit(options)
 	})
 
 program
@@ -205,7 +224,7 @@ program
 	.option('--until <condition>', 'Stop when local condition becomes truthy (requires --interval)')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch(\\"/ping\\").then(r => r.status)"\n  $ argus eval app "document.title" --no-fail-on-exception\n  $ argus eval app "1+1" --retry 3\n  $ argus eval app "1+1" --silent\n  $ argus eval app "Date.now()" --interval 500 --count 10\n  $ argus eval app "document.title" --interval 250 --until \'result === \"ready\"\'\n',
+		'\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch("/ping").then(r => r.status)"\n  $ argus eval app "document.title" --no-fail-on-exception\n  $ argus eval app "1+1" --retry 3\n  $ argus eval app "1+1" --silent\n  $ argus eval app "Date.now()" --interval 500 --count 10\n  $ argus eval app "document.title" --interval 250 --until \'result === "ready"\'\n',
 	)
 	.action(async (id, expression, options) => {
 		await runEval(id, expression, {
@@ -315,13 +334,34 @@ chrome
 	.option('--default-profile', 'Use default Chrome profile instead of a temp profile')
 	.option('--dev-tools', 'Open DevTools for new tabs')
 	.option('--dev-tools-panel <panel>', 'Open DevTools with a specific panel (e.g. console)')
+	.option('--config <path>', 'Path to Argus config file')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --id app\n  $ argus chrome start --default-profile\n  $ argus chrome start --dev-tools\n  $ argus chrome start --dev-tools-panel console\n  $ argus chrome start --json\n',
 	)
-	.action(async (options) => {
-		await runChromeStart(options)
+	.action(async (options, command) => {
+		const { config: configPath, ...cliOptions } = options
+		const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
+		if (!resolvedPath) {
+			if (configPath) {
+				return
+			}
+			await runChromeStart(cliOptions)
+			return
+		}
+
+		const configResult = loadArgusConfig(resolvedPath)
+		if (!configResult) {
+			return
+		}
+
+		const merged = mergeChromeStartOptionsWithConfig(cliOptions, command, configResult)
+		if (!merged) {
+			return
+		}
+
+		await runChromeStart(merged)
 	})
 
 chrome
@@ -406,7 +446,7 @@ page.command('activate')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus page activate ABCD1234\n  $ argus page activate --title \"Docs\"\n  $ argus page activate --url localhost:3000\n  $ argus page activate --match \"Argus\" --json\n',
+		'\nExamples:\n  $ argus page activate ABCD1234\n  $ argus page activate --title "Docs"\n  $ argus page activate --url localhost:3000\n  $ argus page activate --match "Argus" --json\n',
 	)
 	.action(async (targetId, options) => {
 		await runChromeActivate({ ...options, targetId })
@@ -477,19 +517,40 @@ watcher
 watcher
 	.command('start')
 	.description('Start an Argus watcher process')
-	.requiredOption('--id <watcherId>', 'Watcher id to announce in the registry')
-	.requiredOption('--url <url>', 'URL pattern to match for capturing logs')
+	.option('--id <watcherId>', 'Watcher id to announce in the registry')
+	.option('--url <url>', 'URL pattern to match for capturing logs')
 	.option('--chrome-host <host>', 'Chrome CDP host (default: 127.0.0.1)')
 	.option('--chrome-port <port>', 'Chrome CDP port (default: 9222)')
 	.option('--artifacts <dir>', 'Artifacts base directory (default: <cwd>/argus-artifacts)')
 	.option('--no-page-indicator', 'Disable the in-page watcher indicator')
+	.option('--config <path>', 'Path to Argus config file')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --url localhost:3000 --no-page-indicator\n  $ argus watcher start --id app --url localhost:3000 --chrome-port 9223\n  $ argus watcher start --id app --url localhost:3000 --artifacts ./artifacts\n  $ argus watcher start --id app --url localhost:3000 --json\n',
 	)
-	.action(async (options) => {
-		await runWatcherStart(options)
+	.action(async (options, command) => {
+		const { config: configPath, ...cliOptions } = options
+		const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
+		if (!resolvedPath) {
+			if (configPath) {
+				return
+			}
+			await runWatcherStart(cliOptions)
+			return
+		}
+
+		const configResult = loadArgusConfig(resolvedPath)
+		if (!configResult) {
+			return
+		}
+
+		const merged = mergeWatcherStartOptionsWithConfig(cliOptions, command, configResult)
+		if (!merged) {
+			return
+		}
+
+		await runWatcherStart(merged)
 	})
 
 watcher

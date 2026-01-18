@@ -1,0 +1,21 @@
+{
+	"$schema": "../schemas/argus.config.schema.json",
+	"chrome": {
+		"start": {
+			"url": "http://localhost:3000",
+			"defaultProfile": false,
+			"devTools": true,
+			"devToolsPanel": "console"
+		}
+	},
+	"watcher": {
+		"start": {
+			"id": "app",
+			"url": "localhost:3000",
+			"chromeHost": "127.0.0.1",
+			"chromePort": 9222,
+			"artifacts": "./artifacts",
+			"pageIndicator": true
+		}
+	}
+}

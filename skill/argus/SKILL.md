@@ -62,6 +62,41 @@ argus watcher start --id app --url localhost:3000 --chrome-port 9222
 - **`--id`**: the name you’ll use for `logs`, `eval`, `screenshot`, etc.
 - **`--url`**: a URL/pattern used to decide which pages to attach to for capturing logs.
 
+### Config defaults (optional)
+
+Argus can load defaults for `argus chrome start` and `argus watcher start` from a repo-local config file.
+
+- Auto-discovery order: `.argus/config.json`, `argus.config.json`, `argus/config.json`.
+- Use `--config <path>` to point at an explicit file (relative to `cwd` if not absolute).
+- CLI options override config values.
+- `watcher.start.artifacts` is resolved relative to the config file directory.
+- Use `argus config init` to create a starter config file.
+
+Example:
+
+```json
+{
+	"$schema": "../schemas/argus.config.schema.json",
+	"chrome": {
+		"start": {
+			"url": "http://localhost:3000",
+			"devTools": true,
+			"devToolsPanel": "console"
+		}
+	},
+	"watcher": {
+		"start": {
+			"id": "app",
+			"url": "localhost:3000",
+			"chromeHost": "127.0.0.1",
+			"chromePort": 9222,
+			"artifacts": "./artifacts",
+			"pageIndicator": true
+		}
+	}
+}
+```
+
 ### 3) Use the CLI against the watcher
 
 ```bash
@@ -80,6 +115,7 @@ argus chrome start --url http://localhost:3000
 argus chrome start --id app
 argus chrome start --dev-tools
 argus chrome start --dev-tools-panel console
+argus chrome start --config .argus/config.json
 argus chrome start --json
 ```
 
@@ -87,6 +123,7 @@ argus chrome start --json
 - **`--id <watcherId>`**: looks up the watcher in the local registry and uses its `match.url` as the startup URL.
 - **`--dev-tools`**: auto-open DevTools for new tabs.
 - **`--dev-tools-panel <panel>`**: open DevTools with a specific panel (`console`, `network`, `elements`).
+- **`--config <path>`**: load defaults from an Argus config file.
 - **`--json`**: prints `{ chromePid, cdpHost, cdpPort, userDataDir, startupUrl }`.
 
 ## Starting the watcher (details)
@@ -95,6 +132,7 @@ argus chrome start --json
 argus watcher start --id app --url localhost:3000
 argus watcher start --id app --url localhost:3000 --no-page-indicator
 argus watcher start --id app --url localhost:3000 --chrome-host 127.0.0.1 --chrome-port 9222
+argus watcher start --config .argus/config.json
 argus watcher start --id app --url localhost:3000 --json
 ```
 

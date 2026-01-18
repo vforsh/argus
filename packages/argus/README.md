@@ -21,7 +21,42 @@ argus watcher list
 argus watcher status [id]
 argus watcher stop [id]
 argus watcher start --id <id> --url <pattern>
+argus config init
 argus doctor
+```
+
+## Config defaults
+
+Argus can load defaults for `argus chrome start` and `argus watcher start` from a repo-local config file.
+
+- Auto-discovery order: `.argus/config.json`, `argus.config.json`, `argus/config.json`.
+- Use `--config <path>` to point at an explicit file (relative to `cwd` if not absolute).
+- CLI options override config values.
+- `watcher.start.artifacts` is resolved relative to the config file directory.
+
+Example:
+
+```json
+{
+	"$schema": "../schemas/argus.config.schema.json",
+	"chrome": {
+		"start": {
+			"url": "http://localhost:3000",
+			"devTools": true,
+			"devToolsPanel": "console"
+		}
+	},
+	"watcher": {
+		"start": {
+			"id": "app",
+			"url": "localhost:3000",
+			"chromeHost": "127.0.0.1",
+			"chromePort": 9222,
+			"artifacts": "./artifacts",
+			"pageIndicator": true
+		}
+	}
+}
 ```
 
 ### Commands
@@ -53,7 +88,7 @@ argus doctor
 Manage and query a running Chrome instance with remote debugging enabled (CDP).
 
 - **`argus chrome start`**: Launch Chrome with CDP enabled.
-    - Options: `--url <url>`, `--id <watcherId>`, `--default-profile`, `--json`.
+    - Options: `--url <url>`, `--id <watcherId>`, `--default-profile`, `--dev-tools`, `--dev-tools-panel <panel>`, `--config <path>`, `--json`.
     - Example: `argus chrome start --url http://localhost:3000`.
     - Note: `--default-profile` launches Chrome with a copied snapshot of your default profile.
     - Why: recent Chrome versions require a non-default user data dir to expose `--remote-debugging-port`, so Argus copies your default profile into a temp directory and launches Chrome from that copy (keeps your real default profile closed + untouched).
@@ -123,8 +158,8 @@ Also available via `argus watchers` (plural alias).
     - Example: `argus watcher stop app`.
 
 - **`argus watcher start`**: Start an Argus watcher process.
-    - Required: `--id <watcherId>`, `--url <pattern>`.
-    - Optional: `--chrome-host <host>` (default: `127.0.0.1`), `--chrome-port <port>` (default: `9222`), `--no-page-indicator`, `--json`.
+    - Required (CLI or config): `--id <watcherId>`, `--url <pattern>`.
+    - Optional: `--chrome-host <host>` (default: `127.0.0.1`), `--chrome-port <port>` (default: `9222`), `--no-page-indicator`, `--config <path>`, `--json`.
     - Note: the in-page watcher indicator badge is enabled by default.
     - Example: `argus watcher start --id app --url localhost:3000 --chrome-port 9223`.
 
@@ -136,6 +171,11 @@ Also available via `argus watchers` (plural alias).
         - `argus watcher prune --by-cwd my-project`
         - `argus watcher prune --dry-run`
         - `argus watcher prune --dry-run --json`
+
+- **`argus config init`**: Create an Argus config file.
+    - Default path: `.argus/config.json`.
+    - Options: `--path <file>`, `--force`.
+    - Example: `argus config init --path argus.config.json`.
 
 #### Diagnostics
 
