@@ -104,13 +104,12 @@ test('watcher + CLI e2e', async (t) => {
 	)
 
 	// 5b. Assert match/source filters
-	const { stdout: matchOut } = await runCommand(
-		'node',
-		[BIN_PATH, 'logs', watcherId, '--json', '--match', 'nope', '--match', caseMsg],
-		{ env },
-	)
+	const { stdout: matchOut } = await runCommand('node', [BIN_PATH, 'logs', watcherId, '--json', '--match', 'nope', '--match', caseMsg], { env })
 	const matchLogs = JSON.parse(matchOut) as Array<{ text: string }>
-	assert.ok(matchLogs.some((l) => l.text === caseMsg), 'Expected OR match to include case message')
+	assert.ok(
+		matchLogs.some((l) => l.text === caseMsg),
+		'Expected OR match to include case message',
+	)
 
 	const { stdout: caseSensitiveOut } = await runCommand(
 		'node',
@@ -138,7 +137,10 @@ test('watcher + CLI e2e', async (t) => {
 		env,
 	})
 	const sourceLogs = JSON.parse(sourceOut) as Array<{ source: string; text: string }>
-	assert.ok(sourceLogs.some((l) => l.text === testMsg && l.source === 'console'), 'Expected console source filter to include log')
+	assert.ok(
+		sourceLogs.some((l) => l.text === testMsg && l.source === 'console'),
+		'Expected console source filter to include log',
+	)
 
 	// 6. Emit page errors and assert `argus logs`
 	const exceptionMarker = `e2e-uncaught-${Date.now()}`
@@ -175,11 +177,7 @@ test('watcher + CLI e2e', async (t) => {
 		`Expected unhandled rejection marker "${rejectionMarker}" in logs`,
 	)
 
-	const { stdout: exceptionSourceOut } = await runCommand(
-		'node',
-		[BIN_PATH, 'logs', watcherId, '--json', '--source', 'exception'],
-		{ env },
-	)
+	const { stdout: exceptionSourceOut } = await runCommand('node', [BIN_PATH, 'logs', watcherId, '--json', '--source', 'exception'], { env })
 	const exceptionSourceLogs = JSON.parse(exceptionSourceOut) as Array<{ source: string; level: string }>
 	assert.ok(
 		exceptionSourceLogs.every((event) => event.source === 'exception'),
@@ -187,46 +185,45 @@ test('watcher + CLI e2e', async (t) => {
 	)
 
 	// 7. Eval CLI behaviors
-	const { stdout: silentOut, stderr: silentErr, code: silentCode } = await runCommandWithExit(
-		'node',
-		[BIN_PATH, 'eval', watcherId, '1+1', '--silent'],
-		{ env },
-	)
+	const {
+		stdout: silentOut,
+		stderr: silentErr,
+		code: silentCode,
+	} = await runCommandWithExit('node', [BIN_PATH, 'eval', watcherId, '1+1', '--silent'], { env })
 	assert.equal(silentCode, 0)
 	assert.equal(silentOut.trim(), '', 'Silent eval should not emit stdout on success')
 	assert.equal(silentErr.trim(), '', 'Silent eval should not emit stderr on success')
 
-	const { stdout: failOut, stderr: failErr, code: failCode } = await runCommandWithExit(
-		'node',
-		[BIN_PATH, 'eval', watcherId, 'throw new Error("e2e-fail")'],
-		{ env },
-	)
+	const {
+		stdout: failOut,
+		stderr: failErr,
+		code: failCode,
+	} = await runCommandWithExit('node', [BIN_PATH, 'eval', watcherId, 'throw new Error("e2e-fail")'], { env })
 	assert.equal(failCode, 1)
 	assert.equal(failOut.trim(), '', 'Exceptions should not emit stdout for non-JSON errors')
 	assert.match(failErr, /Exception:/)
 
-	const { stdout: noFailOut, stderr: noFailErr, code: noFailCode } = await runCommandWithExit(
-		'node',
-		[BIN_PATH, 'eval', watcherId, 'throw new Error("e2e-no-fail")', '--no-fail-on-exception'],
-		{ env },
-	)
+	const {
+		stdout: noFailOut,
+		stderr: noFailErr,
+		code: noFailCode,
+	} = await runCommandWithExit('node', [BIN_PATH, 'eval', watcherId, 'throw new Error("e2e-no-fail")', '--no-fail-on-exception'], { env })
 	assert.equal(noFailCode, 0)
 	assert.match(noFailOut, /Exception:/, 'No-fail exceptions should emit stdout')
 	assert.equal(noFailErr.trim(), '', 'No-fail exceptions should not emit stderr')
 
 	const retryExpr =
-		'globalThis.__argusEvalRetry = (globalThis.__argusEvalRetry ?? 0) + 1; if (globalThis.__argusEvalRetry < 2) { throw new Error(\"retry\"); } \"ok\"'
-	const { stdout: retryOut, stderr: retryErr, code: retryCode } = await runCommandWithExit(
-		'node',
-		[BIN_PATH, 'eval', watcherId, retryExpr, '--retry', '1'],
-		{ env },
-	)
+		'globalThis.__argusEvalRetry = (globalThis.__argusEvalRetry ?? 0) + 1; if (globalThis.__argusEvalRetry < 2) { throw new Error("retry"); } "ok"'
+	const {
+		stdout: retryOut,
+		stderr: retryErr,
+		code: retryCode,
+	} = await runCommandWithExit('node', [BIN_PATH, 'eval', watcherId, retryExpr, '--retry', '1'], { env })
 	assert.equal(retryCode, 0)
 	assert.match(retryOut, /ok/)
 	assert.equal(retryErr.trim(), '', 'Retry success should not emit stderr')
 
-	const countExpr =
-		'globalThis.__argusEvalCount = (globalThis.__argusEvalCount ?? 0) + 1; globalThis.__argusEvalCount'
+	const countExpr = 'globalThis.__argusEvalCount = (globalThis.__argusEvalCount ?? 0) + 1; globalThis.__argusEvalCount'
 	const { stdout: countOut, code: countCode } = await runCommandWithExit(
 		'node',
 		[BIN_PATH, 'eval', watcherId, countExpr, '--interval', '50', '--count', '3'],
@@ -239,8 +236,7 @@ test('watcher + CLI e2e', async (t) => {
 		.filter(Boolean)
 	assert.equal(countLines.length, 3, 'Interval count should emit 3 iterations')
 
-	const untilExpr =
-		'globalThis.__argusEvalUntil = (globalThis.__argusEvalUntil ?? 0) + 1; globalThis.__argusEvalUntil'
+	const untilExpr = 'globalThis.__argusEvalUntil = (globalThis.__argusEvalUntil ?? 0) + 1; globalThis.__argusEvalUntil'
 	const { stdout: untilOut, code: untilCode } = await runCommandWithExit(
 		'node',
 		[BIN_PATH, 'eval', watcherId, untilExpr, '--interval', '50', '--until', 'result >= 2'],
