@@ -10,6 +10,6 @@
 		"tsBuildInfoFile": "./dist/.tsbuildinfo",
 		"types": ["node"]
 	},
-	"references": [{ "path": "../argus-core" }],
+	"references": [{ "path": "../argus-core" }, { "path": "../argus-watcher" }],
 	"include": ["src"]
 }
