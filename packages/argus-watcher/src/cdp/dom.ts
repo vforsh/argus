@@ -31,10 +31,6 @@ type CdpDocumentResult = {
 	root?: { nodeId?: number }
 }
 
-type CdpQueryResult = {
-	nodeId?: number
-}
-
 type CdpQueryAllResult = {
 	nodeIds?: number[]
 }
@@ -74,10 +70,7 @@ export type FetchDomInfoOptions = {
  * Fetch a DOM subtree rooted at element(s) matching a CSS selector.
  * Returns only element nodes (nodeType === 1).
  */
-export const fetchDomSubtreeBySelector = async (
-	session: CdpSessionHandle,
-	options: FetchDomTreeOptions,
-): Promise<DomTreeResponse> => {
+export const fetchDomSubtreeBySelector = async (session: CdpSessionHandle, options: FetchDomTreeOptions): Promise<DomTreeResponse> => {
 	const depth = clamp(options.depth ?? DEFAULT_DEPTH, 0, MAX_DEPTH)
 	const maxNodes = clamp(options.maxNodes ?? DEFAULT_MAX_NODES, 1, MAX_MAX_NODES)
 	const all = options.all ?? false
@@ -128,10 +121,7 @@ export const fetchDomSubtreeBySelector = async (
 /**
  * Fetch detailed info for element(s) matching a CSS selector.
  */
-export const fetchDomInfoBySelector = async (
-	session: CdpSessionHandle,
-	options: FetchDomInfoOptions,
-): Promise<DomInfoResponse> => {
+export const fetchDomInfoBySelector = async (session: CdpSessionHandle, options: FetchDomInfoOptions): Promise<DomInfoResponse> => {
 	const all = options.all ?? false
 	const maxChars = clamp(options.outerHtmlMaxChars ?? DEFAULT_OUTER_HTML_MAX_CHARS, 0, MAX_OUTER_HTML_CHARS)
 
@@ -208,12 +198,7 @@ type SelectorMatchResult = {
 	nodeIds: number[]
 }
 
-const resolveSelectorMatches = async (
-	session: CdpSessionHandle,
-	rootId: number,
-	selector: string,
-	all: boolean,
-): Promise<SelectorMatchResult> => {
+const resolveSelectorMatches = async (session: CdpSessionHandle, rootId: number, selector: string, all: boolean): Promise<SelectorMatchResult> => {
 	// Always use querySelectorAll to get the true match count
 	const result = (await session.sendAndWait('DOM.querySelectorAll', { nodeId: rootId, selector })) as CdpQueryAllResult
 	const allNodeIds = result.nodeIds ?? []

@@ -190,7 +190,7 @@ export const runChromeStatus = async (options: ChromeCommandOptions): Promise<vo
 	try {
 		response = await fetchJson<ChromeVersionResponse>(url)
 	} catch (error) {
-		output.writeWarn(`unreachable ${endpoint.host}:${endpoint.port}`)
+		output.writeWarn(`Failed to connect to Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
 		process.exitCode = 1
 		return
 	}

@@ -1,22 +1,11 @@
-import type {
-	StorageLocalRequest,
-	StorageLocalResponse,
-	StorageLocalGetResponse,
-	StorageLocalSetResponse,
-	StorageLocalRemoveResponse,
-	StorageLocalListResponse,
-	StorageLocalClearResponse,
-} from '@vforsh/argus-core'
+import type { StorageLocalRequest, StorageLocalResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 
 /**
  * Execute a localStorage operation in the attached page.
  * Throws an Error on CDP failures or origin mismatch.
  */
-export const executeStorageLocal = async (
-	session: CdpSessionHandle,
-	request: StorageLocalRequest,
-): Promise<StorageLocalResponse> => {
+export const executeStorageLocal = async (session: CdpSessionHandle, request: StorageLocalRequest): Promise<StorageLocalResponse> => {
 	const { action, key, value, origin } = request
 
 	// Build the JS expression based on action
@@ -67,11 +56,7 @@ const buildExpression = (
 	})()`
 }
 
-const buildActionCode = (
-	action: StorageLocalRequest['action'],
-	key: string | undefined,
-	value: string | undefined,
-): string => {
+const buildActionCode = (action: StorageLocalRequest['action'], key: string | undefined, value: string | undefined): string => {
 	switch (action) {
 		case 'get':
 			return `

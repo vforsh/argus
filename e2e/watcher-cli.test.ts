@@ -68,8 +68,9 @@ test('watcher + CLI e2e', async (t) => {
 				attached = true
 				break
 			}
-		} catch (e) {
+		} catch (error) {
 			// ignore connection errors during startup
+			void error
 		}
 		await new Promise((r) => setTimeout(r, 200))
 	}
