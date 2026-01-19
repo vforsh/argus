@@ -77,6 +77,7 @@ interface PluginContext {
 	cwd: string // Current working directory
 	configDir: string // Directory containing argus config
 	argusConfig: ArgusConfig // Full argus configuration
+	argus: PluginArgusApi // API for interacting with watchers
 }
 ```
 
@@ -105,6 +106,104 @@ interface PluginContext {
 			}
 		}
 	]
+}
+```
+
+## Executing JavaScript in the Page
+
+Plugins can evaluate JavaScript in the watched page using `context.argus.eval()`. This uses the same eval mechanism as the `argus eval` CLI command.
+
+### Basic Usage
+
+```javascript
+import { Command } from 'commander'
+
+const plugin = new Command('myplugin')
+
+plugin.command('get-title').action(async () => {
+	const result = await context.argus.eval({ expression: 'document.title' })
+	console.log('Page title:', result.result)
+})
+
+export default { command: plugin }
+```
+
+### With Options
+
+```javascript
+const result = await context.argus.eval({
+	expression: 'fetch("/api/data").then(r => r.json())',
+	watcherId: 'my-watcher', // Optional: specific watcher id
+	timeoutMs: 10000, // Optional: timeout in ms
+	retryCount: 3, // Optional: retry on transport failure
+	awaitPromise: true, // Default: true
+	returnByValue: true, // Default: true
+	failOnException: false, // Default: true - set false to get exception in result
+})
+
+if (result.exception) {
+	console.error('Error:', result.exception.text)
+} else {
+	console.log('Result:', result.result)
+}
+```
+
+### Handling Errors
+
+The `eval()` method throws `ArgusPluginApiError` on failure, which includes error codes and candidate watchers:
+
+```javascript
+import { ArgusPluginApiError } from '@vforsh/argus'
+
+try {
+	const result = await context.argus.eval({ expression: '1 + 1' })
+} catch (error) {
+	if (error instanceof ArgusPluginApiError) {
+		switch (error.code) {
+			case 'expression_required':
+				console.error('Expression is required')
+				break
+			case 'watcher_required':
+				console.error('Multiple watchers found, specify one:')
+				error.candidates?.forEach((w) => console.log(`  - ${w.id}`))
+				break
+			case 'watcher_not_found':
+				console.error('No watchers found')
+				break
+			case 'eval_exception':
+				console.error('JS Exception:', error.exception?.text)
+				break
+			case 'eval_transport':
+				console.error('Connection failed:', error.message)
+				break
+		}
+	}
+}
+```
+
+### Watcher Discovery
+
+Use `context.argus.listWatchers()` to discover available watchers:
+
+```javascript
+const watchers = await context.argus.listWatchers()
+for (const { watcher, reachable, error } of watchers) {
+	console.log(`${watcher.id}: ${reachable ? 'online' : error}`)
+}
+
+// Filter by cwd
+const projectWatchers = await context.argus.listWatchers({ byCwd: '/my/project' })
+```
+
+Use `context.argus.resolveWatcher()` to resolve a watcher using the same logic as `argus eval`:
+
+```javascript
+const result = await context.argus.resolveWatcher()
+if (result.ok) {
+	console.log('Selected watcher:', result.watcher.id)
+} else {
+	console.error(result.error)
+	result.candidates?.forEach((w) => console.log(`  Candidate: ${w.id}`))
 }
 ```
 

@@ -1,6 +1,6 @@
 import type { EvalResponse } from '@vforsh/argus-core'
 import { previewStringify } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
+import { evalWithRetries } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
 import { writeWatcherCandidates } from '../watchers/candidates.js'
@@ -242,10 +242,9 @@ const compileUntil = (condition?: string): { evaluator?: UntilEvaluator; error?:
 
 	let compiled: (context: UntilContext) => boolean
 	try {
-		compiled = new Function(
-			'context',
-			`const { result, exception, iteration, attempt } = context; return Boolean(${trimmed});`,
-		) as (context: UntilContext) => boolean
+		compiled = new Function('context', `const { result, exception, iteration, attempt } = context; return Boolean(${trimmed});`) as (
+			context: UntilContext,
+		) => boolean
 	} catch (error) {
 		return { error: `Invalid --until value: ${formatError(error)}` }
 	}
@@ -261,99 +260,12 @@ const compileUntil = (condition?: string): { evaluator?: UntilEvaluator; error?:
 	}
 }
 
-type EvalAttemptInput = {
-	watcher: { id: string; host: string; port: number }
-	expression: string
-	awaitPromise: boolean
-	returnByValue: boolean
-	timeoutMs?: number
-	failOnException: boolean
-	retryCount: number
-}
-
-type EvalAttemptSuccess = {
-	ok: true
-	response: EvalResponse
-	attempt: number
-}
-
 type EvalAttemptFailure = {
 	ok: false
 	kind: 'transport' | 'exception'
 	error: string
 	response?: EvalResponse
 	attempt: number
-}
-
-type EvalAttemptResult = EvalAttemptSuccess | EvalAttemptFailure
-
-type EvalAttemptOutcome =
-	| { ok: true; response: EvalResponse }
-	| { ok: false; kind: 'transport' | 'exception'; error: string; response?: EvalResponse }
-
-const evalWithRetries = async (input: EvalAttemptInput): Promise<EvalAttemptResult> => {
-	let attempt = 0
-	while (attempt <= input.retryCount) {
-		attempt += 1
-		const outcome = await evalOnce({
-			watcher: input.watcher,
-			expression: input.expression,
-			awaitPromise: input.awaitPromise,
-			returnByValue: input.returnByValue,
-			timeoutMs: input.timeoutMs,
-			failOnException: input.failOnException,
-		})
-
-		if (outcome.ok) {
-			return { ...outcome, attempt }
-		}
-
-		const canRetry = attempt <= input.retryCount
-		if (!canRetry) {
-			return { ...outcome, attempt }
-		}
-	}
-
-	return {
-		ok: false,
-		kind: 'transport',
-		error: `${input.watcher.id}: failed to reach watcher (unknown error)`,
-		attempt,
-	}
-}
-
-const evalOnce = async (input: Omit<EvalAttemptInput, 'retryCount'>): Promise<EvalAttemptOutcome> => {
-	const url = `http://${input.watcher.host}:${input.watcher.port}/eval`
-	let response: EvalResponse
-	try {
-		response = await fetchJson<EvalResponse>(url, {
-			method: 'POST',
-			body: {
-				expression: input.expression,
-				awaitPromise: input.awaitPromise,
-				returnByValue: input.returnByValue,
-				timeoutMs: input.timeoutMs,
-			},
-			timeoutMs: input.timeoutMs ? input.timeoutMs + 5_000 : 10_000,
-		})
-	} catch (error) {
-		return {
-			ok: false,
-			kind: 'transport',
-			error: `${input.watcher.id}: failed to reach watcher (${formatError(error)})`,
-		}
-	}
-
-	if (response.exception && input.failOnException) {
-		return {
-			ok: false,
-			kind: 'exception',
-			response,
-			error: formatExceptionMessage(response),
-		}
-	}
-
-	return { ok: true, response }
 }
 
 const printSuccess = (response: EvalResponse, options: EvalOptions, output: ReturnType<typeof createOutput>, streaming: boolean): void => {
@@ -393,13 +305,6 @@ const printError = (
 	}
 
 	output.writeWarn(error.error)
-}
-
-const formatExceptionMessage = (response: EvalResponse): string => {
-	if (!response.exception) {
-		return 'Exception: unknown error'
-	}
-	return `Exception: ${response.exception.text}`
 }
 
 const formatException = (response: EvalResponse): string => {

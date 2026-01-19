@@ -1,13 +1,15 @@
 import { pathToFileURL } from 'node:url'
 import type { Command } from 'commander'
-import type { ResolvedPlugin, ArgusPlugin, PluginContext, PluginLoadError } from '@vforsh/argus-core'
+import type { ResolvedPlugin, ArgusPlugin, PluginContext, PluginLoadError, PluginArgusApi } from '@vforsh/argus-core'
+import { createPluginArgusApi } from './argusApi.js'
 
 /**
  * Loads and validates plugin modules.
  */
-export async function loadPlugins(resolved: ResolvedPlugin[], context: Omit<PluginContext, 'config'>): Promise<LoadedPlugin[]> {
+export async function loadPlugins(resolved: ResolvedPlugin[], context: Omit<PluginContext, 'config' | 'argus'>): Promise<LoadedPlugin[]> {
 	const loaded: LoadedPlugin[] = []
 	const errors: PluginLoadError[] = []
+	const argusApi = createPluginArgusApi(context)
 
 	for (const plugin of resolved) {
 		if (!plugin.enabled) {
@@ -15,7 +17,7 @@ export async function loadPlugins(resolved: ResolvedPlugin[], context: Omit<Plug
 		}
 
 		try {
-			const loadedPlugin = await loadPlugin(plugin, context)
+			const loadedPlugin = await loadPlugin(plugin, context, argusApi)
 			loaded.push(loadedPlugin)
 		} catch (error) {
 			errors.push({
@@ -33,7 +35,11 @@ export async function loadPlugins(resolved: ResolvedPlugin[], context: Omit<Plug
 	return loaded
 }
 
-async function loadPlugin(plugin: ResolvedPlugin, baseContext: Omit<PluginContext, 'config'>): Promise<LoadedPlugin> {
+async function loadPlugin(
+	plugin: ResolvedPlugin,
+	baseContext: Omit<PluginContext, 'config' | 'argus'>,
+	argusApi: PluginArgusApi,
+): Promise<LoadedPlugin> {
 	let module: unknown
 	try {
 		const fileUrl = pathToFileURL(plugin.modulePath).href
@@ -47,6 +53,7 @@ async function loadPlugin(plugin: ResolvedPlugin, baseContext: Omit<PluginContex
 	const context: PluginContext = {
 		...baseContext,
 		config: plugin.config,
+		argus: argusApi,
 	}
 
 	if (pluginExports.setup) {
