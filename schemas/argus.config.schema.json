@@ -82,6 +82,11 @@
 						"pageIndicator": {
 							"type": "boolean",
 							"description": "Enable the in-page watcher indicator badge."
+						},
+						"pageConsoleLogging": {
+							"type": "string",
+							"enum": ["none", "minimal", "full"],
+							"description": "Write watcher logs to the attached page console. Default: minimal."
 						}
 					}
 				}

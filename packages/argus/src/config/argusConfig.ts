@@ -10,6 +10,8 @@ export type ChromeStartConfig = {
 	devToolsPanel?: string
 }
 
+export type PageConsoleLogging = 'none' | 'minimal' | 'full'
+
 export type WatcherStartConfig = {
 	id?: string
 	url?: string
@@ -17,6 +19,7 @@ export type WatcherStartConfig = {
 	chromePort?: number
 	artifacts?: string
 	pageIndicator?: boolean
+	pageConsoleLogging?: PageConsoleLogging
 }
 
 export type ArgusConfig = {
@@ -48,7 +51,7 @@ type OptionSourceProvider = {
 
 const AUTO_CONFIG_CANDIDATES = ['.argus/config.json', 'argus.config.json', 'argus/config.json']
 const EXPECTED_SHAPE_HINT =
-	'Expected shape: { chrome?: { start?: { url?: string, watcherId?: string, defaultProfile?: boolean, devTools?: boolean, devToolsPanel?: string } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean } } }.'
+	'Expected shape: { chrome?: { start?: { url?: string, watcherId?: string, defaultProfile?: boolean, devTools?: boolean, devToolsPanel?: string } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full" } } }.'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -95,6 +98,21 @@ const validateOptionalPort = (value: unknown, label: string): { ok: true; value?
 		return { ok: false, error: `${label} must be between 1 and 65535.` }
 	}
 	return { ok: true, value }
+}
+
+const PAGE_CONSOLE_LOGGING_VALUES: PageConsoleLogging[] = ['none', 'minimal', 'full']
+
+const validateOptionalPageConsoleLogging = (
+	value: unknown,
+	label: string,
+): { ok: true; value?: PageConsoleLogging } | { ok: false; error: string } => {
+	if (value === undefined) {
+		return { ok: true }
+	}
+	if (typeof value !== 'string' || !PAGE_CONSOLE_LOGGING_VALUES.includes(value as PageConsoleLogging)) {
+		return { ok: false, error: `${label} must be one of: none, minimal, full.` }
+	}
+	return { ok: true, value: value as PageConsoleLogging }
 }
 
 const validateChromeStartConfig = (value: unknown): { ok: true; value: ChromeStartConfig } | { ok: false; error: string } => {
@@ -176,6 +194,10 @@ const validateWatcherStartConfig = (value: unknown): { ok: true; value: WatcherS
 	if (!pageIndicatorResult.ok) {
 		return pageIndicatorResult
 	}
+	const pageConsoleLoggingResult = validateOptionalPageConsoleLogging(value.pageConsoleLogging, '"watcher.start.pageConsoleLogging"')
+	if (!pageConsoleLoggingResult.ok) {
+		return pageConsoleLoggingResult
+	}
 
 	if (artifactsResult.value !== undefined && artifactsResult.value.trim() === '') {
 		return { ok: false, error: '"watcher.start.artifacts" must be a non-empty string.' }
@@ -199,6 +221,9 @@ const validateWatcherStartConfig = (value: unknown): { ok: true; value: WatcherS
 	}
 	if (pageIndicatorResult.value !== undefined) {
 		config.pageIndicator = pageIndicatorResult.value
+	}
+	if (pageConsoleLoggingResult.value !== undefined) {
+		config.pageConsoleLogging = pageConsoleLoggingResult.value
 	}
 
 	return { ok: true, value: config }
@@ -410,6 +435,7 @@ export const mergeWatcherStartOptionsWithConfig = <
 		chromePort?: string | number
 		pageIndicator?: boolean
 		artifacts?: string
+		pageConsoleLogging?: PageConsoleLogging
 	},
 >(
 	options: T,
@@ -433,6 +459,7 @@ export const mergeWatcherStartOptionsWithConfig = <
 	merged.chromeHost = mergeOption(command, 'chromeHost', options.chromeHost, watcherStart.chromeHost)
 	merged.chromePort = mergeOption(command, 'chromePort', options.chromePort, watcherStart.chromePort)
 	merged.pageIndicator = mergeOption(command, 'pageIndicator', options.pageIndicator, watcherStart.pageIndicator)
+	merged.pageConsoleLogging = mergeOption(command, 'pageConsoleLogging', options.pageConsoleLogging, watcherStart.pageConsoleLogging)
 	merged.artifacts = mergeOption(command, 'artifacts', options.artifacts, configArtifacts)
 
 	return merged

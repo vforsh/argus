@@ -1,4 +1,4 @@
-import { startWatcher, type WatcherHandle } from '@vforsh/argus-watcher'
+import { startWatcher, type WatcherHandle, type PageConsoleLogging } from '@vforsh/argus-watcher'
 import path from 'node:path'
 import { createOutput } from '../output/io.js'
 
@@ -10,6 +10,7 @@ export type WatcherStartOptions = {
 	chromePort?: string | number
 	pageIndicator?: boolean
 	artifacts?: string
+	pageConsoleLogging?: PageConsoleLogging
 }
 
 type WatcherStartResult = {
@@ -79,6 +80,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 			port: 0,
 			pageIndicator: options.pageIndicator === false ? { enabled: false } : { enabled: true },
 			artifacts: artifactsBaseDir ? { base: artifactsBaseDir } : undefined,
+			pageConsoleLogging: options.pageConsoleLogging,
 		})
 	} catch (error) {
 		output.writeWarn(`Failed to start watcher: ${error instanceof Error ? error.message : error}`)

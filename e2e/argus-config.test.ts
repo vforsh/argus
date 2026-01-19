@@ -116,3 +116,32 @@ test('merge rejects chrome url from CLI with watcherId from config', async (t) =
 	assert.equal(merged, null)
 	assert.equal(process.exitCode, 2)
 })
+
+test('config pageConsoleLogging is merged when CLI does not override', async (t) => {
+	resetExitCode()
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-config-'))
+	t.after(() => fs.rm(tempDir, { recursive: true, force: true }))
+
+	const configPath = path.join(tempDir, 'argus.config.json')
+	await fs.writeFile(configPath, JSON.stringify({ watcher: { start: { pageConsoleLogging: 'full' } } }))
+
+	const configResult = loadArgusConfig(configPath)
+	assert.ok(configResult)
+
+	const merged = mergeWatcherStartOptionsWithConfig({}, createCommand({}), configResult)
+	assert.ok(merged)
+	assert.equal(merged.pageConsoleLogging, 'full')
+})
+
+test('config rejects invalid pageConsoleLogging value', async (t) => {
+	resetExitCode()
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-config-'))
+	t.after(() => fs.rm(tempDir, { recursive: true, force: true }))
+
+	const configPath = path.join(tempDir, 'argus.config.json')
+	await fs.writeFile(configPath, JSON.stringify({ watcher: { start: { pageConsoleLogging: 'invalid' } } }))
+
+	const configResult = loadArgusConfig(configPath)
+	assert.equal(configResult, null)
+	assert.equal(process.exitCode, 2)
+})

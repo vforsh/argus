@@ -69,6 +69,9 @@ export type NetOptions = {
 	enabled?: boolean
 }
 
+/** Page console logging level for watcher lifecycle and request logs. */
+export type PageConsoleLogging = 'none' | 'minimal' | 'full'
+
 /** Options to start a watcher server. */
 export type StartWatcherOptions = {
 	/** Unique watcher identifier (used for registry presence and removal on shutdown). */
@@ -117,6 +120,13 @@ export type StartWatcherOptions = {
 	 * Disabled by default.
 	 */
 	net?: NetOptions
+	/**
+	 * Write watcher lifecycle and request logs into the attached page's DevTools console.
+	 * - `none`: Do not write anything.
+	 * - `minimal` (default): Write attach/detach lifecycle messages.
+	 * - `full`: Same as minimal, plus log every HTTP request to the watcher API.
+	 */
+	pageConsoleLogging?: PageConsoleLogging
 }
 
 /** Handle returned by startWatcher. */
@@ -174,6 +184,10 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	// Network capture is opt-in (disabled by default)
 	const netEnabled = options.net?.enabled === true
 
+	// Page console logging (default: minimal)
+	const pageConsoleLogging = options.pageConsoleLogging ?? 'minimal'
+	const watcherId = options.id
+
 	const events = new Emittery<ArgusWatcherEventMap>()
 	const buffer = new LogBuffer(bufferSize)
 	const netBuffer = netEnabled ? new NetBuffer(netBufferSize) : null
@@ -214,6 +228,25 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	}
 
 	const sessionHandle = createCdpSessionHandle()
+
+	const logToPageConsole = (message: string): void => {
+		if (pageConsoleLogging === 'none') {
+			return
+		}
+		if (!sessionHandle.session.isAttached()) {
+			return
+		}
+		const fullMessage = `[ARGUS] ${watcherId} :: ${message}`
+		queueMicrotask(() => {
+			sessionHandle.session
+				.sendAndWait('Runtime.evaluate', {
+					expression: `console.log(${JSON.stringify(fullMessage)})`,
+					silent: true,
+				})
+				.catch(() => {})
+		})
+	}
+
 	const networkCapture = netBuffer ? createNetworkCapture({ session: sessionHandle.session, buffer: netBuffer }) : null
 	const traceRecorder = createTraceRecorder({ session: sessionHandle.session, artifactsDir: artifactsBaseDir })
 	const screenshotter = createScreenshotter({ session: sessionHandle.session, artifactsDir: artifactsBaseDir })
@@ -273,6 +306,8 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 			cdpStatus = status
 
 			if (status.attached && !prevAttached) {
+				const url = status.target?.url ?? 'unknown'
+				logToPageConsole(`attached (url=${url})`)
 				void events.emit('cdpAttached', {
 					ts: Date.now(),
 					watcherId: options.id,
@@ -300,6 +335,9 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		traceRecorder,
 		screenshotter,
 		onRequest: (event) => {
+			if (pageConsoleLogging === 'full') {
+				logToPageConsole(`http ${event.endpoint}`)
+			}
 			void events.emit('httpRequested', {
 				...event,
 				watcherId: options.id,
@@ -325,6 +363,9 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		closing = true
 		heartbeat.stop()
 		indicatorController?.stop()
+		if (cdpStatus.attached) {
+			logToPageConsole('detached (reason=watcher_stopped)')
+		}
 		await cdp.stop()
 		await fileLogger?.close()
 		traceRecorder.onDetached('watcher_stopped')
