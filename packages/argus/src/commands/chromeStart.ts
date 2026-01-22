@@ -12,7 +12,7 @@ import type { ChromeTargetResponse } from '../cdp/types.js'
 
 export type ChromeStartOptions = {
 	url?: string
-	id?: string
+	fromWatcher?: string
 	json?: boolean
 	defaultProfile?: boolean
 	devTools?: boolean
@@ -202,24 +202,24 @@ const openDevToolsPanel = async (
 
 export const runChromeStart = async (options: ChromeStartOptions): Promise<void> => {
 	const output = createOutput(options)
-	if (options.url && options.id) {
-		output.writeWarn('Cannot combine --url with --id. Use one or the other.')
+	if (options.url && options.fromWatcher) {
+		output.writeWarn('Cannot combine --url with --from-watcher. Use one or the other.')
 		process.exitCode = 2
 		return
 	}
 
 	let startupUrl: string | null = null
 
-	if (options.id) {
+	if (options.fromWatcher) {
 		const registry = await pruneRegistry(await loadRegistry())
-		const watcher = registry.watchers[options.id]
+		const watcher = registry.watchers[options.fromWatcher]
 		if (!watcher) {
-			output.writeWarn(`Watcher not found: ${options.id}`)
+			output.writeWarn(`Watcher not found: ${options.fromWatcher}`)
 			process.exitCode = 1
 			return
 		}
 		if (!watcher.match?.url) {
-			output.writeWarn(`Watcher "${options.id}" has no match.url configured.`)
+			output.writeWarn(`Watcher "${options.fromWatcher}" has no match.url configured.`)
 			process.exitCode = 2
 			return
 		}

@@ -17,20 +17,28 @@ compatibility: Requires Node 18+ (WebSocket), a Chromium-based browser, and loca
 
 Run these in separate terminals so each long-running process can keep running.
 
+### 0) Start your dev/dist server (capture the URL)
+
+Start your app the usual way (project-specific), and capture the URL it prints (use the same URL for Chrome + the watcher).
+
+```bash
+# examples (pick the one your project uses)
+npm run dev
+# npm run start
+# npm run preview
+
+# capture the URL your app is serving on
+export APP_URL="http://localhost:3000"
+```
+
 ### 1) Start Chrome (CDP)
 
 ```bash
-argus chrome start --url http://localhost:3000
+argus chrome start --url "$APP_URL"
 ```
 
 - **Port behavior**: uses **9222** if available; otherwise chooses a free ephemeral port and prints it.
 - **Keep it running**: this command stays alive until Ctrl+C; it cleans up the temp profile on exit.
-
-If Argus can’t find Chrome, set:
-
-```bash
-export ARGUS_CHROME_BIN="/absolute/path/to/chrome"
-```
 
 If you want a snapshot of your default profile (copied into a temp dir):
 
@@ -45,18 +53,12 @@ argus chrome start --dev-tools
 argus chrome start --dev-tools-panel console
 ```
 
-If Argus can’t find your Chrome user data dir for `--default-profile`, set:
-
-```bash
-export ARGUS_CHROME_USER_DATA_DIR="/absolute/path/to/Chrome/User Data"
-```
-
 ### 2) Start a watcher
 
 Use the **CDP port printed by Chrome** (9222 or the ephemeral fallback).
 
 ```bash
-argus watcher start --id app --url localhost:3000 --chrome-port 9222
+argus watcher start --id app --url "$APP_URL" --chrome-port 9222
 ```
 
 - **`--id`**: the name you’ll use for `logs`, `eval`, `screenshot`, etc.
@@ -111,16 +113,16 @@ argus screenshot app --out shot.png
 
 ```bash
 argus chrome start
+argus chrome start --config .argus/config.json
 argus chrome start --url http://localhost:3000
-argus chrome start --id app
+argus chrome start --from-watcher app
 argus chrome start --dev-tools
 argus chrome start --dev-tools-panel console
-argus chrome start --config .argus/config.json
 argus chrome start --json
 ```
 
 - **`--url <url>`**: open this URL on launch.
-- **`--id <watcherId>`**: looks up the watcher in the local registry and uses its `match.url` as the startup URL.
+- **`--from-watcher <watcherId>`**: looks up the watcher in the local registry and uses its `match.url` as the startup URL.
 - **`--dev-tools`**: auto-open DevTools for new tabs.
 - **`--dev-tools-panel <panel>`**: open DevTools with a specific panel (`console`, `network`, `elements`).
 - **`--config <path>`**: load defaults from an Argus config file.
@@ -129,10 +131,11 @@ argus chrome start --json
 ## Starting the watcher (details)
 
 ```bash
+argus watcher start
+argus watcher start --config .argus/config.json
 argus watcher start --id app --url localhost:3000
 argus watcher start --id app --url localhost:3000 --no-page-indicator
 argus watcher start --id app --url localhost:3000 --chrome-host 127.0.0.1 --chrome-port 9222
-argus watcher start --config .argus/config.json
 argus watcher start --id app --url localhost:3000 --json
 ```
 
@@ -280,7 +283,7 @@ argus screenshot app --out shot.png
 Element-only screenshot:
 
 ```bash
-argus screenshot app --selector "body" --out body.png
+argus screenshot app --selector "canvas" --out canvas.png
 ```
 
 Notes:

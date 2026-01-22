@@ -396,7 +396,7 @@ const mergeOption = <T>(command: OptionSourceProvider, key: string, cliValue: T 
 }
 
 export const mergeChromeStartOptionsWithConfig = <
-	T extends { url?: string; id?: string; defaultProfile?: boolean; devTools?: boolean; devToolsPanel?: string },
+	T extends { url?: string; fromWatcher?: string; defaultProfile?: boolean; devTools?: boolean; devToolsPanel?: string },
 >(
 	options: T,
 	command: OptionSourceProvider,
@@ -413,13 +413,13 @@ export const mergeChromeStartOptionsWithConfig = <
 
 	const merged = { ...options }
 	merged.url = mergeOption(command, 'url', options.url, chromeStart.url)
-	merged.id = mergeOption(command, 'id', options.id, chromeStart.watcherId)
+	merged.fromWatcher = mergeOption(command, 'fromWatcher', options.fromWatcher, chromeStart.watcherId)
 	merged.defaultProfile = mergeOption(command, 'defaultProfile', options.defaultProfile, chromeStart.defaultProfile)
 	merged.devTools = mergeOption(command, 'devTools', options.devTools, chromeStart.devTools)
 	merged.devToolsPanel = mergeOption(command, 'devToolsPanel', options.devToolsPanel, chromeStart.devToolsPanel)
 
-	if (merged.url && merged.id) {
-		console.error('Cannot combine --url with --id. Use one or the other.')
+	if (merged.url && merged.fromWatcher) {
+		console.error('Cannot combine --url with --from-watcher. Use one or the other.')
 		process.exitCode = 2
 		return null
 	}
