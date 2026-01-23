@@ -53,8 +53,8 @@
 		{
 			"id": "chromeArgs",
 			"type": "promptString",
-			"description": "Chrome start arguments (e.g., --url http://localhost:3000 --default-profile)",
-			"default": "--default-profile"
+			"description": "Chrome start arguments (e.g., --url http://localhost:3000 --profile default-full)",
+			"default": "--profile default-lite"
 		}
 	]
 }

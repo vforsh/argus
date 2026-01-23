@@ -25,9 +25,10 @@
 							"type": "string",
 							"description": "Use match.url from the watcher registry."
 						},
-						"defaultProfile": {
-							"type": "boolean",
-							"description": "Use a snapshot of the default Chrome profile."
+						"profile": {
+							"type": "string",
+							"enum": ["temp", "default-full", "default-medium", "default-lite"],
+							"description": "Profile mode: temp, default-full, default-medium, or default-lite."
 						},
 						"devTools": {
 							"type": "boolean",
@@ -99,7 +100,7 @@
 			"chrome": {
 				"start": {
 					"url": "http://localhost:3000",
-					"defaultProfile": false,
+					"profile": "default-lite",
 					"devTools": true,
 					"devToolsPanel": "console"
 				}

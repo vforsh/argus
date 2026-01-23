@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { fetchJson } from '../httpClient.js'
@@ -14,7 +14,7 @@ export type ChromeStartOptions = {
 	url?: string
 	fromWatcher?: string
 	json?: boolean
-	defaultProfile?: boolean
+	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
 	devToolsPanel?: string
 }
@@ -92,6 +92,52 @@ const copyDefaultProfile = (sourceDir: string): string => {
 			copyFileSync(source, dest)
 		}
 	}
+
+	return destRoot
+}
+
+const copyDefaultProfileLite = (sourceDir: string): string => {
+	const destRoot = mkdtempSync(path.join(tmpdir(), 'argus-chrome-profile-lite-'))
+	const defaultDir = path.join(destRoot, 'Default')
+	mkdirSync(defaultDir, { recursive: true })
+
+	const copyIfExists = (source: string, dest: string): void => {
+		if (!existsSync(source)) {
+			return
+		}
+		copyFileSync(source, dest)
+	}
+
+	copyIfExists(path.join(sourceDir, 'Local State'), path.join(destRoot, 'Local State'))
+	copyIfExists(path.join(sourceDir, 'Default', 'Cookies'), path.join(defaultDir, 'Cookies'))
+	copyIfExists(path.join(sourceDir, 'Default', 'Cookies-journal'), path.join(defaultDir, 'Cookies-journal'))
+	copyIfExists(path.join(sourceDir, 'Default', 'Login Data'), path.join(defaultDir, 'Login Data'))
+	copyIfExists(path.join(sourceDir, 'Default', 'Login Data-journal'), path.join(defaultDir, 'Login Data-journal'))
+	copyIfExists(path.join(sourceDir, 'Default', 'Preferences'), path.join(defaultDir, 'Preferences'))
+	copyIfExists(path.join(sourceDir, 'Default', 'Secure Preferences'), path.join(defaultDir, 'Secure Preferences'))
+
+	return destRoot
+}
+
+const copyDefaultProfileMedium = (sourceDir: string): string => {
+	const destRoot = copyDefaultProfileLite(sourceDir)
+	const defaultDir = path.join(destRoot, 'Default')
+
+	const copyPathIfExists = (source: string, dest: string): void => {
+		if (!existsSync(source)) {
+			return
+		}
+		const stats = statSync(source)
+		if (stats.isDirectory()) {
+			cpSync(source, dest, { recursive: true })
+			return
+		}
+		copyFileSync(source, dest)
+	}
+
+	copyPathIfExists(path.join(sourceDir, 'Default', 'History'), path.join(defaultDir, 'History'))
+	copyPathIfExists(path.join(sourceDir, 'Default', 'Local Storage'), path.join(defaultDir, 'Local Storage'))
+	copyPathIfExists(path.join(sourceDir, 'Default', 'IndexedDB'), path.join(defaultDir, 'IndexedDB'))
 
 	return destRoot
 }
@@ -200,10 +246,30 @@ const openDevToolsPanel = async (
 	}
 }
 
+const normalizeProfile = (profile?: string): ChromeStartOptions['profile'] | null => {
+	if (!profile) {
+		return 'default-lite'
+	}
+	const trimmed = profile.trim()
+	if (trimmed === '') {
+		return 'default-lite'
+	}
+	if (trimmed === 'temp' || trimmed === 'default-full' || trimmed === 'default-medium' || trimmed === 'default-lite') {
+		return trimmed
+	}
+	return null
+}
+
 export const runChromeStart = async (options: ChromeStartOptions): Promise<void> => {
 	const output = createOutput(options)
 	if (options.url && options.fromWatcher) {
 		output.writeWarn('Cannot combine --url with --from-watcher. Use one or the other.')
+		process.exitCode = 2
+		return
+	}
+	const profile = normalizeProfile(options.profile)
+	if (!profile) {
+		output.writeWarn('Invalid --profile value. Use temp, default-full, default-medium, or default-lite.')
 		process.exitCode = 2
 		return
 	}
@@ -239,7 +305,7 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 	}
 
 	let userDataDir: string | null = null
-	if (options.defaultProfile) {
+	if (profile !== 'temp') {
 		const sourceDir = resolveChromeUserDataDir()
 		if (!sourceDir) {
 			output.writeWarn('Chrome user data dir not found. Set ARGUS_CHROME_USER_DATA_DIR.')
@@ -247,9 +313,21 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 			return
 		}
 		try {
-			userDataDir = copyDefaultProfile(sourceDir)
+			if (profile === 'default-lite') {
+				userDataDir = copyDefaultProfileLite(sourceDir)
+			} else if (profile === 'default-medium') {
+				userDataDir = copyDefaultProfileMedium(sourceDir)
+			} else {
+				userDataDir = copyDefaultProfile(sourceDir)
+			}
 		} catch (error) {
-			output.writeWarn(`Failed to copy default Chrome profile: ${error instanceof Error ? error.message : error}`)
+			const label =
+				profile === 'default-lite'
+					? 'default Chrome profile (lite)'
+					: profile === 'default-medium'
+						? 'default Chrome profile (medium)'
+						: 'default Chrome profile'
+			output.writeWarn(`Failed to copy ${label}: ${error instanceof Error ? error.message : error}`)
 			process.exitCode = 1
 			return
 		}

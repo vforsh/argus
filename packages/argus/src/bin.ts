@@ -332,14 +332,14 @@ chrome
 	.description('Launch Chrome with CDP enabled')
 	.option('--url <url>', 'URL to open in Chrome')
 	.option('--from-watcher <watcherId>', 'Use match.url from a registered watcher')
-	.option('--default-profile', 'Use default Chrome profile instead of a temp profile')
+	.option('--profile <type>', 'Profile mode: temp, default-full, default-medium, or default-lite (default: default-lite)')
 	.option('--dev-tools', 'Open DevTools for new tabs')
 	.option('--dev-tools-panel <panel>', 'Open DevTools with a specific panel (e.g. console)')
 	.option('--config <path>', 'Path to Argus config file')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --from-watcher app\n  $ argus chrome start --default-profile\n  $ argus chrome start --dev-tools\n  $ argus chrome start --dev-tools-panel console\n  $ argus chrome start --json\n',
+		'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --from-watcher app\n  $ argus chrome start --profile default-full\n  $ argus chrome start --profile default-medium\n  $ argus chrome start --profile default-lite\n  $ argus chrome start --profile temp\n  $ argus chrome start --dev-tools\n  $ argus chrome start --dev-tools-panel console\n  $ argus chrome start --json\n',
 	)
 	.action(async (options, command) => {
 		const { config: configPath, ...cliOptions } = options

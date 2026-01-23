@@ -42,6 +42,7 @@ Example:
 	"chrome": {
 		"start": {
 			"url": "http://localhost:3000",
+			"profile": "default-lite",
 			"devTools": true,
 			"devToolsPanel": "console"
 		}
@@ -88,9 +89,11 @@ Example:
 Manage and query a running Chrome instance with remote debugging enabled (CDP).
 
 - **`argus chrome start`**: Launch Chrome with CDP enabled.
-    - Options: `--url <url>`, `--from-watcher <watcherId>`, `--default-profile`, `--dev-tools`, `--dev-tools-panel <panel>`, `--config <path>`, `--json`.
+    - Options: `--url <url>`, `--from-watcher <watcherId>`, `--profile <temp|default-full|default-medium|default-lite>`, `--dev-tools`, `--dev-tools-panel <panel>`, `--config <path>`, `--json`.
     - Example: `argus chrome start --url http://localhost:3000`.
-    - Note: `--default-profile` launches Chrome with a copied snapshot of your default profile.
+    - Note: `--profile default-full` launches Chrome with a copied snapshot of your default profile.
+    - Note: `--profile default-medium` adds History, Local Storage, and IndexedDB to the lite profile.
+    - Note: `--profile default-lite` copies only auth-related files to keep the profile lightweight.
     - Why: recent Chrome versions require a non-default user data dir to expose `--remote-debugging-port`, so Argus copies your default profile into a temp directory and launches Chrome from that copy (keeps your real default profile closed + untouched).
     - Reference:
         ```

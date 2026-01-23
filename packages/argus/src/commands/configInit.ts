@@ -13,7 +13,7 @@ const buildConfigTemplate = (schemaPath: string) => ({
 	chrome: {
 		start: {
 			url: 'http://localhost:3000',
-			defaultProfile: false,
+			profile: 'default-lite',
 			devTools: true,
 			devToolsPanel: 'console',
 		},

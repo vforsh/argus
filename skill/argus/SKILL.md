@@ -43,7 +43,7 @@ argus chrome start --url "$APP_URL"
 If you want a snapshot of your default profile (copied into a temp dir):
 
 ```bash
-argus chrome start --default-profile
+argus chrome start --profile default-full
 ```
 
 If you want DevTools opened immediately:

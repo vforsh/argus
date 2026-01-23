@@ -2,10 +2,9 @@
 	"$schema": "../schemas/argus.config.schema.json",
 	"chrome": {
 		"start": {
-			"url": "http://localhost:3000",
-			"defaultProfile": false,
-			"devTools": true,
-			"devToolsPanel": "console"
+			"url": "https://google.com",
+			"profile": "default-lite",
+			"devTools": true
 		}
 	},
 	"watcher": {

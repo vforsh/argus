@@ -5,7 +5,7 @@ import type { PluginConfig } from '@vforsh/argus-core'
 export type ChromeStartConfig = {
 	url?: string
 	watcherId?: string
-	defaultProfile?: boolean
+	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
 	devToolsPanel?: string
 }
@@ -51,7 +51,7 @@ type OptionSourceProvider = {
 
 const AUTO_CONFIG_CANDIDATES = ['.argus/config.json', 'argus.config.json', 'argus/config.json']
 const EXPECTED_SHAPE_HINT =
-	'Expected shape: { chrome?: { start?: { url?: string, watcherId?: string, defaultProfile?: boolean, devTools?: boolean, devToolsPanel?: string } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full" } } }.'
+	'Expected shape: { chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean, devToolsPanel?: string } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full" } } }.'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -128,9 +128,9 @@ const validateChromeStartConfig = (value: unknown): { ok: true; value: ChromeSta
 	if (!watcherIdResult.ok) {
 		return watcherIdResult
 	}
-	const defaultProfileResult = validateOptionalBoolean(value.defaultProfile, '"chrome.start.defaultProfile"')
-	if (!defaultProfileResult.ok) {
-		return defaultProfileResult
+	const profileResult = validateOptionalString(value.profile, '"chrome.start.profile"')
+	if (!profileResult.ok) {
+		return profileResult
 	}
 	const devToolsResult = validateOptionalBoolean(value.devTools, '"chrome.start.devTools"')
 	if (!devToolsResult.ok) {
@@ -144,6 +144,9 @@ const validateChromeStartConfig = (value: unknown): { ok: true; value: ChromeSta
 	if (urlResult.value !== undefined && watcherIdResult.value !== undefined) {
 		return { ok: false, error: '"chrome.start.url" and "chrome.start.watcherId" are mutually exclusive.' }
 	}
+	if (profileResult.value && !['temp', 'default-full', 'default-medium', 'default-lite'].includes(profileResult.value)) {
+		return { ok: false, error: '"chrome.start.profile" must be one of: temp, default-full, default-medium, default-lite.' }
+	}
 
 	const config: ChromeStartConfig = {}
 	if (urlResult.value !== undefined) {
@@ -152,8 +155,8 @@ const validateChromeStartConfig = (value: unknown): { ok: true; value: ChromeSta
 	if (watcherIdResult.value !== undefined) {
 		config.watcherId = watcherIdResult.value
 	}
-	if (defaultProfileResult.value !== undefined) {
-		config.defaultProfile = defaultProfileResult.value
+	if (profileResult.value !== undefined) {
+		config.profile = profileResult.value as ChromeStartConfig['profile']
 	}
 	if (devToolsResult.value !== undefined) {
 		config.devTools = devToolsResult.value
@@ -396,7 +399,13 @@ const mergeOption = <T>(command: OptionSourceProvider, key: string, cliValue: T 
 }
 
 export const mergeChromeStartOptionsWithConfig = <
-	T extends { url?: string; fromWatcher?: string; defaultProfile?: boolean; devTools?: boolean; devToolsPanel?: string },
+	T extends {
+		url?: string
+		fromWatcher?: string
+		profile?: ChromeStartConfig['profile']
+		devTools?: boolean
+		devToolsPanel?: string
+	},
 >(
 	options: T,
 	command: OptionSourceProvider,
@@ -414,7 +423,7 @@ export const mergeChromeStartOptionsWithConfig = <
 	const merged = { ...options }
 	merged.url = mergeOption(command, 'url', options.url, chromeStart.url)
 	merged.fromWatcher = mergeOption(command, 'fromWatcher', options.fromWatcher, chromeStart.watcherId)
-	merged.defaultProfile = mergeOption(command, 'defaultProfile', options.defaultProfile, chromeStart.defaultProfile)
+	merged.profile = mergeOption(command, 'profile', options.profile, chromeStart.profile)
 	merged.devTools = mergeOption(command, 'devTools', options.devTools, chromeStart.devTools)
 	merged.devToolsPanel = mergeOption(command, 'devToolsPanel', options.devToolsPanel, chromeStart.devToolsPanel)
 
