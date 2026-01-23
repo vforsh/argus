@@ -81,6 +81,8 @@ export type HttpRequestEvent = {
 		| 'screenshot'
 		| 'dom/tree'
 		| 'dom/info'
+		| 'dom/hover'
+		| 'dom/click'
 		| 'storage/local'
 		| 'shutdown'
 	/** IP address of the requester (best-effort). */

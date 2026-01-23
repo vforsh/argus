@@ -19,6 +19,10 @@ import type {
 	DomTreeResponse,
 	DomInfoRequest,
 	DomInfoResponse,
+	DomHoverRequest,
+	DomHoverResponse,
+	DomClickRequest,
+	DomClickResponse,
 	StorageLocalRequest,
 	ShutdownResponse,
 } from '@vforsh/argus-core'
@@ -29,6 +33,7 @@ import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
 import { evaluateExpression } from '../cdp/eval.js'
 import { fetchDomSubtreeBySelector, fetchDomInfoBySelector } from '../cdp/dom.js'
+import { resolveDomSelectorMatches, hoverDomNodes, clickDomNodes } from '../cdp/mouse.js'
 import { executeStorageLocal } from '../cdp/storageLocal.js'
 import {
 	respondJson,
@@ -60,6 +65,8 @@ export type HttpRequestEventMetadata = {
 		| 'screenshot'
 		| 'dom/tree'
 		| 'dom/info'
+		| 'dom/hover'
+		| 'dom/click'
 		| 'storage/local'
 		| 'shutdown'
 	remoteAddress: string | null
@@ -147,6 +154,14 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 
 		if (req.method === 'POST' && url.pathname === '/dom/info') {
 			return handleDomInfo(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/dom/hover') {
+			return handleDomHover(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/dom/click') {
+			return handleDomClick(req, res, options)
 		}
 
 		if (req.method === 'POST' && url.pathname === '/storage/local') {
@@ -344,11 +359,7 @@ const handleEval = async (req: http.IncomingMessage, res: http.ServerResponse, o
 	}
 }
 
-const handleTraceStart = async (
-	req: http.IncomingMessage,
-	res: http.ServerResponse,
-	options: HttpServerOptions,
-): Promise<void> => {
+const handleTraceStart = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
 	const payload = await readJsonBody<TraceStartRequest>(req, res)
 	if (!payload) {
 		return
@@ -368,11 +379,7 @@ const handleTraceStart = async (
 	}
 }
 
-const handleTraceStop = async (
-	req: http.IncomingMessage,
-	res: http.ServerResponse,
-	options: HttpServerOptions,
-): Promise<void> => {
+const handleTraceStop = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
 	const payload = await readJsonBody<TraceStopRequest>(req, res)
 	if (!payload) {
 		return
@@ -392,11 +399,7 @@ const handleTraceStop = async (
 	}
 }
 
-const handleScreenshot = async (
-	req: http.IncomingMessage,
-	res: http.ServerResponse,
-	options: HttpServerOptions,
-): Promise<void> => {
+const handleScreenshot = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
 	const payload = await readJsonBody<ScreenshotRequest>(req, res)
 	if (!payload) {
 		return
@@ -416,11 +419,7 @@ const handleScreenshot = async (
 	}
 }
 
-const handleDomTree = async (
-	req: http.IncomingMessage,
-	res: http.ServerResponse,
-	options: HttpServerOptions,
-): Promise<void> => {
+const handleDomTree = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
 	const payload = await readJsonBody<DomTreeRequest>(req, res)
 	if (!payload) {
 		return
@@ -470,11 +469,7 @@ const handleDomTree = async (
 	}
 }
 
-const handleDomInfo = async (
-	req: http.IncomingMessage,
-	res: http.ServerResponse,
-	options: HttpServerOptions,
-): Promise<void> => {
+const handleDomInfo = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
 	const payload = await readJsonBody<DomInfoRequest>(req, res)
 	if (!payload) {
 		return
@@ -523,11 +518,109 @@ const handleDomInfo = async (
 	}
 }
 
-const handleStorageLocal = async (
-	req: http.IncomingMessage,
-	res: http.ServerResponse,
-	options: HttpServerOptions,
-): Promise<void> => {
+const handleDomHover = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<DomHoverRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.selector || typeof payload.selector !== 'string') {
+		return respondInvalidBody(res, 'selector is required')
+	}
+
+	const all = payload.all ?? false
+	if (typeof all !== 'boolean') {
+		return respondInvalidBody(res, 'all must be a boolean')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/hover',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(options.cdpSession, payload.selector, all)
+
+		if (!all && allNodeIds.length > 1) {
+			return respondJson(
+				res,
+				{
+					ok: false,
+					error: {
+						message: `Selector matched ${allNodeIds.length} elements; pass all=true to hover all matches`,
+						code: 'multiple_matches',
+					},
+				},
+				400,
+			)
+		}
+
+		if (allNodeIds.length === 0) {
+			const response: DomHoverResponse = { ok: true, matches: 0, hovered: 0 }
+			return respondJson(res, response)
+		}
+
+		await hoverDomNodes(options.cdpSession, nodeIds)
+		const response: DomHoverResponse = { ok: true, matches: allNodeIds.length, hovered: nodeIds.length }
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleDomClick = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<DomClickRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.selector || typeof payload.selector !== 'string') {
+		return respondInvalidBody(res, 'selector is required')
+	}
+
+	const all = payload.all ?? false
+	if (typeof all !== 'boolean') {
+		return respondInvalidBody(res, 'all must be a boolean')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/click',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(options.cdpSession, payload.selector, all)
+
+		if (!all && allNodeIds.length > 1) {
+			return respondJson(
+				res,
+				{
+					ok: false,
+					error: {
+						message: `Selector matched ${allNodeIds.length} elements; pass all=true to click all matches`,
+						code: 'multiple_matches',
+					},
+				},
+				400,
+			)
+		}
+
+		if (allNodeIds.length === 0) {
+			const response: DomClickResponse = { ok: true, matches: 0, clicked: 0 }
+			return respondJson(res, response)
+		}
+
+		await clickDomNodes(options.cdpSession, nodeIds)
+		const response: DomClickResponse = { ok: true, matches: allNodeIds.length, clicked: nodeIds.length }
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleStorageLocal = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
 	const payload = await readJsonBody<StorageLocalRequest>(req, res)
 	if (!payload) {
 		return

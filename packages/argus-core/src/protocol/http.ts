@@ -225,6 +225,48 @@ export type DomInfoResponse = {
 	elements: DomElementInfo[]
 }
 
+/**
+ * Request payload for POST /dom/hover.
+ */
+export type DomHoverRequest = {
+	/** CSS selector to match element(s). */
+	selector: string
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+}
+
+/**
+ * Response payload for POST /dom/hover.
+ */
+export type DomHoverResponse = {
+	ok: true
+	/** Number of elements matched by selector. */
+	matches: number
+	/** Number of elements hovered. */
+	hovered: number
+}
+
+/**
+ * Request payload for POST /dom/click.
+ */
+export type DomClickRequest = {
+	/** CSS selector to match element(s). */
+	selector: string
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+}
+
+/**
+ * Response payload for POST /dom/click.
+ */
+export type DomClickResponse = {
+	ok: true
+	/** Number of elements matched by selector. */
+	matches: number
+	/** Number of elements clicked. */
+	clicked: number
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // localStorage operations
 // ─────────────────────────────────────────────────────────────────────────────

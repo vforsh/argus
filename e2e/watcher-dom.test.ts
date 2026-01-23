@@ -6,7 +6,7 @@ import fs from 'node:fs/promises'
 import { chromium } from 'playwright'
 import { getFreePort } from './helpers/ports.js'
 import { runCommand, spawnAndWait } from './helpers/process.js'
-import type { DomTreeResponse, DomInfoResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DomTreeResponse, DomInfoResponse, DomHoverResponse, DomClickResponse, ErrorResponse } from '@vforsh/argus-core'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -33,9 +33,22 @@ const TEST_HTML = `
       <article class="article" data-testid="article-2">
         <p class="paragraph">Third paragraph</p>
       </article>
+      <button id="btn" class="action">Click me</button>
+      <div id="multi-1" class="multi">Multi One</div>
+      <div id="multi-2" class="multi">Multi Two</div>
     </main>
     <footer id="footer">Footer content</footer>
   </div>
+  <script>
+    window.__events = []
+    const btn = document.getElementById('btn')
+    btn.addEventListener('mouseover', () => window.__events.push('hover:btn'))
+    btn.addEventListener('click', () => window.__events.push('click:btn'))
+    const multi = document.querySelectorAll('.multi')
+    multi.forEach((el) => {
+      el.addEventListener('click', () => window.__events.push(\`click:\${el.id}\`))
+    })
+  </script>
 </body>
 </html>
 `
@@ -129,22 +142,18 @@ test('dom tree and dom info e2e', async (t) => {
 
 	await t.test('dom tree --depth controls traversal depth', async () => {
 		// depth=0 should return only the root node without children details
-		const { stdout: depth0 } = await runCommand(
-			'node',
-			[BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--depth', '0', '--json'],
-			{ env },
-		)
+		const { stdout: depth0 } = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--depth', '0', '--json'], {
+			env,
+		})
 		const resp0 = JSON.parse(depth0) as DomTreeResponse
 		assert.equal(resp0.roots[0].tag, 'div')
 		// With depth=0, children should be truncated
 		assert.equal(resp0.roots[0].truncated, true)
 
 		// depth=1 should include immediate children
-		const { stdout: depth1 } = await runCommand(
-			'node',
-			[BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--depth', '1', '--json'],
-			{ env },
-		)
+		const { stdout: depth1 } = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--depth', '1', '--json'], {
+			env,
+		})
 		const resp1 = JSON.parse(depth1) as DomTreeResponse
 		assert.ok(resp1.roots[0].children && resp1.roots[0].children.length > 0, 'depth=1 should include children')
 		const headerChild = resp1.roots[0].children?.find((c) => c.tag === 'header')
@@ -169,11 +178,7 @@ test('dom tree and dom info e2e', async (t) => {
 	})
 
 	await t.test('dom tree --all returns all matches', async () => {
-		const { stdout } = await runCommand(
-			'node',
-			[BIN_PATH, 'dom', 'tree', watcherId, '--selector', '.paragraph', '--all', '--json'],
-			{ env },
-		)
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '.paragraph', '--all', '--json'], { env })
 		const response = JSON.parse(stdout) as DomTreeResponse
 		assert.equal(response.ok, true)
 		assert.equal(response.matches, 3, 'Should match all 3 paragraph elements')
@@ -185,11 +190,7 @@ test('dom tree and dom info e2e', async (t) => {
 	})
 
 	await t.test('dom tree errors on no matches', async () => {
-		const result = await runCommand(
-			'node',
-			[BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#nonexistent'],
-			{ env },
-		).catch((e) => e)
+		const result = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#nonexistent'], { env }).catch((e) => e)
 		assert.ok(result instanceof Error, 'Should throw on no matches')
 		assert.match(result.message, /No element found/)
 	})
@@ -225,11 +226,9 @@ test('dom tree and dom info e2e', async (t) => {
 	})
 
 	await t.test('dom info --outer-html-max truncates outerHTML', async () => {
-		const { stdout } = await runCommand(
-			'node',
-			[BIN_PATH, 'dom', 'info', watcherId, '--selector', '#root', '--outer-html-max', '50', '--json'],
-			{ env },
-		)
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '#root', '--outer-html-max', '50', '--json'], {
+			env,
+		})
 		const response = JSON.parse(stdout) as DomInfoResponse
 		assert.equal(response.ok, true)
 		const el = response.elements[0]
@@ -252,11 +251,7 @@ test('dom tree and dom info e2e', async (t) => {
 	})
 
 	await t.test('dom info --all returns all matches', async () => {
-		const { stdout } = await runCommand(
-			'node',
-			[BIN_PATH, 'dom', 'info', watcherId, '--selector', '.nav-link', '--all', '--json'],
-			{ env },
-		)
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '.nav-link', '--all', '--json'], { env })
 		const response = JSON.parse(stdout) as DomInfoResponse
 		assert.equal(response.ok, true)
 		assert.equal(response.matches, 2)
@@ -268,22 +263,18 @@ test('dom tree and dom info e2e', async (t) => {
 	})
 
 	await t.test('dom info includes data attributes', async () => {
-		const { stdout } = await runCommand(
-			'node',
-			[BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'],
-			{ env },
-		)
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'], {
+			env,
+		})
 		const response = JSON.parse(stdout) as DomInfoResponse
 		assert.equal(response.ok, true)
 		assert.equal(response.elements[0].attributes['data-testid'], 'article-1')
 	})
 
 	await t.test('dom info reports correct childElementCount', async () => {
-		const { stdout } = await runCommand(
-			'node',
-			[BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'],
-			{ env },
-		)
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'], {
+			env,
+		})
 		const response = JSON.parse(stdout) as DomInfoResponse
 		assert.equal(response.elements[0].childElementCount, 2, 'article-1 has 2 paragraph children')
 
@@ -294,6 +285,69 @@ test('dom tree and dom info e2e', async (t) => {
 		)
 		const response2 = JSON.parse(stdout2) as DomInfoResponse
 		assert.equal(response2.elements[0].childElementCount, 1, 'article-2 has 1 paragraph child')
+	})
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// dom hover + click tests
+	// ─────────────────────────────────────────────────────────────────────────
+
+	await t.test('dom hover triggers mouseover events', async () => {
+		await page.evaluate(() => {
+			;(globalThis as { __events?: string[] }).__events = []
+		})
+
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'hover', watcherId, '--selector', '#btn', '--json'], { env })
+		const response = JSON.parse(stdout) as DomHoverResponse
+		assert.equal(response.ok, true)
+		assert.equal(response.matches, 1)
+		assert.equal(response.hovered, 1)
+
+		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		assert.ok(events.includes('hover:btn'))
+	})
+
+	await t.test('dom click triggers click events', async () => {
+		await page.evaluate(() => {
+			;(globalThis as { __events?: string[] }).__events = []
+		})
+
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '#btn', '--json'], { env })
+		const response = JSON.parse(stdout) as DomClickResponse
+		assert.equal(response.ok, true)
+		assert.equal(response.matches, 1)
+		assert.equal(response.clicked, 1)
+
+		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		assert.ok(events.includes('click:btn'))
+	})
+
+	await t.test('dom click errors on multiple matches without --all', async () => {
+		const result = await runCommand('node', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '.multi', '--json'], {
+			env,
+		}).catch((e) => e)
+
+		assert.ok(result instanceof Error, 'Should throw on multiple matches')
+		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
+		assert.ok(stdoutMatch, 'Should have JSON in stdout')
+		const response = JSON.parse(stdoutMatch![1]) as ErrorResponse
+		assert.equal(response.ok, false)
+		assert.match(response.error.message, /matched.*elements/)
+	})
+
+	await t.test('dom click --all clicks all matches', async () => {
+		await page.evaluate(() => {
+			;(globalThis as { __events?: string[] }).__events = []
+		})
+
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '.multi', '--all', '--json'], { env })
+		const response = JSON.parse(stdout) as DomClickResponse
+		assert.equal(response.ok, true)
+		assert.equal(response.matches, 2)
+		assert.equal(response.clicked, 2)
+
+		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		assert.ok(events.includes('click:multi-1'))
+		assert.ok(events.includes('click:multi-2'))
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────

@@ -10,6 +10,8 @@ import { runTrace, runTraceStart, runTraceStop } from './commands/trace.js'
 import { runScreenshot } from './commands/screenshot.js'
 import { runDomTree } from './commands/domTree.js'
 import { runDomInfo } from './commands/domInfo.js'
+import { runDomHover } from './commands/domHover.js'
+import { runDomClick } from './commands/domClick.js'
 import { runChromeStart } from './commands/chromeStart.js'
 import {
 	runChromeVersion,
@@ -323,6 +325,34 @@ dom.command('info')
 	)
 	.action(async (id, options) => {
 		await runDomInfo(id, options)
+	})
+
+dom.command('hover')
+	.argument('[id]', 'Watcher id to query')
+	.description('Hover over element(s) matching a CSS selector')
+	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
+	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom hover app --selector "#btn"\n  $ argus dom hover app --selector ".item" --all\n  $ argus dom hover app --selector "#btn" --json\n',
+	)
+	.action(async (id, options) => {
+		await runDomHover(id, options)
+	})
+
+dom.command('click')
+	.argument('[id]', 'Watcher id to query')
+	.description('Click element(s) matching a CSS selector')
+	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
+	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom click app --selector "#btn"\n  $ argus dom click app --selector ".item" --all\n  $ argus dom click app --selector "#btn" --json\n',
+	)
+	.action(async (id, options) => {
+		await runDomClick(id, options)
 	})
 
 const chrome = program.command('chrome').alias('browser').description('Chrome/Chromium management commands')
