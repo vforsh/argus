@@ -7,4 +7,6 @@ export type ChromeTargetResponse = {
 	devtoolsFrontendUrl?: string
 	description?: string
 	faviconUrl?: string
+	/** Parent target ID for nested targets (e.g., iframes within pages). */
+	parentId?: string
 }

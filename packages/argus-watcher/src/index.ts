@@ -197,7 +197,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	let closeOnce: (() => Promise<void>) | null = null
 	let cdpStatus: {
 		attached: boolean
-		target: { title: string | null; url: string | null } | null
+		target: { title: string | null; url: string | null; type: string | null; parentId: string | null } | null
 		reason?: string | null
 	} = { attached: false, target: null }
 

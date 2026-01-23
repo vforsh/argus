@@ -14,6 +14,10 @@ export type CdpAttachedEvent = {
 		title: string | null
 		/** Page URL for the target. */
 		url: string | null
+		/** Target type (e.g., 'page', 'iframe', 'worker'). */
+		type: string | null
+		/** Parent target ID for nested targets (e.g., iframes). Null for top-level pages. */
+		parentId: string | null
 	} | null
 }
 

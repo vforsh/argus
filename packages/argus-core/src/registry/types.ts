@@ -1,13 +1,35 @@
 /** Target matching rules for CDP selection. */
 export type WatcherMatch = {
-	/** Exact URL match against the CDP target URL. */
+	/** Substring match against the CDP target URL. */
 	url?: string
-	/** Exact title match against the CDP target title. */
+	/** Substring match against the CDP target title. */
 	title?: string
 	/** JavaScript regex pattern (without flags) matched against the CDP target URL. */
 	urlRegex?: string
 	/** JavaScript regex pattern (without flags) matched against the CDP target title. */
 	titleRegex?: string
+	/**
+	 * Filter by target type (e.g., 'page', 'iframe', 'worker').
+	 * Exact match against the Chrome target `type` field.
+	 */
+	type?: string
+	/**
+	 * Match against URL origin only (protocol + host + port).
+	 * Ignores path, query params, and hash. Useful for iframe matching
+	 * when parent pages may include the iframe URL in query params.
+	 */
+	origin?: string
+	/**
+	 * Connect to a specific target by its Chrome target ID.
+	 * Bypasses URL/title matching entirely. Get target IDs from `argus page targets`.
+	 */
+	targetId?: string
+	/**
+	 * Filter by parent target URL pattern.
+	 * Only matches targets whose parent's URL includes this substring.
+	 * Useful for targeting iframes within a specific parent page.
+	 */
+	parent?: string
 }
 
 /** Chrome CDP connection details. */

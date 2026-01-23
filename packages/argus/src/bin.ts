@@ -438,13 +438,14 @@ const page = program.command('page').alias('tab').description('Page/tab manageme
 page.command('targets')
 	.aliases(['list', 'ls'])
 	.description('List Chrome targets (tabs, extensions, etc.)')
-	.option('--type <type>', 'Filter by target type (e.g. page, worker)')
+	.option('--type <type>', 'Filter by target type (e.g. page, worker, iframe)')
+	.option('--tree', 'Show targets as a tree with parent-child relationships')
 	.option('--cdp <host:port>', 'CDP host:port')
 	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus page targets\n  $ argus page targets --type page\n  $ argus page targets --json\n  $ argus page targets --id app\n',
+		'\nExamples:\n  $ argus page targets\n  $ argus page targets --type page\n  $ argus page targets --type iframe\n  $ argus page targets --tree\n  $ argus page targets --json\n  $ argus page targets --id app\n',
 	)
 	.action(async (options) => {
 		await runChromeTargets(options)
@@ -549,6 +550,10 @@ watcher
 	.description('Start an Argus watcher process')
 	.option('--id <watcherId>', 'Watcher id to announce in the registry')
 	.option('--url <url>', 'URL pattern to match for capturing logs')
+	.option('--type <type>', 'Filter by target type (e.g., page, iframe, worker)')
+	.option('--origin <origin>', 'Match against URL origin only (protocol + host + port)')
+	.option('--target <targetId>', 'Connect to a specific target by its Chrome target ID')
+	.option('--parent <pattern>', 'Filter by parent target URL pattern')
 	.option('--chrome-host <host>', 'Chrome CDP host (default: 127.0.0.1)')
 	.option('--chrome-port <port>', 'Chrome CDP port (default: 9222)')
 	.option('--artifacts <dir>', 'Artifacts base directory (default: <cwd>/argus-artifacts)')
@@ -557,7 +562,7 @@ watcher
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --url localhost:3000 --no-page-indicator\n  $ argus watcher start --id app --url localhost:3000 --chrome-port 9223\n  $ argus watcher start --id app --url localhost:3000 --artifacts ./artifacts\n  $ argus watcher start --id app --url localhost:3000 --json\n',
+		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id game --type iframe --url localhost:3007\n  $ argus watcher start --id game --origin https://localhost:3007\n  $ argus watcher start --id game --target CC1135709D9AC3B9CC0446F8B58CC344\n  $ argus watcher start --id game --type iframe --parent yandex.ru\n  $ argus watcher start --id app --url localhost:3000 --no-page-indicator\n  $ argus watcher start --id app --url localhost:3000 --json\n',
 	)
 	.action(async (options, command) => {
 		const { config: configPath, ...cliOptions } = options

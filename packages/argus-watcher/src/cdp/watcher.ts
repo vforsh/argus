@@ -22,6 +22,12 @@ export type CdpTarget = {
 
 	/** WebSocket URL used to connect to the target via the Chrome DevTools Protocol. */
 	webSocketDebuggerUrl: string
+
+	/** Target type (e.g., 'page', 'iframe', 'worker', 'service_worker'). */
+	type: string
+
+	/** Parent target ID for nested targets (e.g., iframes within pages). Null for top-level pages. */
+	parentId: string | null
 }
 
 /** Current CDP attachment status. */
@@ -30,6 +36,8 @@ export type CdpStatus = {
 	target: {
 		title: string | null
 		url: string | null
+		type: string | null
+		parentId: string | null
 	} | null
 	/** Best-effort reason for detachment. Null when attached. */
 	reason?: string | null
@@ -162,7 +170,12 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		// Only signal attached after we've enabled the necessary domains
 		options.onStatus({
 			attached: true,
-			target: { title: target.title ?? null, url: target.url ?? null },
+			target: {
+				title: target.title ?? null,
+				url: target.url ?? null,
+				type: target.type ?? null,
+				parentId: target.parentId ?? null,
+			},
 			reason: null,
 		})
 
@@ -190,26 +203,72 @@ const findTarget = async (chrome: WatcherChrome, match?: WatcherMatch): Promise<
 		throw new Error('No CDP targets available')
 	}
 
-	if (!match || (!match.url && !match.title && !match.urlRegex && !match.titleRegex)) {
+	// Direct target ID match bypasses all other filters
+	if (match?.targetId) {
+		const selected = targets.find((t) => t.id === match.targetId)
+		if (!selected) {
+			throw new Error(`No CDP target found with id: ${match.targetId}`)
+		}
+		return selected
+	}
+
+	const hasFilters = match?.url || match?.title || match?.urlRegex || match?.titleRegex || match?.type || match?.origin || match?.parent
+
+	if (!match || !hasFilters) {
 		return targets[0]
 	}
 
 	const urlRegex = match.urlRegex ? safeRegex(match.urlRegex) : null
 	const titleRegex = match.titleRegex ? safeRegex(match.titleRegex) : null
 
+	// Build a lookup map for parent resolution
+	const targetById = new Map(targets.map((t) => [t.id, t]))
+
 	const selected = targets.find((target) => {
+		// Type filter (exact match)
+		if (match.type && target.type !== match.type) {
+			return false
+		}
+
+		// Origin filter (match URL origin only)
+		if (match.origin) {
+			const targetOrigin = extractOrigin(target.url)
+			if (!targetOrigin || !targetOrigin.includes(match.origin)) {
+				return false
+			}
+		}
+
+		// Parent filter (match parent target's URL)
+		if (match.parent) {
+			if (!target.parentId) {
+				return false
+			}
+			const parent = targetById.get(target.parentId)
+			if (!parent || !parent.url.includes(match.parent)) {
+				return false
+			}
+		}
+
+		// URL substring filter
 		if (match.url && !target.url.includes(match.url)) {
 			return false
 		}
+
+		// Title substring filter
 		if (match.title && !target.title.includes(match.title)) {
 			return false
 		}
+
+		// URL regex filter
 		if (urlRegex && !urlRegex.test(target.url)) {
 			return false
 		}
+
+		// Title regex filter
 		if (titleRegex && !titleRegex.test(target.title)) {
 			return false
 		}
+
 		return true
 	})
 
@@ -218,6 +277,19 @@ const findTarget = async (chrome: WatcherChrome, match?: WatcherMatch): Promise<
 	}
 
 	return selected
+}
+
+/**
+ * Extract the origin (protocol + host + port) from a URL.
+ * Returns null if the URL is malformed.
+ */
+const extractOrigin = (url: string): string | null => {
+	try {
+		const parsed = new URL(url)
+		return parsed.origin
+	} catch {
+		return null
+	}
 }
 
 const fetchTargets = async (chrome: WatcherChrome): Promise<CdpTarget[]> => {
@@ -237,6 +309,8 @@ const fetchTargets = async (chrome: WatcherChrome): Promise<CdpTarget[]> => {
 			title: String(target.title ?? ''),
 			url: String(target.url ?? ''),
 			webSocketDebuggerUrl: String(target.webSocketDebuggerUrl ?? ''),
+			type: String(target.type ?? 'page'),
+			parentId: typeof target.parentId === 'string' ? target.parentId : null,
 		}))
 		.filter((target) => Boolean(target.webSocketDebuggerUrl))
 }

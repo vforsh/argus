@@ -12,6 +12,7 @@ compatibility: Requires Node 18+ (WebSocket), a Chromium-based browser, and loca
 - **Fetching logs** (one-shot + follow) (`argus logs`, `argus tail`)
 - **Evaluating JS** in the connected page (`argus eval`)
 - **Screenshots** (full page or element) (`argus screenshot`)
+- **Iframe targeting** with `--type`, `--origin`, `--target`, `--parent` filters
 
 ## Quick workflow (recommended)
 
@@ -286,8 +287,117 @@ Notes:
 
 - `--out` is interpreted by the watcher (typically relative to its artifacts dir). Use `--json` to capture the resolved `outFile` path.
 
+## Working with iframes
+
+When your app runs inside an iframe (e.g., embedded games, widgets), special targeting is needed to attach to the iframe instead of the parent page.
+
+### The problem
+
+Simple URL matching (`--url localhost:3007`) can match the wrong target when:
+
+- The parent page includes the iframe URL in its query string (e.g., `?game_url=https://localhost:3007`)
+- Multiple targets have similar URLs
+
+### Targeting options
+
+Use these options with `argus watcher start` to precisely target iframes:
+
+**`--type iframe`** - Only match targets with type "iframe":
+
+```bash
+argus watcher start --id game --type iframe --url localhost:3007
+```
+
+**`--origin <origin>`** - Match URL origin only (ignores query params in other pages):
+
+```bash
+argus watcher start --id game --origin https://localhost:3007
+```
+
+**`--target <targetId>`** - Connect to a specific target by ID:
+
+```bash
+# First, list targets to find the ID
+argus page targets --type iframe
+
+# Then connect directly
+argus watcher start --id game --target CC1135709D9AC3B9CC0446F8B58CC344
+```
+
+**`--parent <pattern>`** - Match only targets whose parent URL contains this pattern:
+
+```bash
+argus watcher start --id game --type iframe --parent yandex.ru
+```
+
+### Discovering targets
+
+List all targets with parent information:
+
+```bash
+argus page targets
+```
+
+Show targets as a tree with parent-child relationships:
+
+```bash
+argus page targets --tree
+```
+
+Filter to iframes only:
+
+```bash
+argus page targets --type iframe
+```
+
+### Example: embedded game debugging
+
+```bash
+# Terminal 1: Start Chrome
+argus chrome start --url "https://yandex.ru/games/app/123"
+
+# Terminal 2: Start watcher for the iframe
+argus watcher start --id game --type iframe --url localhost:3007
+
+# Terminal 3: Debug the game
+argus logs game --levels error,warning
+argus eval game 'window.gameState'
+argus screenshot game --out game.png
+```
+
+### Watcher output with iframe info
+
+When attached to an iframe, the watcher shows type and parent info:
+
+```
+[game] CDP attached: My Game (https://localhost:3007/dev/index.html) (type: iframe)
+```
+
+### Programmatic targeting
+
+```js
+import { startWatcher } from '@vforsh/argus-watcher'
+
+const { watcher, events, close } = await startWatcher({
+	id: 'game',
+	match: {
+		url: 'localhost:3007',
+		type: 'iframe', // Only match iframes
+		// origin: 'https://localhost:3007',  // Or use origin matching
+		// targetId: 'CC11...',   // Or direct target ID
+		// parent: 'yandex.ru',   // Or filter by parent URL
+	},
+	chrome: { host: '127.0.0.1', port: 9222 },
+})
+
+events.on('cdpAttached', ({ target }) => {
+	console.log(`Attached to ${target?.title} (type: ${target?.type}, parent: ${target?.parentId})`)
+})
+```
+
 ## Common troubleshooting
 
 - **Chrome binary not found**: set `ARGUS_CHROME_BIN` to an absolute path.
-- **Watcher can’t attach**: confirm the CDP endpoint (`argus chrome status --host 127.0.0.1 --port 9222`) and ensure your watcher’s `--chrome-port` matches.
+- **Watcher can't attach**: confirm the CDP endpoint (`argus chrome status --host 127.0.0.1 --port 9222`) and ensure your watcher's `--chrome-port` matches.
 - **Page reload with params fails**: only supported for http/https targets (not `chrome://`, `devtools://`, etc.).
+- **Wrong target matched (iframe issue)**: Use `--type iframe` or `--origin` to avoid matching parent pages that include your URL in query params.

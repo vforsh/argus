@@ -11,6 +11,14 @@ export type WatcherStartOptions = {
 	pageIndicator?: boolean
 	artifacts?: string
 	pageConsoleLogging?: PageConsoleLogging
+	/** Filter by target type (e.g., 'page', 'iframe'). */
+	type?: string
+	/** Match against URL origin only (protocol + host + port). */
+	origin?: string
+	/** Connect to a specific target by its Chrome target ID. */
+	target?: string
+	/** Filter by parent target URL pattern. */
+	parent?: string
 }
 
 type WatcherStartResult = {
@@ -18,7 +26,11 @@ type WatcherStartResult = {
 	host: string
 	port: number
 	pid: number
-	matchUrl: string
+	matchUrl?: string
+	matchType?: string
+	matchOrigin?: string
+	matchTarget?: string
+	matchParent?: string
 	chromeHost: string
 	chromePort: number
 	artifactsBaseDir?: string
@@ -39,8 +51,10 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		return
 	}
 
-	if (!options.url || options.url.trim() === '') {
-		output.writeWarn('--url is required.')
+	// At least one targeting option is required: --url, --target, --origin, or --type
+	const hasTargeting = options.url?.trim() || options.target?.trim() || options.origin?.trim() || options.type?.trim()
+	if (!hasTargeting) {
+		output.writeWarn('At least one targeting option is required: --url, --target, --origin, or --type.')
 		process.exitCode = 2
 		return
 	}
@@ -58,7 +72,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 	}
 
 	const watcherId = options.id.trim()
-	const matchUrl = options.url.trim()
+	const matchUrl = options.url?.trim()
 	let artifactsBaseDir: string | undefined
 	if (options.artifacts != null) {
 		const trimmed = options.artifacts.trim()
@@ -70,11 +84,36 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		artifactsBaseDir = path.resolve(process.cwd(), trimmed)
 	}
 
+	// Build the match object from various filter options
+	const match: {
+		url?: string
+		type?: string
+		origin?: string
+		targetId?: string
+		parent?: string
+	} = {}
+
+	if (matchUrl) {
+		match.url = matchUrl
+	}
+	if (options.type?.trim()) {
+		match.type = options.type.trim()
+	}
+	if (options.origin?.trim()) {
+		match.origin = options.origin.trim()
+	}
+	if (options.target?.trim()) {
+		match.targetId = options.target.trim()
+	}
+	if (options.parent?.trim()) {
+		match.parent = options.parent.trim()
+	}
+
 	let handle: WatcherHandle
 	try {
 		handle = await startWatcher({
 			id: watcherId,
-			match: { url: matchUrl },
+			match: Object.keys(match).length > 0 ? match : undefined,
 			chrome: { host: chromeHost, port: chromePort },
 			host: '127.0.0.1',
 			port: 0,
@@ -93,7 +132,11 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		host: handle.watcher.host,
 		port: handle.watcher.port,
 		pid: handle.watcher.pid,
-		matchUrl,
+		matchUrl: match.url,
+		matchType: match.type,
+		matchOrigin: match.origin,
+		matchTarget: match.targetId,
+		matchParent: match.parent,
 		chromeHost,
 		chromePort,
 		artifactsBaseDir,
@@ -113,7 +156,8 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 	})
 
 	handle.events.on('cdpAttached', ({ target }) => {
-		output.writeHuman(`[${handle.watcher.id}] CDP attached: ${target?.title} (${target?.url})`)
+		const typeInfo = target?.type ? ` (type: ${target.type})` : ''
+		output.writeHuman(`[${handle.watcher.id}] CDP attached: ${target?.title} (${target?.url})${typeInfo}`)
 	})
 
 	handle.events.on('cdpDetached', ({ reason, target }) => {
@@ -127,7 +171,21 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		output.writeHuman(`  id=${result.id}`)
 		output.writeHuman(`  host=${result.host}`)
 		output.writeHuman(`  port=${result.port}`)
-		output.writeHuman(`  matchUrl=${result.matchUrl}`)
+		if (result.matchUrl) {
+			output.writeHuman(`  matchUrl=${result.matchUrl}`)
+		}
+		if (result.matchType) {
+			output.writeHuman(`  matchType=${result.matchType}`)
+		}
+		if (result.matchOrigin) {
+			output.writeHuman(`  matchOrigin=${result.matchOrigin}`)
+		}
+		if (result.matchTarget) {
+			output.writeHuman(`  matchTarget=${result.matchTarget}`)
+		}
+		if (result.matchParent) {
+			output.writeHuman(`  matchParent=${result.matchParent}`)
+		}
 		output.writeHuman(`  chrome=${result.chromeHost}:${result.chromePort}`)
 		if (result.artifactsBaseDir) {
 			output.writeHuman(`  artifacts=${result.artifactsBaseDir}`)

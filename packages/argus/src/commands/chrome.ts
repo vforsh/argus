@@ -210,6 +210,7 @@ export const runChromeStatus = async (options: ChromeCommandOptions): Promise<vo
 
 export type ChromeTargetsOptions = ChromeCommandOptions & {
 	type?: string
+	tree?: boolean
 }
 
 export const runChromeTargets = async (options: ChromeTargetsOptions): Promise<void> => {
@@ -238,13 +239,72 @@ export const runChromeTargets = async (options: ChromeTargetsOptions): Promise<v
 
 	if (options.json) {
 		output.writeJson(targets)
+	} else if (options.tree) {
+		renderTargetTree(targets, output)
 	} else {
 		for (const target of targets) {
 			const title = target.title ? ` ${target.title}` : ''
 			const targetUrl = target.url ? ` ${target.url}` : ''
-			output.writeHuman(`${target.id} ${target.type}${title}${targetUrl}`)
+			const parentInfo = target.parentId ? ` [parent: ${target.parentId.slice(0, 8)}...]` : ''
+			output.writeHuman(`${target.id} ${target.type}${title}${targetUrl}${parentInfo}`)
 		}
 	}
+}
+
+/**
+ * Render targets as a tree showing parent-child relationships.
+ */
+const renderTargetTree = (targets: ChromeTargetResponse[], output: { writeHuman: (msg: string) => void }): void => {
+	// Build lookup maps
+	const targetById = new Map(targets.map((t) => [t.id, t]))
+	const childrenByParent = new Map<string | null, ChromeTargetResponse[]>()
+
+	for (const target of targets) {
+		const parentId = target.parentId ?? null
+		const children = childrenByParent.get(parentId) ?? []
+		children.push(target)
+		childrenByParent.set(parentId, children)
+	}
+
+	// Find root targets (no parent or parent not in our list)
+	const roots = targets.filter((t) => !t.parentId || !targetById.has(t.parentId))
+
+	const renderNode = (target: ChromeTargetResponse, prefix: string, isLast: boolean): void => {
+		const connector = isLast ? '└── ' : '├── '
+		const title = target.title || '(untitled)'
+		const shortId = target.id.slice(0, 8) + '...'
+		output.writeHuman(`${prefix}${connector}${title} (${target.type}, ${shortId})`)
+		output.writeHuman(`${prefix}${isLast ? '    ' : '│   '}${target.url}`)
+
+		const children = childrenByParent.get(target.id) ?? []
+		children.forEach((child, index) => {
+			const childIsLast = index === children.length - 1
+			renderNode(child, prefix + (isLast ? '    ' : '│   '), childIsLast)
+		})
+	}
+
+	if (roots.length === 0) {
+		output.writeHuman('(no targets)')
+		return
+	}
+
+	roots.forEach((root, index) => {
+		const isLast = index === roots.length - 1
+		const title = root.title || '(untitled)'
+		const shortId = root.id.slice(0, 8) + '...'
+		output.writeHuman(`${title} (${root.type}, ${shortId})`)
+		output.writeHuman(`${root.url}`)
+
+		const children = childrenByParent.get(root.id) ?? []
+		children.forEach((child, childIndex) => {
+			const childIsLast = childIndex === children.length - 1
+			renderNode(child, '', childIsLast)
+		})
+
+		if (!isLast) {
+			output.writeHuman('')
+		}
+	})
 }
 
 export type ChromeOpenOptions = ChromeCommandOptions & {
