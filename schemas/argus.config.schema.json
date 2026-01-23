@@ -33,10 +33,6 @@
 						"devTools": {
 							"type": "boolean",
 							"description": "Auto-open DevTools for new tabs."
-						},
-						"devToolsPanel": {
-							"type": "string",
-							"description": "Open DevTools with a specific panel (e.g. console)."
 						}
 					},
 					"allOf": [
@@ -101,8 +97,7 @@
 				"start": {
 					"url": "http://localhost:3000",
 					"profile": "default-lite",
-					"devTools": true,
-					"devToolsPanel": "console"
+					"devTools": true
 				}
 			},
 			"watcher": {

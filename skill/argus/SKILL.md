@@ -50,7 +50,6 @@ If you want DevTools opened immediately:
 
 ```bash
 argus chrome start --dev-tools
-argus chrome start --dev-tools-panel console
 ```
 
 ### 2) Start a watcher
@@ -82,8 +81,7 @@ Example:
 	"chrome": {
 		"start": {
 			"url": "http://localhost:3000",
-			"devTools": true,
-			"devToolsPanel": "console"
+			"devTools": true
 		}
 	},
 	"watcher": {
@@ -117,14 +115,12 @@ argus chrome start --config .argus/config.json
 argus chrome start --url http://localhost:3000
 argus chrome start --from-watcher app
 argus chrome start --dev-tools
-argus chrome start --dev-tools-panel console
 argus chrome start --json
 ```
 
 - **`--url <url>`**: open this URL on launch.
 - **`--from-watcher <watcherId>`**: looks up the watcher in the local registry and uses its `match.url` as the startup URL.
 - **`--dev-tools`**: auto-open DevTools for new tabs.
-- **`--dev-tools-panel <panel>`**: open DevTools with a specific panel (`console`, `network`, `elements`).
 - **`--config <path>`**: load defaults from an Argus config file.
 - **`--json`**: prints `{ chromePid, cdpHost, cdpPort, userDataDir, startupUrl }`.
 

@@ -15,7 +15,6 @@ const buildConfigTemplate = (schemaPath: string) => ({
 			url: 'http://localhost:3000',
 			profile: 'default-lite',
 			devTools: true,
-			devToolsPanel: 'console',
 		},
 	},
 	watcher: {
