@@ -1,5 +1,7 @@
 # Argus CDP Bridge Extension
 
+**Repository**: https://github.com/vforsh/argus
+
 Chrome extension that provides CDP (Chrome DevTools Protocol) access to tabs without requiring Chrome to be launched with `--remote-debugging-port`. Uses the `chrome.debugger` API to attach to tabs and communicates with `argus-bridge` via Native Messaging.
 
 ## Build

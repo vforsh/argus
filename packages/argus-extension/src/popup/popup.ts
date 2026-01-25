@@ -32,6 +32,9 @@ const statusText = document.getElementById('statusText') as HTMLSpanElement
 const content = document.getElementById('content') as HTMLDivElement
 const attachedCount = document.getElementById('attachedCount') as HTMLSpanElement
 
+// Previous state for diffing (avoid unnecessary re-renders)
+let prevStateHash = ''
+
 /**
  * Send a message to the service worker.
  */
@@ -59,7 +62,7 @@ function updateStatus(connected: boolean, tabCount: number): void {
 /**
  * Render the tab list.
  */
-function renderTabs(tabs: TabInfo[]): void {
+function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
 	if (tabs.length === 0) {
 		content.innerHTML = `
       <div class="empty-state">
@@ -71,7 +74,16 @@ function renderTabs(tabs: TabInfo[]): void {
 	}
 
 	const attachedTabs = tabs.filter((t) => t.attached)
-	const availableTabs = tabs.filter((t) => !t.attached)
+	let availableTabs = tabs.filter((t) => !t.attached)
+
+	// Move current tab to the beginning of Available Tabs list
+	if (currentTabId !== undefined) {
+		const currentTabIndex = availableTabs.findIndex((t) => t.tabId === currentTabId)
+		if (currentTabIndex > 0) {
+			const [currentTab] = availableTabs.splice(currentTabIndex, 1)
+			availableTabs.unshift(currentTab)
+		}
+	}
 
 	let html = ''
 
@@ -102,6 +114,9 @@ function renderTabs(tabs: TabInfo[]): void {
 	content.querySelectorAll('.tab-action').forEach((btn) => {
 		btn.addEventListener('click', handleTabAction)
 	})
+	content.querySelectorAll('.tab-item').forEach((item) => {
+		item.addEventListener('click', handleTabItemClick)
+	})
 }
 
 /**
@@ -110,7 +125,7 @@ function renderTabs(tabs: TabInfo[]): void {
 function renderTabItem(tab: TabInfo): string {
 	const favicon = tab.faviconUrl
 		? `<img class="tab-favicon" src="${escapeHtml(tab.faviconUrl)}" alt="">`
-		: `<div class="tab-favicon" style="background: #333"></div>`
+		: `<div class="tab-favicon" style="background: #e0e0e0"></div>`
 
 	const actionButton = tab.attached
 		? `<button class="tab-action detach" data-tab-id="${tab.tabId}" data-action="detach">Detach</button>`
@@ -129,6 +144,35 @@ function renderTabItem(tab: TabInfo): string {
 }
 
 /**
+ * Handle click on tab item (attach/detach based on current state).
+ */
+async function handleTabItemClick(event: Event): Promise<void> {
+	const target = event.target as HTMLElement
+	// Ignore clicks on the button (it's handled separately)
+	if (target.closest('.tab-action')) {
+		return
+	}
+
+	const tabItem = event.currentTarget as HTMLElement
+	const tabId = parseInt(tabItem.dataset.tabId ?? '0', 10)
+	const isAttached = tabItem.classList.contains('attached')
+	const action = isAttached ? 'detach' : 'attach'
+
+	// Show loading state
+	tabItem.style.opacity = '0.6'
+	tabItem.style.pointerEvents = 'none'
+
+	try {
+		await sendMessage({ action, tabId })
+		await refreshTabs(true)
+	} catch (err) {
+		console.error('Action failed:', err)
+		tabItem.style.opacity = '1'
+		tabItem.style.pointerEvents = 'auto'
+	}
+}
+
+/**
  * Handle attach/detach button click.
  */
 async function handleTabAction(event: Event): Promise<void> {
@@ -142,7 +186,7 @@ async function handleTabAction(event: Event): Promise<void> {
 	try {
 		await sendMessage({ action, tabId })
 		// Refresh the tab list
-		await refreshTabs()
+		await refreshTabs(true)
 	} catch (err) {
 		console.error('Action failed:', err)
 		button.disabled = false
@@ -153,19 +197,34 @@ async function handleTabAction(event: Event): Promise<void> {
 /**
  * Refresh the tab list and status.
  */
-async function refreshTabs(): Promise<void> {
-	const [statusResponse, tabsResponse] = await Promise.all([
+async function refreshTabs(forceRender = false): Promise<void> {
+	const [statusResponse, tabsResponse, [currentTab]] = await Promise.all([
 		sendMessage<StatusResponse>({ action: 'getStatus' }),
 		sendMessage<TabsResponse>({ action: 'getTabs' }),
+		chrome.tabs.query({ active: true, currentWindow: true }),
 	])
 
 	const connected = statusResponse.status?.bridgeConnected ?? false
 	const attachedTabCount = statusResponse.status?.attachedTabs.length ?? 0
 
+	// Compute state hash to avoid unnecessary re-renders
+	const stateHash = JSON.stringify({
+		connected,
+		attachedTabCount,
+		tabs: tabsResponse.tabs,
+		currentTabId: currentTab?.id,
+		error: tabsResponse.error,
+	})
+
+	if (!forceRender && stateHash === prevStateHash) {
+		return
+	}
+	prevStateHash = stateHash
+
 	updateStatus(connected, attachedTabCount)
 
 	if (tabsResponse.success && tabsResponse.tabs) {
-		renderTabs(tabsResponse.tabs)
+		renderTabs(tabsResponse.tabs, currentTab?.id)
 	} else {
 		content.innerHTML = `
       <div class="empty-state">

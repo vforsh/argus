@@ -17,14 +17,14 @@
 				width: 360px;
 				min-height: 200px;
 				max-height: 500px;
-				background: #1a1a2e;
-				color: #eee;
+				background: #f5f5f5;
+				color: #333;
 			}
 
 			.header {
 				padding: 12px 16px;
-				background: #16213e;
-				border-bottom: 1px solid #0f3460;
+				background: #fff;
+				border-bottom: 1px solid #e0e0e0;
 				display: flex;
 				align-items: center;
 				gap: 10px;
@@ -33,7 +33,7 @@
 			.header h1 {
 				font-size: 15px;
 				font-weight: 600;
-				color: #fff;
+				color: #333;
 			}
 
 			.status-indicator {
@@ -49,21 +49,39 @@
 
 			.status-text {
 				font-size: 11px;
-				color: #888;
+				color: #666;
 				margin-left: auto;
 			}
 
 			.content {
 				padding: 12px;
-				overflow-y: auto;
+				overflow-y: overlay;
 				max-height: 400px;
+			}
+
+			/* Webkit scrollbar (Chrome) */
+			.content::-webkit-scrollbar {
+				width: 6px;
+			}
+
+			.content::-webkit-scrollbar-track {
+				background: transparent;
+			}
+
+			.content::-webkit-scrollbar-thumb {
+				background: rgba(0, 0, 0, 0.2);
+				border-radius: 3px;
+			}
+
+			.content::-webkit-scrollbar-thumb:hover {
+				background: rgba(0, 0, 0, 0.35);
 			}
 
 			.section-title {
 				font-size: 11px;
 				text-transform: uppercase;
 				letter-spacing: 0.5px;
-				color: #888;
+				color: #666;
 				margin-bottom: 8px;
 			}
 
@@ -78,19 +96,21 @@
 				align-items: center;
 				gap: 10px;
 				padding: 10px 12px;
-				background: #16213e;
+				background: #fff;
 				border-radius: 6px;
 				cursor: pointer;
-				transition: background 0.15s;
+				transition: outline-color 0.15s;
+				outline: 2px solid transparent;
+				outline-offset: -2px;
 			}
 
 			.tab-item:hover {
-				background: #1f3460;
+				outline-color: #90caf9;
 			}
 
 			.tab-item.attached {
-				background: #1a3a2e;
-				border: 1px solid #2d5a3e;
+				background: #e8f5e9;
+				border: 1px solid #81c784;
 			}
 
 			.tab-favicon {
@@ -107,7 +127,7 @@
 
 			.tab-title {
 				font-weight: 500;
-				color: #fff;
+				color: #333;
 				white-space: nowrap;
 				overflow: hidden;
 				text-overflow: ellipsis;
@@ -115,7 +135,7 @@
 
 			.tab-url {
 				font-size: 11px;
-				color: #666;
+				color: #888;
 				white-space: nowrap;
 				overflow: hidden;
 				text-overflow: ellipsis;
@@ -131,27 +151,27 @@
 			}
 
 			.tab-action.attach {
-				background: #0f3460;
-				color: #4fc3f7;
+				background: #e3f2fd;
+				color: #1976d2;
 			}
 
 			.tab-action.attach:hover {
-				background: #1a4a80;
+				background: #bbdefb;
 			}
 
 			.tab-action.detach {
-				background: #3a1a1a;
-				color: #ff8a80;
+				background: #ffebee;
+				color: #d32f2f;
 			}
 
 			.tab-action.detach:hover {
-				background: #4a2a2a;
+				background: #ffcdd2;
 			}
 
 			.empty-state {
 				text-align: center;
 				padding: 40px 20px;
-				color: #666;
+				color: #888;
 			}
 
 			.empty-state .icon {
@@ -164,21 +184,21 @@
 				align-items: center;
 				justify-content: center;
 				padding: 40px;
-				color: #666;
+				color: #888;
 			}
 
 			.footer {
 				padding: 10px 16px;
-				background: #16213e;
-				border-top: 1px solid #0f3460;
+				background: #fff;
+				border-top: 1px solid #e0e0e0;
 				font-size: 11px;
-				color: #666;
+				color: #888;
 				display: flex;
 				justify-content: space-between;
 			}
 
 			.footer a {
-				color: #4fc3f7;
+				color: #1976d2;
 				text-decoration: none;
 			}
 
@@ -200,7 +220,7 @@
 
 		<div class="footer">
 			<span id="attachedCount">0 attached</span>
-			<a href="https://github.com/nickeax/argus" target="_blank">Documentation</a>
+			<a href="https://github.com/vforsh/argus" target="_blank">Documentation</a>
 		</div>
 
 		<script src="../../dist/popup/popup.js" type="module"></script>
