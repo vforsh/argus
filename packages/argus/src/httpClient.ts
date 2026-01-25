@@ -22,12 +22,14 @@ export const fetchJson = async <T>(url: string, options: HttpOptions = {}): Prom
 			headers: body ? { 'Content-Type': 'application/json' } : undefined,
 		})
 
-		// For error responses, return the JSON body if returnErrorResponse is enabled
+		// For error responses, try to extract the error message from the JSON body
 		if (!response.ok) {
 			if (options.returnErrorResponse && response.status >= 400) {
 				return (await response.json()) as T
 			}
-			throw new Error(`Request failed (${response.status} ${response.statusText})`)
+			// Try to read the error message from the response body
+			const errorMessage = await extractErrorMessage(response)
+			throw new Error(errorMessage ?? `Request failed (${response.status} ${response.statusText})`)
 		}
 
 		return (await response.json()) as T
@@ -47,6 +49,22 @@ const isAbortError = (error: unknown): boolean => {
 	}
 
 	return (error as { name: string }).name === 'AbortError'
+}
+
+/** Try to extract an error message from a response's JSON body. */
+const extractErrorMessage = async (response: Response): Promise<string | null> => {
+	try {
+		const body = await response.json()
+		if (body && typeof body === 'object' && 'error' in body) {
+			const error = (body as { error?: unknown }).error
+			if (error && typeof error === 'object' && 'message' in error) {
+				return (error as { message: string }).message
+			}
+		}
+	} catch {
+		// Ignore JSON parse errors - fall back to status text
+	}
+	return null
 }
 
 /** Fetch text with timeout. */
