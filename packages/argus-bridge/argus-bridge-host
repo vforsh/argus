@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "/Users/vlad/Library/Application Support/fnm/node-versions/v24.12.0/installation/bin/node" "/Users/vlad/dev/argus/argus/packages/argus-bridge/dist/bin.js" start "$@" 2>>/tmp/argus-bridge-native.log

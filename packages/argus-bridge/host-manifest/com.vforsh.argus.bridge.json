@@ -1,0 +1,7 @@
+{
+	"name": "com.vforsh.argus.bridge",
+	"description": "Argus CDP Bridge Native Messaging Host",
+	"path": "/path/to/argus-bridge",
+	"type": "stdio",
+	"allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID/"]
+}

@@ -1,0 +1,38 @@
+{
+	"name": "@vforsh/argus-bridge",
+	"version": "0.1.0",
+	"description": "Native Messaging host for Argus Chrome extension CDP bridge",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/vforsh/argus.git",
+		"directory": "packages/argus-bridge"
+	},
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"argus-bridge": "./dist/bin.js"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"host-manifest"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@vforsh/argus-core": "0.1.2",
+		"emittery": "^1.2.0"
+	},
+	"scripts": {
+		"build": "tsc -b",
+		"typecheck": "tsc -b --pretty false",
+		"install-host": "node dist/scripts/install-host.js"
+	}
+}
