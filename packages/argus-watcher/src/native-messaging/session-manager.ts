@@ -3,18 +3,9 @@
  * Implements CdpSessionHandle interface using Native Messaging.
  */
 
-import type { NativeMessagingHandler } from './native-messaging.js'
+import type { NativeMessagingHandler } from './messaging.js'
 import type { ExtensionToHost, HostToExtension, TabInfo, PendingRequest, CdpEventHandler } from './types.js'
-
-export type CdpSendOptions = {
-	timeoutMs?: number
-}
-
-export type CdpSessionHandle = {
-	isAttached: () => boolean
-	sendAndWait: (method: string, params?: Record<string, unknown>, options?: CdpSendOptions) => Promise<unknown>
-	onEvent: (method: string, handler: CdpEventHandler) => () => void
-}
+import type { CdpSessionHandle } from '../cdp/connection.js'
 
 export type ExtensionSession = {
 	tabId: number
@@ -106,12 +97,6 @@ export class SessionManager {
 		if (session) {
 			this.sessions.delete(message.tabId)
 			this.eventHandlers.delete(message.tabId)
-
-			// Reject any pending requests for this tab
-			for (const [requestId, pending] of this.pendingRequests) {
-				// We don't track which request belongs to which tab, so we can't filter here
-				// This is a simplification - in a production system we'd track this
-			}
 		}
 		this.events.onDetach(message.tabId, message.reason)
 	}

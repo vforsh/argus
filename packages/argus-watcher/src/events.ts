@@ -89,6 +89,9 @@ export type HttpRequestEvent = {
 		| 'dom/click'
 		| 'storage/local'
 		| 'shutdown'
+		| 'targets'
+		| 'attach'
+		| 'detach'
 	/** IP address of the requester (best-effort). */
 	remoteAddress: string | null
 	/** Parsed query parameters. */

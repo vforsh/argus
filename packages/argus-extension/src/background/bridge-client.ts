@@ -1,5 +1,5 @@
 /**
- * Native Messaging client for communicating with argus-bridge.
+ * Native Messaging client for communicating with argus-watcher (extension mode).
  * Handles connection lifecycle, message serialization, and reconnection.
  */
 

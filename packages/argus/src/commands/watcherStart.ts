@@ -1,9 +1,11 @@
-import { startWatcher, type WatcherHandle, type PageConsoleLogging } from '@vforsh/argus-watcher'
+import { startWatcher, type WatcherHandle, type PageConsoleLogging, type WatcherSourceMode } from '@vforsh/argus-watcher'
 import path from 'node:path'
 import { createOutput } from '../output/io.js'
 
 export type WatcherStartOptions = {
 	id?: string
+	/** Source mode for CDP connection: 'cdp' (default) or 'extension'. */
+	source?: WatcherSourceMode
 	url?: string
 	json?: boolean
 	chromeHost?: string
@@ -26,13 +28,14 @@ type WatcherStartResult = {
 	host: string
 	port: number
 	pid: number
+	source: WatcherSourceMode
 	matchUrl?: string
 	matchType?: string
 	matchOrigin?: string
 	matchTarget?: string
 	matchParent?: string
-	chromeHost: string
-	chromePort: number
+	chromeHost?: string
+	chromePort?: number
 	artifactsBaseDir?: string
 }
 
@@ -51,24 +54,55 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		return
 	}
 
-	// At least one targeting option is required: --url, --target, --origin, or --type
-	const hasTargeting = options.url?.trim() || options.target?.trim() || options.origin?.trim() || options.type?.trim()
-	if (!hasTargeting) {
-		output.writeWarn('At least one targeting option is required: --url, --target, --origin, or --type.')
+	// Validate source option
+	const sourceMode: WatcherSourceMode = options.source ?? 'cdp'
+	if (sourceMode !== 'cdp' && sourceMode !== 'extension') {
+		output.writeWarn(`Invalid --source: ${options.source}. Must be 'cdp' or 'extension'.`)
 		process.exitCode = 2
 		return
 	}
 
-	const chromeHost = options.chromeHost?.trim() || '127.0.0.1'
-	let chromePort = 9222
-	if (options.chromePort != null) {
-		const parsed = parsePort(options.chromePort)
-		if (parsed === null) {
-			output.writeWarn(`Invalid --chrome-port: ${options.chromePort}. Must be an integer 1-65535.`)
+	// For extension mode, validate that CDP targeting options are not used
+	// (chrome-host/chrome-port are ignored but allowed for config file compatibility)
+	if (sourceMode === 'extension') {
+		const cdpTargetingOptions = []
+		if (options.url?.trim()) cdpTargetingOptions.push('--url')
+		if (options.target?.trim()) cdpTargetingOptions.push('--target')
+		if (options.origin?.trim()) cdpTargetingOptions.push('--origin')
+		if (options.type?.trim()) cdpTargetingOptions.push('--type')
+		if (options.parent?.trim()) cdpTargetingOptions.push('--parent')
+
+		if (cdpTargetingOptions.length > 0) {
+			output.writeWarn(`CDP targeting options cannot be used with --source extension: ${cdpTargetingOptions.join(', ')}`)
 			process.exitCode = 2
 			return
 		}
-		chromePort = parsed
+	}
+
+	// For CDP mode, at least one targeting option is required
+	if (sourceMode === 'cdp') {
+		const hasTargeting = options.url?.trim() || options.target?.trim() || options.origin?.trim() || options.type?.trim()
+		if (!hasTargeting) {
+			output.writeWarn('At least one targeting option is required for CDP mode: --url, --target, --origin, or --type.')
+			process.exitCode = 2
+			return
+		}
+	}
+
+	let chromeHost: string | undefined
+	let chromePort: number | undefined
+	if (sourceMode === 'cdp') {
+		chromeHost = options.chromeHost?.trim() || '127.0.0.1'
+		chromePort = 9222
+		if (options.chromePort != null) {
+			const parsed = parsePort(options.chromePort)
+			if (parsed === null) {
+				output.writeWarn(`Invalid --chrome-port: ${options.chromePort}. Must be an integer 1-65535.`)
+				process.exitCode = 2
+				return
+			}
+			chromePort = parsed
+		}
 	}
 
 	const watcherId = options.id.trim()
@@ -113,11 +147,12 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 	try {
 		handle = await startWatcher({
 			id: watcherId,
-			match: Object.keys(match).length > 0 ? match : undefined,
-			chrome: { host: chromeHost, port: chromePort },
+			source: sourceMode,
+			match: sourceMode === 'cdp' && Object.keys(match).length > 0 ? match : undefined,
+			chrome: sourceMode === 'cdp' ? { host: chromeHost!, port: chromePort! } : undefined,
 			host: '127.0.0.1',
 			port: 0,
-			pageIndicator: options.pageIndicator === false ? { enabled: false } : { enabled: true },
+			pageIndicator: sourceMode === 'cdp' ? (options.pageIndicator === false ? { enabled: false } : { enabled: true }) : { enabled: false },
 			artifacts: artifactsBaseDir ? { base: artifactsBaseDir } : undefined,
 			pageConsoleLogging: options.pageConsoleLogging,
 		})
@@ -132,6 +167,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		host: handle.watcher.host,
 		port: handle.watcher.port,
 		pid: handle.watcher.pid,
+		source: sourceMode,
 		matchUrl: match.url,
 		matchType: match.type,
 		matchOrigin: match.origin,
@@ -169,6 +205,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 	} else {
 		output.writeHuman(`Watcher started:`)
 		output.writeHuman(`  id=${result.id}`)
+		output.writeHuman(`  source=${result.source}`)
 		output.writeHuman(`  host=${result.host}`)
 		output.writeHuman(`  port=${result.port}`)
 		if (result.matchUrl) {
@@ -186,7 +223,9 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		if (result.matchParent) {
 			output.writeHuman(`  matchParent=${result.matchParent}`)
 		}
-		output.writeHuman(`  chrome=${result.chromeHost}:${result.chromePort}`)
+		if (result.chromeHost && result.chromePort) {
+			output.writeHuman(`  chrome=${result.chromeHost}:${result.chromePort}`)
+		}
 		if (result.artifactsBaseDir) {
 			output.writeHuman(`  artifacts=${result.artifactsBaseDir}`)
 		}

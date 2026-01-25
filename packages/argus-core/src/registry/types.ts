@@ -62,6 +62,8 @@ export type WatcherRecord = {
 	chrome?: WatcherChrome
 	/** Whether to include ISO timestamps in formatted log output. */
 	includeTimestamps?: boolean
+	/** Source mode: 'cdp' (direct Chrome connection) or 'extension' (via Chrome extension). */
+	source?: 'cdp' | 'extension'
 }
 
 /** Registry schema v1. */

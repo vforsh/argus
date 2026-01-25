@@ -20,7 +20,7 @@ export type WatcherFileLoggerOptions = {
 	watcherId: string
 	startedAt: number
 	logsDir: string
-	chrome: WatcherChrome
+	chrome?: WatcherChrome
 	match?: WatcherMatch
 	maxFiles: number
 	includeTimestamps: boolean
@@ -32,7 +32,7 @@ export class WatcherFileLogger {
 	private readonly startedAt: number
 	private readonly startedAtIso: string
 	private readonly logsDir: string
-	private readonly chrome: WatcherChrome
+	private readonly chrome?: WatcherChrome
 	private readonly match?: WatcherMatch
 	private readonly maxFiles: number
 	private readonly includeTimestamps: boolean
@@ -269,7 +269,7 @@ export class WatcherFileLogger {
 type HeaderContext = {
 	watcherId: string
 	startedAt: number
-	chrome: WatcherChrome
+	chrome?: WatcherChrome
 	match?: WatcherMatch
 	pageUrl: string | null
 	pageTitle: string | null
@@ -293,7 +293,7 @@ const renderHeader = (context: HeaderContext): string => {
 		`arch: ${os.arch()}`,
 		`cwd: ${process.cwd()}`,
 		`logsPath: ${context.logsPath}`,
-		`chrome: ${context.chrome.host}:${context.chrome.port}`,
+		`chrome: ${context.chrome ? `${context.chrome.host}:${context.chrome.port}` : '(extension mode)'}`,
 		`match: ${matchText}`,
 		`pageUrl: ${pageUrl}`,
 		`pageSearchParams: ${pageSearchParams}`,

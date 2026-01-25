@@ -1,6 +1,6 @@
 /**
  * Native Messaging protocol types for communication between
- * the Chrome extension and the argus-bridge Node.js host.
+ * the Chrome extension and the argus-watcher (extension mode).
  */
 
 // ============================================================

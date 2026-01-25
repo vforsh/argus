@@ -31,6 +31,7 @@ import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
+import type { CdpSourceHandle } from '../sources/types.js'
 import { evaluateExpression } from '../cdp/eval.js'
 import { fetchDomSubtreeBySelector, fetchDomInfoBySelector } from '../cdp/dom.js'
 import { resolveDomSelectorMatches, hoverDomNodes, clickDomNodes } from '../cdp/mouse.js'
@@ -69,6 +70,9 @@ export type HttpRequestEventMetadata = {
 		| 'dom/click'
 		| 'storage/local'
 		| 'shutdown'
+		| 'targets'
+		| 'attach'
+		| 'detach'
 	remoteAddress: string | null
 	query?: {
 		after?: number
@@ -96,6 +100,8 @@ export type HttpServerOptions = {
 	cdpSession: CdpSessionHandle
 	traceRecorder: TraceRecorder
 	screenshotter: Screenshotter
+	/** Source handle for extension mode (enables /targets, /attach, /detach endpoints). */
+	sourceHandle?: CdpSourceHandle
 	/** Optional callback invoked when logs or tail are requested. */
 	onRequest?: (event: HttpRequestEventMetadata) => void
 	/** Optional callback invoked when a shutdown request is received. */
@@ -170,6 +176,21 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 
 		if (req.method === 'POST' && url.pathname === '/shutdown') {
 			return handleShutdown(res, options)
+		}
+
+		// Extension-specific endpoints (only available when sourceHandle is provided)
+		if (options.sourceHandle) {
+			if (req.method === 'GET' && url.pathname === '/targets') {
+				return handleTargets(res, options)
+			}
+
+			if (req.method === 'POST' && url.pathname === '/attach') {
+				return handleAttach(req, res, options)
+			}
+
+			if (req.method === 'POST' && url.pathname === '/detach') {
+				return handleDetach(req, res, options)
+			}
 		}
 
 		respondJson(res, { ok: false, error: { message: 'Not found', code: 'not_found' } }, 404)
@@ -651,6 +672,85 @@ const handleStorageLocal = async (req: http.IncomingMessage, res: http.ServerRes
 	try {
 		const response = await executeStorageLocal(options.cdpSession, payload)
 		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+// ============================================================
+// Extension-specific handlers
+// ============================================================
+
+const handleTargets = async (res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	if (!options.sourceHandle?.listTargets) {
+		return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
+	}
+
+	options.onRequest?.({
+		endpoint: 'targets',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const targets = await options.sourceHandle.listTargets()
+		respondJson(res, { ok: true, targets })
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleAttach = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	if (!options.sourceHandle?.attachTarget) {
+		return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
+	}
+
+	const payload = await readJsonBody<{ tabId: number }>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (typeof payload.tabId !== 'number') {
+		return respondInvalidBody(res, 'tabId is required')
+	}
+
+	options.onRequest?.({
+		endpoint: 'attach',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		options.sourceHandle.attachTarget(payload.tabId)
+		respondJson(res, { ok: true, message: 'Attach request sent' })
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleDetach = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	if (!options.sourceHandle?.detachTarget) {
+		return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
+	}
+
+	const payload = await readJsonBody<{ tabId: number }>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (typeof payload.tabId !== 'number') {
+		return respondInvalidBody(res, 'tabId is required')
+	}
+
+	options.onRequest?.({
+		endpoint: 'detach',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		options.sourceHandle.detachTarget(payload.tabId)
+		respondJson(res, { ok: true, message: 'Detach request sent' })
 	} catch (error) {
 		respondError(res, error)
 	}

@@ -1,22 +1,28 @@
 ---
 name: argus
-description: Use the argus CLI to launch Chrome with CDP, start a local watcher, open/reload tabs, fetch/tail console logs, evaluate JS in the connected page, and capture screenshots. Use when debugging a local web app via Chromium CDP or when you need scripted access to watcher logs/eval/screenshot outputs.
+description: Use the argus CLI to launch Chrome with CDP, start a local watcher, open/reload tabs, fetch/tail console logs, evaluate JS in the connected page, and capture screenshots. Use when debugging a local web app via Chromium CDP or Chrome extension, or when you need scripted access to watcher logs/eval/screenshot outputs.
 compatibility: Requires Node 18+ (WebSocket), a Chromium-based browser, and localhost HTTP access (watcher + CDP).
 ---
 
 ## What this skill covers
 
 - **Starting Chrome** with CDP enabled (`argus chrome start`)
-- **Starting a watcher** that captures logs for matching pages (`argus watcher start`)
+- **Starting a watcher** in CDP mode or extension mode (`argus watcher start`)
 - **Page commands** to open/reload tabs (`argus page open`, `argus page reload`)
 - **Fetching logs** (one-shot + follow) (`argus logs`, `argus tail`)
 - **Evaluating JS** in the connected page (`argus eval`)
 - **Screenshots** (full page or element) (`argus screenshot`)
 - **Iframe targeting** with `--type`, `--origin`, `--target`, `--parent` filters
+- **Extension mode** for debugging without `--remote-debugging-port`
 
 ## Quick workflow (recommended)
 
 Run these in separate terminals so each long-running process can keep running.
+
+**Two modes available:**
+
+- **CDP mode** (default): Launch Chrome with `argus chrome start`, use `--url` matching
+- **Extension mode**: Debug any tab in your regular Chrome using the Argus extension
 
 ### 0) Start your dev/dist server (capture the URL)
 
@@ -127,6 +133,8 @@ argus chrome start --json
 
 ## Starting the watcher (details)
 
+### CDP mode (default)
+
 ```bash
 argus watcher start
 argus watcher start --config .argus/config.json
@@ -141,6 +149,20 @@ Notes:
 - **Chrome must already be running** with CDP enabled at `--chrome-host:--chrome-port`.
 - The watcher process runs until Ctrl+C.
 - The in-page watcher indicator badge is **enabled by default**; use `--no-page-indicator` to disable.
+
+### Extension mode
+
+```bash
+argus watcher start --id app --source extension
+argus watcher start --id app --source extension --json
+```
+
+Notes:
+
+- **No Chrome flags needed** - works with your regular Chrome.
+- Requires the Argus extension to be installed and the Native Messaging host configured.
+- Tab selection is done via the extension popup (no `--url` matching).
+- See "Extension mode" section below for setup instructions.
 
 ## Programmatic watcher (Node API)
 
@@ -395,9 +417,84 @@ events.on('cdpAttached', ({ target }) => {
 })
 ```
 
+## Extension mode (no `--remote-debugging-port` needed)
+
+Extension mode lets you debug any Chrome tab without launching Chrome with special flags. Useful when:
+
+- You can't restart Chrome with `--remote-debugging-port`
+- You want to debug tabs in your normal browsing session
+- The app is already running in a regular Chrome window
+
+### Setup (one-time)
+
+1. **Load the extension** in Chrome:
+
+    ```bash
+    # Build the extension
+    cd packages/argus-extension && npm run build
+    ```
+
+    - Open `chrome://extensions`
+    - Enable **Developer mode**
+    - Click **Load unpacked** → select `packages/argus-extension`
+    - Copy the **Extension ID** (e.g., `kkoefnlnjlnlbohcifcbkpgmjaokmipi`)
+
+2. **Install the Native Messaging host**:
+    ```bash
+    cd packages/argus-watcher
+    node dist/scripts/install-host.js install <EXTENSION_ID>
+    ```
+
+### Usage
+
+```bash
+# Start watcher in extension mode
+argus watcher start --id app --source extension
+```
+
+Then in Chrome:
+
+1. Click the **Argus extension icon** in the toolbar
+2. Click **Attach** on the tab you want to debug
+3. Chrome shows an orange "debugging" bar (normal, can't be disabled)
+
+Now use the CLI as usual:
+
+```bash
+argus list                      # Shows watcher with source: extension
+argus logs app                  # View console logs
+argus tail app                  # Follow logs in real-time
+argus eval app "document.title" # Evaluate JavaScript
+```
+
+### Extension mode limitations
+
+- **Orange debugging bar**: Chrome shows "Argus is debugging this browser" - this is a security feature and cannot be disabled.
+- **One debugger per tab**: Only one extension/DevTools can debug a tab at a time.
+- **Tab must stay open**: Closing a tab detaches the debugger.
+- **No automatic target matching**: You manually select which tab to attach via the extension popup (unlike CDP mode's `--url` matching).
+
+### Programmatic (Node API)
+
+```js
+import { startWatcher } from '@vforsh/argus-watcher'
+
+const { watcher, events, close } = await startWatcher({
+	id: 'app',
+	source: 'extension', // Use extension mode instead of CDP
+	// No chrome or match options needed - extension handles tab selection
+})
+
+events.on('cdpAttached', ({ target }) => {
+	console.log(`Attached to ${target?.title}`)
+})
+```
+
 ## Common troubleshooting
 
 - **Chrome binary not found**: set `ARGUS_CHROME_BIN` to an absolute path.
 - **Watcher can't attach**: confirm the CDP endpoint (`argus chrome status --host 127.0.0.1 --port 9222`) and ensure your watcher's `--chrome-port` matches.
 - **Page reload with params fails**: only supported for http/https targets (not `chrome://`, `devtools://`, etc.).
 - **Wrong target matched (iframe issue)**: Use `--type iframe` or `--origin` to avoid matching parent pages that include your URL in query params.
+- **Extension mode: "Native host has exited"**: Reinstall the host manifest with `node dist/scripts/install-host.js install <EXTENSION_ID>`. Ensure you're using the same Node version.
+- **Extension mode: can't connect**: Reload the extension in `chrome://extensions` and try again.

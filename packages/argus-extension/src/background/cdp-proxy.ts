@@ -1,6 +1,6 @@
 /**
  * CDP Proxy - Routes CDP commands and events between the Native Messaging
- * host (argus-bridge) and the chrome.debugger API.
+ * host (argus-watcher in extension mode) and the chrome.debugger API.
  */
 
 import type { DebuggerManager } from './debugger-manager.js'

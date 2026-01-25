@@ -1,6 +1,6 @@
 /**
  * Message types for Native Messaging communication between
- * the Chrome extension and argus-bridge.
+ * the Chrome extension and argus-watcher (extension source).
  */
 
 // ============================================================

@@ -2,7 +2,7 @@
 
 **Repository**: https://github.com/vforsh/argus
 
-Chrome extension that provides CDP (Chrome DevTools Protocol) access to tabs without requiring Chrome to be launched with `--remote-debugging-port`. Uses the `chrome.debugger` API to attach to tabs and communicates with `argus-bridge` via Native Messaging.
+Chrome extension that provides CDP (Chrome DevTools Protocol) access to tabs without requiring Chrome to be launched with `--remote-debugging-port`. Uses the `chrome.debugger` API to attach to tabs and communicates with `argus-watcher` (in extension mode) via Native Messaging.
 
 ## Build
 
@@ -22,11 +22,11 @@ This bundles the TypeScript source into `dist/`.
 
 ## Install Native Messaging Host
 
-The extension communicates with `argus-bridge` via Chrome's Native Messaging protocol. You need to install the host manifest:
+The extension communicates with `argus-watcher` via Chrome's Native Messaging protocol. You need to install the host manifest:
 
 ```bash
 # From the argus root directory
-cd packages/argus-bridge
+cd packages/argus-watcher
 npm run build
 node dist/scripts/install-host.js install <EXTENSION_ID>
 ```
@@ -35,16 +35,16 @@ Replace `<EXTENSION_ID>` with the ID from step 5 above.
 
 This creates:
 
-- **macOS**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json`
-- **Linux**: `~/.config/google-chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json`
+- **macOS**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.vforsh.argus.watcher.json`
+- **Linux**: `~/.config/google-chrome/NativeMessagingHosts/com.vforsh.argus.watcher.json`
 - **Windows**: Manifest in AppData + registry key (see console output)
 
 ## Usage
 
-1. **Start the bridge**:
+1. **Start the watcher in extension mode**:
 
     ```bash
-    npx argus-bridge start --id my-bridge --port 9333
+    argus watcher start --id app --source extension
     ```
 
 2. **Attach to tabs**: Click the Argus extension icon in Chrome toolbar, then click "Attach" on the tabs you want to monitor.
@@ -52,19 +52,22 @@ This creates:
 3. **Use with Argus CLI**:
 
     ```bash
+    # List watchers
+    argus list
+
     # View logs from attached tab
-    argus logs --watcher http://127.0.0.1:9333
+    argus logs app
 
     # Evaluate JavaScript
-    argus eval "document.title" --watcher http://127.0.0.1:9333
+    argus eval app "document.title"
     ```
 
 ## How It Works
 
 ```
 ┌─────────────────────┐     Native Messaging     ┌──────────────────────┐
-│  Chrome Extension   │ ◄──────────────────────► │  argus-bridge        │
-│  (chrome.debugger)  │      (stdin/stdout)      │  (HTTP server)       │
+│  Chrome Extension   │ ◄──────────────────────► │  argus-watcher       │
+│  (chrome.debugger)  │      (stdin/stdout)      │  (extension mode)    │
 └─────────────────────┘                          └──────────────────────┘
          │                                                │
          │ Attach to tabs                                │ Watcher API
@@ -75,9 +78,9 @@ This creates:
 ```
 
 1. Extension uses `chrome.debugger.attach()` to connect to tabs
-2. CDP commands/events flow through Native Messaging to `argus-bridge`
-3. Bridge exposes standard Argus HTTP API (`/logs`, `/eval`, `/dom/*`, etc.)
-4. Argus CLI connects to bridge just like a regular watcher
+2. CDP commands/events flow through Native Messaging to `argus-watcher`
+3. Watcher exposes standard Argus HTTP API (`/logs`, `/eval`, `/dom/*`, etc.)
+4. Argus CLI connects to watcher just like CDP mode
 
 ## Limitations
 
@@ -90,5 +93,5 @@ This creates:
 1. Remove extension from `chrome://extensions`
 2. Remove Native Messaging host:
     ```bash
-    node packages/argus-bridge/dist/scripts/install-host.js uninstall
+    node packages/argus-watcher/dist/scripts/install-host.js uninstall
     ```
