@@ -3,74 +3,205 @@ name: argus
 description: Guides use of the Argus CLI to debug local web apps via Chrome CDP or the Argus Chrome extension (start Chrome/watcher, select targets including iframes, tail logs, eval JavaScript, and capture screenshots).
 ---
 
-## Argus CLI (CDP + watcher workflows)
+## Argus CLI
 
-Argus connects to a running watcher and gives you fast, scriptable access to:
+Debug local web apps via Chrome CDP or extension. Logs, eval, screenshots, target management.
 
-- **Logs**: `argus logs`, `argus tail`
-- **Eval**: `argus eval` (full docs: [EVAL.md](./reference/EVAL.md))
-- **Screenshots**: `argus screenshot`
-- **Targets/pages**: `argus page targets|open|reload`
+---
 
-Keep long-running processes (dev server, Chrome, watcher) in separate terminals.
+## CDP Workflow (Recommended)
 
-## Quick start (recommended: CDP mode)
+Launch Chrome with CDP enabled, auto-select targets via `--url` matching.
 
 ```bash
-# 0) Start your app (project-specific)
-npm run dev
-export APP_URL="http://localhost:3000"
+# 1) Start app
+npm run dev && export APP_URL="http://localhost:3000"
 
-# 1) Start Chrome with CDP enabled (prints host/port)
+# 2) Start Chrome with CDP (uses 9222 if available; prints port)
 argus chrome start --url "$APP_URL"
 
-# 2) Start a watcher against that Chrome instance
+# 3) Start watcher
 argus watcher start --id app --url "$APP_URL" --chrome-port 9222
 
-# 3) Use the CLI against the watcher
+# 4) Use CLI
 argus logs app --since 10m --levels error,warning
-argus eval app "document.title"
+argus tail app
+argus eval app "location.href"
 argus screenshot app --out shot.png
 ```
 
-More details: [WORKFLOW_CDP.md](./reference/WORKFLOW_CDP.md)
-
-## Quick start (extension mode)
-
-Use extension mode when you can’t (or don’t want to) start Chrome with `--remote-debugging-port`.
+Chrome variants:
 
 ```bash
-# one-time setup (build extension, load unpacked, install native host)
-argus extension setup <EXTENSION_ID>
-
-# after attaching via the extension popup:
-argus list
-argus logs extension
-argus eval extension "location.href"
+argus chrome start --dev-tools
+argus chrome start --profile default-full
+argus chrome start --json
+argus chrome start --from-watcher app
 ```
 
-More details: [WORKFLOW_EXTENSION.md](./reference/WORKFLOW_EXTENSION.md)
+---
 
-## Iframes and target selection
+## Extension Workflow
 
-If your app runs inside an iframe (embedded games/widgets), use explicit targeting so you attach to the right target:
+Debug normal Chrome session without CDP flags.
 
-- CDP mode: `argus watcher start --type iframe`, `--origin`, `--target`, `--parent`
-- Extension mode cross-origin iframe eval: requires a helper script (see [EXTENSION_IFRAME_EVAL.md](./reference/EXTENSION_IFRAME_EVAL.md))
+### One-Time Setup
 
-Details: [IFRAMES.md](./reference/IFRAMES.md)
+```bash
+# 1) Build extension
+cd packages/argus-extension && npm run build
 
-## Config defaults (optional)
+# 2) Load in Chrome
+#    chrome://extensions → Developer mode → Load unpacked → select packages/argus-extension
+#    Copy Extension ID (e.g. kkoefnlnjlnlbohcifcbkpgmjaokmipi)
 
-Argus can load defaults from a repo-local config file (CLI flags still win).
+# 3) Install native host
+argus extension setup <EXTENSION_ID>
+argus extension status
+```
 
-Details + example config: [CONFIG.md](./reference/CONFIG.md)
+### Usage
 
-## Reference (read this when needed)
+1. Click Argus extension icon
+2. Click **Attach** on target tab
+3. Chrome shows orange "debugging" bar (expected)
 
-- **CDP workflow**: [WORKFLOW_CDP.md](./WORKFLOW_CDP.md)
-- **Extension workflow**: [WORKFLOW_EXTENSION.md](./reference/WORKFLOW_EXTENSION.md)
-- **Common commands**: [COMMANDS.md](./reference/COMMANDS.md)
-- **Iframes/targets**: [IFRAMES.md](./reference/IFRAMES.md)
-- **Troubleshooting**: [TROUBLESHOOTING.md](./reference/TROUBLESHOOTING.md)
-- **Programmatic watcher API**: [PROGRAMMATIC.md](./reference/PROGRAMMATIC.md)
+```bash
+argus list
+argus logs extension
+argus eval extension "document.title"
+```
+
+### Limitations
+
+- Debugging bar can't be hidden (Chrome security)
+- One debugger per tab
+- Tab must stay open
+- Manual tab selection (no `--url` matching)
+- Cross-origin iframes: use helper script (see [IFRAMES.md](./reference/IFRAMES.md))
+
+---
+
+## Commands Cheat Sheet
+
+### Logs
+
+```bash
+argus logs app --since 10m
+argus logs app --levels error,warning
+argus logs app --match "Error|Exception" --ignore-case
+argus logs app --source console
+argus logs app --json          # NDJSON output
+```
+
+### Tail (follow)
+
+```bash
+argus tail app
+argus tail app --levels error --json
+argus tail app --timeout 30000 --limit 200
+```
+
+### Eval
+
+```bash
+argus eval app "location.href"
+argus eval app "await fetch('/ping').then(r => r.status)"
+argus eval app "document.title" --json
+```
+
+Full eval docs (polling, flags, iframe): [EVAL.md](./reference/EVAL.md)
+
+### Screenshots
+
+```bash
+argus screenshot app --out shot.png
+argus screenshot app --selector "canvas" --out canvas.png
+```
+
+### Targets / Pages
+
+```bash
+argus page targets --id app
+argus page targets --type iframe --id app
+argus page open --url http://example.com --id app
+argus page reload <targetId> --id app
+argus page reload <targetId> --id app --param foo=bar
+```
+
+---
+
+## Config Defaults
+
+Load defaults for `argus chrome start` and `argus watcher start` from config file.
+
+Auto-discovery: `.argus/config.json`, `argus.config.json`, `argus/config.json`
+
+- `--config <path>` for explicit file
+- CLI flags override config
+- `argus config init` creates starter config
+
+Example:
+
+```json
+{
+	"chrome": {
+		"start": { "url": "http://localhost:3000", "devTools": true }
+	},
+	"watcher": {
+		"start": {
+			"id": "app",
+			"url": "localhost:3000",
+			"chromePort": 9222,
+			"artifacts": "./artifacts"
+		}
+	}
+}
+```
+
+---
+
+## Programmatic Watcher (Node API)
+
+Use `@vforsh/argus-watcher` to create watchers from code.
+
+```js
+import { startWatcher } from '@vforsh/argus-watcher'
+
+const { watcher, events, close } = await startWatcher({
+	id: 'app',
+	match: { url: 'localhost:3000' },
+	chrome: { host: '127.0.0.1', port: 9222 },
+})
+
+events.on('cdpAttached', ({ target }) => {
+	console.log(`Attached to ${target?.title}`)
+})
+
+await close()
+```
+
+---
+
+## Troubleshooting
+
+**Chrome binary not found** — Set `ARGUS_CHROME_BIN` to absolute path.
+
+**Watcher can't attach (CDP)** — Check `--chrome-port` matches Chrome's port. Probe: `argus chrome status --port 9222`
+
+**Reload with params fails** — Only http/https targets (not `chrome://`, `devtools://`).
+
+**Wrong target matched** — Use `--type iframe` or `--origin`. See [IFRAMES.md](./reference/IFRAMES.md).
+
+**Extension: "Native host has exited"** — Reinstall: `argus extension setup <EXTENSION_ID>`. Check Node version.
+
+**Extension: can't connect** — Reload extension in `chrome://extensions`.
+
+**Extension: can't eval in cross-origin iframe** — Use helper script. See [IFRAMES.md](./reference/IFRAMES.md).
+
+---
+
+## Reference (specialized topics)
+
+- [EVAL.md](./reference/EVAL.md) — Polling, flags, iframe eval
+- [IFRAMES.md](./reference/IFRAMES.md) — Target selection, cross-origin eval
