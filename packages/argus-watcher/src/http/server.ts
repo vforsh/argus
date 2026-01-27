@@ -23,8 +23,16 @@ import type {
 	DomHoverResponse,
 	DomClickRequest,
 	DomClickResponse,
+	DomAddRequest,
+	DomAddResponse,
+	DomRemoveRequest,
+	DomRemoveResponse,
+	DomModifyRequest,
+	DomModifyResponse,
 	StorageLocalRequest,
 	ShutdownResponse,
+	ReloadRequest,
+	ReloadResponse,
 } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
@@ -33,7 +41,7 @@ import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
 import type { CdpSourceHandle } from '../sources/types.js'
 import { evaluateExpression } from '../cdp/eval.js'
-import { fetchDomSubtreeBySelector, fetchDomInfoBySelector } from '../cdp/dom.js'
+import { fetchDomSubtreeBySelector, fetchDomInfoBySelector, insertAdjacentHtml, removeElements, modifyElements } from '../cdp/dom.js'
 import { resolveDomSelectorMatches, hoverDomNodes, clickDomNodes } from '../cdp/mouse.js'
 import { executeStorageLocal } from '../cdp/storageLocal.js'
 import {
@@ -68,7 +76,11 @@ export type HttpRequestEventMetadata = {
 		| 'dom/info'
 		| 'dom/hover'
 		| 'dom/click'
+		| 'dom/add'
+		| 'dom/remove'
+		| 'dom/modify'
 		| 'storage/local'
+		| 'reload'
 		| 'shutdown'
 		| 'targets'
 		| 'attach'
@@ -170,8 +182,24 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 			return handleDomClick(req, res, options)
 		}
 
+		if (req.method === 'POST' && url.pathname === '/dom/add') {
+			return handleDomAdd(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/dom/remove') {
+			return handleDomRemove(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/dom/modify') {
+			return handleDomModify(req, res, options)
+		}
+
 		if (req.method === 'POST' && url.pathname === '/storage/local') {
 			return handleStorageLocal(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/reload') {
+			return handleReload(req, res, options)
 		}
 
 		if (req.method === 'POST' && url.pathname === '/shutdown') {
@@ -641,6 +669,170 @@ const handleDomClick = async (req: http.IncomingMessage, res: http.ServerRespons
 	}
 }
 
+const handleDomAdd = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<DomAddRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.selector || typeof payload.selector !== 'string') {
+		return respondInvalidBody(res, 'selector is required')
+	}
+
+	if (!payload.html || typeof payload.html !== 'string') {
+		return respondInvalidBody(res, 'html is required')
+	}
+
+	const validPositions = ['beforebegin', 'afterbegin', 'beforeend', 'afterend']
+	if (payload.position && !validPositions.includes(payload.position)) {
+		return respondInvalidBody(res, `position must be one of: ${validPositions.join(', ')}`)
+	}
+
+	const all = payload.all ?? false
+	if (typeof all !== 'boolean') {
+		return respondInvalidBody(res, 'all must be a boolean')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/add',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const { allNodeIds, insertedCount } = await insertAdjacentHtml(options.cdpSession, {
+			selector: payload.selector,
+			html: payload.html,
+			position: payload.position,
+			all,
+		})
+
+		if (!all && allNodeIds.length > 1) {
+			return respondJson(
+				res,
+				{
+					ok: false,
+					error: {
+						message: `Selector matched ${allNodeIds.length} elements; pass all=true to insert at all matches`,
+						code: 'multiple_matches',
+					},
+				},
+				400,
+			)
+		}
+
+		const response: DomAddResponse = { ok: true, matches: allNodeIds.length, inserted: insertedCount }
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleDomRemove = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<DomRemoveRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.selector || typeof payload.selector !== 'string') {
+		return respondInvalidBody(res, 'selector is required')
+	}
+
+	const all = payload.all ?? false
+	if (typeof all !== 'boolean') {
+		return respondInvalidBody(res, 'all must be a boolean')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/remove',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const { allNodeIds, removedCount } = await removeElements(options.cdpSession, {
+			selector: payload.selector,
+			all,
+		})
+
+		if (!all && allNodeIds.length > 1) {
+			return respondJson(
+				res,
+				{
+					ok: false,
+					error: {
+						message: `Selector matched ${allNodeIds.length} elements; pass all=true to remove all matches`,
+						code: 'multiple_matches',
+					},
+				},
+				400,
+			)
+		}
+
+		const response: DomRemoveResponse = { ok: true, matches: allNodeIds.length, removed: removedCount }
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleDomModify = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<DomModifyRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.selector || typeof payload.selector !== 'string') {
+		return respondInvalidBody(res, 'selector is required')
+	}
+
+	const validTypes = ['attr', 'class', 'style', 'text', 'html']
+	if (!payload.type || !validTypes.includes(payload.type)) {
+		return respondInvalidBody(res, `type must be one of: ${validTypes.join(', ')}`)
+	}
+
+	if ((payload.type === 'text' || payload.type === 'html') && typeof payload.value !== 'string') {
+		return respondInvalidBody(res, 'value is required for text/html modifications')
+	}
+
+	const all = payload.all ?? false
+	if (typeof all !== 'boolean') {
+		return respondInvalidBody(res, 'all must be a boolean')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/modify',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const { allNodeIds, modifiedCount } = await modifyElements(options.cdpSession, {
+			...payload,
+			all,
+		})
+
+		if (!all && allNodeIds.length > 1) {
+			return respondJson(
+				res,
+				{
+					ok: false,
+					error: {
+						message: `Selector matched ${allNodeIds.length} elements; pass all=true to modify all matches`,
+						code: 'multiple_matches',
+					},
+				},
+				400,
+			)
+		}
+
+		const response: DomModifyResponse = { ok: true, matches: allNodeIds.length, modified: modifiedCount }
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
 const handleStorageLocal = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
 	const payload = await readJsonBody<StorageLocalRequest>(req, res)
 	if (!payload) {
@@ -671,6 +863,29 @@ const handleStorageLocal = async (req: http.IncomingMessage, res: http.ServerRes
 
 	try {
 		const response = await executeStorageLocal(options.cdpSession, payload)
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleReload = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<ReloadRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	options.onRequest?.({
+		endpoint: 'reload',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		await options.cdpSession.sendAndWait('Page.reload', {
+			ignoreCache: payload.ignoreCache ?? false,
+		})
+		const response: ReloadResponse = { ok: true }
 		respondJson(res, response)
 	} catch (error) {
 		respondError(res, error)

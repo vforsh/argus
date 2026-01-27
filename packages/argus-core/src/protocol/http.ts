@@ -25,6 +25,17 @@ export type ShutdownResponse = {
 	ok: true
 }
 
+/** Request payload for POST /reload. */
+export type ReloadRequest = {
+	/** If true, bypass browser cache. Default: false. */
+	ignoreCache?: boolean
+}
+
+/** Response payload for POST /reload. */
+export type ReloadResponse = {
+	ok: true
+}
+
 /** Response payload for GET /logs. */
 export type LogsResponse = {
 	ok: true
@@ -265,6 +276,83 @@ export type DomClickResponse = {
 	matches: number
 	/** Number of elements clicked. */
 	clicked: number
+}
+
+/** Valid positions for insertAdjacentHTML. */
+export type DomInsertPosition = 'beforebegin' | 'afterbegin' | 'beforeend' | 'afterend'
+
+/**
+ * Request payload for POST /dom/add.
+ */
+export type DomAddRequest = {
+	/** CSS selector to match target element(s). */
+	selector: string
+	/** HTML string to insert. */
+	html: string
+	/** Insert position relative to matched element. Default: 'beforeend'. */
+	position?: DomInsertPosition
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+}
+
+/**
+ * Response payload for POST /dom/add.
+ */
+export type DomAddResponse = {
+	ok: true
+	/** Number of elements matched by selector. */
+	matches: number
+	/** Number of elements where HTML was inserted. */
+	inserted: number
+}
+
+/**
+ * Request payload for POST /dom/remove.
+ */
+export type DomRemoveRequest = {
+	/** CSS selector to match element(s) to remove. */
+	selector: string
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+}
+
+/**
+ * Response payload for POST /dom/remove.
+ */
+export type DomRemoveResponse = {
+	ok: true
+	/** Number of elements matched by selector. */
+	matches: number
+	/** Number of elements removed. */
+	removed: number
+}
+
+/**
+ * Request payload for POST /dom/modify.
+ * Discriminated union based on 'type' field.
+ */
+export type DomModifyRequest = {
+	/** CSS selector to match element(s). */
+	selector: string
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+} & (
+	| { type: 'attr'; set?: Record<string, string | true>; remove?: string[] }
+	| { type: 'class'; add?: string[]; remove?: string[]; toggle?: string[] }
+	| { type: 'style'; set?: Record<string, string>; remove?: string[] }
+	| { type: 'text'; value: string }
+	| { type: 'html'; value: string }
+)
+
+/**
+ * Response payload for POST /dom/modify.
+ */
+export type DomModifyResponse = {
+	ok: true
+	/** Number of elements matched by selector. */
+	matches: number
+	/** Number of elements modified. */
+	modified: number
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

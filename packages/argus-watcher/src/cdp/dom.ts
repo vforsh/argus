@@ -1,4 +1,4 @@
-import type { DomNode, DomElementInfo, DomTreeResponse, DomInfoResponse } from '@vforsh/argus-core'
+import type { DomNode, DomElementInfo, DomTreeResponse, DomInfoResponse, DomInsertPosition } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -301,4 +301,261 @@ const toDomNodeTree = (node: CdpNode, remainingDepth: number, state: TraversalSt
 
 const clamp = (value: number, min: number, max: number): number => {
 	return Math.max(min, Math.min(max, value))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOM manipulation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Options for inserting HTML adjacent to matched elements. */
+export type InsertAdjacentHtmlOptions = {
+	selector: string
+	html: string
+	position?: DomInsertPosition
+	all?: boolean
+}
+
+/** Result of insertAdjacentHtml operation. */
+export type InsertAdjacentHtmlResult = {
+	allNodeIds: number[]
+	insertedCount: number
+}
+
+/**
+ * Insert HTML adjacent to element(s) matching a CSS selector.
+ * Uses insertAdjacentHTML on each matched element.
+ */
+export const insertAdjacentHtml = async (session: CdpSessionHandle, options: InsertAdjacentHtmlOptions): Promise<InsertAdjacentHtmlResult> => {
+	await session.sendAndWait('DOM.enable')
+
+	const rootId = await getDomRootId(session)
+	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false)
+
+	if (nodeIds.length === 0) {
+		return { allNodeIds, insertedCount: 0 }
+	}
+
+	const position = options.position ?? 'beforeend'
+
+	for (const nodeId of nodeIds) {
+		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+		const objectId = resolved.object?.objectId
+		if (!objectId) {
+			continue
+		}
+
+		await session.sendAndWait('Runtime.callFunctionOn', {
+			objectId,
+			functionDeclaration: 'function(pos, html) { this.insertAdjacentHTML(pos, html); }',
+			arguments: [{ value: position }, { value: options.html }],
+			awaitPromise: false,
+			returnByValue: true,
+		})
+	}
+
+	return { allNodeIds, insertedCount: nodeIds.length }
+}
+
+/** Options for removing matched elements. */
+export type RemoveElementsOptions = {
+	selector: string
+	all?: boolean
+}
+
+/** Result of removeElements operation. */
+export type RemoveElementsResult = {
+	allNodeIds: number[]
+	removedCount: number
+}
+
+/**
+ * Remove element(s) matching a CSS selector from the DOM.
+ */
+export const removeElements = async (session: CdpSessionHandle, options: RemoveElementsOptions): Promise<RemoveElementsResult> => {
+	await session.sendAndWait('DOM.enable')
+
+	const rootId = await getDomRootId(session)
+	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false)
+
+	if (nodeIds.length === 0) {
+		return { allNodeIds, removedCount: 0 }
+	}
+
+	for (const nodeId of nodeIds) {
+		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+		const objectId = resolved.object?.objectId
+		if (!objectId) {
+			continue
+		}
+
+		await session.sendAndWait('Runtime.callFunctionOn', {
+			objectId,
+			functionDeclaration: 'function() { this.remove(); }',
+			awaitPromise: false,
+			returnByValue: true,
+		})
+	}
+
+	return { allNodeIds, removedCount: nodeIds.length }
+}
+
+/** Base options for modifying matched elements. */
+type ModifyElementsBaseOptions = {
+	selector: string
+	all?: boolean
+}
+
+/** Attribute modification options. */
+type ModifyAttrOptions = ModifyElementsBaseOptions & {
+	type: 'attr'
+	set?: Record<string, string | true>
+	remove?: string[]
+}
+
+/** Class modification options. */
+type ModifyClassOptions = ModifyElementsBaseOptions & {
+	type: 'class'
+	add?: string[]
+	remove?: string[]
+	toggle?: string[]
+}
+
+/** Style modification options. */
+type ModifyStyleOptions = ModifyElementsBaseOptions & {
+	type: 'style'
+	set?: Record<string, string>
+	remove?: string[]
+}
+
+/** Text content modification options. */
+type ModifyTextOptions = ModifyElementsBaseOptions & {
+	type: 'text'
+	value: string
+}
+
+/** HTML content modification options. */
+type ModifyHtmlOptions = ModifyElementsBaseOptions & {
+	type: 'html'
+	value: string
+}
+
+/** Options for modifying matched elements. */
+export type ModifyElementsOptions = ModifyAttrOptions | ModifyClassOptions | ModifyStyleOptions | ModifyTextOptions | ModifyHtmlOptions
+
+/** Result of modifyElements operation. */
+export type ModifyElementsResult = {
+	allNodeIds: number[]
+	modifiedCount: number
+}
+
+/**
+ * Modify element(s) matching a CSS selector.
+ * Supports attribute, class, style, text, and HTML modifications.
+ */
+export const modifyElements = async (session: CdpSessionHandle, options: ModifyElementsOptions): Promise<ModifyElementsResult> => {
+	await session.sendAndWait('DOM.enable')
+
+	const rootId = await getDomRootId(session)
+	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false)
+
+	if (nodeIds.length === 0) {
+		return { allNodeIds, modifiedCount: 0 }
+	}
+
+	const fn = buildModifyFunction(options)
+
+	for (const nodeId of nodeIds) {
+		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+		const objectId = resolved.object?.objectId
+		if (!objectId) {
+			continue
+		}
+
+		await session.sendAndWait('Runtime.callFunctionOn', {
+			objectId,
+			functionDeclaration: fn.code,
+			arguments: fn.args,
+			awaitPromise: false,
+			returnByValue: true,
+		})
+	}
+
+	return { allNodeIds, modifiedCount: nodeIds.length }
+}
+
+type ModifyFunction = {
+	code: string
+	args: Array<{ value: unknown }>
+}
+
+const buildModifyFunction = (options: ModifyElementsOptions): ModifyFunction => {
+	switch (options.type) {
+		case 'attr':
+			return {
+				code: `function(toSet, toRemove) {
+					if (toSet) {
+						for (const [name, value] of Object.entries(toSet)) {
+							if (value === true) {
+								this.setAttribute(name, '');
+							} else {
+								this.setAttribute(name, value);
+							}
+						}
+					}
+					if (toRemove) {
+						for (const name of toRemove) {
+							this.removeAttribute(name);
+						}
+					}
+				}`,
+				args: [{ value: options.set ?? null }, { value: options.remove ?? null }],
+			}
+
+		case 'class':
+			return {
+				code: `function(toAdd, toRemove, toToggle) {
+					if (toAdd) {
+						this.classList.add(...toAdd);
+					}
+					if (toRemove) {
+						this.classList.remove(...toRemove);
+					}
+					if (toToggle) {
+						for (const cls of toToggle) {
+							this.classList.toggle(cls);
+						}
+					}
+				}`,
+				args: [{ value: options.add ?? null }, { value: options.remove ?? null }, { value: options.toggle ?? null }],
+			}
+
+		case 'style':
+			return {
+				code: `function(toSet, toRemove) {
+					if (toSet) {
+						for (const [prop, value] of Object.entries(toSet)) {
+							this.style.setProperty(prop, value);
+						}
+					}
+					if (toRemove) {
+						for (const prop of toRemove) {
+							this.style.removeProperty(prop);
+						}
+					}
+				}`,
+				args: [{ value: options.set ?? null }, { value: options.remove ?? null }],
+			}
+
+		case 'text':
+			return {
+				code: `function(value) { this.textContent = value; }`,
+				args: [{ value: options.value }],
+			}
+
+		case 'html':
+			return {
+				code: `function(value) { this.innerHTML = value; }`,
+				args: [{ value: options.value }],
+			}
+	}
 }

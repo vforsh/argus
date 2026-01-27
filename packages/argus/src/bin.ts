@@ -8,10 +8,14 @@ import { runNetTail } from './commands/netTail.js'
 import { runEval } from './commands/eval.js'
 import { runTrace, runTraceStart, runTraceStop } from './commands/trace.js'
 import { runScreenshot } from './commands/screenshot.js'
+import { runReload } from './commands/reload.js'
 import { runDomTree } from './commands/domTree.js'
 import { runDomInfo } from './commands/domInfo.js'
 import { runDomHover } from './commands/domHover.js'
 import { runDomClick } from './commands/domClick.js'
+import { runDomAdd } from './commands/domAdd.js'
+import { runDomRemove } from './commands/domRemove.js'
+import { runDomModifyAttr, runDomModifyClass, runDomModifyStyle, runDomModifyText, runDomModifyHtml } from './commands/domModify.js'
 import { runChromeStart } from './commands/chromeStart.js'
 import {
 	runChromeVersion,
@@ -295,6 +299,17 @@ program
 		await runScreenshot(id, options)
 	})
 
+program
+	.command('reload')
+	.argument('[id]', 'Watcher id to reload')
+	.description('Reload the page attached to a watcher')
+	.option('--ignore-cache', 'Bypass browser cache')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus reload app\n  $ argus reload app --ignore-cache\n  $ argus reload app --json\n')
+	.action(async (id, options) => {
+		await runReload(id, options)
+	})
+
 const dom = program.command('dom').alias('html').description('Inspect DOM elements in the connected page')
 
 dom.command('tree')
@@ -354,6 +369,115 @@ dom.command('click')
 	)
 	.action(async (id, options) => {
 		await runDomClick(id, options)
+	})
+
+dom.command('add')
+	.argument('[id]', 'Watcher id to query')
+	.description('Insert HTML into the page relative to matched element(s)')
+	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
+	.requiredOption('--html <string>', 'HTML to insert')
+	.option('--position <pos>', 'Insert position: beforebegin, afterbegin, beforeend, afterend', 'beforeend')
+	.option('--all', 'Insert at all matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom add app --selector "#container" --html "<div>Hello</div>"\n  $ argus dom add app --selector "body" --position beforeend --html "<script src=\'debug.js\'></script>"\n  $ argus dom add app --selector ".item" --all --position afterend --html "<hr>"\n',
+	)
+	.action(async (id, options) => {
+		await runDomAdd(id, options)
+	})
+
+dom.command('remove')
+	.argument('[id]', 'Watcher id to query')
+	.description('Remove elements from the page')
+	.requiredOption('--selector <css>', 'CSS selector for elements to remove')
+	.option('--all', 'Remove all matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom remove app --selector ".debug-overlay"\n  $ argus dom remove app --selector "[data-testid=\'temp\']" --all\n',
+	)
+	.action(async (id, options) => {
+		await runDomRemove(id, options)
+	})
+
+const domModify = dom.command('modify').description('Modify DOM element properties')
+
+domModify
+	.command('attr')
+	.argument('[id]', 'Watcher id to query')
+	.argument('[attrs...]', 'Attributes: name (boolean) or name=value')
+	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
+	.option('--remove <attrs...>', 'Attributes to remove')
+	.option('--all', 'Apply to all matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom modify attr app --selector "#btn" disabled\n  $ argus dom modify attr app --selector "#btn" data-loading=true aria-label="Submit"\n  $ argus dom modify attr app --selector "#btn" --remove disabled data-temp\n',
+	)
+	.action(async (id, attrs, options) => {
+		await runDomModifyAttr(id, attrs, options)
+	})
+
+domModify
+	.command('class')
+	.argument('[id]', 'Watcher id to query')
+	.argument('[classes...]', 'Shorthand: +add, -remove, ~toggle (or plain name to add)')
+	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
+	.option('--add <classes...>', 'Classes to add')
+	.option('--remove <classes...>', 'Classes to remove')
+	.option('--toggle <classes...>', 'Classes to toggle')
+	.option('--all', 'Apply to all matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom modify class app --selector "#btn" --add active highlighted\n  $ argus dom modify class app --selector "#btn" --remove hidden disabled\n  $ argus dom modify class app --selector "#btn" --toggle loading\n  $ argus dom modify class app --selector "#btn" +active +primary -hidden ~loading\n',
+	)
+	.action(async (id, classes, options) => {
+		await runDomModifyClass(id, classes, options)
+	})
+
+domModify
+	.command('style')
+	.argument('[id]', 'Watcher id to query')
+	.argument('[styles...]', 'Styles: property=value')
+	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
+	.option('--remove <props...>', 'Style properties to remove')
+	.option('--all', 'Apply to all matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom modify style app --selector "#btn" color=red font-size=14px\n  $ argus dom modify style app --selector "#btn" --remove color font-size\n',
+	)
+	.action(async (id, styles, options) => {
+		await runDomModifyStyle(id, styles, options)
+	})
+
+domModify
+	.command('text')
+	.argument('[id]', 'Watcher id to query')
+	.argument('<text>', 'Text content to set')
+	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
+	.option('--all', 'Apply to all matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom modify text app --selector "#msg" "Hello World"\n  $ argus dom modify text app --selector ".counter" --all "0"\n',
+	)
+	.action(async (id, text, options) => {
+		await runDomModifyText(id, text, options)
+	})
+
+domModify
+	.command('html')
+	.argument('[id]', 'Watcher id to query')
+	.argument('<html>', 'HTML content to set')
+	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
+	.option('--all', 'Apply to all matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus dom modify html app --selector "#container" "<p>New <strong>content</strong></p>"\n')
+	.action(async (id, html, options) => {
+		await runDomModifyHtml(id, html, options)
 	})
 
 const chrome = program.command('chrome').alias('browser').description('Chrome/Chromium management commands')
