@@ -293,6 +293,12 @@ export type DomAddRequest = {
 	position?: DomInsertPosition
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
+	/** Zero-based index of the match to insert at (mutually exclusive with all). */
+	nth?: number
+	/** Expected match count; request fails if mismatch (prevents accidental inserts). */
+	expect?: number
+	/** Insert text content instead of HTML (uses insertAdjacentText). */
+	text?: boolean
 }
 
 /**

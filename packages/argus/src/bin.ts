@@ -375,13 +375,23 @@ dom.command('add')
 	.argument('[id]', 'Watcher id to query')
 	.description('Insert HTML into the page relative to matched element(s)')
 	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
-	.requiredOption('--html <string>', 'HTML to insert')
-	.option('--position <pos>', 'Insert position: beforebegin, afterbegin, beforeend, afterend', 'beforeend')
+	.option('--html <string>', 'HTML to insert (use "-" for stdin)')
+	.option('--html-file <path>', 'Read HTML to insert from a file')
+	.option('--html-stdin', 'Read HTML to insert from stdin (same as --html -)')
+	.option(
+		'--position <pos>',
+		'Insert position: beforebegin, afterbegin, beforeend, afterend (aliases: before, after, prepend, append)',
+		'beforeend',
+	)
+	.option('--nth <index>', 'Insert at the zero-based match index')
+	.option('--first', 'Insert at the first match (same as --nth 0)')
+	.option('--expect <n>', 'Expect N matches before inserting')
+	.option('--text', 'Insert text content (uses insertAdjacentText)')
 	.option('--all', 'Insert at all matches (default: error if >1 match)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus dom add app --selector "#container" --html "<div>Hello</div>"\n  $ argus dom add app --selector "body" --position beforeend --html "<script src=\'debug.js\'></script>"\n  $ argus dom add app --selector ".item" --all --position afterend --html "<hr>"\n',
+		'\nExamples:\n  $ argus dom add app --selector "#container" --html "<div>Hello</div>"\n  $ argus dom add app --selector "body" --position append --html "<script src=\'debug.js\'></script>"\n  $ argus dom add app --selector ".item" --all --position afterend --html "<hr>"\n  $ argus dom add app --selector "#root" --html-file ./snippet.html\n  $ cat snippet.html | argus dom add app --selector "#root" --html -\n  $ argus dom add app --selector ".item" --nth 2 --html "<hr>"\n  $ argus dom add app --selector "#banner" --text --html "Preview mode"\n',
 	)
 	.action(async (id, options) => {
 		await runDomAdd(id, options)

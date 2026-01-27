@@ -309,15 +309,14 @@ const clamp = (value: number, min: number, max: number): number => {
 
 /** Options for inserting HTML adjacent to matched elements. */
 export type InsertAdjacentHtmlOptions = {
-	selector: string
+	nodeIds: number[]
 	html: string
 	position?: DomInsertPosition
-	all?: boolean
+	text?: boolean
 }
 
 /** Result of insertAdjacentHtml operation. */
 export type InsertAdjacentHtmlResult = {
-	allNodeIds: number[]
 	insertedCount: number
 }
 
@@ -328,16 +327,16 @@ export type InsertAdjacentHtmlResult = {
 export const insertAdjacentHtml = async (session: CdpSessionHandle, options: InsertAdjacentHtmlOptions): Promise<InsertAdjacentHtmlResult> => {
 	await session.sendAndWait('DOM.enable')
 
-	const rootId = await getDomRootId(session)
-	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false)
-
-	if (nodeIds.length === 0) {
-		return { allNodeIds, insertedCount: 0 }
+	if (options.nodeIds.length === 0) {
+		return { insertedCount: 0 }
 	}
 
 	const position = options.position ?? 'beforeend'
+	const functionDeclaration = options.text
+		? 'function(pos, value) { this.insertAdjacentText(pos, value); }'
+		: 'function(pos, html) { this.insertAdjacentHTML(pos, html); }'
 
-	for (const nodeId of nodeIds) {
+	for (const nodeId of options.nodeIds) {
 		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
 		const objectId = resolved.object?.objectId
 		if (!objectId) {
@@ -346,14 +345,14 @@ export const insertAdjacentHtml = async (session: CdpSessionHandle, options: Ins
 
 		await session.sendAndWait('Runtime.callFunctionOn', {
 			objectId,
-			functionDeclaration: 'function(pos, html) { this.insertAdjacentHTML(pos, html); }',
+			functionDeclaration,
 			arguments: [{ value: position }, { value: options.html }],
 			awaitPromise: false,
 			returnByValue: true,
 		})
 	}
 
-	return { allNodeIds, insertedCount: nodeIds.length }
+	return { insertedCount: options.nodeIds.length }
 }
 
 /** Options for removing matched elements. */

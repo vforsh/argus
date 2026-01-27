@@ -6,7 +6,6 @@
 import { DebuggerManager } from './debugger-manager.js'
 import { BridgeClient } from './bridge-client.js'
 import { CdpProxy } from './cdp-proxy.js'
-import type { TabInfo } from '../types/messages.js'
 
 // Initialize core components
 const debuggerManager = new DebuggerManager()
