@@ -34,8 +34,6 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 			currentSession = session
 
-			// Enable Runtime domain to receive console events
-			sessionManager.enableDomain(session.tabId, 'Runtime')
 			sessionManager.enableDomain(session.tabId, 'Page')
 
 			// Subscribe to console events

@@ -24,16 +24,18 @@ export type EvalAttemptResult =
 
 export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 	const url = `http://${input.watcher.host}:${input.watcher.port}/eval`
+	const body = {
+		expression: input.expression,
+		awaitPromise: input.awaitPromise,
+		returnByValue: input.returnByValue,
+		timeoutMs: input.timeoutMs,
+	}
+
 	let response: EvalResponse
 	try {
 		response = await fetchJson<EvalResponse>(url, {
 			method: 'POST',
-			body: {
-				expression: input.expression,
-				awaitPromise: input.awaitPromise,
-				returnByValue: input.returnByValue,
-				timeoutMs: input.timeoutMs,
-			},
+			body,
 			timeoutMs: input.timeoutMs ? input.timeoutMs + 5_000 : 10_000,
 		})
 	} catch (error) {

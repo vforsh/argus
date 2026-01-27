@@ -14,6 +14,7 @@ compatibility: Requires Node 18+ (WebSocket), a Chromium-based browser, and loca
 - **Screenshots** (full page or element) (`argus screenshot`)
 - **Iframe targeting** with `--type`, `--origin`, `--target`, `--parent` filters
 - **Extension mode** for debugging without `--remote-debugging-port`
+- **Iframe helper script** for cross-origin iframe eval in extension mode (`argus iframe-helper`)
 
 ## Quick workflow (recommended)
 
@@ -279,16 +280,28 @@ Useful flags:
 - **`--no-fail-on-exception`**: keep exit code 0 when the evaluation throws.
 - **`--retry <n>`**: retry failed evaluations up to N times.
 - **`--timeout <ms>`**: watcher-side eval timeout.
-- **`--no-await`**: don’t await returned promises.
+- **`--no-await`**: don't await returned promises.
 - **`--interval <ms|duration>`**: re-run periodically (`500`, `250ms`, `3s`, `2m`).
 - **`--count <n>`**: stop after N iterations (requires `--interval`).
 - **`--until <condition>`**: stop when local condition becomes truthy (requires `--interval`).
     - Local context: `{ result, exception, iteration, attempt }`.
+- **`--iframe <selector>`**: eval in a cross-origin iframe via postMessage (requires helper script).
+- **`--iframe-timeout <ms>`**: timeout for iframe response (default: 5000).
 
 Example: poll until a title is ready:
 
 ```bash
 argus eval app 'document.title' --interval 250ms --until 'result === "ready"'
+```
+
+Example: eval in a cross-origin iframe (extension mode):
+
+```bash
+# First, include the helper script in your iframe (one-time setup)
+argus iframe-helper --out src/argus-helper.js
+
+# Then eval in the iframe
+argus eval app 'window.gameState' --iframe 'iframe#game'
 ```
 
 ## Screenshots
@@ -312,6 +325,8 @@ Notes:
 ## Working with iframes
 
 When your app runs inside an iframe (e.g., embedded games, widgets), special targeting is needed to attach to the iframe instead of the parent page.
+
+> **Extension mode note**: Cross-origin iframe eval requires a helper script. See [EXTENSION_IFRAME_EVAL.md](./EXTENSION_IFRAME_EVAL.md).
 
 ### The problem
 
@@ -479,6 +494,7 @@ argus eval app "document.title" # Evaluate JavaScript
 - **One debugger per tab**: Only one extension/DevTools can debug a tab at a time.
 - **Tab must stay open**: Closing a tab detaches the debugger.
 - **No automatic target matching**: You manually select which tab to attach via the extension popup (unlike CDP mode's `--url` matching).
+- **Cross-origin iframes**: Cannot directly eval in cross-origin iframes. Use the `argus iframe-helper` command to generate a postMessage bridge script. See [EXTENSION_IFRAME_EVAL.md](./EXTENSION_IFRAME_EVAL.md) for details.
 
 ### Programmatic (Node API)
 
@@ -496,6 +512,19 @@ events.on('cdpAttached', ({ target }) => {
 })
 ```
 
+## Iframe Helper (extension mode)
+
+Generate a helper script for cross-origin iframe eval via postMessage:
+
+```bash
+argus iframe-helper                        # Output to stdout
+argus iframe-helper --out src/helper.js   # Write to file
+argus iframe-helper --iife --no-log       # IIFE-wrapped, no console.log
+argus iframe-helper --namespace myapp     # Custom message prefix
+```
+
+Include this script in your iframe to enable eval from the parent page. See [EXTENSION_IFRAME_EVAL.md](./EXTENSION_IFRAME_EVAL.md) for full usage details.
+
 ## Common troubleshooting
 
 - **Chrome binary not found**: set `ARGUS_CHROME_BIN` to an absolute path.
@@ -504,3 +533,4 @@ events.on('cdpAttached', ({ target }) => {
 - **Wrong target matched (iframe issue)**: Use `--type iframe` or `--origin` to avoid matching parent pages that include your URL in query params.
 - **Extension mode: "Native host has exited"**: Reinstall the host manifest with `argus extension setup <EXTENSION_ID>`. Ensure you're using the same Node version.
 - **Extension mode: can't connect**: Reload the extension in `chrome://extensions` and try again.
+- **Extension mode: can't eval in iframe**: Cross-origin iframes need the helper script. Run `argus iframe-helper --out helper.js` and include it in your iframe.

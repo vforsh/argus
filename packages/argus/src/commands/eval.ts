@@ -18,6 +18,12 @@ export type EvalOptions = {
 	interval?: string
 	count?: string
 	until?: string
+	/** CSS selector for iframe to eval in via postMessage (extension mode). */
+	iframe?: string
+	/** Message type prefix for iframe eval (default: argus). */
+	iframeNamespace?: string
+	/** Timeout for iframe postMessage response in ms (default: 5000). */
+	iframeTimeout?: string
 }
 
 /** Execute the eval command for a watcher id. */
@@ -27,6 +33,16 @@ export const runEval = async (id: string | undefined, expression: string, option
 		output.writeWarn('Expression is required')
 		process.exitCode = 2
 		return
+	}
+
+	// Wrap expression for iframe eval if --iframe is provided
+	if (options.iframe) {
+		const iframeTimeoutMs = parseNumber(options.iframeTimeout) ?? 5000
+		expression = wrapForIframeEval(expression, {
+			selector: options.iframe,
+			namespace: options.iframeNamespace ?? 'argus',
+			timeoutMs: iframeTimeoutMs,
+		})
 	}
 
 	const retryCount = parseRetryCount(options.retry)
@@ -329,4 +345,45 @@ const formatError = (error: unknown): string => {
 		return error.message
 	}
 	return String(error)
+}
+
+type IframeWrapConfig = {
+	selector: string
+	namespace: string
+	timeoutMs: number
+}
+
+/**
+ * Wrap an expression to eval it in an iframe via postMessage.
+ * The iframe must have the argus helper script loaded.
+ */
+const wrapForIframeEval = (code: string, config: IframeWrapConfig): string => {
+	const { selector, namespace, timeoutMs } = config
+	const evalType = `${namespace}:eval`
+	const resultType = `${namespace}:eval-result`
+
+	// Escape the code for embedding in a string
+	const escapedCode = JSON.stringify(code)
+
+	return `(async () => {
+  const iframe = document.querySelector(${JSON.stringify(selector)});
+  if (!iframe) throw new Error('Iframe not found: ${selector.replace(/'/g, "\\'")}');
+  if (!iframe.contentWindow) throw new Error('Iframe has no contentWindow');
+  const id = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      reject(new Error('Iframe eval timeout after ${timeoutMs}ms'));
+    }, ${timeoutMs});
+    const handler = (e) => {
+      if (e.data?.type !== '${resultType}' || e.data.id !== id) return;
+      clearTimeout(timeout);
+      window.removeEventListener('message', handler);
+      if (e.data.ok) resolve(e.data.result);
+      else reject(new Error(e.data.error));
+    };
+    window.addEventListener('message', handler);
+    iframe.contentWindow.postMessage({ type: '${evalType}', id, code: ${escapedCode} }, '*');
+  });
+})()`
 }

@@ -6,6 +6,7 @@ import { runTail } from './commands/tail.js'
 import { runNet } from './commands/net.js'
 import { runNetTail } from './commands/netTail.js'
 import { runEval } from './commands/eval.js'
+import { runIframeHelper } from './commands/iframeHelper.js'
 import { runTrace, runTraceStart, runTraceStop } from './commands/trace.js'
 import { runScreenshot } from './commands/screenshot.js'
 import { runReload } from './commands/reload.js'
@@ -234,9 +235,23 @@ program
 	.option('--interval <ms|duration>', 'Re-evaluate every interval (e.g. 500, 3s)')
 	.option('--count <n>', 'Stop after N iterations (requires --interval)')
 	.option('--until <condition>', 'Stop when local condition becomes truthy (requires --interval)')
+	.option('--iframe <selector>', 'Eval in iframe via postMessage (requires helper script)')
+	.option('--iframe-namespace <name>', 'Message type prefix for iframe eval (default: argus)')
+	.option('--iframe-timeout <ms>', 'Timeout for iframe postMessage response (default: 5000)')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus eval app "location.href"\n  $ argus eval app "await fetch("/ping").then(r => r.status)"\n  $ argus eval app "document.title" --no-fail-on-exception\n  $ argus eval app "1+1" --retry 3\n  $ argus eval app "1+1" --silent\n  $ argus eval app "Date.now()" --interval 500 --count 10\n  $ argus eval app "document.title" --interval 250 --until \'result === "ready"\'\n',
+		`
+Examples:
+  $ argus eval app "location.href"
+  $ argus eval app "await fetch('/ping').then(r => r.status)"
+  $ argus eval app "document.title" --no-fail-on-exception
+  $ argus eval app "1+1" --retry 3
+  $ argus eval app "1+1" --silent
+  $ argus eval app "Date.now()" --interval 500 --count 10
+  $ argus eval app "document.title" --interval 250 --until 'result === "ready"'
+  $ argus eval app "window.gameState" --iframe "iframe#game"
+  $ argus eval app "document.title" --iframe "iframe" --iframe-timeout 10000
+`,
 	)
 	.action(async (id, expression, options) => {
 		await runEval(id, expression, {
@@ -250,7 +265,31 @@ program
 			interval: options.interval,
 			count: options.count,
 			until: options.until,
+			iframe: options.iframe,
+			iframeNamespace: options.iframeNamespace,
+			iframeTimeout: options.iframeTimeout,
 		})
+	})
+
+program
+	.command('iframe-helper')
+	.description('Output helper script for cross-origin iframe eval via postMessage')
+	.option('--out <file>', 'Write script to file instead of stdout')
+	.option('--no-log', 'Omit console.log confirmation')
+	.option('--iife', 'Wrap in IIFE to avoid global scope')
+	.option('--namespace <name>', 'Message type prefix (default: argus)')
+	.addHelpText(
+		'after',
+		`
+Examples:
+  $ argus iframe-helper > helper.js
+  $ argus iframe-helper --out src/argus.js
+  $ argus iframe-helper --iife --no-log
+  $ argus iframe-helper --namespace myapp
+`,
+	)
+	.action(async (options) => {
+		await runIframeHelper(options)
 	})
 
 const trace = program
