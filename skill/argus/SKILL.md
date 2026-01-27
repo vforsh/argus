@@ -440,9 +440,15 @@ Extension mode lets you debug any Chrome tab without launching Chrome with speci
     - Copy the **Extension ID** (e.g., `kkoefnlnjlnlbohcifcbkpgmjaokmipi`)
 
 2. **Install the Native Messaging host**:
+
     ```bash
-    cd packages/argus-watcher
-    node dist/scripts/install-host.js install <EXTENSION_ID>
+    argus extension setup <EXTENSION_ID>
+    ```
+
+    To verify installation:
+
+    ```bash
+    argus extension status
     ```
 
 ### Usage
@@ -496,5 +502,5 @@ events.on('cdpAttached', ({ target }) => {
 - **Watcher can't attach**: confirm the CDP endpoint (`argus chrome status --host 127.0.0.1 --port 9222`) and ensure your watcher's `--chrome-port` matches.
 - **Page reload with params fails**: only supported for http/https targets (not `chrome://`, `devtools://`, etc.).
 - **Wrong target matched (iframe issue)**: Use `--type iframe` or `--origin` to avoid matching parent pages that include your URL in query params.
-- **Extension mode: "Native host has exited"**: Reinstall the host manifest with `node dist/scripts/install-host.js install <EXTENSION_ID>`. Ensure you're using the same Node version.
+- **Extension mode: "Native host has exited"**: Reinstall the host manifest with `argus extension setup <EXTENSION_ID>`. Ensure you're using the same Node version.
 - **Extension mode: can't connect**: Reload the extension in `chrome://extensions` and try again.
