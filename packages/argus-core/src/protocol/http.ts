@@ -278,6 +278,31 @@ export type DomClickResponse = {
 	clicked: number
 }
 
+/**
+ * Request payload for POST /dom/keydown.
+ */
+export type DomKeydownRequest = {
+	/** Key name (e.g. "Enter", "a", "ArrowUp"). */
+	key: string
+	/** Optional CSS selector — focus element before dispatching. */
+	selector?: string
+	/** Comma-separated modifier names: "shift,ctrl,alt,meta". */
+	modifiers?: string
+}
+
+/**
+ * Response payload for POST /dom/keydown.
+ */
+export type DomKeydownResponse = {
+	ok: true
+	/** The key that was dispatched. */
+	key: string
+	/** Resolved modifier bitmask (Alt=1, Ctrl=2, Meta=4, Shift=8). */
+	modifiers: number
+	/** Whether a selector was focused before dispatch. */
+	focused: boolean
+}
+
 /** Valid positions for insertAdjacentHTML. */
 export type DomInsertPosition = 'beforebegin' | 'afterbegin' | 'beforeend' | 'afterend'
 

@@ -6,7 +6,7 @@ import fs from 'node:fs/promises'
 import { chromium } from 'playwright'
 import { getFreePort } from './helpers/ports.js'
 import { runCommand, spawnAndWait } from './helpers/process.js'
-import type { DomTreeResponse, DomInfoResponse, DomHoverResponse, DomClickResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DomTreeResponse, DomInfoResponse, DomHoverResponse, DomClickResponse, DomKeydownResponse, ErrorResponse } from '@vforsh/argus-core'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -33,6 +33,7 @@ const TEST_HTML = `
       <article class="article" data-testid="article-2">
         <p class="paragraph">Third paragraph</p>
       </article>
+      <input id="input" type="text" />
       <button id="btn" class="action">Click me</button>
       <div id="multi-1" class="multi">Multi One</div>
       <div id="multi-2" class="multi">Multi Two</div>
@@ -47,6 +48,13 @@ const TEST_HTML = `
     const multi = document.querySelectorAll('.multi')
     multi.forEach((el) => {
       el.addEventListener('click', () => window.__events.push(\`click:\${el.id}\`))
+    })
+    document.addEventListener('keydown', (e) => {
+      window.__events.push(\`keydown:\${e.key}\`)
+    })
+    const input = document.getElementById('input')
+    input.addEventListener('keydown', (e) => {
+      window.__events.push(\`input-keydown:\${e.key}\`)
     })
   </script>
 </body>
@@ -348,6 +356,66 @@ test('dom tree and dom info e2e', async (t) => {
 		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
 		assert.ok(events.includes('click:multi-1'))
 		assert.ok(events.includes('click:multi-2'))
+	})
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// dom keydown tests
+	// ─────────────────────────────────────────────────────────────────────────
+
+	await t.test('dom keydown dispatches Enter', async () => {
+		await page.evaluate(() => {
+			;(globalThis as { __events?: string[] }).__events = []
+		})
+
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'Enter', '--json'], { env })
+		const response = JSON.parse(stdout) as DomKeydownResponse
+		assert.equal(response.ok, true)
+		assert.equal(response.key, 'Enter')
+		assert.equal(response.modifiers, 0)
+		assert.equal(response.focused, false)
+
+		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		assert.ok(events.includes('keydown:Enter'))
+	})
+
+	await t.test('dom keydown with --selector focuses element', async () => {
+		await page.evaluate(() => {
+			;(globalThis as { __events?: string[] }).__events = []
+		})
+
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'], { env })
+		const response = JSON.parse(stdout) as DomKeydownResponse
+		assert.equal(response.ok, true)
+		assert.equal(response.key, 'a')
+		assert.equal(response.focused, true)
+
+		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		assert.ok(events.includes('input-keydown:a'))
+	})
+
+	await t.test('dom keydown with --modifiers sets bitmask', async () => {
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'a', '--modifiers', 'shift', '--json'], { env })
+		const response = JSON.parse(stdout) as DomKeydownResponse
+		assert.equal(response.ok, true)
+		assert.equal(response.modifiers, 8, 'Shift bitmask should be 8')
+	})
+
+	await t.test('dom keydown unknown key returns error', async () => {
+		const result = await runCommand('node', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'NoSuchKey', '--json'], {
+			env,
+		}).catch((e) => e)
+
+		assert.ok(result instanceof Error, 'Should throw on unknown key')
+		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
+		assert.ok(stdoutMatch, 'Should have JSON in stdout')
+		const response = JSON.parse(stdoutMatch![1]) as ErrorResponse
+		assert.equal(response.ok, false)
+		assert.match(response.error.message, /Unknown key/)
+	})
+
+	await t.test('dom keydown human output format', async () => {
+		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'Enter'], { env })
+		assert.match(stdout, /Dispatched keydown: Enter/)
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────

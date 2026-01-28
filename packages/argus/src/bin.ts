@@ -14,6 +14,7 @@ import { runDomTree } from './commands/domTree.js'
 import { runDomInfo } from './commands/domInfo.js'
 import { runDomHover } from './commands/domHover.js'
 import { runDomClick } from './commands/domClick.js'
+import { runDomKeydown } from './commands/domKeydown.js'
 import { runDomAdd } from './commands/domAdd.js'
 import { runDomRemove } from './commands/domRemove.js'
 import { runDomModifyAttr, runDomModifyClass, runDomModifyStyle, runDomModifyText, runDomModifyHtml } from './commands/domModify.js'
@@ -415,6 +416,21 @@ dom.command('click')
 	)
 	.action(async (id, options) => {
 		await runDomClick(id, options)
+	})
+
+dom.command('keydown')
+	.argument('[id]', 'Watcher id to query')
+	.description('Dispatch a keyboard event to the connected page')
+	.requiredOption('--key <name>', 'Key name (e.g. Enter, a, ArrowUp)')
+	.option('--selector <css>', 'Focus element before dispatching')
+	.option('--modifiers <list>', 'Comma-separated modifiers: shift,ctrl,alt,meta')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom keydown app --key Enter\n  $ argus dom keydown app --key a --selector "#input"\n  $ argus dom keydown app --key a --modifiers shift,ctrl\n',
+	)
+	.action(async (id, options) => {
+		await runDomKeydown(id, options)
 	})
 
 dom.command('add')

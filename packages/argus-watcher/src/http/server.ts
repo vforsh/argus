@@ -23,6 +23,8 @@ import type {
 	DomHoverResponse,
 	DomClickRequest,
 	DomClickResponse,
+	DomKeydownRequest,
+	DomKeydownResponse,
 	DomAddRequest,
 	DomAddResponse,
 	DomRemoveRequest,
@@ -43,6 +45,7 @@ import type { CdpSourceHandle } from '../sources/types.js'
 import { evaluateExpression } from '../cdp/eval.js'
 import { fetchDomSubtreeBySelector, fetchDomInfoBySelector, insertAdjacentHtml, removeElements, modifyElements } from '../cdp/dom.js'
 import { resolveDomSelectorMatches, hoverDomNodes, clickDomNodes } from '../cdp/mouse.js'
+import { dispatchKeydown, parseModifiers } from '../cdp/keyboard.js'
 import { executeStorageLocal } from '../cdp/storageLocal.js'
 import {
 	respondJson,
@@ -76,6 +79,7 @@ export type HttpRequestEventMetadata = {
 		| 'dom/info'
 		| 'dom/hover'
 		| 'dom/click'
+		| 'dom/keydown'
 		| 'dom/add'
 		| 'dom/remove'
 		| 'dom/modify'
@@ -180,6 +184,10 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 
 		if (req.method === 'POST' && url.pathname === '/dom/click') {
 			return handleDomClick(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/dom/keydown') {
+			return handleDomKeydown(req, res, options)
 		}
 
 		if (req.method === 'POST' && url.pathname === '/dom/add') {
@@ -663,6 +671,46 @@ const handleDomClick = async (req: http.IncomingMessage, res: http.ServerRespons
 
 		await clickDomNodes(options.cdpSession, nodeIds)
 		const response: DomClickResponse = { ok: true, matches: allNodeIds.length, clicked: nodeIds.length }
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleDomKeydown = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<DomKeydownRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.key || typeof payload.key !== 'string') {
+		return respondInvalidBody(res, 'key is required')
+	}
+
+	if (payload.selector != null && (typeof payload.selector !== 'string' || payload.selector.trim() === '')) {
+		return respondInvalidBody(res, 'selector must be a non-empty string')
+	}
+
+	let modifiers: number
+	try {
+		modifiers = parseModifiers(payload.modifiers)
+	} catch (error) {
+		return respondInvalidBody(res, error instanceof Error ? error.message : 'invalid modifiers')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/keydown',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const result = await dispatchKeydown(options.cdpSession, {
+			key: payload.key,
+			selector: payload.selector,
+			modifiers,
+		})
+		const response: DomKeydownResponse = { ok: true, key: result.key, modifiers: result.modifiers, focused: result.focused }
 		respondJson(res, response)
 	} catch (error) {
 		respondError(res, error)
