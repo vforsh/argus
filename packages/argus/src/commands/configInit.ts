@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export type ConfigInitOptions = {
 	path?: string
@@ -8,8 +9,8 @@ export type ConfigInitOptions = {
 
 const DEFAULT_CONFIG_PATH = '.argus/config.json'
 
-const buildConfigTemplate = (schemaPath: string) => ({
-	$schema: schemaPath,
+const buildConfigTemplate = (schemaRef: string) => ({
+	$schema: schemaRef,
 	chrome: {
 		start: {
 			url: 'http://localhost:3000',
@@ -34,22 +35,6 @@ const resolveConfigPath = (cwd: string, targetPath?: string): string => {
 		return path.resolve(cwd, DEFAULT_CONFIG_PATH)
 	}
 	return path.isAbsolute(targetPath) ? targetPath : path.resolve(cwd, targetPath)
-}
-
-const ensureSchemaPath = async (schemaPath: string): Promise<boolean> => {
-	try {
-		const stats = await fs.stat(schemaPath)
-		if (!stats.isFile()) {
-			console.error(`Schema path is not a file: ${schemaPath}`)
-			process.exitCode = 2
-			return false
-		}
-		return true
-	} catch (error) {
-		console.error(`Schema not found at ${schemaPath}: ${error instanceof Error ? error.message : String(error)}`)
-		process.exitCode = 2
-		return false
-	}
 }
 
 const ensureParentDir = async (filePath: string): Promise<boolean> => {
@@ -80,20 +65,48 @@ const writeConfigFile = async (filePath: string, contents: string, force?: boole
 	}
 }
 
+const ensureSchemaFile = async (schemaPath: string): Promise<boolean> => {
+	try {
+		const stats = await fs.stat(schemaPath)
+		if (!stats.isFile()) {
+			console.error(`Schema path is not a file: ${schemaPath}`)
+			process.exitCode = 2
+			return false
+		}
+		return true
+	} catch (error) {
+		console.error(`Schema not found at ${schemaPath}: ${error instanceof Error ? error.message : String(error)}`)
+		process.exitCode = 2
+		return false
+	}
+}
+
+const resolveSchemaRef = async (): Promise<string | null> => {
+	// At runtime, this file lives at: <packageRoot>/dist/commands/configInit.js
+	// The schema lives at:          <packageRoot>/schemas/argus.config.schema.json
+	const schemaUrl = new URL('../../schemas/argus.config.schema.json', import.meta.url)
+	const schemaPath = fileURLToPath(schemaUrl)
+
+	if (!(await ensureSchemaFile(schemaPath))) {
+		return null
+	}
+	return pathToFileURL(schemaPath).href
+}
+
 export const runConfigInit = async (options: ConfigInitOptions): Promise<void> => {
 	const cwd = process.cwd()
 	const targetPath = resolveConfigPath(cwd, options.path)
-	const schemaPath = path.resolve(cwd, 'schemas/argus.config.schema.json')
-
-	if (!(await ensureSchemaPath(schemaPath))) {
-		return
-	}
 
 	if (!(await ensureParentDir(targetPath))) {
 		return
 	}
 
-	const template = buildConfigTemplate(schemaPath)
+	const schemaRef = await resolveSchemaRef()
+	if (!schemaRef) {
+		return
+	}
+
+	const template = buildConfigTemplate(schemaRef)
 	const contents = `${JSON.stringify(template, null, '\t')}\n`
 	if (!(await writeConfigFile(targetPath, contents, options.force))) {
 		return

@@ -38,7 +38,7 @@ Example:
 
 ```json
 {
-	"$schema": "../schemas/argus.config.schema.json",
+	"$schema": "file:///.../node_modules/@vforsh/argus/schemas/argus.config.schema.json",
 	"chrome": {
 		"start": {
 			"url": "http://localhost:3000",
