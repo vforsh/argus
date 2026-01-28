@@ -108,10 +108,11 @@ if (window.__ARGUS__) {
 
 ## CLI Usage
 
-The inject script is typically configured via config file. The CLI reads the config and passes the script text to the watcher:
-
 ```bash
-# Uses inject config from argus.config.json
+# Via CLI flag
+argus watcher start --id app --url localhost:3000 --inject ./scripts/debug-helpers.js
+
+# Via config file (inject.file resolved relative to config)
 argus watcher start --id app --url localhost:3000
 ```
 

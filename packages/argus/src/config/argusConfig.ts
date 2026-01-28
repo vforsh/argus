@@ -507,11 +507,7 @@ export const mergeWatcherStartOptionsWithConfig = <
 	merged.pageIndicator = mergeOption(command, 'pageIndicator', options.pageIndicator, watcherStart.pageIndicator)
 	merged.pageConsoleLogging = mergeOption(command, 'pageConsoleLogging', options.pageConsoleLogging, watcherStart.pageConsoleLogging)
 	merged.artifacts = mergeOption(command, 'artifacts', options.artifacts, configArtifacts)
-	if (options.inject !== undefined) {
-		merged.inject = options.inject
-	} else if (configInject !== undefined) {
-		merged.inject = configInject
-	}
+	merged.inject = mergeOption(command, 'inject', options.inject, configInject)
 
 	return merged
 }
