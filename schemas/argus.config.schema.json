@@ -84,6 +84,22 @@
 							"type": "string",
 							"enum": ["none", "minimal", "full"],
 							"description": "Write watcher logs to the attached page console. Default: minimal."
+						},
+						"inject": {
+							"type": "object",
+							"additionalProperties": false,
+							"description": "JavaScript injection on watcher attach.",
+							"properties": {
+								"file": {
+									"type": "string",
+									"description": "Path to JavaScript file to inject, resolved relative to config file."
+								},
+								"exposeArgus": {
+									"type": "boolean",
+									"description": "Set window.__ARGUS__ metadata before running script. Default: true."
+								}
+							},
+							"required": ["file"]
 						}
 					}
 				}

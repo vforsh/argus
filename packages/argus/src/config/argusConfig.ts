@@ -11,6 +11,11 @@ export type ChromeStartConfig = {
 
 export type PageConsoleLogging = 'none' | 'minimal' | 'full'
 
+export type WatcherInjectConfig = {
+	file: string
+	exposeArgus?: boolean
+}
+
 export type WatcherStartConfig = {
 	id?: string
 	url?: string
@@ -19,6 +24,7 @@ export type WatcherStartConfig = {
 	artifacts?: string
 	pageIndicator?: boolean
 	pageConsoleLogging?: PageConsoleLogging
+	inject?: WatcherInjectConfig
 }
 
 export type ArgusConfig = {
@@ -50,7 +56,7 @@ type OptionSourceProvider = {
 
 const AUTO_CONFIG_CANDIDATES = ['.argus/config.json', '.config/argus.json', 'argus.config.json', 'argus/config.json']
 const EXPECTED_SHAPE_HINT =
-	'Expected shape: { chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full" } } }.'
+	'Expected shape: { chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full", inject?: { file: string, exposeArgus?: boolean } } } }.'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -160,6 +166,33 @@ const validateChromeStartConfig = (value: unknown): { ok: true; value: ChromeSta
 	return { ok: true, value: config }
 }
 
+const validateOptionalInjectConfig = (value: unknown): { ok: true; value?: WatcherInjectConfig } | { ok: false; error: string } => {
+	if (value === undefined) {
+		return { ok: true }
+	}
+	if (!isRecord(value)) {
+		return { ok: false, error: '"watcher.start.inject" must be an object.' }
+	}
+	const fileResult = validateOptionalString(value.file, '"watcher.start.inject.file"')
+	if (!fileResult.ok) {
+		return fileResult
+	}
+	if (fileResult.value === undefined || fileResult.value.trim() === '') {
+		return { ok: false, error: '"watcher.start.inject.file" is required and must be a non-empty string.' }
+	}
+	const exposeArgusResult = validateOptionalBoolean(value.exposeArgus, '"watcher.start.inject.exposeArgus"')
+	if (!exposeArgusResult.ok) {
+		return exposeArgusResult
+	}
+	return {
+		ok: true,
+		value: {
+			file: fileResult.value,
+			exposeArgus: exposeArgusResult.value,
+		},
+	}
+}
+
 const validateWatcherStartConfig = (value: unknown): { ok: true; value: WatcherStartConfig } | { ok: false; error: string } => {
 	if (!isRecord(value)) {
 		return { ok: false, error: '"watcher.start" must be an object.' }
@@ -193,6 +226,10 @@ const validateWatcherStartConfig = (value: unknown): { ok: true; value: WatcherS
 	if (!pageConsoleLoggingResult.ok) {
 		return pageConsoleLoggingResult
 	}
+	const injectResult = validateOptionalInjectConfig(value.inject)
+	if (!injectResult.ok) {
+		return injectResult
+	}
 
 	if (artifactsResult.value !== undefined && artifactsResult.value.trim() === '') {
 		return { ok: false, error: '"watcher.start.artifacts" must be a non-empty string.' }
@@ -219,6 +256,9 @@ const validateWatcherStartConfig = (value: unknown): { ok: true; value: WatcherS
 	}
 	if (pageConsoleLoggingResult.value !== undefined) {
 		config.pageConsoleLogging = pageConsoleLoggingResult.value
+	}
+	if (injectResult.value !== undefined) {
+		config.inject = injectResult.value
 	}
 
 	return { ok: true, value: config }
@@ -380,6 +420,11 @@ export const getConfigStartDefaults = (config: ArgusConfig): { chromeStart?: Chr
 
 const resolveArtifactsPath = (configDir: string, artifacts: string): string => path.resolve(configDir, artifacts)
 
+const resolveInjectPath = (configDir: string, inject: WatcherInjectConfig): WatcherInjectConfig => ({
+	file: path.resolve(configDir, inject.file),
+	exposeArgus: inject.exposeArgus,
+})
+
 const mergeOption = <T>(command: OptionSourceProvider, key: string, cliValue: T | undefined, configValue: T | undefined): T | undefined => {
 	if (command.getOptionValueSource(key) === 'cli') {
 		return cliValue
@@ -435,6 +480,7 @@ export const mergeWatcherStartOptionsWithConfig = <
 		pageIndicator?: boolean
 		artifacts?: string
 		pageConsoleLogging?: PageConsoleLogging
+		inject?: WatcherInjectConfig
 	},
 >(
 	options: T,
@@ -452,6 +498,7 @@ export const mergeWatcherStartOptionsWithConfig = <
 
 	const merged = { ...options }
 	const configArtifacts = watcherStart.artifacts !== undefined ? resolveArtifactsPath(configResult.configDir, watcherStart.artifacts) : undefined
+	const configInject = watcherStart.inject !== undefined ? resolveInjectPath(configResult.configDir, watcherStart.inject) : undefined
 
 	merged.id = mergeOption(command, 'id', options.id, watcherStart.id)
 	merged.url = mergeOption(command, 'url', options.url, watcherStart.url)
@@ -460,6 +507,11 @@ export const mergeWatcherStartOptionsWithConfig = <
 	merged.pageIndicator = mergeOption(command, 'pageIndicator', options.pageIndicator, watcherStart.pageIndicator)
 	merged.pageConsoleLogging = mergeOption(command, 'pageConsoleLogging', options.pageConsoleLogging, watcherStart.pageConsoleLogging)
 	merged.artifacts = mergeOption(command, 'artifacts', options.artifacts, configArtifacts)
+	if (options.inject !== undefined) {
+		merged.inject = options.inject
+	} else if (configInject !== undefined) {
+		merged.inject = configInject
+	}
 
 	return merged
 }

@@ -102,7 +102,7 @@ export type StartWatcherOptions = {
 	heartbeatMs?: number
 	/**
 	 * Artifacts storage configuration for logs, traces, and screenshots.
-	 * All artifacts are stored under `artifacts.base` (default: `$TMPDIR/argus/<watcherId>`).
+	 * All artifacts are stored under `artifacts.base` (default: `$TMPDIR/argus`).
 	 * Subdirectories: `logs/`, `traces/`, `screenshots/`.
 	 */
 	artifacts?: ArtifactsOptions
@@ -140,6 +140,14 @@ export type StartWatcherOptions = {
 	 * - `full`: Same as minimal, plus log every HTTP request to the watcher API.
 	 */
 	pageConsoleLogging?: PageConsoleLogging
+	/**
+	 * Optional JavaScript to inject on attach and document start.
+	 * The script is provided as raw text to keep watcher package filesystem-agnostic.
+	 */
+	inject?: {
+		script: string
+		exposeArgus?: boolean
+	}
 }
 
 /** Handle returned by startWatcher. */
@@ -279,6 +287,56 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		attachedAt: indicatorAttachedAt ?? Date.now(),
 	})
 
+	const maybeInjectOnAttach = async (
+		session: CdpSourceHandle['session'],
+		target: { title?: string | null; url?: string | null; type?: string | null; parentId?: string | null },
+	): Promise<void> => {
+		if (!options.inject?.script) {
+			return
+		}
+		if (!session.isAttached()) {
+			return
+		}
+
+		const trimmedScript = options.inject.script.trim()
+		if (trimmedScript === '') {
+			console.warn(`[Watcher] Inject script is empty for watcher ${record.id}. Skipping.`)
+			return
+		}
+
+		const attachedAt = Date.now()
+		const exposeArgus = options.inject.exposeArgus ?? true
+		const argusPayload = exposeArgus
+			? {
+					watcherId: record.id,
+					watcherHost: record.host,
+					watcherPort: record.port,
+					watcherPid: record.pid,
+					attachedAt,
+					target: {
+						title: target.title ?? null,
+						url: target.url ?? null,
+						type: target.type ?? 'page',
+						parentId: target.parentId ?? null,
+					},
+				}
+			: null
+
+		const expression = buildInjectExpression(trimmedScript, argusPayload)
+
+		try {
+			await session.sendAndWait('Page.addScriptToEvaluateOnNewDocument', { source: expression })
+		} catch (error) {
+			console.warn(`[Watcher] Failed to register inject script for watcher ${record.id}: ${formatError(error)}`)
+		}
+
+		try {
+			await session.sendAndWait('Runtime.evaluate', { expression, silent: true })
+		} catch (error) {
+			console.warn(`[Watcher] Failed to run inject script for watcher ${record.id}: ${formatError(error)}`)
+		}
+	}
+
 	// Create the appropriate source based on mode
 	let sourceHandle: CdpSourceHandle
 	let networkCapture: Awaited<ReturnType<typeof createNetworkCapture>> | null = null
@@ -319,6 +377,9 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 				},
 				onPageIntl: (info) => {
 					fileLogger?.setPageIntl(info)
+				},
+				onAttach: async (session, target) => {
+					await maybeInjectOnAttach(session, target)
 				},
 			},
 			ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
@@ -390,6 +451,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 							buildIndicatorInfo({ title: target.title, url: target.url }),
 						)
 					}
+					await maybeInjectOnAttach(session, target)
 				},
 				onDetach: (reason) => {
 					networkCapture?.onDetached()
@@ -492,4 +554,36 @@ const resolveMaxFiles = (maxFiles?: number): number => {
 		throw new Error('artifacts.logs.maxFiles must be an integer >= 1')
 	}
 	return maxFiles
+}
+
+const buildInjectExpression = (
+	script: string,
+	argusPayload: {
+		watcherId: string
+		watcherHost: string
+		watcherPort: number
+		watcherPid: number
+		attachedAt: number
+		target: { title: string | null; url: string | null; type: string; parentId: string | null }
+	} | null,
+): string => {
+	const lines = ['(() => {']
+	if (argusPayload) {
+		lines.push(`window.__ARGUS__ = ${JSON.stringify(argusPayload)};`)
+	}
+	lines.push(`const __argusScript = ${JSON.stringify(script)};`)
+	lines.push('const __argusFn = new Function(__argusScript);')
+	lines.push('__argusFn();')
+	lines.push('})();')
+	return lines.join('\n')
+}
+
+const formatError = (error: unknown): string => {
+	if (!error) {
+		return 'Unknown error'
+	}
+	if (error instanceof Error) {
+		return error.message
+	}
+	return String(error)
 }

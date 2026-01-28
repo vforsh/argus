@@ -1,6 +1,8 @@
 import { startWatcher, type WatcherHandle, type PageConsoleLogging, type WatcherSourceMode } from '@vforsh/argus-watcher'
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createOutput } from '../output/io.js'
+import type { WatcherInjectConfig } from '../config/argusConfig.js'
 
 export type WatcherStartOptions = {
 	id?: string
@@ -13,6 +15,8 @@ export type WatcherStartOptions = {
 	pageIndicator?: boolean
 	artifacts?: string
 	pageConsoleLogging?: PageConsoleLogging
+	/** JavaScript injection on watcher attach. */
+	inject?: WatcherInjectConfig
 	/** Filter by target type (e.g., 'page', 'iframe'). */
 	type?: string
 	/** Match against URL origin only (protocol + host + port). */
@@ -44,6 +48,33 @@ const isValidPort = (port: number): boolean => Number.isFinite(port) && port >= 
 const parsePort = (value: string | number): number | null => {
 	const port = typeof value === 'string' ? parseInt(value, 10) : value
 	return isValidPort(port) ? port : null
+}
+
+const resolveInjectScript = async (
+	inject: WatcherInjectConfig | undefined,
+	output: { writeWarn: (message: string) => void },
+): Promise<{ script: string; exposeArgus?: boolean } | null> => {
+	if (!inject) {
+		return null
+	}
+
+	const resolvedPath = path.isAbsolute(inject.file) ? inject.file : path.resolve(process.cwd(), inject.file)
+	let script: string
+	try {
+		script = await fs.readFile(resolvedPath, 'utf8')
+	} catch (error) {
+		output.writeWarn(
+			`Failed to read inject script at ${resolvedPath}: ${error instanceof Error ? error.message : String(error)}. Skipping injection.`,
+		)
+		return null
+	}
+
+	if (script.trim() === '') {
+		output.writeWarn(`Inject script at ${resolvedPath} is empty. Skipping injection.`)
+		return null
+	}
+
+	return { script, exposeArgus: inject.exposeArgus }
 }
 
 export const runWatcherStart = async (options: WatcherStartOptions): Promise<void> => {
@@ -118,6 +149,8 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		artifactsBaseDir = path.resolve(process.cwd(), trimmed)
 	}
 
+	const inject = await resolveInjectScript(options.inject, output)
+
 	// Build the match object from various filter options
 	const match: {
 		url?: string
@@ -155,6 +188,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 			pageIndicator: sourceMode === 'cdp' ? (options.pageIndicator === false ? { enabled: false } : { enabled: true }) : { enabled: false },
 			artifacts: artifactsBaseDir ? { base: artifactsBaseDir } : undefined,
 			pageConsoleLogging: options.pageConsoleLogging,
+			inject: inject ?? undefined,
 		})
 	} catch (error) {
 		output.writeWarn(`Failed to start watcher: ${error instanceof Error ? error.message : error}`)
