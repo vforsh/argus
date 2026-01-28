@@ -48,7 +48,7 @@ type OptionSourceProvider = {
 	getOptionValueSource: (key: string) => string
 }
 
-const AUTO_CONFIG_CANDIDATES = ['.argus/config.json', 'argus.config.json', 'argus/config.json']
+const AUTO_CONFIG_CANDIDATES = ['.argus/config.json', '.config/argus.json', 'argus.config.json', 'argus/config.json']
 const EXPECTED_SHAPE_HINT =
 	'Expected shape: { chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full" } } }.'
 

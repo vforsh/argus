@@ -135,7 +135,7 @@ argus page reload <targetId> --id app --param foo=bar
 
 Load defaults for `argus chrome start` and `argus watcher start` from config file.
 
-Auto-discovery: `.argus/config.json`, `argus.config.json`, `argus/config.json`
+Auto-discovery: `.argus/config.json`, `.config/argus.json`, `argus.config.json`, `argus/config.json`
 
 - `--config <path>` for explicit file
 - CLI flags override config

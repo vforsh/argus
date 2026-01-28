@@ -29,7 +29,7 @@ argus doctor
 
 Argus can load defaults for `argus chrome start` and `argus watcher start` from a repo-local config file.
 
-- Auto-discovery order: `.argus/config.json`, `argus.config.json`, `argus/config.json`.
+- Auto-discovery order: `.argus/config.json`, `.config/argus.json`, `argus.config.json`, `argus/config.json`.
 - Use `--config <path>` to point at an explicit file (relative to `cwd` if not absolute).
 - CLI options override config values.
 - `watcher.start.artifacts` is resolved relative to the config file directory.

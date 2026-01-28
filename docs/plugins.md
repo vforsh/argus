@@ -27,7 +27,7 @@ export default {
 
 ### 2. Register in config
 
-Add to `.argus/config.json`:
+Add to your Argus config file (for example, `.argus/config.json`):
 
 ```json
 {
@@ -73,7 +73,7 @@ The `setup` hook receives a context object:
 
 ```typescript
 interface PluginContext {
-	config?: Record<string, unknown> // Plugin config from argus.config.json
+	config?: Record<string, unknown> // Plugin config from argus config
 	cwd: string // Current working directory
 	configDir: string // Directory containing argus config
 	argusConfig: ArgusConfig // Full argus configuration

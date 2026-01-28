@@ -28,6 +28,24 @@ test('resolveArgusConfigPath returns null when auto-discovery misses', async (t)
 	assert.equal(process.exitCode, undefined)
 })
 
+test('resolveArgusConfigPath prefers .config/argus.json after .argus', async (t) => {
+	resetExitCode()
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-config-'))
+	t.after(() => fs.rm(tempDir, { recursive: true, force: true }))
+
+	const configDir = path.join(tempDir, '.config')
+	await fs.mkdir(configDir, { recursive: true })
+
+	const preferredPath = path.join(configDir, 'argus.json')
+	const fallbackPath = path.join(tempDir, 'argus.config.json')
+	await fs.writeFile(preferredPath, JSON.stringify({ watcher: { start: { id: 'preferred' } } }))
+	await fs.writeFile(fallbackPath, JSON.stringify({ watcher: { start: { id: 'fallback' } } }))
+
+	const resolved = resolveArgusConfigPath({ cwd: tempDir })
+	assert.equal(resolved, preferredPath)
+	assert.equal(process.exitCode, undefined)
+})
+
 test('resolveArgusConfigPath errors on explicit missing path', async (t) => {
 	resetExitCode()
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-config-'))

@@ -97,7 +97,7 @@ export interface PluginContext {
 	cwd: string
 
 	/**
-	 * Argus config directory (.argus/ or directory containing argus.config.json).
+	 * Argus config directory (.argus/, .config/, or directory containing argus.config.json).
 	 */
 	configDir: string
 
