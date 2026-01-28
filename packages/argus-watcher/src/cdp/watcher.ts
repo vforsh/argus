@@ -55,6 +55,7 @@ export type CdpWatcherOptions = {
 	onLog: (event: Omit<LogEvent, 'id'>) => void
 	onStatus: (status: CdpStatus) => void
 	onPageNavigation?: (info: { url: string; title: string | null }) => void
+	onPageLoad?: () => void
 	onPageIntl?: (info: PageIntlInfo) => void
 	onAttach?: (session: CdpSessionHandle, target: CdpTarget) => Promise<void> | void
 	onDetach?: (reason: string) => void
@@ -109,6 +110,13 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		}
 		currentTarget.url = navigation.url
 		options.onPageNavigation?.({ url: navigation.url, title: currentTarget.title ?? null })
+	})
+
+	session.onEvent('Page.domContentEventFired', () => {
+		if (!currentTarget) {
+			return
+		}
+		options.onPageLoad?.()
 	})
 
 	return { stop, session }

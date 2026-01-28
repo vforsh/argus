@@ -44,6 +44,7 @@ export const createCdpSource = (options: CdpSourceOptions): CdpSourceHandle => {
 		onLog: events.onLog,
 		onStatus: events.onStatus,
 		onPageNavigation: events.onPageNavigation,
+		onPageLoad: events.onPageLoad,
 		onPageIntl: events.onPageIntl,
 		onAttach: events.onAttach
 			? (session, target) =>

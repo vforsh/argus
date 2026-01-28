@@ -28,12 +28,6 @@ export type PageIndicatorOptions = {
 	margin?: number
 	/** Icon size in pixels. Defaults to 19. */
 	size?: number
-	/** Hover outline color. Defaults to 'rgba(255, 255, 255, 0.9)'. */
-	outlineColor?: string
-	/** Hover outline width in pixels. Defaults to 2. */
-	outlineWidth?: number
-	/** Hover outline offset in pixels. Defaults to 2. */
-	outlineOffset?: number
 }
 
 export type PageIndicatorInfo = {
@@ -49,6 +43,8 @@ export type PageIndicatorInfo = {
 export type PageIndicatorController = {
 	onAttach: (session: CdpSessionHandle, target: CdpTarget, info: PageIndicatorInfo) => void
 	onNavigation: (session: CdpSessionHandle, info: PageIndicatorInfo) => void
+	/** Re-inject the indicator using the last known info. Use after DOM is rebuilt (e.g. domContentEventFired). */
+	reinstall: () => void
 	onDetach: () => void
 	stop: () => void
 }
@@ -77,25 +73,19 @@ export const validatePageIndicatorOptions = (options: PageIndicatorOptions | und
 }
 
 const DEFAULT_BG_COLOR = 'rgba(0, 0, 0, 0.75)'
+const DEFAULT_HOVER_BG_COLOR = 'rgba(0, 0, 0, 0.9)'
 const DEFAULT_ICON_COLOR = 'rgba(255, 255, 255, 0.95)'
 const DEFAULT_MARGIN = 8
 const DEFAULT_SIZE = 19
-const DEFAULT_OUTLINE_COLOR = 'rgba(255, 255, 255, 0.9)'
-const DEFAULT_OUTLINE_WIDTH = 2
-const DEFAULT_OUTLINE_OFFSET = 2
-
 export const createPageIndicatorController = (options: PageIndicatorOptions): PageIndicatorController => {
 	const position = options.position ?? 'bottom-right'
 	const heartbeatMs = options.heartbeatMs ?? 2000
 	const ttlMs = options.ttlMs ?? 6000
 	const bgColor = options.bgColor ?? DEFAULT_BG_COLOR
+	const hoverBgColor = DEFAULT_HOVER_BG_COLOR
 	const iconColor = options.iconColor ?? DEFAULT_ICON_COLOR
 	const margin = options.margin ?? DEFAULT_MARGIN
 	const size = options.size ?? DEFAULT_SIZE
-	const outlineColor = options.outlineColor ?? DEFAULT_OUTLINE_COLOR
-	const outlineWidth = options.outlineWidth ?? DEFAULT_OUTLINE_WIDTH
-	const outlineOffset = options.outlineOffset ?? DEFAULT_OUTLINE_OFFSET
-
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 	let currentSession: CdpSessionHandle | null = null
 	let currentInfo: PageIndicatorInfo | null = null
@@ -110,12 +100,10 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 			position,
 			ttlMs,
 			bgColor,
+			hoverBgColor,
 			iconColor,
 			margin,
 			size,
-			outlineColor,
-			outlineWidth,
-			outlineOffset,
 		})
 
 		heartbeatTimer = setInterval(() => {
@@ -133,12 +121,26 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 			position,
 			ttlMs,
 			bgColor,
+			hoverBgColor,
 			iconColor,
 			margin,
 			size,
-			outlineColor,
-			outlineWidth,
-			outlineOffset,
+		})
+	}
+
+	const reinstall = (): void => {
+		if (!currentSession || !currentInfo) {
+			return
+		}
+		void installIndicator(currentSession, {
+			info: currentInfo,
+			position,
+			ttlMs,
+			bgColor,
+			hoverBgColor,
+			iconColor,
+			margin,
+			size,
 		})
 	}
 
@@ -160,7 +162,7 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 		onDetach()
 	}
 
-	return { onAttach, onNavigation, onDetach, stop }
+	return { onAttach, onNavigation, reinstall, onDetach, stop }
 }
 
 const installIndicator = async (
@@ -170,26 +172,22 @@ const installIndicator = async (
 		position: PageIndicatorPosition
 		ttlMs: number
 		bgColor: string
+		hoverBgColor: string
 		iconColor: string
 		margin: number
 		size: number
-		outlineColor: string
-		outlineWidth: number
-		outlineOffset: number
 	},
 ): Promise<void> => {
-	const { info, position, ttlMs, bgColor, iconColor, margin, size, outlineColor, outlineWidth, outlineOffset } = params
+	const { info, position, ttlMs, bgColor, hoverBgColor, iconColor, margin, size } = params
 	const expression = buildInstallExpression({
 		info,
 		position,
 		ttlMs,
 		bgColor,
+		hoverBgColor,
 		iconColor,
 		margin,
 		size,
-		outlineColor,
-		outlineWidth,
-		outlineOffset,
 	})
 
 	try {
@@ -233,14 +231,12 @@ const buildInstallExpression = (params: {
 	position: PageIndicatorPosition
 	ttlMs: number
 	bgColor: string
+	hoverBgColor: string
 	iconColor: string
 	margin: number
 	size: number
-	outlineColor: string
-	outlineWidth: number
-	outlineOffset: number
 }): string => {
-	const { info, position, ttlMs, bgColor, iconColor, margin, size, outlineColor, outlineWidth, outlineOffset } = params
+	const { info, position, ttlMs, bgColor, hoverBgColor, iconColor, margin, size } = params
 	const infoJson = JSON.stringify(info)
 	const svgWithSize = BOT_SVG.replace(/width="19"/, `width="${size}"`).replace(/height="19"/, `height="${size}"`)
 	const svgEscaped = svgWithSize.replace(/'/g, "\\'")
@@ -278,7 +274,7 @@ const buildInstallExpression = (params: {
     clearInterval(window[STATE_KEY].timerId);
   }
 
-  // Inject styles for hover outline and dialog
+  // Inject styles for hover effects and dialog
   var existingStyle = document.getElementById(STYLE_ID);
   if (existingStyle) {
     existingStyle.remove();
@@ -286,9 +282,12 @@ const buildInstallExpression = (params: {
   var style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent =
+    '#' + INDICATOR_ID + ' {' +
+      'transition: filter 0.15s ease, background 0.15s ease;' +
+    '}' +
     '#' + INDICATOR_ID + ':hover {' +
-      'outline: ${outlineWidth}px solid ${outlineColor};' +
-      'outline-offset: ${outlineOffset}px;' +
+      'filter: brightness(1.4);' +
+      'background: ${hoverBgColor} !important;' +
     '}' +
     '#' + DIALOG_ID + '::backdrop {' +
       'background: rgba(0, 0, 0, 0.5);' +

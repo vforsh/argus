@@ -431,6 +431,11 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 						indicatorController.onNavigation(sessionHandle.session, buildIndicatorInfo({ title: null, url: info.url }))
 					}
 				},
+				onPageLoad: () => {
+					if (indicatorController) {
+						indicatorController.reinstall()
+					}
+				},
 				onPageIntl: (info) => {
 					fileLogger?.setPageIntl(info)
 				},

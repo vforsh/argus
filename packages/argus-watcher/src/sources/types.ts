@@ -56,6 +56,8 @@ export type CdpSourceEvents = {
 	onDetach?: (reason: string) => void
 	/** Called on page navigation (for file log rotation). */
 	onPageNavigation?: (info: { url: string; title: string | null }) => void
+	/** Called when the page DOM is ready after navigation. */
+	onPageLoad?: () => void
 	/** Called when page intl info is available. */
 	onPageIntl?: (info: { timezone: string | null; locale: string | null }) => void
 }
