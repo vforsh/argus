@@ -13,7 +13,7 @@ Debug local web apps via Chrome CDP or extension. Logs, eval, screenshots, targe
 
 Launch Chrome with CDP enabled, auto-select targets via `--url` matching.
 
-**IMPORTANT for agents:** Chrome and watcher are long-running processes. Always start them in the background (e.g., `run_in_background: true` in Bash tool) so they don't block subsequent commands.
+**CRITICAL for agents:** `argus watcher start` and `argus chrome start` are **long-running processes that never exit on their own**. You **MUST** start them in the background (e.g., `run_in_background: true` in Bash tool). If you run them in the foreground, they will block indefinitely and you will not be able to execute any further commands.
 
 ```bash
 # 1) Start app
@@ -22,8 +22,8 @@ npm run dev && export APP_URL="http://localhost:3000"
 # 2) Start Chrome with CDP in background (uses 9222 if available; prints port)
 argus chrome start --url "$APP_URL"  # Run with run_in_background: true
 
-# 3) Start watcher in background
-argus watcher start --id app --url "$APP_URL" --chrome-port 9222  # Run with run_in_background: true
+# 3) Start watcher in background — MUST use run_in_background: true (blocks forever otherwise)
+argus watcher start --id app --url "$APP_URL" --chrome-port 9222  # run_in_background: true
 
 # 4) Use CLI (these are quick commands, run normally)
 argus logs app --since 10m --levels error,warning
