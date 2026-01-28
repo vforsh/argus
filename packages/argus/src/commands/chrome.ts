@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import type { ChromeTargetResponse } from '../cdp/types.js'
 import type { CdpEndpointOptions } from '../cdp/resolveCdpEndpoint.js'
 import { resolveCdpEndpoint } from '../cdp/resolveCdpEndpoint.js'
@@ -557,4 +558,118 @@ export const runChromeReload = async (options: ChromeReloadOptions): Promise<voi
 	} else {
 		output.writeHuman(`reloaded ${targetId}`)
 	}
+}
+
+export type ChromeListOptions = { json?: boolean }
+
+export const runChromeList = async (options: ChromeListOptions): Promise<void> => {
+	const output = createOutput(options)
+
+	const ports = await discoverChromeCdpPorts()
+	if (ports.length === 0) {
+		output.writeHuman('No Chrome instances found listening on TCP ports.')
+		return
+	}
+
+	const results = await Promise.all(
+		ports.map(async ({ port, pid }) => {
+			try {
+				const [version, targets] = await Promise.all([
+					fetchJson<ChromeVersionResponse>(`http://127.0.0.1:${port}/json/version`, { timeoutMs: 2_000 }),
+					fetchJson<ChromeTargetResponse[]>(`http://127.0.0.1:${port}/json/list`, { timeoutMs: 2_000 }),
+				])
+				const pages = targets.filter((t) => t.type === 'page' && !t.url.startsWith('devtools://')).length
+				return {
+					port,
+					pid,
+					reachable: true as const,
+					browser: version.Browser,
+					webSocketDebuggerUrl: version.webSocketDebuggerUrl,
+					targets: targets.length,
+					pages,
+				}
+			} catch {
+				return { port, pid, reachable: false as const }
+			}
+		}),
+	)
+
+	const reachable = results.filter((r): r is Extract<typeof r, { reachable: true }> => r.reachable)
+
+	if (reachable.length === 0) {
+		output.writeHuman('Found Chrome processes listening on TCP, but none responded to CDP.')
+		return
+	}
+
+	if (options.json) {
+		output.writeJson(reachable)
+	} else {
+		for (const r of reachable) {
+			output.writeHuman(`127.0.0.1:${r.port} pid=${r.pid} ${r.browser} ${r.pages} page${r.pages === 1 ? '' : 's'}`)
+		}
+	}
+}
+
+/**
+ * Match Chrome/Chromium process names in lsof output.
+ * With `+c 0`, macOS lsof escapes spaces as `\x20` (e.g. `Google\x20Chrome`).
+ */
+const CHROME_NAME_PATTERN = /\b(google(\s|\\x20)*chrome|chromium|chrome)\b/i
+
+/**
+ * Discover Chrome processes listening on TCP ports via `lsof`.
+ * Returns deduplicated `{ port, pid }` pairs.
+ */
+const discoverChromeCdpPorts = async (): Promise<Array<{ port: number; pid: number }>> => {
+	let stdout: string
+	try {
+		stdout = await new Promise<string>((resolve, reject) => {
+			execFile('lsof', ['+c', '0', '-iTCP', '-sTCP:LISTEN', '-P', '-n'], { timeout: 5_000 }, (error, out) => {
+				if (error) {
+					reject(error)
+					return
+				}
+				resolve(out)
+			})
+		})
+	} catch {
+		return []
+	}
+
+	const seen = new Set<number>()
+	const results: Array<{ port: number; pid: number }> = []
+
+	for (const line of stdout.split('\n')) {
+		if (!CHROME_NAME_PATTERN.test(line)) {
+			continue
+		}
+
+		// lsof columns: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
+		// With +c 0, COMMAND can contain escaped spaces — PID is the first purely numeric column.
+		const pidMatch = line.match(/\s+(\d+)\s+/)
+		if (!pidMatch) {
+			continue
+		}
+
+		const pid = parseInt(pidMatch[1], 10)
+		if (isNaN(pid)) {
+			continue
+		}
+
+		// NAME column is last, format: *:PORT or 127.0.0.1:PORT (LISTEN)
+		const portMatch = line.match(/:(\d+)\s+\(LISTEN\)/)
+		if (!portMatch) {
+			continue
+		}
+
+		const port = parseInt(portMatch[1], 10)
+		if (isNaN(port) || seen.has(port)) {
+			continue
+		}
+
+		seen.add(port)
+		results.push({ port, pid })
+	}
+
+	return results
 }

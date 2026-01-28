@@ -28,6 +28,7 @@ import {
 	runChromeActivate,
 	runChromeClose,
 	runChromeStop,
+	runChromeList,
 } from './commands/chrome.js'
 import { runPageReload } from './commands/page.js'
 import { runDoctor } from './commands/doctor.js'
@@ -634,6 +635,16 @@ chrome
 		}
 
 		await runChromeStart(merged)
+	})
+
+chrome
+	.command('list')
+	.alias('ls')
+	.description('List running Chrome instances with CDP enabled')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus chrome list\n  $ argus chrome ls\n  $ argus chrome ls --json\n')
+	.action(async (options) => {
+		await runChromeList(options)
 	})
 
 chrome
