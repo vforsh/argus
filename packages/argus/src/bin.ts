@@ -334,10 +334,13 @@ program
 	.command('screenshot')
 	.argument('[id]', 'Watcher id to query')
 	.description('Capture a screenshot to disk on the watcher')
-	.option('--out <file>', 'Output screenshot file path (relative to artifacts base directory)')
+	.option('--out <file>', 'Output file path (absolute or relative to artifacts directory)')
 	.option('--selector <selector>', 'Optional CSS selector for element-only capture')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus screenshot app --out shot.png\n  $ argus screenshot app --selector "body" --out body.png\n')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus screenshot app\n  $ argus screenshot app --out /tmp/screenshot.png\n  $ argus screenshot app --selector "body"\n',
+	)
 	.action(async (id, options) => {
 		await runScreenshot(id, options)
 	})
@@ -735,7 +738,7 @@ watcher
 	.option('--parent <pattern>', 'Filter by parent target URL pattern (CDP mode only)')
 	.option('--chrome-host <host>', 'Chrome CDP host (default: 127.0.0.1) (CDP mode only)')
 	.option('--chrome-port <port>', 'Chrome CDP port (default: 9222) (CDP mode only)')
-	.option('--artifacts <dir>', 'Artifacts base directory (default: <cwd>/argus-artifacts)')
+	.option('--artifacts <dir>', 'Artifacts base directory (default: $TMPDIR/argus)')
 	.option('--no-page-indicator', 'Disable the in-page watcher indicator (CDP mode only)')
 	.option('--config <path>', 'Path to Argus config file')
 	.option('--json', 'Output JSON for automation')

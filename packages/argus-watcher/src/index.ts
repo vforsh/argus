@@ -1,4 +1,5 @@
 import type { WatcherMatch, WatcherChrome, WatcherRecord, LogEvent } from '@vforsh/argus-core'
+import os from 'node:os'
 import path from 'node:path'
 import Emittery from 'emittery'
 import { LogBuffer } from './buffer/LogBuffer.js'
@@ -39,7 +40,7 @@ export type BuildFilenameContext = {
 export type ArtifactsOptions = {
 	/**
 	 * Base directory for all artifacts.
-	 * Defaults to `<cwd>/argus-artifacts`.
+	 * Defaults to `$TMPDIR/argus/<watcherId>`.
 	 */
 	base?: string
 	/** Optional file log persistence settings. Disabled by default. */
@@ -101,7 +102,7 @@ export type StartWatcherOptions = {
 	heartbeatMs?: number
 	/**
 	 * Artifacts storage configuration for logs, traces, and screenshots.
-	 * All artifacts are stored under `artifacts.base` (default: `<cwd>/argus-artifacts`).
+	 * All artifacts are stored under `artifacts.base` (default: `$TMPDIR/argus/<watcherId>`).
 	 * Subdirectories: `logs/`, `traces/`, `screenshots/`.
 	 */
 	artifacts?: ArtifactsOptions
@@ -188,7 +189,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const stripUrlPrefixes = options.location?.stripUrlPrefixes
 
 	// Resolve artifacts configuration
-	const artifactsBaseDir = resolveArtifactsBaseDir(options.artifacts?.base)
+	const artifactsBaseDir = resolveArtifactsBaseDir(options.artifacts?.base, options.id)
 	const logsEnabled = options.artifacts?.logs?.enabled === true
 	const logsDir = path.join(artifactsBaseDir, 'logs')
 	const includeTimestamps = options.artifacts?.logs?.includeTimestamps ?? false
@@ -473,14 +474,14 @@ export type { ArgusWatcherEventMap, CdpAttachedEvent, CdpDetachedEvent, HttpRequ
 
 export type { PageIndicatorOptions, PageIndicatorPosition } from './cdp/pageIndicator.js'
 
-const resolveArtifactsBaseDir = (base: string | undefined): string => {
+const resolveArtifactsBaseDir = (base: string | undefined, watcherId: string): string => {
 	if (base !== undefined && base !== null) {
 		if (typeof base !== 'string' || base.trim() === '') {
 			throw new Error('artifacts.base must be a non-empty string when provided')
 		}
 		return path.resolve(base)
 	}
-	return path.resolve(process.cwd(), 'argus-artifacts')
+	return path.join(os.tmpdir(), 'argus', watcherId)
 }
 
 const resolveMaxFiles = (maxFiles?: number): number => {

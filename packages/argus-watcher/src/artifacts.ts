@@ -10,23 +10,27 @@ export const ensureParentDir = async (filePath: string): Promise<void> => {
 	await fs.mkdir(dir, { recursive: true })
 }
 
+/**
+ * Resolve an artifact output path.
+ * - If `outFile` is an absolute path, use it directly (no restriction).
+ * - If `outFile` is relative, resolve it under `artifactsDir`.
+ * - If `outFile` is empty/undefined, use `defaultName` under `artifactsDir`.
+ */
 export const resolveArtifactPath = (
 	artifactsDir: string,
 	outFile: string | undefined,
 	defaultName: string,
 ): { absolutePath: string; displayPath: string } => {
-	const baseDir = path.resolve(artifactsDir)
-	const fileName = outFile && outFile.trim() ? outFile.trim() : defaultName
-	const resolved = path.resolve(baseDir, fileName)
+	const trimmed = outFile?.trim()
 
-	if (!isPathInside(resolved, baseDir)) {
-		throw new Error('outFile must resolve under artifactsDir')
+	if (trimmed && path.isAbsolute(trimmed)) {
+		const resolved = path.resolve(trimmed)
+		return { absolutePath: resolved, displayPath: resolved }
 	}
 
-	return { absolutePath: resolved, displayPath: resolved }
-}
+	const baseDir = path.resolve(artifactsDir)
+	const fileName = trimmed || defaultName
+	const resolved = path.resolve(baseDir, fileName)
 
-const isPathInside = (targetPath: string, baseDir: string): boolean => {
-	const normalizedBase = baseDir.endsWith(path.sep) ? baseDir : `${baseDir}${path.sep}`
-	return targetPath === baseDir || targetPath.startsWith(normalizedBase)
+	return { absolutePath: resolved, displayPath: resolved }
 }

@@ -22,7 +22,7 @@ export const createScreenshotter = (options: { session: CdpSessionHandle; artifa
 		}
 
 		await ensureArtifactsDir(options.artifactsDir)
-		const defaultName = `screenshots/screenshot-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
+		const defaultName = `screenshots/${new Date().toISOString().replace(/[:.]/g, '-')}.png`
 		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
 		await ensureParentDir(absolutePath)
 
@@ -38,10 +38,7 @@ export const createScreenshotter = (options: { session: CdpSessionHandle; artifa
 	return { capture }
 }
 
-const captureScreenshot = async (
-	session: CdpSessionHandle,
-	options: { selector?: string; format: 'png' },
-): Promise<CaptureResult> => {
+const captureScreenshot = async (session: CdpSessionHandle, options: { selector?: string; format: 'png' }): Promise<CaptureResult> => {
 	let clip: Clip | undefined
 
 	if (options.selector) {
@@ -78,8 +75,9 @@ const resolveClip = async (session: CdpSessionHandle, selector: string): Promise
 	}
 
 	const boxResult = await session.sendAndWait('DOM.getBoxModel', { nodeId })
-	const quad = (boxResult as { model?: { content?: number[]; border?: number[] } }).model?.content
-		?? (boxResult as { model?: { border?: number[] } }).model?.border
+	const quad =
+		(boxResult as { model?: { content?: number[]; border?: number[] } }).model?.content ??
+		(boxResult as { model?: { border?: number[] } }).model?.border
 
 	if (!quad || quad.length < 8) {
 		throw new Error('Unable to compute element box model')
