@@ -153,11 +153,14 @@ Example:
 			"id": "app",
 			"url": "localhost:3000",
 			"chromePort": 9222,
-			"artifacts": "./artifacts"
+			"artifacts": "./artifacts",
+			"inject": { "file": "./scripts/debug.js" }
 		}
 	}
 }
 ```
+
+Script injection runs custom JS on attach and page navigation. See [INJECT.md](./reference/INJECT.md).
 
 ---
 
@@ -205,3 +208,4 @@ await close()
 
 - [EVAL.md](./reference/EVAL.md) — Polling, flags, iframe eval
 - [IFRAMES.md](./reference/IFRAMES.md) — Target selection, cross-origin eval
+- [INJECT.md](./reference/INJECT.md) — Script injection on watcher attach
