@@ -1,5 +1,6 @@
 import type { EvalResponse } from '@vforsh/argus-core'
 import { previewStringify } from '@vforsh/argus-core'
+import { readFile } from 'node:fs/promises'
 import { evalWithRetries } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
@@ -18,6 +19,10 @@ export type EvalOptions = {
 	interval?: string
 	count?: string
 	until?: string
+	/** Read expression from a file path. */
+	file?: string
+	/** Read expression from stdin. Also activated when expression is `-`. */
+	stdin?: boolean
 	/** CSS selector for iframe to eval in via postMessage (extension mode). */
 	iframe?: string
 	/** Message type prefix for iframe eval (default: argus). */
@@ -27,13 +32,16 @@ export type EvalOptions = {
 }
 
 /** Execute the eval command for a watcher id. */
-export const runEval = async (id: string | undefined, expression: string, options: EvalOptions): Promise<void> => {
+export const runEval = async (id: string | undefined, rawExpression: string | undefined, options: EvalOptions): Promise<void> => {
 	const output = createOutput(options)
-	if (!expression || expression.trim() === '') {
-		output.writeWarn('Expression is required')
+
+	const resolvedExpression = await resolveExpression(rawExpression, options, output)
+	if (resolvedExpression == null) {
 		process.exitCode = 2
 		return
 	}
+
+	let expression = resolvedExpression
 
 	// Wrap expression for iframe eval if --iframe is provided
 	if (options.iframe) {
@@ -173,6 +181,82 @@ export const runEval = async (id: string | undefined, expression: string, option
 		await sleep(intervalMs.value)
 	}
 }
+
+const resolveExpression = async (
+	inline: string | undefined,
+	options: EvalOptions,
+	output: ReturnType<typeof createOutput>,
+): Promise<string | null> => {
+	const wantsStdin = options.stdin === true || inline === '-'
+	const hasInline = inline != null && inline !== '-'
+	const hasFile = options.file != null
+
+	if (hasInline && hasFile) {
+		output.writeWarn('Cannot combine an inline expression with --file')
+		return null
+	}
+
+	if (hasInline && wantsStdin) {
+		output.writeWarn('Cannot combine an inline expression with --stdin')
+		return null
+	}
+
+	if (hasFile && wantsStdin) {
+		output.writeWarn('Cannot combine --file with stdin input')
+		return null
+	}
+
+	if (hasFile) {
+		try {
+			const content = await readFile(options.file ?? '', 'utf8')
+			if (!content.trim()) {
+				output.writeWarn(`File is empty: ${options.file}`)
+				return null
+			}
+			return content
+		} catch (error) {
+			output.writeWarn(`Failed to read --file: ${formatError(error)}`)
+			return null
+		}
+	}
+
+	if (wantsStdin) {
+		try {
+			const content = await readStdin()
+			if (!content.trim()) {
+				output.writeWarn('Stdin input is empty')
+				return null
+			}
+			return content
+		} catch (error) {
+			output.writeWarn(`Failed to read stdin: ${formatError(error)}`)
+			return null
+		}
+	}
+
+	if (hasInline) {
+		if (!inline.trim()) {
+			output.writeWarn('Expression is empty')
+			return null
+		}
+		return inline
+	}
+
+	output.writeWarn('Expression is required. Provide an inline expression, --file, or --stdin (or pass - as expression).')
+	return null
+}
+
+const readStdin = async (): Promise<string> =>
+	new Promise((resolve, reject) => {
+		let data = ''
+		process.stdin.setEncoding('utf8')
+		process.stdin.on('data', (chunk) => {
+			data += chunk
+		})
+		process.stdin.on('end', () => resolve(data))
+		process.stdin.on('error', (error) => reject(error))
+		process.stdin.resume()
+	})
 
 const parseNumber = (value?: string): number | undefined => {
 	if (!value) {

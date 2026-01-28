@@ -224,7 +224,7 @@ net.command('tail')
 program
 	.command('eval')
 	.argument('[id]', 'Watcher id to query')
-	.argument('<expression>', 'JS expression to evaluate')
+	.argument('[expression]', 'JS expression to evaluate (or use --file / --stdin)')
 	.description('Evaluate a JS expression in the connected page')
 	.option('--no-await', 'Do not await promises')
 	.option('--timeout <ms>', 'Eval timeout in milliseconds')
@@ -236,6 +236,8 @@ program
 	.option('--interval <ms|duration>', 'Re-evaluate every interval (e.g. 500, 3s)')
 	.option('--count <n>', 'Stop after N iterations (requires --interval)')
 	.option('--until <condition>', 'Stop when local condition becomes truthy (requires --interval)')
+	.option('-f, --file <path>', 'Read expression from a file')
+	.option('--stdin', 'Read expression from stdin')
 	.option('--iframe <selector>', 'Eval in iframe via postMessage (requires helper script)')
 	.option('--iframe-namespace <name>', 'Message type prefix for iframe eval (default: argus)')
 	.option('--iframe-timeout <ms>', 'Timeout for iframe postMessage response (default: 5000)')
@@ -245,6 +247,9 @@ program
 Examples:
   $ argus eval app "location.href"
   $ argus eval app "await fetch('/ping').then(r => r.status)"
+  $ argus eval app --file ./script.js
+  $ cat script.js | argus eval app --stdin
+  $ argus eval app - < script.js
   $ argus eval app "document.title" --no-fail-on-exception
   $ argus eval app "1+1" --retry 3
   $ argus eval app "1+1" --silent
@@ -266,6 +271,8 @@ Examples:
 			interval: options.interval,
 			count: options.count,
 			until: options.until,
+			file: options.file,
+			stdin: options.stdin,
 			iframe: options.iframe,
 			iframeNamespace: options.iframeNamespace,
 			iframeTimeout: options.iframeTimeout,
