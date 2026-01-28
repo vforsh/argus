@@ -28,6 +28,12 @@ export type PageIndicatorOptions = {
 	margin?: number
 	/** Icon size in pixels. Defaults to 19. */
 	size?: number
+	/** Hover outline color. Defaults to 'rgba(255, 255, 255, 0.9)'. */
+	outlineColor?: string
+	/** Hover outline width in pixels. Defaults to 2. */
+	outlineWidth?: number
+	/** Hover outline offset in pixels. Defaults to 2. */
+	outlineOffset?: number
 }
 
 export type PageIndicatorInfo = {
@@ -74,6 +80,9 @@ const DEFAULT_BG_COLOR = 'rgba(0, 0, 0, 0.75)'
 const DEFAULT_ICON_COLOR = 'rgba(255, 255, 255, 0.95)'
 const DEFAULT_MARGIN = 8
 const DEFAULT_SIZE = 19
+const DEFAULT_OUTLINE_COLOR = 'rgba(255, 255, 255, 0.9)'
+const DEFAULT_OUTLINE_WIDTH = 2
+const DEFAULT_OUTLINE_OFFSET = 2
 
 export const createPageIndicatorController = (options: PageIndicatorOptions): PageIndicatorController => {
 	const position = options.position ?? 'bottom-right'
@@ -83,6 +92,9 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 	const iconColor = options.iconColor ?? DEFAULT_ICON_COLOR
 	const margin = options.margin ?? DEFAULT_MARGIN
 	const size = options.size ?? DEFAULT_SIZE
+	const outlineColor = options.outlineColor ?? DEFAULT_OUTLINE_COLOR
+	const outlineWidth = options.outlineWidth ?? DEFAULT_OUTLINE_WIDTH
+	const outlineOffset = options.outlineOffset ?? DEFAULT_OUTLINE_OFFSET
 
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 	let currentSession: CdpSessionHandle | null = null
@@ -93,7 +105,18 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 		currentSession = session
 		currentInfo = info
 
-		void installIndicator(session, { info, position, ttlMs, bgColor, iconColor, margin, size })
+		void installIndicator(session, {
+			info,
+			position,
+			ttlMs,
+			bgColor,
+			iconColor,
+			margin,
+			size,
+			outlineColor,
+			outlineWidth,
+			outlineOffset,
+		})
 
 		heartbeatTimer = setInterval(() => {
 			if (!currentSession || !currentInfo) {
@@ -105,7 +128,18 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 
 	const onNavigation = (session: CdpSessionHandle, info: PageIndicatorInfo): void => {
 		currentInfo = info
-		void installIndicator(session, { info, position, ttlMs, bgColor, iconColor, margin, size })
+		void installIndicator(session, {
+			info,
+			position,
+			ttlMs,
+			bgColor,
+			iconColor,
+			margin,
+			size,
+			outlineColor,
+			outlineWidth,
+			outlineOffset,
+		})
 	}
 
 	const onDetach = (): void => {
@@ -139,10 +173,24 @@ const installIndicator = async (
 		iconColor: string
 		margin: number
 		size: number
+		outlineColor: string
+		outlineWidth: number
+		outlineOffset: number
 	},
 ): Promise<void> => {
-	const { info, position, ttlMs, bgColor, iconColor, margin, size } = params
-	const expression = buildInstallExpression({ info, position, ttlMs, bgColor, iconColor, margin, size })
+	const { info, position, ttlMs, bgColor, iconColor, margin, size, outlineColor, outlineWidth, outlineOffset } = params
+	const expression = buildInstallExpression({
+		info,
+		position,
+		ttlMs,
+		bgColor,
+		iconColor,
+		margin,
+		size,
+		outlineColor,
+		outlineWidth,
+		outlineOffset,
+	})
 
 	try {
 		await session.sendAndWait('Runtime.evaluate', {
@@ -188,8 +236,11 @@ const buildInstallExpression = (params: {
 	iconColor: string
 	margin: number
 	size: number
+	outlineColor: string
+	outlineWidth: number
+	outlineOffset: number
 }): string => {
-	const { info, position, ttlMs, bgColor, iconColor, margin, size } = params
+	const { info, position, ttlMs, bgColor, iconColor, margin, size, outlineColor, outlineWidth, outlineOffset } = params
 	const infoJson = JSON.stringify(info)
 	const svgWithSize = BOT_SVG.replace(/width="19"/, `width="${size}"`).replace(/height="19"/, `height="${size}"`)
 	const svgEscaped = svgWithSize.replace(/'/g, "\\'")
@@ -211,6 +262,8 @@ const buildInstallExpression = (params: {
 	return `
 (function() {
   var INDICATOR_ID = 'argus-watcher-indicator';
+  var STYLE_ID = 'argus-watcher-indicator-style';
+  var DIALOG_ID = 'argus-watcher-indicator-dialog';
   var STATE_KEY = '__ARGUS_WATCHER_INDICATOR__';
   var info = ${infoJson};
   var ttlMs = ${ttlMs};
@@ -224,6 +277,82 @@ const buildInstallExpression = (params: {
   if (window[STATE_KEY] && window[STATE_KEY].timerId) {
     clearInterval(window[STATE_KEY].timerId);
   }
+
+  // Inject styles for hover outline and dialog
+  var existingStyle = document.getElementById(STYLE_ID);
+  if (existingStyle) {
+    existingStyle.remove();
+  }
+  var style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent =
+    '#' + INDICATOR_ID + ':hover {' +
+      'outline: ${outlineWidth}px solid ${outlineColor};' +
+      'outline-offset: ${outlineOffset}px;' +
+    '}' +
+    '#' + DIALOG_ID + '::backdrop {' +
+      'background: rgba(0, 0, 0, 0.5);' +
+    '}' +
+    '#' + DIALOG_ID + ' {' +
+      'border: 1px solid rgba(255, 255, 255, 0.15);' +
+      'border-radius: 10px;' +
+      'background: #1a1a1a;' +
+      'color: #e0e0e0;' +
+      'padding: 0;' +
+      'min-width: 320px;' +
+      'max-width: 480px;' +
+      'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;' +
+      'font-size: 13px;' +
+      'box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);' +
+    '}' +
+    '#' + DIALOG_ID + ' .argus-dialog-header {' +
+      'padding: 14px 18px 10px;' +
+      'font-size: 14px;' +
+      'font-weight: 600;' +
+      'color: #fff;' +
+      'border-bottom: 1px solid rgba(255, 255, 255, 0.1);' +
+    '}' +
+    '#' + DIALOG_ID + ' .argus-dialog-body {' +
+      'padding: 12px 18px;' +
+    '}' +
+    '#' + DIALOG_ID + ' .argus-dialog-row {' +
+      'display: flex;' +
+      'padding: 4px 0;' +
+      'gap: 12px;' +
+    '}' +
+    '#' + DIALOG_ID + ' .argus-dialog-label {' +
+      'flex-shrink: 0;' +
+      'width: 70px;' +
+      'color: rgba(255, 255, 255, 0.5);' +
+      'font-size: 12px;' +
+      'text-transform: uppercase;' +
+      'letter-spacing: 0.5px;' +
+      'padding-top: 1px;' +
+    '}' +
+    '#' + DIALOG_ID + ' .argus-dialog-value {' +
+      'color: #e0e0e0;' +
+      'word-break: break-all;' +
+    '}' +
+    '#' + DIALOG_ID + ' .argus-dialog-footer {' +
+      'display: flex;' +
+      'justify-content: flex-end;' +
+      'gap: 8px;' +
+      'padding: 10px 18px 14px;' +
+      'border-top: 1px solid rgba(255, 255, 255, 0.1);' +
+    '}' +
+    '#' + DIALOG_ID + ' button {' +
+      'border: 1px solid rgba(255, 255, 255, 0.2);' +
+      'border-radius: 6px;' +
+      'padding: 6px 16px;' +
+      'font-size: 13px;' +
+      'cursor: pointer;' +
+      'background: rgba(255, 255, 255, 0.08);' +
+      'color: #e0e0e0;' +
+    '}' +
+    '#' + DIALOG_ID + ' button:hover {' +
+      'background: rgba(255, 255, 255, 0.15);' +
+    '}';
+  document.documentElement.appendChild(style);
 
   var el = document.createElement('div');
   el.id = INDICATOR_ID;
@@ -240,15 +369,61 @@ const buildInstallExpression = (params: {
     var state = window[STATE_KEY];
     var i = state ? state.info : info;
     var attachedDate = new Date(i.attachedAt).toISOString();
-    alert(
-      'Argus Watcher Info\\n\\n' +
-      'ID: ' + i.watcherId + '\\n' +
-      'Host: ' + i.watcherHost + ':' + i.watcherPort + '\\n' +
-      'PID: ' + i.watcherPid + '\\n' +
-      'Target: ' + (i.targetTitle || '(no title)') + '\\n' +
-      'URL: ' + (i.targetUrl || '(no url)') + '\\n' +
-      'Attached: ' + attachedDate
-    );
+    var fields = [
+      ['ID', i.watcherId],
+      ['Host', i.watcherHost + ':' + i.watcherPort],
+      ['PID', String(i.watcherPid)],
+      ['Target', i.targetTitle || '(no title)'],
+      ['URL', i.targetUrl || '(no url)'],
+      ['Attached', attachedDate]
+    ];
+
+    var dialog = document.getElementById(DIALOG_ID);
+    if (!dialog) {
+      dialog = document.createElement('dialog');
+      dialog.id = DIALOG_ID;
+      dialog.addEventListener('click', function(e) {
+        if (e.target === dialog) {
+          dialog.close();
+        }
+      });
+      document.documentElement.appendChild(dialog);
+    }
+
+    var html = '<div class="argus-dialog-header">Argus Watcher</div>' +
+      '<div class="argus-dialog-body">';
+    for (var f = 0; f < fields.length; f++) {
+      html += '<div class="argus-dialog-row">' +
+        '<span class="argus-dialog-label">' + fields[f][0] + '</span>' +
+        '<span class="argus-dialog-value">' + fields[f][1] + '</span>' +
+        '</div>';
+    }
+    html += '</div>' +
+      '<div class="argus-dialog-footer">' +
+        '<button data-action="copy" type="button">Copy</button>' +
+        '<button data-action="close" type="button">Close</button>' +
+      '</div>';
+    dialog.innerHTML = html;
+
+    dialog.querySelector('[data-action="copy"]').addEventListener('click', function() {
+      var text = 'Argus Watcher Info\\n';
+      for (var c = 0; c < fields.length; c++) {
+        text += fields[c][0] + ': ' + fields[c][1] + '\\n';
+      }
+      navigator.clipboard.writeText(text.trim()).then(function() {
+        var btn = dialog.querySelector('[data-action="copy"]');
+        if (btn) {
+          btn.textContent = 'Copied!';
+          setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+        }
+      });
+    });
+
+    dialog.querySelector('[data-action="close"]').addEventListener('click', function() {
+      dialog.close();
+    });
+
+    dialog.showModal();
   });
 
   document.documentElement.appendChild(el);
@@ -298,6 +473,8 @@ const buildRemoveExpression = (): string => {
 	return `
 (function() {
   var INDICATOR_ID = 'argus-watcher-indicator';
+  var STYLE_ID = 'argus-watcher-indicator-style';
+  var DIALOG_ID = 'argus-watcher-indicator-dialog';
   var STATE_KEY = '__ARGUS_WATCHER_INDICATOR__';
   var state = window[STATE_KEY];
   if (state && state.timerId) {
@@ -306,6 +483,10 @@ const buildRemoveExpression = (): string => {
   delete window[STATE_KEY];
   var el = document.getElementById(INDICATOR_ID);
   if (el) el.remove();
+  var styleEl = document.getElementById(STYLE_ID);
+  if (styleEl) styleEl.remove();
+  var dialogEl = document.getElementById(DIALOG_ID);
+  if (dialogEl) dialogEl.remove();
 })();
 `
 }
