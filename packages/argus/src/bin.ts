@@ -16,6 +16,7 @@ import { runDomHover } from './commands/domHover.js'
 import { runDomClick } from './commands/domClick.js'
 import { runDomKeydown } from './commands/domKeydown.js'
 import { runDomAdd } from './commands/domAdd.js'
+import { runDomAddScript } from './commands/domAddScript.js'
 import { runDomRemove } from './commands/domRemove.js'
 import { runDomModifyAttr, runDomModifyClass, runDomModifyStyle, runDomModifyText, runDomModifyHtml } from './commands/domModify.js'
 import { runChromeStart } from './commands/chromeStart.js'
@@ -464,6 +465,43 @@ dom.command('add')
 	)
 	.action(async (id, options) => {
 		await runDomAdd(id, options)
+	})
+
+dom.command('add-script')
+	.argument('[id]', 'Watcher id to query')
+	.argument('[code]', 'Inline JS code to inject (or use --file / --stdin / --src)')
+	.description('Add a <script> element to the page')
+	.option('--src <url>', 'External script URL (mutually exclusive with code/file/stdin)')
+	.option('-f, --file <path>', 'Read JS from file')
+	.option('--stdin', 'Read from stdin (also triggered by - as code arg)')
+	.option('--type <type>', 'Script type attribute (e.g. "module")')
+	.option('--id <id>', 'Script element id attribute')
+	.option('--target <el>', 'Append to "head" (default) or "body"')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		`
+Examples:
+  $ argus dom add-script app "console.log('hello')"
+  $ argus dom add-script app --src "https://cdn.example.com/lib.js"
+  $ argus dom add-script app --file ./debug.js
+  $ cat debug.js | argus dom add-script app --stdin
+  $ argus dom add-script app - < debug.js
+  $ argus dom add-script app --src "./lib.js" --type module
+  $ argus dom add-script app "console.log('tagged')" --id my-debug
+  $ argus dom add-script app --file ./init.js --target body
+`,
+	)
+	.action(async (id, code, options) => {
+		await runDomAddScript(id, code, {
+			src: options.src,
+			file: options.file,
+			stdin: options.stdin,
+			type: options.type,
+			scriptId: options.id,
+			target: options.target,
+			json: options.json,
+		})
 	})
 
 dom.command('remove')
