@@ -801,6 +801,7 @@ watcher
 
 watcher
 	.command('start')
+	.alias('attach')
 	.description('Start an Argus watcher process')
 	.option('--id <watcherId>', 'Watcher id to announce in the registry')
 	.option('--source <mode>', 'Source mode: cdp (default) or extension')
@@ -818,7 +819,7 @@ watcher
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --source extension\n  $ argus watcher start --id game --type iframe --url localhost:3007\n  $ argus watcher start --id game --origin https://localhost:3007\n  $ argus watcher start --id game --target CC1135709D9AC3B9CC0446F8B58CC344\n  $ argus watcher start --id game --type iframe --parent yandex.ru\n  $ argus watcher start --id app --url localhost:3000 --no-page-indicator\n  $ argus watcher start --id app --url localhost:3000 --inject ./scripts/debug.js\n  $ argus watcher start --id app --url localhost:3000 --json\n',
+		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --source extension\n  $ argus watcher start --id game --type iframe --url localhost:3007\n  $ argus watcher start --id game --origin https://localhost:3007\n  $ argus watcher start --id game --target CC1135709D9AC3B9CC0446F8B58CC344\n  $ argus watcher start --id game --type iframe --parent yandex.ru\n  $ argus watcher start --id app --url localhost:3000 --no-page-indicator\n  $ argus watcher start --id app --url localhost:3000 --inject ./scripts/debug.js\n  $ argus watcher start --id app --url localhost:3000 --json\n  $ argus watcher attach --id app --url localhost:3000\n',
 	)
 	.action(async (options, command) => {
 		const { config: configPath, inject, ...rest } = options
