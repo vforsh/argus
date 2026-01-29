@@ -52,6 +52,7 @@ import {
 import { PluginRegistry } from './plugins/registry.js'
 
 const collectMatch = (value: string, previous: string[]): string[] => [...previous, value]
+const collectParam = (value: string, previous: string[]): string[] => [...previous, value]
 
 const validateCaseFlags = (options: { ignoreCase?: boolean; caseSensitive?: boolean }): boolean => {
 	if (options.ignoreCase && options.caseSensitive) {
@@ -95,6 +96,21 @@ program
 		process.exit(2)
 	})
 
+program.addHelpText(
+	'after',
+	`
+Command groups:
+  Setup        chrome, watcher, page, config, extension
+  Inspect      logs, net, eval, dom, storage
+  Capture      screenshot, trace
+  Utility      ls, doctor
+`,
+)
+
+// ---------------------------------------------------------------------------
+// Quick access
+// ---------------------------------------------------------------------------
+
 program
 	.command('list')
 	.alias('ls')
@@ -115,19 +131,307 @@ program
 		await runDoctor(options)
 	})
 
-const config = program.command('config').description('Manage Argus config files')
+// ---------------------------------------------------------------------------
+// Setup & infrastructure
+// ---------------------------------------------------------------------------
 
-config
-	.command('init')
-	.description('Create an Argus config file')
-	.option('--path <file>', 'Path to write the config file (default: .argus/config.json)')
-	.option('--force', 'Overwrite existing config file')
-	.addHelpText('after', '\nExamples:\n  $ argus config init\n  $ argus config init --path argus.config.json\n')
-	.action(async (options) => {
-		await runConfigInit(options)
+const chrome = program.command('chrome').alias('browser').description('Chrome/Chromium management commands')
+
+chrome
+	.command('start')
+	.description('Launch Chrome with CDP enabled')
+	.option('--url <url>', 'URL to open in Chrome')
+	.option('--from-watcher <watcherId>', 'Use match.url from a registered watcher')
+	.option('--profile <type>', 'Profile mode: temp, default-full, default-medium, or default-lite (default: default-lite)')
+	.option('--dev-tools', 'Open DevTools for new tabs')
+	.option('--config <path>', 'Path to Argus config file')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --from-watcher app\n  $ argus chrome start --profile default-full\n  $ argus chrome start --profile default-medium\n  $ argus chrome start --profile default-lite\n  $ argus chrome start --profile temp\n  $ argus chrome start --dev-tools\n  $ argus chrome start --json\n',
+	)
+	.action(async (options, command) => {
+		const { config: configPath, ...cliOptions } = options
+		const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
+		if (!resolvedPath) {
+			if (configPath) {
+				return
+			}
+			await runChromeStart(cliOptions)
+			return
+		}
+
+		const configResult = loadArgusConfig(resolvedPath)
+		if (!configResult) {
+			return
+		}
+
+		const merged = mergeChromeStartOptionsWithConfig(cliOptions, command, configResult)
+		if (!merged) {
+			return
+		}
+
+		await runChromeStart(merged)
 	})
 
-program
+chrome
+	.command('ls')
+	.alias('list')
+	.description('List running Chrome instances with CDP enabled')
+	.option('--json', 'Output JSON for automation')
+	.option('--pages', 'List individual pages for each instance')
+	.addHelpText('after', '\nExamples:\n  $ argus chrome ls\n  $ argus chrome ls --pages\n  $ argus chrome ls --json --pages\n')
+	.action(async (options) => {
+		await runChromeList(options)
+	})
+
+chrome
+	.command('version')
+	.description('Show Chrome version info from CDP endpoint')
+	.option('--cdp <host:port>', 'CDP host:port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus chrome version\n  $ argus chrome version --cdp 127.0.0.1:9222\n  $ argus chrome version --id app\n  $ argus chrome version --json\n',
+	)
+	.action(async (options) => {
+		await runChromeVersion(options)
+	})
+
+chrome
+	.command('status')
+	.description('Check if Chrome CDP endpoint is reachable')
+	.option('--cdp <host:port>', 'CDP host:port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus chrome status\n  $ argus chrome status --cdp 127.0.0.1:9222\n  $ argus chrome status --id app\n')
+	.action(async (options) => {
+		await runChromeStatus(options)
+	})
+
+chrome
+	.command('stop')
+	.alias('quit')
+	.description('Close the Chrome instance via CDP')
+	.option('--cdp <host:port>', 'CDP host:port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus chrome stop\n  $ argus chrome stop --id app\n  $ argus chrome stop --json\n')
+	.action(async (options) => {
+		await runChromeStop(options)
+	})
+
+const watcher = program.command('watcher').alias('watchers').description('Watcher management commands')
+
+watcher
+	.command('start')
+	.alias('attach')
+	.description('Start an Argus watcher process')
+	.option('--id <watcherId>', 'Watcher id to announce in the registry')
+	.option('--source <mode>', 'Source mode: cdp (default) or extension')
+	.option('--url <url>', 'URL pattern to match for capturing logs (CDP mode only)')
+	.option('--type <type>', 'Filter by target type (e.g., page, iframe, worker) (CDP mode only)')
+	.option('--origin <origin>', 'Match against URL origin only (protocol + host + port) (CDP mode only)')
+	.option('--target <targetId>', 'Connect to a specific target by its Chrome target ID (CDP mode only)')
+	.option('--parent <pattern>', 'Filter by parent target URL pattern (CDP mode only)')
+	.option('--chrome-host <host>', 'Chrome CDP host (default: 127.0.0.1) (CDP mode only)')
+	.option('--chrome-port <port>', 'Chrome CDP port (default: 9222) (CDP mode only)')
+	.option('--artifacts <dir>', 'Artifacts base directory (default: $TMPDIR/argus)')
+	.option('--no-page-indicator', 'Disable the in-page watcher indicator (CDP mode only)')
+	.option('--inject <path>', 'Path to JavaScript file to inject on watcher attach (CDP mode only)')
+	.option('--config <path>', 'Path to Argus config file')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --source extension\n  $ argus watcher start --id game --type iframe --url localhost:3007\n  $ argus watcher start --id game --origin https://localhost:3007\n  $ argus watcher start --id game --target CC1135709D9AC3B9CC0446F8B58CC344\n  $ argus watcher start --id game --type iframe --parent yandex.ru\n  $ argus watcher start --id app --url localhost:3000 --no-page-indicator\n  $ argus watcher start --id app --url localhost:3000 --inject ./scripts/debug.js\n  $ argus watcher start --id app --url localhost:3000 --json\n  $ argus watcher attach --id app --url localhost:3000\n',
+	)
+	.action(async (options, command) => {
+		const { config: configPath, inject, ...rest } = options
+		const cliOptions = {
+			...rest,
+			inject: inject ? { file: inject } : undefined,
+		}
+		const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
+		if (!resolvedPath) {
+			if (configPath) {
+				return
+			}
+			await runWatcherStart(cliOptions)
+			return
+		}
+
+		const configResult = loadArgusConfig(resolvedPath)
+		if (!configResult) {
+			return
+		}
+
+		const merged = mergeWatcherStartOptionsWithConfig(cliOptions, command, configResult)
+		if (!merged) {
+			return
+		}
+
+		await runWatcherStart(merged)
+	})
+
+watcher
+	.command('stop')
+	.alias('kill')
+	.alias('detach')
+	.argument('[id]', 'Watcher id to stop')
+	.option('--id <watcherId>', 'Watcher id to stop')
+	.description('Stop a watcher')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus watcher stop app\n  $ argus watcher stop --id app\n  $ argus watcher kill app\n  $ argus watcher detach app\n',
+	)
+	.action(async (id, options) => {
+		await runWatcherStop(id ?? options.id, options)
+	})
+
+watcher
+	.command('status')
+	.alias('ping')
+	.argument('[id]', 'Watcher id to query')
+	.description('Check watcher status')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus watcher status app\n  $ argus watcher status app --json\n')
+	.action(async (id, options) => {
+		await runWatcherStatus(id, options)
+	})
+
+watcher
+	.command('ls')
+	.alias('list')
+	.description('List registered watchers')
+	.option('--json', 'Output JSON for automation')
+	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
+	.addHelpText('after', '\nExamples:\n  $ argus watcher ls\n  $ argus watcher ls --json\n  $ argus watcher ls --by-cwd my-project\n')
+	.action(async (options) => {
+		await runList(options)
+	})
+
+watcher
+	.command('reload')
+	.argument('[id]', 'Watcher id to reload')
+	.description('Reload the page attached to a watcher')
+	.option('--ignore-cache', 'Bypass browser cache')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus watcher reload app\n  $ argus watcher reload app --ignore-cache\n  $ argus watcher reload app --json\n',
+	)
+	.action(async (id, options) => {
+		await runReload(id, options)
+	})
+
+watcher
+	.command('prune')
+	.alias('clean')
+	.description('Remove unreachable watchers from the registry')
+	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
+	.option('--dry-run', 'Preview what would be removed without changing the registry')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus watcher prune\n  $ argus watcher prune --by-cwd my-project\n  $ argus watcher prune --dry-run\n  $ argus watcher prune --dry-run --json\n',
+	)
+	.action(async (options) => {
+		await runWatcherPrune(options)
+	})
+
+watcher
+	.command('native-host')
+	.description('[internal] Start as Native Messaging host for Chrome extension')
+	.option('--id <watcherId>', 'Watcher id (default: extension)')
+	.option('--json', 'Output JSON for automation')
+	.action(async (options) => {
+		await runWatcherNativeHost(options)
+	})
+
+const page = program.command('page').alias('tab').description('Page/tab management commands')
+
+page.command('ls')
+	.aliases(['targets', 'list'])
+	.description('List Chrome targets (tabs, extensions, etc.)')
+	.option('--type <type>', 'Filter by target type (e.g. page, worker, iframe)')
+	.option('--tree', 'Show targets as a tree with parent-child relationships')
+	.option('--cdp <host:port>', 'CDP host:port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus page ls\n  $ argus page ls --type page\n  $ argus page ls --type iframe\n  $ argus page ls --tree\n  $ argus page ls --json\n  $ argus page ls --id app\n',
+	)
+	.action(async (options) => {
+		await runChromeTargets(options)
+	})
+
+page.command('open')
+	.alias('new')
+	.description('Open a new tab in Chrome')
+	.requiredOption('--url <url>', 'URL to open')
+	.option('--cdp <host:port>', 'CDP host:port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus page open --url http://localhost:3000\n  $ argus page open --url localhost:3000\n  $ argus page open --url http://example.com --json\n',
+	)
+	.action(async (options) => {
+		await runChromeOpen(options)
+	})
+
+page.command('activate')
+	.description('Activate (focus) a Chrome target')
+	.argument('[targetId]', 'Target ID to activate')
+	.option('--title <substring>', 'Case-insensitive substring match against target title')
+	.option('--url <substring>', 'Case-insensitive substring match against target URL')
+	.option('--match <substring>', 'Case-insensitive substring match against title + URL')
+	.option('--cdp <host:port>', 'CDP host:port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus page activate ABCD1234\n  $ argus page activate --title "Docs"\n  $ argus page activate --url localhost:3000\n  $ argus page activate --match "Argus" --json\n',
+	)
+	.action(async (targetId, options) => {
+		await runChromeActivate({ ...options, targetId })
+	})
+
+page.command('close')
+	.description('Close a Chrome target')
+	.argument('<targetId>', 'Target ID to close')
+	.option('--cdp <host:port>', 'CDP host:port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus page close ABCD1234\n  $ argus page close ABCD1234 --json\n')
+	.action(async (targetId, options) => {
+		await runChromeClose({ ...options, targetId })
+	})
+
+page.command('reload')
+	.description('Reload a Chrome target')
+	.argument('[targetId]', 'Target ID to reload')
+	.option('--attached', 'Reload the attached page for a watcher (requires --id)')
+	.option('--cdp <host:port>', 'CDP host:port')
+	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
+	.option('--param <key=value>', 'Update query param (repeatable, overwrite semantics)', collectParam, [])
+	.option('--params <a=b&c=d>', 'Update query params from string (overwrite semantics)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus page reload ABCD1234\n  $ argus page reload --attached --id app\n  $ argus page reload ABCD1234 --json\n  $ argus page reload ABCD1234 --param foo=bar\n  $ argus page reload ABCD1234 --param foo=bar --param baz=qux\n  $ argus page reload ABCD1234 --params "a=1&b=2"\n',
+	)
+	.action(async (targetId, options) => {
+		await runPageReload({ ...options, targetId })
+	})
+
+// ---------------------------------------------------------------------------
+// Inspect & debug
+// ---------------------------------------------------------------------------
+
+const logs = program
 	.command('logs')
 	.alias('log')
 	.argument('[id]', 'Watcher id to query')
@@ -161,10 +465,9 @@ program
 		await runLogs(id, options)
 	})
 
-program
-	.command('tail')
+logs.command('tail')
 	.argument('[id]', 'Watcher id to follow')
-	.description('Tail logs from a watcher via long-polling')
+	.description('Stream logs via long-polling')
 	.option('--levels <levels>', 'Comma-separated log levels')
 	.option('--match <regex>', 'Filter by regex (repeatable)', collectMatch, [])
 	.option('--ignore-case', 'Use case-insensitive regex matching')
@@ -177,7 +480,7 @@ program
 	.option('--json-full', 'Output full newline-delimited JSON events (can be very large)')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus tail app\n  $ argus tail app --levels error\n  $ argus tail app --json\n  $ argus tail app --json-full\n',
+		'\nExamples:\n  $ argus logs tail app\n  $ argus logs tail app --levels error\n  $ argus logs tail app --json\n  $ argus logs tail app --json-full\n',
 	)
 	.action(async (id, options) => {
 		if (options.json && options.jsonFull) {
@@ -223,8 +526,9 @@ net.command('tail')
 		await runNetTail(id, options)
 	})
 
-program
+const evalCmd = program
 	.command('eval')
+	.alias('e')
 	.argument('[id]', 'Watcher id to query')
 	.argument('[expression]', 'JS expression to evaluate (or use --file / --stdin)')
 	.description('Evaluate a JS expression in the connected page')
@@ -281,7 +585,7 @@ Examples:
 		})
 	})
 
-program
+evalCmd
 	.command('iframe-helper')
 	.description('Output helper script for cross-origin iframe eval via postMessage')
 	.option('--out <file>', 'Write script to file instead of stdout')
@@ -292,78 +596,14 @@ program
 		'after',
 		`
 Examples:
-  $ argus iframe-helper > helper.js
-  $ argus iframe-helper --out src/argus.js
-  $ argus iframe-helper --iife --no-log
-  $ argus iframe-helper --namespace myapp
+  $ argus eval iframe-helper > helper.js
+  $ argus eval iframe-helper --out src/argus.js
+  $ argus eval iframe-helper --iife --no-log
+  $ argus eval iframe-helper --namespace myapp
 `,
 	)
 	.action(async (options) => {
 		await runIframeHelper(options)
-	})
-
-const trace = program
-	.command('trace')
-	.argument('[id]', 'Watcher id to query')
-	.description('Capture a Chrome trace to disk on the watcher')
-	.option('--duration <duration>', 'Capture for duration (e.g. 3s, 500ms)')
-	.option('--out <file>', 'Output trace file path (relative to artifacts base directory)')
-	.option('--categories <categories>', 'Comma-separated tracing categories')
-	.option('--options <options>', 'Tracing options string')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus trace app --duration 3s --out trace.json\n')
-	.action(async (id, options) => {
-		await runTrace(id, options)
-	})
-
-trace
-	.command('start')
-	.argument('[id]', 'Watcher id to query')
-	.description('Start Chrome tracing')
-	.option('--out <file>', 'Output trace file path (relative to artifacts base directory)')
-	.option('--categories <categories>', 'Comma-separated tracing categories')
-	.option('--options <options>', 'Tracing options string')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus trace start app --out trace.json\n')
-	.action(async (id, options) => {
-		await runTraceStart(id, options)
-	})
-
-trace
-	.command('stop')
-	.argument('[id]', 'Watcher id to query')
-	.description('Stop Chrome tracing')
-	.option('--trace-id <id>', 'Trace id returned from start')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus trace stop app\n')
-	.action(async (id, options) => {
-		await runTraceStop(id, options)
-	})
-
-program
-	.command('screenshot')
-	.argument('[id]', 'Watcher id to query')
-	.description('Capture a screenshot to disk on the watcher')
-	.option('--out <file>', 'Output file path (absolute or relative to artifacts directory)')
-	.option('--selector <selector>', 'Optional CSS selector for element-only capture')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus screenshot app\n  $ argus screenshot app --out /tmp/screenshot.png\n  $ argus screenshot app --selector "body"\n',
-	)
-	.action(async (id, options) => {
-		await runScreenshot(id, options)
-	})
-
-program
-	.command('reload')
-	.argument('[id]', 'Watcher id to reload')
-	.description('Reload the page attached to a watcher')
-	.option('--ignore-cache', 'Bypass browser cache')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus reload app\n  $ argus reload app --ignore-cache\n  $ argus reload app --json\n')
-	.action(async (id, options) => {
-		await runReload(id, options)
 	})
 
 const dom = program.command('dom').alias('html').description('Inspect DOM elements in the connected page')
@@ -598,289 +838,6 @@ domModify
 		await runDomModifyHtml(id, html, options)
 	})
 
-const chrome = program.command('chrome').alias('browser').description('Chrome/Chromium management commands')
-
-chrome
-	.command('start')
-	.description('Launch Chrome with CDP enabled')
-	.option('--url <url>', 'URL to open in Chrome')
-	.option('--from-watcher <watcherId>', 'Use match.url from a registered watcher')
-	.option('--profile <type>', 'Profile mode: temp, default-full, default-medium, or default-lite (default: default-lite)')
-	.option('--dev-tools', 'Open DevTools for new tabs')
-	.option('--config <path>', 'Path to Argus config file')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --from-watcher app\n  $ argus chrome start --profile default-full\n  $ argus chrome start --profile default-medium\n  $ argus chrome start --profile default-lite\n  $ argus chrome start --profile temp\n  $ argus chrome start --dev-tools\n  $ argus chrome start --json\n',
-	)
-	.action(async (options, command) => {
-		const { config: configPath, ...cliOptions } = options
-		const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
-		if (!resolvedPath) {
-			if (configPath) {
-				return
-			}
-			await runChromeStart(cliOptions)
-			return
-		}
-
-		const configResult = loadArgusConfig(resolvedPath)
-		if (!configResult) {
-			return
-		}
-
-		const merged = mergeChromeStartOptionsWithConfig(cliOptions, command, configResult)
-		if (!merged) {
-			return
-		}
-
-		await runChromeStart(merged)
-	})
-
-chrome
-	.command('list')
-	.alias('ls')
-	.description('List running Chrome instances with CDP enabled')
-	.option('--json', 'Output JSON for automation')
-	.option('--pages', 'List individual pages for each instance')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus chrome list\n  $ argus chrome ls\n  $ argus chrome ls --pages\n  $ argus chrome ls --json --pages\n',
-	)
-	.action(async (options) => {
-		await runChromeList(options)
-	})
-
-chrome
-	.command('version')
-	.description('Show Chrome version info from CDP endpoint')
-	.option('--cdp <host:port>', 'CDP host:port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus chrome version\n  $ argus chrome version --cdp 127.0.0.1:9222\n  $ argus chrome version --id app\n  $ argus chrome version --json\n',
-	)
-	.action(async (options) => {
-		await runChromeVersion(options)
-	})
-
-chrome
-	.command('status')
-	.description('Check if Chrome CDP endpoint is reachable')
-	.option('--cdp <host:port>', 'CDP host:port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus chrome status\n  $ argus chrome status --cdp 127.0.0.1:9222\n  $ argus chrome status --id app\n')
-	.action(async (options) => {
-		await runChromeStatus(options)
-	})
-
-chrome
-	.command('stop')
-	.alias('quit')
-	.description('Close the Chrome instance via CDP')
-	.option('--cdp <host:port>', 'CDP host:port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus chrome stop\n  $ argus chrome stop --id app\n  $ argus chrome stop --json\n')
-	.action(async (options) => {
-		await runChromeStop(options)
-	})
-
-const collectParam = (value: string, previous: string[]): string[] => [...previous, value]
-
-const page = program.command('page').alias('tab').description('Page/tab management commands')
-
-page.command('targets')
-	.aliases(['list', 'ls'])
-	.description('List Chrome targets (tabs, extensions, etc.)')
-	.option('--type <type>', 'Filter by target type (e.g. page, worker, iframe)')
-	.option('--tree', 'Show targets as a tree with parent-child relationships')
-	.option('--cdp <host:port>', 'CDP host:port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus page targets\n  $ argus page targets --type page\n  $ argus page targets --type iframe\n  $ argus page targets --tree\n  $ argus page targets --json\n  $ argus page targets --id app\n',
-	)
-	.action(async (options) => {
-		await runChromeTargets(options)
-	})
-
-page.command('open')
-	.alias('new')
-	.description('Open a new tab in Chrome')
-	.requiredOption('--url <url>', 'URL to open')
-	.option('--cdp <host:port>', 'CDP host:port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus page open --url http://localhost:3000\n  $ argus page open --url localhost:3000\n  $ argus page open --url http://example.com --json\n',
-	)
-	.action(async (options) => {
-		await runChromeOpen(options)
-	})
-
-page.command('activate')
-	.description('Activate (focus) a Chrome target')
-	.argument('[targetId]', 'Target ID to activate')
-	.option('--title <substring>', 'Case-insensitive substring match against target title')
-	.option('--url <substring>', 'Case-insensitive substring match against target URL')
-	.option('--match <substring>', 'Case-insensitive substring match against title + URL')
-	.option('--cdp <host:port>', 'CDP host:port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus page activate ABCD1234\n  $ argus page activate --title "Docs"\n  $ argus page activate --url localhost:3000\n  $ argus page activate --match "Argus" --json\n',
-	)
-	.action(async (targetId, options) => {
-		await runChromeActivate({ ...options, targetId })
-	})
-
-page.command('close')
-	.description('Close a Chrome target')
-	.argument('<targetId>', 'Target ID to close')
-	.option('--cdp <host:port>', 'CDP host:port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus page close ABCD1234\n  $ argus page close ABCD1234 --json\n')
-	.action(async (targetId, options) => {
-		await runChromeClose({ ...options, targetId })
-	})
-
-page.command('reload')
-	.description('Reload a Chrome target')
-	.argument('[targetId]', 'Target ID to reload')
-	.option('--attached', 'Reload the attached page for a watcher (requires --id)')
-	.option('--cdp <host:port>', 'CDP host:port')
-	.option('--id <watcherId>', 'Use chrome config from a registered watcher')
-	.option('--param <key=value>', 'Update query param (repeatable, overwrite semantics)', collectParam, [])
-	.option('--params <a=b&c=d>', 'Update query params from string (overwrite semantics)')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus page reload ABCD1234\n  $ argus page reload --attached --id app\n  $ argus page reload ABCD1234 --json\n  $ argus page reload ABCD1234 --param foo=bar\n  $ argus page reload ABCD1234 --param foo=bar --param baz=qux\n  $ argus page reload ABCD1234 --params "a=1&b=2"\n',
-	)
-	.action(async (targetId, options) => {
-		await runPageReload({ ...options, targetId })
-	})
-
-const watcher = program.command('watcher').alias('watchers').description('Watcher management commands')
-
-watcher
-	.command('list')
-	.alias('ls')
-	.description('List registered watchers')
-	.option('--json', 'Output JSON for automation')
-	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
-	.addHelpText('after', '\nExamples:\n  $ argus watcher list\n  $ argus watcher list --json\n  $ argus watcher list --by-cwd my-project\n')
-	.action(async (options) => {
-		await runList(options)
-	})
-
-watcher
-	.command('status')
-	.alias('ping')
-	.argument('[id]', 'Watcher id to query')
-	.description('Check watcher status')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus watcher status app\n  $ argus watcher status app --json\n')
-	.action(async (id, options) => {
-		await runWatcherStatus(id, options)
-	})
-
-watcher
-	.command('stop')
-	.alias('kill')
-	.alias('detach')
-	.argument('[id]', 'Watcher id to stop')
-	.option('--id <watcherId>', 'Watcher id to stop')
-	.description('Stop a watcher')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus watcher stop app\n  $ argus watcher stop --id app\n  $ argus watcher kill app\n  $ argus watcher detach app\n',
-	)
-	.action(async (id, options) => {
-		await runWatcherStop(id ?? options.id, options)
-	})
-
-watcher
-	.command('start')
-	.alias('attach')
-	.description('Start an Argus watcher process')
-	.option('--id <watcherId>', 'Watcher id to announce in the registry')
-	.option('--source <mode>', 'Source mode: cdp (default) or extension')
-	.option('--url <url>', 'URL pattern to match for capturing logs (CDP mode only)')
-	.option('--type <type>', 'Filter by target type (e.g., page, iframe, worker) (CDP mode only)')
-	.option('--origin <origin>', 'Match against URL origin only (protocol + host + port) (CDP mode only)')
-	.option('--target <targetId>', 'Connect to a specific target by its Chrome target ID (CDP mode only)')
-	.option('--parent <pattern>', 'Filter by parent target URL pattern (CDP mode only)')
-	.option('--chrome-host <host>', 'Chrome CDP host (default: 127.0.0.1) (CDP mode only)')
-	.option('--chrome-port <port>', 'Chrome CDP port (default: 9222) (CDP mode only)')
-	.option('--artifacts <dir>', 'Artifacts base directory (default: $TMPDIR/argus)')
-	.option('--no-page-indicator', 'Disable the in-page watcher indicator (CDP mode only)')
-	.option('--inject <path>', 'Path to JavaScript file to inject on watcher attach (CDP mode only)')
-	.option('--config <path>', 'Path to Argus config file')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus watcher start --id app --url localhost:3000\n  $ argus watcher start --id app --source extension\n  $ argus watcher start --id game --type iframe --url localhost:3007\n  $ argus watcher start --id game --origin https://localhost:3007\n  $ argus watcher start --id game --target CC1135709D9AC3B9CC0446F8B58CC344\n  $ argus watcher start --id game --type iframe --parent yandex.ru\n  $ argus watcher start --id app --url localhost:3000 --no-page-indicator\n  $ argus watcher start --id app --url localhost:3000 --inject ./scripts/debug.js\n  $ argus watcher start --id app --url localhost:3000 --json\n  $ argus watcher attach --id app --url localhost:3000\n',
-	)
-	.action(async (options, command) => {
-		const { config: configPath, inject, ...rest } = options
-		const cliOptions = {
-			...rest,
-			inject: inject ? { file: inject } : undefined,
-		}
-		const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
-		if (!resolvedPath) {
-			if (configPath) {
-				return
-			}
-			await runWatcherStart(cliOptions)
-			return
-		}
-
-		const configResult = loadArgusConfig(resolvedPath)
-		if (!configResult) {
-			return
-		}
-
-		const merged = mergeWatcherStartOptionsWithConfig(cliOptions, command, configResult)
-		if (!merged) {
-			return
-		}
-
-		await runWatcherStart(merged)
-	})
-
-watcher
-	.command('prune')
-	.alias('clean')
-	.description('Remove unreachable watchers from the registry')
-	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
-	.option('--dry-run', 'Preview what would be removed without changing the registry')
-	.option('--json', 'Output JSON for automation')
-	.addHelpText(
-		'after',
-		'\nExamples:\n  $ argus watcher prune\n  $ argus watcher prune --by-cwd my-project\n  $ argus watcher prune --dry-run\n  $ argus watcher prune --dry-run --json\n',
-	)
-	.action(async (options) => {
-		await runWatcherPrune(options)
-	})
-
-watcher
-	.command('native-host')
-	.description('Start a watcher as a Native Messaging host (used by Chrome extension)')
-	.option('--id <watcherId>', 'Watcher id (default: extension)')
-	.option('--json', 'Output JSON for automation')
-	.action(async (options) => {
-		await runWatcherNativeHost(options)
-	})
-
 const storage = program.command('storage').description('Interact with browser storage APIs')
 
 const storageLocal = storage.command('local').description('Manage localStorage for the attached page')
@@ -920,11 +877,12 @@ storageLocal
 	})
 
 storageLocal
-	.command('list')
+	.command('ls')
+	.alias('list')
 	.argument('[id]', 'Watcher id')
 	.option('--origin <origin>', 'Validate page origin matches this value')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus storage local list app\n  $ argus storage local list app --json\n')
+	.addHelpText('after', '\nExamples:\n  $ argus storage local ls app\n  $ argus storage local ls app --json\n')
 	.action(async (id, options) => {
 		await runStorageLocalList(id, options)
 	})
@@ -937,6 +895,79 @@ storageLocal
 	.addHelpText('after', '\nExamples:\n  $ argus storage local clear app\n')
 	.action(async (id, options) => {
 		await runStorageLocalClear(id, options)
+	})
+
+// ---------------------------------------------------------------------------
+// Capture
+// ---------------------------------------------------------------------------
+
+program
+	.command('screenshot')
+	.argument('[id]', 'Watcher id to query')
+	.description('Capture a screenshot to disk on the watcher')
+	.option('--out <file>', 'Output file path (absolute or relative to artifacts directory)')
+	.option('--selector <selector>', 'Optional CSS selector for element-only capture')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus screenshot app\n  $ argus screenshot app --out /tmp/screenshot.png\n  $ argus screenshot app --selector "body"\n',
+	)
+	.action(async (id, options) => {
+		await runScreenshot(id, options)
+	})
+
+const trace = program
+	.command('trace')
+	.argument('[id]', 'Watcher id to query')
+	.description('Capture a Chrome trace to disk on the watcher')
+	.option('--duration <duration>', 'Capture for duration (e.g. 3s, 500ms)')
+	.option('--out <file>', 'Output trace file path (relative to artifacts base directory)')
+	.option('--categories <categories>', 'Comma-separated tracing categories')
+	.option('--options <options>', 'Tracing options string')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus trace app --duration 3s --out trace.json\n')
+	.action(async (id, options) => {
+		await runTrace(id, options)
+	})
+
+trace
+	.command('start')
+	.argument('[id]', 'Watcher id to query')
+	.description('Start Chrome tracing')
+	.option('--out <file>', 'Output trace file path (relative to artifacts base directory)')
+	.option('--categories <categories>', 'Comma-separated tracing categories')
+	.option('--options <options>', 'Tracing options string')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus trace start app --out trace.json\n')
+	.action(async (id, options) => {
+		await runTraceStart(id, options)
+	})
+
+trace
+	.command('stop')
+	.argument('[id]', 'Watcher id to query')
+	.description('Stop Chrome tracing')
+	.option('--trace-id <id>', 'Trace id returned from start')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus trace stop app\n')
+	.action(async (id, options) => {
+		await runTraceStop(id, options)
+	})
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+const config = program.command('config').alias('cfg').description('Manage Argus config files')
+
+config
+	.command('init')
+	.description('Create an Argus config file')
+	.option('--path <file>', 'Path to write the config file (default: .argus/config.json)')
+	.option('--force', 'Overwrite existing config file')
+	.addHelpText('after', '\nExamples:\n  $ argus config init\n  $ argus config init --path argus.config.json\n')
+	.action(async (options) => {
+		await runConfigInit(options)
 	})
 
 const extension = program.command('extension').alias('ext').description('Browser extension management')
@@ -976,6 +1007,10 @@ extension
 	.action(async (options) => {
 		await runExtensionInfo(options)
 	})
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
 	const cwd = process.cwd()
