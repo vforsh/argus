@@ -12,7 +12,7 @@ const BIN = path.resolve(import.meta.dirname!, '..', 'packages', 'argus', 'src',
  */
 const spawnAndReadJson = (args: string[], label: string): Promise<{ proc: ChildProcess; result: unknown }> =>
 	new Promise((resolve, reject) => {
-		const proc = spawn('npx', ['tsx', BIN, ...args], {
+		const proc = spawn('bun', [BIN, ...args], {
 			stdio: ['ignore', 'pipe', 'inherit'],
 		})
 

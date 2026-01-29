@@ -1,11 +1,11 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
-import { chromium } from 'playwright'
+import { chromium, type Browser, type Page } from 'playwright'
 import { getFreePort } from './helpers/ports.js'
 import { runCommand, spawnAndWait } from './helpers/process.js'
+import type { ChildProcess } from 'node:child_process'
 import type { DomTreeResponse, DomInfoResponse, DomHoverResponse, DomClickResponse, DomKeydownResponse, ErrorResponse } from '@vforsh/argus-core'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
@@ -61,384 +61,391 @@ const TEST_HTML = `
 </html>
 `
 
-test('dom tree and dom info e2e', async (t) => {
-	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-dom-e2e-'))
-	const env = { ...process.env, ARGUS_HOME: tempDir }
-	const debugPort = await getFreePort()
-	const watcherId = `dom-e2e-${Date.now()}`
+describe('dom tree and dom info e2e', () => {
+	let tempDir: string
+	let env: Record<string, string | undefined>
+	let browser: Browser
+	let page: Page
+	let watcherProc: ChildProcess
+	let watcherId: string
 
-	// 1. Launch browser
-	const browser = await chromium.launch({
-		args: [`--remote-debugging-address=127.0.0.1`, `--remote-debugging-port=${debugPort}`],
+	beforeAll(async () => {
+		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-dom-e2e-'))
+		env = { ...process.env, ARGUS_HOME: tempDir }
+		const debugPort = await getFreePort()
+		watcherId = `dom-e2e-${Date.now()}`
+
+		// 1. Launch browser
+		browser = await chromium.launch({
+			args: [`--remote-debugging-address=127.0.0.1`, `--remote-debugging-port=${debugPort}`],
+		})
+
+		const context = await browser.newContext()
+		page = await context.newPage()
+		await page.setContent(TEST_HTML)
+
+		// Verify page loaded
+		const title = await page.title()
+		expect(title).toBe('dom-e2e')
+
+		// 2. Start watcher
+		const watcherConfig = {
+			id: watcherId,
+			chrome: { host: '127.0.0.1', port: debugPort },
+			match: { title: 'dom-e2e' },
+			host: '127.0.0.1',
+			port: 0,
+		}
+
+		const { proc, stdout: watcherStdout } = await spawnAndWait(
+			'bun',
+			[FIXTURE_WATCHER, JSON.stringify(watcherConfig)],
+			{ env },
+			/\{"id":"dom-e2e-/,
+		)
+		watcherProc = proc
+
+		const watcherInfo = JSON.parse(watcherStdout)
+
+		// 3. Wait for attachment
+		let attached = false
+		for (let i = 0; i < 50; i++) {
+			try {
+				const res = await fetch(`http://127.0.0.1:${watcherInfo.port}/status`)
+				const status = (await res.json()) as { attached: boolean }
+				if (status.attached) {
+					attached = true
+					break
+				}
+			} catch {
+				// ignore connection errors during startup
+			}
+			await new Promise((r) => setTimeout(r, 200))
+		}
+		expect(attached).toBe(true)
 	})
 
-	t.after(async () => {
-		await browser.close()
+	afterAll(async () => {
+		watcherProc?.kill('SIGTERM')
+		await browser?.close()
 		await fs.rm(tempDir, { recursive: true, force: true })
 	})
-
-	const context = await browser.newContext()
-	const page = await context.newPage()
-	await page.setContent(TEST_HTML)
-
-	// Verify page loaded
-	const title = await page.title()
-	assert.equal(title, 'dom-e2e')
-
-	// 2. Start watcher
-	const watcherConfig = {
-		id: watcherId,
-		chrome: { host: '127.0.0.1', port: debugPort },
-		match: { title: 'dom-e2e' },
-		host: '127.0.0.1',
-		port: 0,
-	}
-
-	const { proc: watcherProc, stdout: watcherStdout } = await spawnAndWait(
-		'npx',
-		['tsx', FIXTURE_WATCHER, JSON.stringify(watcherConfig)],
-		{ env },
-		/\{"id":"dom-e2e-/,
-	)
-
-	t.after(async () => {
-		watcherProc.kill('SIGTERM')
-	})
-
-	const watcherInfo = JSON.parse(watcherStdout)
-
-	// 3. Wait for attachment
-	let attached = false
-	for (let i = 0; i < 50; i++) {
-		try {
-			const res = await fetch(`http://127.0.0.1:${watcherInfo.port}/status`)
-			const status = (await res.json()) as { attached: boolean }
-			if (status.attached) {
-				attached = true
-				break
-			}
-		} catch {
-			// ignore connection errors during startup
-		}
-		await new Promise((r) => setTimeout(r, 200))
-	}
-	assert.ok(attached, 'Watcher should be attached to page')
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// dom tree tests
 	// ─────────────────────────────────────────────────────────────────────────
 
-	await t.test('dom tree --selector returns tree for unique selector', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--json'], {
+	test('dom tree --selector returns tree for unique selector', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--json'], {
 			env,
 		})
 		const response = JSON.parse(stdout) as DomTreeResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.matches, 1)
-		assert.equal(response.roots.length, 1)
-		assert.equal(response.roots[0].tag, 'div')
-		assert.equal(response.roots[0].attributes.id, 'root')
-		assert.ok(response.roots[0].attributes.class?.includes('container'))
+		expect(response.ok).toBe(true)
+		expect(response.matches).toBe(1)
+		expect(response.roots.length).toBe(1)
+		expect(response.roots[0].tag).toBe('div')
+		expect(response.roots[0].attributes.id).toBe('root')
+		expect(response.roots[0].attributes.class).toContain('container')
 	})
 
-	await t.test('dom tree human output format', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#header'], { env })
-		assert.match(stdout, /<header#header\.header-style>/)
-		assert.match(stdout, /<h1#title>/)
-		assert.match(stdout, /<nav\.nav>/)
+	test('dom tree human output format', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#header'], { env })
+		expect(stdout).toMatch(/<header#header\.header-style>/)
+		expect(stdout).toMatch(/<h1#title>/)
+		expect(stdout).toMatch(/<nav\.nav>/)
 	})
 
-	await t.test('dom tree --depth controls traversal depth', async () => {
+	test('dom tree --depth controls traversal depth', async () => {
 		// depth=0 should return only the root node without children details
-		const { stdout: depth0 } = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--depth', '0', '--json'], {
+		const { stdout: depth0 } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--depth', '0', '--json'], {
 			env,
 		})
 		const resp0 = JSON.parse(depth0) as DomTreeResponse
-		assert.equal(resp0.roots[0].tag, 'div')
+		expect(resp0.roots[0].tag).toBe('div')
 		// With depth=0, children should be truncated
-		assert.equal(resp0.roots[0].truncated, true)
+		expect(resp0.roots[0].truncated).toBe(true)
 
 		// depth=1 should include immediate children
-		const { stdout: depth1 } = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--depth', '1', '--json'], {
+		const { stdout: depth1 } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--depth', '1', '--json'], {
 			env,
 		})
 		const resp1 = JSON.parse(depth1) as DomTreeResponse
-		assert.ok(resp1.roots[0].children && resp1.roots[0].children.length > 0, 'depth=1 should include children')
+		expect(resp1.roots[0].children && resp1.roots[0].children.length > 0).toBe(true)
 		const headerChild = resp1.roots[0].children?.find((c) => c.tag === 'header')
-		assert.ok(headerChild, 'Should find header child')
-		assert.equal(headerChild?.truncated, true, 'Header children should be truncated at depth=1')
+		expect(headerChild).toBeTruthy()
+		expect(headerChild?.truncated).toBe(true)
 	})
 
-	await t.test('dom tree errors on multiple matches without --all', async () => {
+	test('dom tree errors on multiple matches without --all', async () => {
 		// .paragraph matches multiple elements
-		const result = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '.paragraph', '--json'], {
+		const result = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '.paragraph', '--json'], {
 			env,
 		}).catch((e) => e)
 
 		// The command exits with error code 1
-		assert.ok(result instanceof Error, 'Should throw on multiple matches')
+		expect(result).toBeInstanceOf(Error)
 		// Extract JSON from stdout in error message (format: "Stdout: {...}")
 		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
-		assert.ok(stdoutMatch, 'Should have JSON in stdout')
+		expect(stdoutMatch).toBeTruthy()
 		const response = JSON.parse(stdoutMatch![1]) as ErrorResponse
-		assert.equal(response.ok, false)
-		assert.match(response.error.message, /matched.*elements/)
+		expect(response.ok).toBe(false)
+		expect(response.error.message).toMatch(/matched.*elements/)
 	})
 
-	await t.test('dom tree --all returns all matches', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '.paragraph', '--all', '--json'], { env })
+	test('dom tree --all returns all matches', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '.paragraph', '--all', '--json'], { env })
 		const response = JSON.parse(stdout) as DomTreeResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.matches, 3, 'Should match all 3 paragraph elements')
-		assert.equal(response.roots.length, 3)
+		expect(response.ok).toBe(true)
+		expect(response.matches).toBe(3)
+		expect(response.roots.length).toBe(3)
 		for (const root of response.roots) {
-			assert.equal(root.tag, 'p')
-			assert.ok(root.attributes.class?.includes('paragraph'))
+			expect(root.tag).toBe('p')
+			expect(root.attributes.class).toContain('paragraph')
 		}
 	})
 
-	await t.test('dom tree errors on no matches', async () => {
-		const result = await runCommand('node', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#nonexistent'], { env }).catch((e) => e)
-		assert.ok(result instanceof Error, 'Should throw on no matches')
-		assert.match(result.message, /No element found/)
+	test('dom tree errors on no matches', async () => {
+		const result = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#nonexistent'], { env }).catch((e) => e)
+		expect(result).toBeInstanceOf(Error)
+		expect(result.message).toMatch(/No element found/)
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// dom info tests
 	// ─────────────────────────────────────────────────────────────────────────
 
-	await t.test('dom info --selector returns element info', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '#title', '--json'], {
+	test('dom info --selector returns element info', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '#title', '--json'], {
 			env,
 		})
 		const response = JSON.parse(stdout) as DomInfoResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.matches, 1)
-		assert.equal(response.elements.length, 1)
+		expect(response.ok).toBe(true)
+		expect(response.matches).toBe(1)
+		expect(response.elements.length).toBe(1)
 		const el = response.elements[0]
-		assert.equal(el.tag, 'h1')
-		assert.equal(el.attributes.id, 'title')
-		assert.equal(el.childElementCount, 0)
-		assert.ok(el.outerHTML?.includes('Test Page'))
-		assert.equal(el.outerHTMLTruncated, false)
+		expect(el.tag).toBe('h1')
+		expect(el.attributes.id).toBe('title')
+		expect(el.childElementCount).toBe(0)
+		expect(el.outerHTML).toContain('Test Page')
+		expect(el.outerHTMLTruncated).toBe(false)
 	})
 
-	await t.test('dom info human output format', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '#header'], { env })
-		assert.match(stdout, /<header#header\.header-style>/)
-		assert.match(stdout, /Attributes:/)
-		assert.match(stdout, /id="header"/)
-		assert.match(stdout, /class="header-style"/)
-		assert.match(stdout, /Child elements:/)
-		assert.match(stdout, /outerHTML:/)
+	test('dom info human output format', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '#header'], { env })
+		expect(stdout).toMatch(/<header#header\.header-style>/)
+		expect(stdout).toMatch(/Attributes:/)
+		expect(stdout).toMatch(/id="header"/)
+		expect(stdout).toMatch(/class="header-style"/)
+		expect(stdout).toMatch(/Child elements:/)
+		expect(stdout).toMatch(/outerHTML:/)
 	})
 
-	await t.test('dom info --outer-html-max truncates outerHTML', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '#root', '--outer-html-max', '50', '--json'], {
+	test('dom info --outer-html-max truncates outerHTML', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '#root', '--outer-html-max', '50', '--json'], {
 			env,
 		})
 		const response = JSON.parse(stdout) as DomInfoResponse
-		assert.equal(response.ok, true)
+		expect(response.ok).toBe(true)
 		const el = response.elements[0]
-		assert.ok(el.outerHTML, 'outerHTML should exist')
-		assert.ok(el.outerHTML!.length <= 50, 'outerHTML should be truncated to 50 chars')
-		assert.equal(el.outerHTMLTruncated, true)
+		expect(el.outerHTML).toBeTruthy()
+		expect(el.outerHTML!.length <= 50).toBe(true)
+		expect(el.outerHTMLTruncated).toBe(true)
 	})
 
-	await t.test('dom info errors on multiple matches without --all', async () => {
-		const result = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '.article', '--json'], {
+	test('dom info errors on multiple matches without --all', async () => {
+		const result = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '.article', '--json'], {
 			env,
 		}).catch((e) => e)
-		assert.ok(result instanceof Error, 'Should throw on multiple matches')
+		expect(result).toBeInstanceOf(Error)
 		// Extract JSON from stdout in error message
 		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
-		assert.ok(stdoutMatch, 'Should have JSON in stdout')
+		expect(stdoutMatch).toBeTruthy()
 		const response = JSON.parse(stdoutMatch![1]) as ErrorResponse
-		assert.equal(response.ok, false)
-		assert.match(response.error.message, /matched.*elements/)
+		expect(response.ok).toBe(false)
+		expect(response.error.message).toMatch(/matched.*elements/)
 	})
 
-	await t.test('dom info --all returns all matches', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '.nav-link', '--all', '--json'], { env })
+	test('dom info --all returns all matches', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '.nav-link', '--all', '--json'], { env })
 		const response = JSON.parse(stdout) as DomInfoResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.matches, 2)
-		assert.equal(response.elements.length, 2)
-		assert.equal(response.elements[0].tag, 'a')
-		assert.equal(response.elements[1].tag, 'a')
-		assert.ok(response.elements[0].outerHTML?.includes('Home'))
-		assert.ok(response.elements[1].outerHTML?.includes('About'))
+		expect(response.ok).toBe(true)
+		expect(response.matches).toBe(2)
+		expect(response.elements.length).toBe(2)
+		expect(response.elements[0].tag).toBe('a')
+		expect(response.elements[1].tag).toBe('a')
+		expect(response.elements[0].outerHTML).toContain('Home')
+		expect(response.elements[1].outerHTML).toContain('About')
 	})
 
-	await t.test('dom info includes data attributes', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'], {
+	test('dom info includes data attributes', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'], {
 			env,
 		})
 		const response = JSON.parse(stdout) as DomInfoResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.elements[0].attributes['data-testid'], 'article-1')
+		expect(response.ok).toBe(true)
+		expect(response.elements[0].attributes['data-testid']).toBe('article-1')
 	})
 
-	await t.test('dom info reports correct childElementCount', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'], {
+	test('dom info reports correct childElementCount', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'], {
 			env,
 		})
 		const response = JSON.parse(stdout) as DomInfoResponse
-		assert.equal(response.elements[0].childElementCount, 2, 'article-1 has 2 paragraph children')
+		expect(response.elements[0].childElementCount).toBe(2)
 
 		const { stdout: stdout2 } = await runCommand(
-			'node',
+			'bun',
 			[BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-2"]', '--json'],
 			{ env },
 		)
 		const response2 = JSON.parse(stdout2) as DomInfoResponse
-		assert.equal(response2.elements[0].childElementCount, 1, 'article-2 has 1 paragraph child')
+		expect(response2.elements[0].childElementCount).toBe(1)
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// dom hover + click tests
 	// ─────────────────────────────────────────────────────────────────────────
 
-	await t.test('dom hover triggers mouseover events', async () => {
+	test('dom hover triggers mouseover events', async () => {
 		await page.evaluate(() => {
 			;(globalThis as { __events?: string[] }).__events = []
 		})
 
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'hover', watcherId, '--selector', '#btn', '--json'], { env })
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'hover', watcherId, '--selector', '#btn', '--json'], { env })
 		const response = JSON.parse(stdout) as DomHoverResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.matches, 1)
-		assert.equal(response.hovered, 1)
+		expect(response.ok).toBe(true)
+		expect(response.matches).toBe(1)
+		expect(response.hovered).toBe(1)
 
 		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
-		assert.ok(events.includes('hover:btn'))
+		expect(events).toContain('hover:btn')
 	})
 
-	await t.test('dom click triggers click events', async () => {
+	test('dom click triggers click events', async () => {
 		await page.evaluate(() => {
 			;(globalThis as { __events?: string[] }).__events = []
 		})
 
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '#btn', '--json'], { env })
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '#btn', '--json'], { env })
 		const response = JSON.parse(stdout) as DomClickResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.matches, 1)
-		assert.equal(response.clicked, 1)
+		expect(response.ok).toBe(true)
+		expect(response.matches).toBe(1)
+		expect(response.clicked).toBe(1)
 
 		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
-		assert.ok(events.includes('click:btn'))
+		expect(events).toContain('click:btn')
 	})
 
-	await t.test('dom click errors on multiple matches without --all', async () => {
-		const result = await runCommand('node', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '.multi', '--json'], {
+	test('dom click errors on multiple matches without --all', async () => {
+		const result = await runCommand('bun', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '.multi', '--json'], {
 			env,
 		}).catch((e) => e)
 
-		assert.ok(result instanceof Error, 'Should throw on multiple matches')
+		expect(result).toBeInstanceOf(Error)
 		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
-		assert.ok(stdoutMatch, 'Should have JSON in stdout')
+		expect(stdoutMatch).toBeTruthy()
 		const response = JSON.parse(stdoutMatch![1]) as ErrorResponse
-		assert.equal(response.ok, false)
-		assert.match(response.error.message, /matched.*elements/)
+		expect(response.ok).toBe(false)
+		expect(response.error.message).toMatch(/matched.*elements/)
 	})
 
-	await t.test('dom click --all clicks all matches', async () => {
+	test('dom click --all clicks all matches', async () => {
 		await page.evaluate(() => {
 			;(globalThis as { __events?: string[] }).__events = []
 		})
 
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '.multi', '--all', '--json'], { env })
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '.multi', '--all', '--json'], { env })
 		const response = JSON.parse(stdout) as DomClickResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.matches, 2)
-		assert.equal(response.clicked, 2)
+		expect(response.ok).toBe(true)
+		expect(response.matches).toBe(2)
+		expect(response.clicked).toBe(2)
 
 		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
-		assert.ok(events.includes('click:multi-1'))
-		assert.ok(events.includes('click:multi-2'))
+		expect(events).toContain('click:multi-1')
+		expect(events).toContain('click:multi-2')
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// dom keydown tests
 	// ─────────────────────────────────────────────────────────────────────────
 
-	await t.test('dom keydown dispatches Enter', async () => {
+	test('dom keydown dispatches Enter', async () => {
 		await page.evaluate(() => {
 			;(globalThis as { __events?: string[] }).__events = []
 		})
 
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'Enter', '--json'], { env })
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'Enter', '--json'], { env })
 		const response = JSON.parse(stdout) as DomKeydownResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.key, 'Enter')
-		assert.equal(response.modifiers, 0)
-		assert.equal(response.focused, false)
+		expect(response.ok).toBe(true)
+		expect(response.key).toBe('Enter')
+		expect(response.modifiers).toBe(0)
+		expect(response.focused).toBe(false)
 
 		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
-		assert.ok(events.includes('keydown:Enter'))
+		expect(events).toContain('keydown:Enter')
 	})
 
-	await t.test('dom keydown with --selector focuses element', async () => {
+	test('dom keydown with --selector focuses element', async () => {
 		await page.evaluate(() => {
 			;(globalThis as { __events?: string[] }).__events = []
 		})
 
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'], { env })
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'], { env })
 		const response = JSON.parse(stdout) as DomKeydownResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.key, 'a')
-		assert.equal(response.focused, true)
+		expect(response.ok).toBe(true)
+		expect(response.key).toBe('a')
+		expect(response.focused).toBe(true)
 
 		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
-		assert.ok(events.includes('input-keydown:a'))
+		expect(events).toContain('input-keydown:a')
 	})
 
-	await t.test('dom keydown with --modifiers sets bitmask', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'a', '--modifiers', 'shift', '--json'], { env })
+	test('dom keydown with --modifiers sets bitmask', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'a', '--modifiers', 'shift', '--json'], { env })
 		const response = JSON.parse(stdout) as DomKeydownResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.modifiers, 8, 'Shift bitmask should be 8')
+		expect(response.ok).toBe(true)
+		expect(response.modifiers).toBe(8)
 	})
 
-	await t.test('dom keydown unknown key returns error', async () => {
-		const result = await runCommand('node', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'NoSuchKey', '--json'], {
+	test('dom keydown unknown key returns error', async () => {
+		const result = await runCommand('bun', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'NoSuchKey', '--json'], {
 			env,
 		}).catch((e) => e)
 
-		assert.ok(result instanceof Error, 'Should throw on unknown key')
+		expect(result).toBeInstanceOf(Error)
 		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
-		assert.ok(stdoutMatch, 'Should have JSON in stdout')
+		expect(stdoutMatch).toBeTruthy()
 		const response = JSON.parse(stdoutMatch![1]) as ErrorResponse
-		assert.equal(response.ok, false)
-		assert.match(response.error.message, /Unknown key/)
+		expect(response.ok).toBe(false)
+		expect(response.error.message).toMatch(/Unknown key/)
 	})
 
-	await t.test('dom keydown human output format', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'Enter'], { env })
-		assert.match(stdout, /Dispatched keydown: Enter/)
+	test('dom keydown human output format', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'Enter'], { env })
+		expect(stdout).toMatch(/Dispatched keydown: Enter/)
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// html alias tests (alias for dom)
 	// ─────────────────────────────────────────────────────────────────────────
 
-	await t.test('html tree alias works like dom tree', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'html', 'tree', watcherId, '--selector', '#root', '--json'], {
+	test('html tree alias works like dom tree', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'html', 'tree', watcherId, '--selector', '#root', '--json'], {
 			env,
 		})
 		const response = JSON.parse(stdout) as DomTreeResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.roots[0].tag, 'div')
-		assert.equal(response.roots[0].attributes.id, 'root')
+		expect(response.ok).toBe(true)
+		expect(response.roots[0].tag).toBe('div')
+		expect(response.roots[0].attributes.id).toBe('root')
 	})
 
-	await t.test('html info alias works like dom info', async () => {
-		const { stdout } = await runCommand('node', [BIN_PATH, 'html', 'info', watcherId, '--selector', '#title', '--json'], {
+	test('html info alias works like dom info', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'html', 'info', watcherId, '--selector', '#title', '--json'], {
 			env,
 		})
 		const response = JSON.parse(stdout) as DomInfoResponse
-		assert.equal(response.ok, true)
-		assert.equal(response.elements[0].tag, 'h1')
-		assert.equal(response.elements[0].attributes.id, 'title')
+		expect(response.ok).toBe(true)
+		expect(response.elements[0].tag).toBe('h1')
+		expect(response.elements[0].attributes.id).toBe('title')
 	})
 })

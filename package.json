@@ -16,12 +16,12 @@
 		"typecheck:packages": "tsc -b packages/* --pretty false",
 		"build": "tsc -b",
 		"build:packages": "tsc -b packages/*",
-		"chrome:start": "npx tsx packages/argus/src/bin.ts chrome start",
-		"test:e2e": "npm run build:packages && npx tsx --test e2e/**/*.test.ts",
-		"playground": "npx tsx playground/start.ts",
-		"playground:serve": "npx tsx playground/serve.ts",
-		"playground:chrome": "npx tsx packages/argus/src/bin.ts chrome start --url http://127.0.0.1:3333",
-		"playground:attach": "npx tsx packages/argus/src/bin.ts watcher start --id playground --url 127.0.0.1:3333",
+		"chrome:start": "bun packages/argus/src/bin.ts chrome start",
+		"test:e2e": "bun run build:packages && bun test e2e/",
+		"playground": "bun playground/start.ts",
+		"playground:serve": "bun playground/serve.ts",
+		"playground:chrome": "bun packages/argus/src/bin.ts chrome start --url http://127.0.0.1:3333",
+		"playground:attach": "bun packages/argus/src/bin.ts watcher start --id playground --url 127.0.0.1:3333",
 		"prepare": "husky"
 	},
 	"lint-staged": {
@@ -30,15 +30,15 @@
 	"devDependencies": {
 		"@commitlint/cli": "20.3.1",
 		"@commitlint/config-conventional": "20.3.1",
-		"@types/node": "25.0.6",
+		"bun-types": "latest",
 		"dotenv": "^17.2.3",
 		"husky": "9.1.7",
 		"lint-staged": "^16.2.7",
 		"oxlint": "1.38.0",
 		"playwright": "^1.57.0",
 		"prettier": "3.7.4",
-		"tsx": "^4.21.0",
 		"typescript": "5.9.3"
 	},
+	"packageManager": "bun",
 	"version": "0.1.2"
 }

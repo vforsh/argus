@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { Command } from 'commander'
 import { runList } from './commands/list.js'
 import { runLogs } from './commands/logs.js'

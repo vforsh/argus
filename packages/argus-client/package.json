@@ -22,7 +22,7 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@vforsh/argus-core": "0.1.2"
+		"@vforsh/argus-core": "workspace:*"
 	},
 	"scripts": {
 		"build": "tsc -b",

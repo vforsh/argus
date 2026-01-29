@@ -9,7 +9,7 @@
 		"outDir": "./dist",
 		"tsBuildInfoFile": "./dist/.tsbuildinfo",
 		"lib": ["ES2022", "DOM"],
-		"types": ["node"]
+		"types": ["bun-types"]
 	},
 	"references": [{ "path": "../argus-core" }],
 	"include": ["src"]

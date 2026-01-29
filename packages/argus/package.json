@@ -26,14 +26,14 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@vforsh/argus-client": "0.1.2",
-		"@vforsh/argus-core": "0.1.2",
-		"@vforsh/argus-watcher": "0.1.2",
+		"@vforsh/argus-client": "workspace:*",
+		"@vforsh/argus-core": "workspace:*",
+		"@vforsh/argus-watcher": "workspace:*",
 		"commander": "14.0.2"
 	},
 	"scripts": {
 		"build": "tsc -b",
 		"typecheck": "tsc -b --pretty false",
-		"chrome:start": "tsx src/bin.ts chrome start"
+		"chrome:start": "bun src/bin.ts chrome start"
 	}
 }

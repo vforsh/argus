@@ -2,7 +2,7 @@ import * as http from 'node:http'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-const PLAYGROUND_DIR = path.dirname(new URL(import.meta.url).pathname)
+const PLAYGROUND_DIR = import.meta.dirname!
 
 const MIME_TYPES: Record<string, string> = {
 	'.html': 'text/html; charset=utf-8',
@@ -98,7 +98,7 @@ export const startServer = (options: ServerOptions): http.Server => {
 	return server
 }
 
-// Standalone entry: npx tsx playground/serve.ts
+// Standalone entry: bun playground/serve.ts
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(PLAYGROUND_DIR, 'serve.ts')
 if (isMain) {
 	const port = Number(process.env['PLAYGROUND_PORT']) || 3333

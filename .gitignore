@@ -8,3 +8,4 @@ coverage
 logs/*.log
 
 .argus/artifacts/
+package-lock.json

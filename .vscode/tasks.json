@@ -5,7 +5,7 @@
 			"label": "build:all",
 			"detail": "Builds all packages in the workspace",
 			"type": "shell",
-			"command": "npm run build:packages",
+			"command": "bun run build:packages",
 			"problemMatcher": ["$tsc"],
 			"group": {
 				"kind": "build",
@@ -16,7 +16,7 @@
 			"label": "chrome: start",
 			"detail": "Launches Chrome with CDP enabled",
 			"type": "shell",
-			"command": "node packages/argus/dist/bin.js chrome start ${input:chromeArgs}",
+			"command": "bun packages/argus/dist/bin.js chrome start ${input:chromeArgs}",
 			"problemMatcher": [],
 			"presentation": {
 				"reveal": "always",
@@ -31,7 +31,7 @@
 			"label": "watcher: start",
 			"detail": "Starts the Argus watcher with optional --page-url argument",
 			"type": "shell",
-			"command": "npx tsx scripts/start-watcher.ts ${input:args}",
+			"command": "bun scripts/start-watcher.ts ${input:args}",
 			"problemMatcher": [],
 			"presentation": {
 				"reveal": "always",
