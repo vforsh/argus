@@ -6,6 +6,7 @@ import { runTail } from './commands/tail.js'
 import { runNet } from './commands/net.js'
 import { runNetTail } from './commands/netTail.js'
 import { runEval } from './commands/eval.js'
+import { runEvalUntil } from './commands/evalUntil.js'
 import { runIframeHelper } from './commands/iframeHelper.js'
 import { runTrace, runTraceStart, runTraceStop } from './commands/trace.js'
 import { runScreenshot } from './commands/screenshot.js'
@@ -101,7 +102,7 @@ program.addHelpText(
 	`
 Command groups:
   Setup        chrome, watcher, page, config, extension
-  Inspect      logs, net, eval, dom, storage
+  Inspect      logs, net, eval, eval-until, dom, storage
   Capture      screenshot, trace
   Utility      ls, doctor
 `,
@@ -604,6 +605,60 @@ Examples:
 	)
 	.action(async (options) => {
 		await runIframeHelper(options)
+	})
+
+program
+	.command('eval-until')
+	.argument('[id]', 'Watcher id to query')
+	.argument('[expression]', 'JS expression to poll until truthy (or use --file / --stdin)')
+	.description('Poll a JS expression until it returns a truthy value')
+	.option('--no-await', 'Do not await promises')
+	.option('--timeout <ms>', 'Per-eval timeout in milliseconds')
+	.option('--json', 'Output JSON for automation')
+	.option('--no-return-by-value', 'Disable returnByValue (use preview)')
+	.option('--no-fail-on-exception', 'Do not exit with code 1 when the evaluation throws')
+	.option('--retry <n>', 'Retry failed evaluations up to N times')
+	.option('-q, --silent', 'Suppress success output; only emit output on error')
+	.option('--interval <ms|duration>', 'Polling interval (default: 250ms)')
+	.option('--count <n>', 'Stop after N iterations')
+	.option('--total-timeout <duration>', 'Max wall-clock time (e.g. 30s, 2m)')
+	.option('--verbose', 'Print intermediate (falsy) results')
+	.option('-f, --file <path>', 'Read expression from a file')
+	.option('--stdin', 'Read expression from stdin')
+	.option('--iframe <selector>', 'Eval in iframe via postMessage (requires helper script)')
+	.option('--iframe-namespace <name>', 'Message type prefix for iframe eval (default: argus)')
+	.option('--iframe-timeout <ms>', 'Timeout for iframe postMessage response (default: 5000)')
+	.addHelpText(
+		'after',
+		`
+Examples:
+  $ argus eval-until app "document.querySelector('#loaded')"
+  $ argus eval-until app "window.APP_READY" --interval 500
+  $ argus eval-until app "document.title === 'Ready'" --total-timeout 30s
+  $ argus eval-until app "window.data" --verbose
+  $ argus eval-until app "window.data" --count 20 --interval 1s
+  $ argus eval-until app --file ./check.js --total-timeout 1m
+`,
+	)
+	.action(async (id, expression, options) => {
+		await runEvalUntil(id, expression, {
+			json: options.json,
+			await: options.await,
+			timeout: options.timeout,
+			returnByValue: options.returnByValue,
+			failOnException: options.failOnException,
+			retry: options.retry,
+			silent: options.silent,
+			interval: options.interval,
+			count: options.count,
+			totalTimeout: options.totalTimeout,
+			verbose: options.verbose,
+			file: options.file,
+			stdin: options.stdin,
+			iframe: options.iframe,
+			iframeNamespace: options.iframeNamespace,
+			iframeTimeout: options.iframeTimeout,
+		})
 	})
 
 const dom = program.command('dom').alias('html').description('Inspect DOM elements in the connected page')

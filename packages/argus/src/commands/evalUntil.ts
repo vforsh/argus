@@ -1,10 +1,9 @@
-import type { EvalResponse } from '@vforsh/argus-core'
 import { evalWithRetries } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
+import { parseDurationMs } from '../time.js'
 import { writeWatcherCandidates } from '../watchers/candidates.js'
 import { resolveWatcher } from '../watchers/resolveWatcher.js'
 import {
-	formatError,
 	parseCount,
 	parseIntervalMs,
 	parseNumber,
@@ -16,8 +15,8 @@ import {
 	wrapForIframeEval,
 } from './evalShared.js'
 
-/** Options for the eval command. */
-export type EvalOptions = {
+/** Options for the eval-until command. */
+export type EvalUntilOptions = {
 	json?: boolean
 	await?: boolean
 	timeout?: string
@@ -27,7 +26,8 @@ export type EvalOptions = {
 	silent?: boolean
 	interval?: string
 	count?: string
-	until?: string
+	totalTimeout?: string
+	verbose?: boolean
 	/** Read expression from a file path. */
 	file?: string
 	/** Read expression from stdin. Also activated when expression is `-`. */
@@ -40,8 +40,8 @@ export type EvalOptions = {
 	iframeTimeout?: string
 }
 
-/** Execute the eval command for a watcher id. */
-export const runEval = async (id: string | undefined, rawExpression: string | undefined, options: EvalOptions): Promise<void> => {
+/** Execute the eval-until command: poll until the expression returns a truthy value. */
+export const runEvalUntil = async (id: string | undefined, rawExpression: string | undefined, options: EvalUntilOptions): Promise<void> => {
 	const output = createOutput(options)
 
 	const resolvedExpression = await resolveExpression(rawExpression, options, output)
@@ -52,7 +52,6 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 
 	let expression = resolvedExpression
 
-	// Wrap expression for iframe eval if --iframe is provided
 	if (options.iframe) {
 		const iframeTimeoutMs = parseNumber(options.iframeTimeout) ?? 5000
 		expression = wrapForIframeEval(expression, {
@@ -75,6 +74,7 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		process.exitCode = 2
 		return
 	}
+	const pollIntervalMs = intervalMs.value ?? 250
 
 	const countValue = parseCount(options.count)
 	if (countValue.error) {
@@ -82,21 +82,10 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		process.exitCode = 2
 		return
 	}
-	if (countValue.value != null && intervalMs.value == null) {
-		output.writeWarn('Invalid --count usage: --count requires --interval')
-		process.exitCode = 2
-		return
-	}
 
-	if (options.until && intervalMs.value == null) {
-		output.writeWarn('Invalid --until usage: --until requires --interval')
-		process.exitCode = 2
-		return
-	}
-
-	const untilEvaluator = compileUntil(options.until)
-	if (untilEvaluator.error) {
-		output.writeWarn(untilEvaluator.error)
+	const totalTimeoutMs = parseTotalTimeout(options.totalTimeout)
+	if (totalTimeoutMs.error) {
+		output.writeWarn(totalTimeoutMs.error)
 		process.exitCode = 2
 		return
 	}
@@ -113,41 +102,34 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 	}
 
 	const { watcher } = resolved
-
 	const timeoutMs = parseNumber(options.timeout)
 
-	if (intervalMs.value == null) {
-		const singleResult = await evalWithRetries({
-			watcher,
-			expression,
-			awaitPromise: options.await ?? true,
-			returnByValue: options.returnByValue ?? true,
-			timeoutMs,
-			failOnException: options.failOnException ?? true,
-			retryCount: retryCount.value,
-		})
-
-		if (!singleResult.ok) {
-			printError(singleResult, options, output)
-			process.exitCode = 1
-			return
-		}
-
-		printSuccess(singleResult.response, options, output, false)
-		return
-	}
-
 	let running = true
+	let interrupted = false
 	const stop = (): void => {
 		running = false
+		interrupted = true
 	}
 
 	process.on('SIGINT', stop)
 	process.on('SIGTERM', stop)
 
+	const startTime = Date.now()
 	let iteration = 0
+
 	while (running) {
+		// Check total timeout before evaluating
+		if (totalTimeoutMs.value != null) {
+			const elapsed = Date.now() - startTime
+			if (elapsed >= totalTimeoutMs.value) {
+				output.writeWarn(`Total timeout exceeded (${options.totalTimeout})`)
+				process.exitCode = 1
+				return
+			}
+		}
+
 		iteration += 1
+
 		const iterationResult = await evalWithRetries({
 			watcher,
 			expression,
@@ -164,68 +146,52 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 			return
 		}
 
-		printSuccess(iterationResult.response, options, output, true)
+		const isTruthy = Boolean(iterationResult.response.result)
 
-		if (untilEvaluator.evaluator) {
-			const untilResult = untilEvaluator.evaluator({
-				result: iterationResult.response.result,
-				exception: iterationResult.response.exception ?? null,
-				iteration,
-				attempt: iterationResult.attempt,
-			})
-			if (!untilResult.ok) {
-				printError({ kind: 'until', error: untilResult.error }, options, output)
-				process.exitCode = 1
-				return
-			}
-			if (untilResult.matched) {
-				return
-			}
-		}
-
-		if (countValue.value != null && iteration >= countValue.value) {
+		if (isTruthy) {
+			printSuccess(iterationResult.response, options, output, false)
 			return
 		}
 
-		await sleep(intervalMs.value)
+		if (options.verbose) {
+			printSuccess(iterationResult.response, options, output, true)
+		}
+
+		// Check count limit after evaluating
+		if (countValue.value != null && iteration >= countValue.value) {
+			output.writeWarn(`Exhausted after ${iteration} iterations without a truthy result`)
+			process.exitCode = 1
+			return
+		}
+
+		await sleep(pollIntervalMs)
+	}
+
+	if (interrupted) {
+		process.exitCode = 130
 	}
 }
 
-type UntilContext = {
-	result: EvalResponse['result']
-	exception: EvalResponse['exception'] | null
-	iteration: number
-	attempt: number
-}
-
-type UntilEvaluator = (context: UntilContext) => { ok: true; matched: boolean } | { ok: false; error: string }
-
-const compileUntil = (condition?: string): { evaluator?: UntilEvaluator; error?: string } => {
-	if (condition == null) {
+const parseTotalTimeout = (value?: string): { value?: number; error?: string } => {
+	if (value == null) {
 		return {}
 	}
 
-	const trimmed = condition.trim()
+	const trimmed = value.trim()
 	if (!trimmed) {
-		return { error: 'Invalid --until value: empty condition.' }
+		return { error: 'Invalid --total-timeout value: empty duration.' }
 	}
 
-	let compiled: (context: UntilContext) => boolean
-	try {
-		compiled = new Function('context', `const { result, exception, iteration, attempt } = context; return Boolean(${trimmed});`) as (
-			context: UntilContext,
-		) => boolean
-	} catch (error) {
-		return { error: `Invalid --until value: ${formatError(error)}` }
+	let parsed: number | null
+	if (/^[0-9]+$/.test(trimmed)) {
+		parsed = Number(trimmed)
+	} else {
+		parsed = parseDurationMs(trimmed)
 	}
 
-	return {
-		evaluator: (context) => {
-			try {
-				return { ok: true, matched: compiled(context) }
-			} catch (error) {
-				return { ok: false, error: `Failed to evaluate --until condition: ${formatError(error)}` }
-			}
-		},
+	if (parsed == null || !Number.isFinite(parsed) || parsed <= 0) {
+		return { error: 'Invalid --total-timeout value: expected milliseconds or a duration like 30s, 2m, 1h.' }
 	}
+
+	return { value: parsed }
 }

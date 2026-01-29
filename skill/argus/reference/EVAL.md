@@ -48,6 +48,35 @@ argus eval app "document.title" --interval 250ms --until 'result === "ready"'
 
 `--until` context: `{ result, exception, iteration, attempt }`
 
+## eval-until
+
+Poll until expression returns truthy (`Boolean(result)`). Defaults to 250ms interval; silent intermediate output.
+
+```bash
+argus eval-until [id] "<expression>" [flags]
+```
+
+```bash
+argus eval-until app "document.querySelector('#loaded')"
+argus eval-until app "window.APP_READY" --interval 500
+argus eval-until app "document.title === 'Ready'" --total-timeout 30s
+argus eval-until app "window.data" --verbose --count 20
+argus eval-until app --file ./check.js --total-timeout 1m
+```
+
+| Flag                         | Effect                                  |
+| ---------------------------- | --------------------------------------- |
+| `--interval <ms\|duration>`  | Polling interval (default: 250ms)       |
+| `--count <n>`                | Max iterations                          |
+| `--total-timeout <duration>` | Max wall-clock time (`30s`, `2m`, `1h`) |
+| `--verbose`                  | Print intermediate (falsy) results      |
+
+Also supports all behavior flags (`--no-await`, `--timeout`, `--json`, `--retry`, etc.) and iframe flags.
+
+**Exit codes:** 0 = truthy found, 1 = error/exhausted, 2 = invalid args, 130 = SIGINT/SIGTERM.
+
+**vs `eval --interval --until`:** `eval-until` defaults interval to 250ms, uses implicit `Boolean(result)` condition, suppresses intermediate output by default, and adds `--total-timeout`.
+
 ## Iframe Eval (extension mode)
 
 Cross-origin iframes need helper script:
