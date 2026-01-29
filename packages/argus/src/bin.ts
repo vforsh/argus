@@ -97,17 +97,6 @@ program
 		process.exit(2)
 	})
 
-program.addHelpText(
-	'after',
-	`
-Command groups:
-  Setup        chrome, watcher, page, config, extension
-  Inspect      logs, net, eval, eval-until, dom, storage
-  Capture      screenshot, trace
-  Utility      ls, doctor
-`,
-)
-
 // ---------------------------------------------------------------------------
 // Quick access
 // ---------------------------------------------------------------------------
@@ -609,6 +598,7 @@ Examples:
 
 program
 	.command('eval-until')
+	.alias('wait')
 	.argument('[id]', 'Watcher id to query')
 	.argument('[expression]', 'JS expression to poll until truthy (or use --file / --stdin)')
 	.description('Poll a JS expression until it returns a truthy value')
