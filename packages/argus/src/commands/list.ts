@@ -3,6 +3,7 @@ import { loadRegistry, pruneRegistry } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatWatcherLine } from '../output/format.js'
 import { createOutput } from '../output/io.js'
+import { discoverChromeInstances, formatChromeInstanceLine } from './chrome.js'
 
 /** Options for the list command. */
 export type ListOptions = {
@@ -13,6 +14,41 @@ export type ListOptions = {
 /** Execute the list command. */
 export const runList = async (options: ListOptions): Promise<void> => {
 	const output = createOutput(options)
+
+	const [watcherResults, chromeInstances] = await Promise.all([listWatchers(options, output), discoverChromeInstances()])
+
+	if (options.json) {
+		output.writeJson({
+			watchers: watcherResults.map((entry) => entry.status?.watcher ?? entry.watcher),
+			chrome: chromeInstances,
+		})
+		return
+	}
+
+	output.writeHuman('Browsers')
+	if (chromeInstances.length > 0) {
+		for (const r of chromeInstances) {
+			output.writeHuman(`  ${formatChromeInstanceLine(r)}`)
+		}
+	} else {
+		output.writeHuman('  (none)')
+	}
+
+	output.writeHuman('')
+	output.writeHuman('Watchers')
+	if (watcherResults.length > 0) {
+		for (const entry of watcherResults) {
+			output.writeHuman(`  ${formatWatcherLine(entry.watcher, entry.status)}`)
+		}
+	} else {
+		output.writeHuman('  (none)')
+	}
+}
+
+const listWatchers = async (
+	options: ListOptions,
+	output: ReturnType<typeof createOutput>,
+): Promise<Array<{ watcher: WatcherRecord; status?: StatusResponse }>> => {
 	let registry = await loadRegistry()
 	registry = await pruneRegistry(registry)
 
@@ -23,12 +59,7 @@ export const runList = async (options: ListOptions): Promise<void> => {
 		watchers = watchers.filter((watcher) => watcher.cwd && watcher.cwd.includes(substring))
 	}
 
-	if (watchers.length === 0) {
-		if (options.json) {
-			output.writeJson([])
-		}
-		return
-	}
+	if (watchers.length === 0) return []
 
 	const results: Array<{ watcher: WatcherRecord; status?: StatusResponse }> = []
 
@@ -43,14 +74,7 @@ export const runList = async (options: ListOptions): Promise<void> => {
 		}
 	}
 
-	if (options.json) {
-		output.writeJson(results.map((entry) => entry.status?.watcher ?? entry.watcher))
-		return
-	}
-
-	for (const entry of results) {
-		output.writeHuman(formatWatcherLine(entry.watcher, entry.status))
-	}
+	return results
 }
 
 const formatError = (error: unknown): string => {

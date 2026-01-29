@@ -98,10 +98,10 @@ program
 program
 	.command('list')
 	.alias('ls')
-	.description('List registered watchers')
+	.description('List watchers and Chrome instances')
 	.option('--json', 'Output JSON for automation')
 	.option('--by-cwd <substring>', 'Filter watchers by working directory substring')
-	.addHelpText('after', '\nExamples:\n  $ argus list\n  $ argus list --json\n  $ argus list --by-cwd my-project\n')
+	.addHelpText('after', '\nExamples:\n  $ argus list\n  $ argus ls\n  $ argus list --json\n  $ argus list --by-cwd my-project\n')
 	.action(async (options) => {
 		await runList(options)
 	})
@@ -642,7 +642,11 @@ chrome
 	.alias('ls')
 	.description('List running Chrome instances with CDP enabled')
 	.option('--json', 'Output JSON for automation')
-	.addHelpText('after', '\nExamples:\n  $ argus chrome list\n  $ argus chrome ls\n  $ argus chrome ls --json\n')
+	.option('--pages', 'List individual pages for each instance')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus chrome list\n  $ argus chrome ls\n  $ argus chrome ls --pages\n  $ argus chrome ls --json --pages\n',
+	)
 	.action(async (options) => {
 		await runChromeList(options)
 	})

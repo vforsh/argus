@@ -560,7 +560,53 @@ export const runChromeReload = async (options: ChromeReloadOptions): Promise<voi
 	}
 }
 
-export type ChromeListOptions = { json?: boolean }
+export type ChromeListOptions = { json?: boolean; pages?: boolean }
+
+export type ChromeInstanceInfo = {
+	port: number
+	pid: number
+	browser: string
+	webSocketDebuggerUrl: string
+	targets: number
+	pages: number
+	pageDetails?: Array<{ title: string; url: string }>
+}
+
+/** Discover reachable Chrome instances with CDP enabled. */
+export const discoverChromeInstances = async (options?: { pages?: boolean }): Promise<ChromeInstanceInfo[]> => {
+	const ports = await discoverChromeCdpPorts()
+	if (ports.length === 0) return []
+
+	const results = await Promise.all(
+		ports.map(async ({ port, pid }) => {
+			try {
+				const [version, targets] = await Promise.all([
+					fetchJson<ChromeVersionResponse>(`http://127.0.0.1:${port}/json/version`, { timeoutMs: 2_000 }),
+					fetchJson<ChromeTargetResponse[]>(`http://127.0.0.1:${port}/json/list`, { timeoutMs: 2_000 }),
+				])
+				const userPages = targets.filter((t) => t.type === 'page' && isUserPage(t.url))
+				return {
+					port,
+					pid,
+					reachable: true as const,
+					browser: version.Browser,
+					webSocketDebuggerUrl: version.webSocketDebuggerUrl,
+					targets: targets.length,
+					pages: userPages.length,
+					...(options?.pages && { pageDetails: userPages.map((p) => ({ title: p.title, url: p.url })) }),
+				}
+			} catch {
+				return { port, pid, reachable: false as const }
+			}
+		}),
+	)
+
+	return results.filter((r): r is Extract<typeof r, { reachable: true }> => r.reachable)
+}
+
+/** Format a Chrome instance as a human-readable line. */
+export const formatChromeInstanceLine = (r: ChromeInstanceInfo): string =>
+	`127.0.0.1:${r.port} pid=${r.pid} ${r.browser} ${r.pages} page${r.pages === 1 ? '' : 's'}`
 
 export const runChromeList = async (options: ChromeListOptions): Promise<void> => {
 	const output = createOutput(options)
@@ -571,44 +617,35 @@ export const runChromeList = async (options: ChromeListOptions): Promise<void> =
 		return
 	}
 
-	const results = await Promise.all(
-		ports.map(async ({ port, pid }) => {
-			try {
-				const [version, targets] = await Promise.all([
-					fetchJson<ChromeVersionResponse>(`http://127.0.0.1:${port}/json/version`, { timeoutMs: 2_000 }),
-					fetchJson<ChromeTargetResponse[]>(`http://127.0.0.1:${port}/json/list`, { timeoutMs: 2_000 }),
-				])
-				const pages = targets.filter((t) => t.type === 'page' && !t.url.startsWith('devtools://')).length
-				return {
-					port,
-					pid,
-					reachable: true as const,
-					browser: version.Browser,
-					webSocketDebuggerUrl: version.webSocketDebuggerUrl,
-					targets: targets.length,
-					pages,
-				}
-			} catch {
-				return { port, pid, reachable: false as const }
-			}
-		}),
-	)
+	const instances = await discoverChromeInstances(options)
 
-	const reachable = results.filter((r): r is Extract<typeof r, { reachable: true }> => r.reachable)
-
-	if (reachable.length === 0) {
+	if (instances.length === 0) {
 		output.writeHuman('Found Chrome processes listening on TCP, but none responded to CDP.')
 		return
 	}
 
 	if (options.json) {
-		output.writeJson(reachable)
+		output.writeJson(instances)
 	} else {
-		for (const r of reachable) {
-			output.writeHuman(`127.0.0.1:${r.port} pid=${r.pid} ${r.browser} ${r.pages} page${r.pages === 1 ? '' : 's'}`)
+		for (const r of instances) {
+			output.writeHuman(formatChromeInstanceLine(r))
+			if (r.pageDetails) {
+				for (const p of r.pageDetails) {
+					output.writeHuman(`  ${p.title} — ${p.url}`)
+				}
+			}
 		}
 	}
 }
+
+/**
+ * Chrome-internal URLs that CDP reports as `type: "page"` but are not user-visible tabs.
+ * Covers omnibox popups, NTP sub-frames, side panels, and other top-chrome UI surfaces.
+ */
+const CHROME_INTERNAL_URL_PATTERN = /^(devtools|chrome-untrusted):\/\/|\.top-chrome\/|^chrome:\/\/newtab-footer\b/
+
+/** Whether a CDP target URL represents a real user-visible page (tab). */
+const isUserPage = (url: string): boolean => !CHROME_INTERNAL_URL_PATTERN.test(url)
 
 /**
  * Match Chrome/Chromium process names in lsof output.
