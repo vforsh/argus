@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<title>Playground Iframe</title>
+		<style>
+			body {
+				font-family: system-ui, sans-serif;
+				padding: 1rem;
+				margin: 0;
+				background: #f0f4ff;
+			}
+			h2 {
+				margin-top: 0;
+			}
+			button {
+				padding: 0.4rem 0.8rem;
+				cursor: pointer;
+			}
+			#iframe-output {
+				margin-top: 0.5rem;
+				padding: 0.5rem;
+				background: #fff;
+				border: 1px solid #ccc;
+				min-height: 1.5rem;
+			}
+		</style>
+	</head>
+	<body data-testid="iframe-body">
+		<h2 data-testid="iframe-heading">Iframe Content</h2>
+		<p data-testid="iframe-text">This page is loaded inside an iframe for cross-context eval testing.</p>
+		<button data-testid="iframe-btn" id="iframe-btn">Click me (iframe)</button>
+		<div data-testid="iframe-output" id="iframe-output">—</div>
+
+		<script>
+			// Event tracking (mirrors e2e test pattern)
+			window.__events = []
+
+			// Global state for eval testing
+			window.iframeState = {
+				loaded: true,
+				title: document.title,
+				clicks: 0,
+			}
+
+			const btn = document.getElementById('iframe-btn')
+			const output = document.getElementById('iframe-output')
+
+			btn.addEventListener('click', () => {
+				window.iframeState.clicks++
+				window.__events.push('click:iframe-btn')
+				output.textContent = `Clicked ${window.iframeState.clicks} time(s)`
+			})
+
+			// ── Argus iframe helper script ──
+			// Enables: argus eval playground "..." --iframe "#playground-iframe"
+			/**
+			 * Argus iframe helper script.
+			 *
+			 * Include this script in a cross-origin iframe to enable eval via postMessage.
+			 * The parent page can then execute JavaScript in this iframe's context.
+			 *
+			 * Usage from parent:
+			 *   const id = crypto.randomUUID();
+			 *   iframe.contentWindow.postMessage({ type: 'argus:eval', id, code: 'document.title' }, '*');
+			 *
+			 *   window.addEventListener('message', (e) => {
+			 *     if (e.data?.type === 'argus:eval-result' && e.data.id === id) {
+			 *       if (e.data.ok) console.log('Result:', e.data.result);
+			 *       else console.error('Error:', e.data.error);
+			 *     }
+			 *   });
+			 *
+			 * Message format:
+			 *   Request:  { type: 'argus:eval', id: string, code: string }
+			 *   Response: { type: 'argus:eval-result', id: string, ok: boolean, result?: any, error?: string }
+			 */
+			window.addEventListener('message', async (event) => {
+				if (event.data?.type !== 'argus:eval') return
+				const { id, code } = event.data
+				try {
+					const result = await eval(code)
+					parent.postMessage({ type: 'argus:eval-result', id, ok: true, result }, '*')
+				} catch (err) {
+					parent.postMessage({ type: 'argus:eval-result', id, ok: false, error: String(err) }, '*')
+				}
+			})
+			console.log('[Argus] iframe helper loaded')
+		</script>
+	</body>
+</html>

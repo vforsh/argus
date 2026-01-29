@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<title>Argus Playground</title>
+		<style>
+			*,
+			*::before,
+			*::after {
+				box-sizing: border-box;
+			}
+			body {
+				font-family: system-ui, sans-serif;
+				margin: 0;
+				padding: 1.5rem;
+				color: #1a1a1a;
+				line-height: 1.5;
+			}
+			h1 {
+				margin-top: 0;
+			}
+			section {
+				margin-bottom: 2rem;
+				padding: 1rem;
+				border: 1px solid #ddd;
+				border-radius: 6px;
+			}
+			section h2 {
+				margin-top: 0;
+				font-size: 1.1rem;
+				border-bottom: 1px solid #eee;
+				padding-bottom: 0.3rem;
+			}
+			button {
+				padding: 0.35rem 0.7rem;
+				margin: 0.2rem;
+				cursor: pointer;
+			}
+			.btn-row {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 0.3rem;
+				margin-bottom: 0.5rem;
+			}
+			table {
+				border-collapse: collapse;
+				width: 100%;
+			}
+			th,
+			td {
+				border: 1px solid #ccc;
+				padding: 0.3rem 0.5rem;
+				text-align: left;
+			}
+			th {
+				background: #f5f5f5;
+			}
+			textarea {
+				width: 100%;
+				font-family: inherit;
+			}
+			iframe {
+				border: 2px solid #aac;
+				width: 100%;
+				height: 180px;
+			}
+			#auto-log-status {
+				font-size: 0.85rem;
+				color: #666;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Argus Playground</h1>
+
+		<!-- ── Console ── -->
+		<section data-testid="console-section">
+			<h2>Console</h2>
+			<div class="btn-row">
+				<button data-testid="btn-log" onclick="console.log('playground log', Date.now())">console.log</button>
+				<button data-testid="btn-warn" onclick="console.warn('playground warn', Date.now())">console.warn</button>
+				<button data-testid="btn-error" onclick="console.error('playground error', Date.now())">console.error</button>
+				<button data-testid="btn-info" onclick="console.info('playground info', Date.now())">console.info</button>
+				<button data-testid="btn-debug" onclick="console.debug('playground debug', Date.now())">console.debug</button>
+			</div>
+			<div>
+				<button data-testid="btn-auto-log-toggle" id="btn-auto-log-toggle">Start auto-log</button>
+				<span id="auto-log-status">stopped</span>
+			</div>
+		</section>
+
+		<!-- ── Network ── -->
+		<section data-testid="network-section">
+			<h2>Network</h2>
+			<div class="btn-row">
+				<button data-testid="btn-fetch-echo" onclick="doFetch('/api/echo')">GET /api/echo (200)</button>
+				<button data-testid="btn-fetch-slow" onclick="doFetch('/api/slow')">GET /api/slow (2s)</button>
+				<button data-testid="btn-fetch-error" onclick="doFetch('/api/error')">GET /api/error (500)</button>
+			</div>
+			<pre data-testid="network-output" id="network-output">—</pre>
+		</section>
+
+		<!-- ── DOM ── -->
+		<section data-testid="dom-section">
+			<h2>DOM</h2>
+
+			<article data-testid="article-1" id="article-1">
+				<h3>Article One</h3>
+				<p>First paragraph of article one.</p>
+			</article>
+
+			<article data-testid="article-2" id="article-2">
+				<h3>Article Two</h3>
+				<p>Second article for multi-match testing.</p>
+			</article>
+
+			<form data-testid="sample-form" onsubmit="return false">
+				<label>
+					Name
+					<input data-testid="input-name" type="text" id="input-name" value="Alice" />
+				</label>
+				<label>
+					Email
+					<input data-testid="input-email" type="email" id="input-email" value="alice@example.com" />
+				</label>
+				<label>
+					Color
+					<select data-testid="select-color" id="select-color">
+						<option value="red">Red</option>
+						<option value="green" selected>Green</option>
+						<option value="blue">Blue</option>
+					</select>
+				</label>
+				<label>
+					Notes
+					<textarea data-testid="textarea-notes" id="textarea-notes" rows="2">Sample notes</textarea>
+				</label>
+				<button data-testid="btn-submit" type="submit">Submit</button>
+			</form>
+
+			<ul data-testid="sample-list">
+				<li data-testid="list-item-1">Item 1</li>
+				<li data-testid="list-item-2">Item 2</li>
+				<li data-testid="list-item-3">Item 3</li>
+			</ul>
+
+			<table data-testid="sample-table">
+				<thead>
+					<tr>
+						<th>ID</th>
+						<th>Name</th>
+						<th>Value</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr data-testid="table-row-1">
+						<td>1</td>
+						<td>Alpha</td>
+						<td>10</td>
+					</tr>
+					<tr data-testid="table-row-2">
+						<td>2</td>
+						<td>Beta</td>
+						<td>20</td>
+					</tr>
+					<tr data-testid="table-row-3">
+						<td>3</td>
+						<td>Gamma</td>
+						<td>30</td>
+					</tr>
+				</tbody>
+			</table>
+
+			<div data-testid="multi-target">
+				<div data-testid="target-a" class="target">Target A</div>
+				<div data-testid="target-b" class="target">Target B</div>
+				<div data-testid="target-c" class="target">Target C</div>
+			</div>
+		</section>
+
+		<!-- ── Storage ── -->
+		<section data-testid="storage-section">
+			<h2>Storage</h2>
+			<div class="btn-row">
+				<button data-testid="btn-storage-set" onclick="seedStorage()">Seed localStorage</button>
+				<button data-testid="btn-storage-clear" onclick="clearStorage()">Clear localStorage</button>
+			</div>
+			<pre data-testid="storage-output" id="storage-output">—</pre>
+		</section>
+
+		<!-- ── Eval ── -->
+		<section data-testid="eval-section">
+			<h2>Eval</h2>
+			<p>
+				<code>window.playground</code> — counter: <span data-testid="eval-counter" id="eval-counter">0</span>, ready:
+				<span data-testid="eval-ready" id="eval-ready">false</span>
+			</p>
+			<button data-testid="btn-increment" onclick="incrementCounter()">Increment</button>
+		</section>
+
+		<!-- ── Iframe (same-origin) ── -->
+		<section data-testid="iframe-section">
+			<h2>Iframe (same-origin)</h2>
+			<iframe src="/iframe.html" data-testid="playground-iframe" id="playground-iframe"></iframe>
+		</section>
+
+		<!-- ── Iframe (cross-origin) ── -->
+		<section data-testid="cross-origin-iframe-section">
+			<h2>Iframe (cross-origin)</h2>
+			<p style="font-size: 0.85rem; color: #666; margin-top: 0">Served from port 3334 — different origin for postMessage eval testing.</p>
+			<iframe data-testid="cross-origin-iframe" id="cross-origin-iframe"></iframe>
+		</section>
+
+		<script src="/config.js"></script>
+		<script>
+			// ── Event tracking (e2e test pattern) ──
+			window.__events = []
+
+			// ── Eval globals ──
+			window.playground = {
+				counter: 0,
+				ready: false,
+				data: {
+					items: ['alpha', 'beta', 'gamma'],
+					nested: { depth: 1, value: 42 },
+				},
+			}
+
+			// Set ready after 2s (for eval-until testing)
+			setTimeout(() => {
+				window.playground.ready = true
+				document.getElementById('eval-ready').textContent = 'true'
+				console.log('[playground] ready flag set')
+			}, 2000)
+
+			function incrementCounter() {
+				window.playground.counter++
+				document.getElementById('eval-counter').textContent = window.playground.counter
+				window.__events.push('increment')
+			}
+
+			// ── Console auto-logger ──
+			let autoLogTimer = null
+			const toggleBtn = document.getElementById('btn-auto-log-toggle')
+			const statusSpan = document.getElementById('auto-log-status')
+
+			toggleBtn.addEventListener('click', () => {
+				if (autoLogTimer) {
+					clearInterval(autoLogTimer)
+					autoLogTimer = null
+					toggleBtn.textContent = 'Start auto-log'
+					statusSpan.textContent = 'stopped'
+				} else {
+					let tick = 0
+					autoLogTimer = setInterval(() => {
+						tick++
+						console.log(`[auto-log] tick=${tick} ts=${Date.now()}`)
+					}, 5000)
+					toggleBtn.textContent = 'Stop auto-log'
+					statusSpan.textContent = 'running (every 5s)'
+				}
+			})
+
+			// ── Network helpers ──
+			async function doFetch(url) {
+				const output = document.getElementById('network-output')
+				output.textContent = `Fetching ${url}...`
+				try {
+					const res = await fetch(url)
+					const body = await res.json()
+					output.textContent = JSON.stringify({ status: res.status, body }, null, 2)
+				} catch (err) {
+					output.textContent = `Error: ${err.message}`
+				}
+			}
+
+			// ── Storage helpers ──
+			function seedStorage() {
+				localStorage.setItem('playground:name', 'Argus')
+				localStorage.setItem('playground:version', '0.1.0')
+				localStorage.setItem('playground:config', JSON.stringify({ debug: true, theme: 'dark' }))
+				refreshStorageDisplay()
+			}
+
+			function clearStorage() {
+				localStorage.clear()
+				refreshStorageDisplay()
+			}
+
+			function refreshStorageDisplay() {
+				const output = document.getElementById('storage-output')
+				const entries = {}
+				for (let i = 0; i < localStorage.length; i++) {
+					const key = localStorage.key(i)
+					entries[key] = localStorage.getItem(key)
+				}
+				output.textContent = JSON.stringify(entries, null, 2) || '(empty)'
+			}
+
+			// ── DOM event tracking ──
+			document.querySelectorAll('[data-testid]').forEach((el) => {
+				const id = el.getAttribute('data-testid')
+				el.addEventListener('mouseover', () => window.__events.push(`hover:${id}`))
+				el.addEventListener('click', () => window.__events.push(`click:${id}`))
+			})
+			document.addEventListener('keydown', (e) => {
+				window.__events.push(`keydown:${e.key}`)
+			})
+
+			// ── Cross-origin iframe src ──
+			// Port is injected by the server via /config.js, falling back to 3334.
+			const xOriginPort = window.__CROSS_ORIGIN_PORT ?? 3334
+			document.getElementById('cross-origin-iframe').src = `http://127.0.0.1:${xOriginPort}/iframe.html`
+
+			// ── Seed storage on load ──
+			seedStorage()
+		</script>
+	</body>
+</html>

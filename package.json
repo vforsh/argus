@@ -18,6 +18,10 @@
 		"build:packages": "tsc -b packages/*",
 		"chrome:start": "npx tsx packages/argus/src/bin.ts chrome start",
 		"test:e2e": "npm run build:packages && npx tsx --test e2e/**/*.test.ts",
+		"playground": "npx tsx playground/start.ts",
+		"playground:serve": "npx tsx playground/serve.ts",
+		"playground:chrome": "npx tsx packages/argus/src/bin.ts chrome start --url http://127.0.0.1:3333",
+		"playground:attach": "npx tsx packages/argus/src/bin.ts watcher start --id playground --url 127.0.0.1:3333",
 		"prepare": "husky"
 	},
 	"lint-staged": {

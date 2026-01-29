@@ -71,3 +71,17 @@
 - **String-first logging**: Put the main information in a string so it survives into text logs reliably. If you need to log structured data, serialize it (e.g. JSON) into the message string (or include a short, string summary + a serialized payload). Don’t rely on logging raw objects as separate args for anything important.
 
 - **Signal, not noise**: Add `info` logs around crucial transitions (open/save, persistence, cache invalidate, RPC boundaries) so flows are traceable, but keep volume low. Prefer one log per milestone with compact counts/ids over per-item spam. If a loop would log per node/asset/object, gate it behind debug or aggregate counts first.
+
+---
+
+## Playground
+
+- **What it is**: `playground/` is a self-contained test harness for manually exercising all Argus CLI capabilities. It bundles an HTML page with console/network/DOM/storage/eval/iframe sections, an HTTP server with API stubs, and an orchestrator that wires up Chrome + watcher in one command.
+
+- **Quick start**: `npm run playground` starts everything (server on `:3333`, cross-origin server on `:3334`, Chrome with temp profile, watcher `playground`). Run it in the background — it's a long-running process that must stay alive while you test CLI commands in the foreground. Individual pieces: `npm run playground:serve`, `playground:chrome`, `playground:attach`.
+
+- **When to use**: Use the playground to smoke-test CLI commands after changes to `packages/argus/` or `packages/argus-watcher/`. The watcher ID is always `playground`, so commands look like `argus eval playground "..."`, `argus dom tree playground --selector "body"`, etc.
+
+- **Cross-origin iframe**: The page includes both a same-origin iframe (`#playground-iframe`, port 3333) and a cross-origin iframe (`#cross-origin-iframe`, port 3334). Both embed the Argus iframe helper script, so `--iframe` eval works on either. Use this to verify postMessage-based eval across origins.
+
+- **Extending**: When adding new Argus commands or capabilities, add matching controls/structure to `playground/index.html` so they can be tested interactively. Keep the HTML self-contained (inline scripts, no build step).
