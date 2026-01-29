@@ -7,6 +7,7 @@ export type ChromeStartConfig = {
 	watcherId?: string
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
+	headless?: boolean
 }
 
 export type PageConsoleLogging = 'none' | 'minimal' | 'full'
@@ -56,7 +57,7 @@ type OptionSourceProvider = {
 
 const AUTO_CONFIG_CANDIDATES = ['.argus/config.json', '.config/argus.json', 'argus.config.json', 'argus/config.json']
 const EXPECTED_SHAPE_HINT =
-	'Expected shape: { chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full", inject?: { file: string, exposeArgus?: boolean } } } }.'
+	'Expected shape: { chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean, headless?: boolean } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full", inject?: { file: string, exposeArgus?: boolean } } } }.'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -141,6 +142,10 @@ const validateChromeStartConfig = (value: unknown): { ok: true; value: ChromeSta
 	if (!devToolsResult.ok) {
 		return devToolsResult
 	}
+	const headlessResult = validateOptionalBoolean(value.headless, '"chrome.start.headless"')
+	if (!headlessResult.ok) {
+		return headlessResult
+	}
 
 	if (urlResult.value !== undefined && watcherIdResult.value !== undefined) {
 		return { ok: false, error: '"chrome.start.url" and "chrome.start.watcherId" are mutually exclusive.' }
@@ -161,6 +166,9 @@ const validateChromeStartConfig = (value: unknown): { ok: true; value: ChromeSta
 	}
 	if (devToolsResult.value !== undefined) {
 		config.devTools = devToolsResult.value
+	}
+	if (headlessResult.value !== undefined) {
+		config.headless = headlessResult.value
 	}
 
 	return { ok: true, value: config }
@@ -441,6 +449,7 @@ export const mergeChromeStartOptionsWithConfig = <
 		fromWatcher?: string
 		profile?: ChromeStartConfig['profile']
 		devTools?: boolean
+		headless?: boolean
 	},
 >(
 	options: T,
@@ -461,6 +470,7 @@ export const mergeChromeStartOptionsWithConfig = <
 	merged.fromWatcher = mergeOption(command, 'fromWatcher', options.fromWatcher, chromeStart.watcherId)
 	merged.profile = mergeOption(command, 'profile', options.profile, chromeStart.profile)
 	merged.devTools = mergeOption(command, 'devTools', options.devTools, chromeStart.devTools)
+	merged.headless = mergeOption(command, 'headless', options.headless, chromeStart.headless)
 
 	if (merged.url && merged.fromWatcher) {
 		console.error('Cannot combine --url with --from-watcher. Use one or the other.')

@@ -15,6 +15,7 @@ export type ChromeStartOptions = {
 	json?: boolean
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
+	headless?: boolean
 }
 
 type ChromeStartResult = {
@@ -267,6 +268,9 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 	}
 	if (options.devTools) {
 		args.push('--auto-open-devtools-for-tabs')
+	}
+	if (options.headless) {
+		args.push('--headless=new')
 	}
 	if (startupUrl) {
 		args.push(startupUrl)

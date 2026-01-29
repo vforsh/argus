@@ -134,11 +134,12 @@ chrome
 	.option('--from-watcher <watcherId>', 'Use match.url from a registered watcher')
 	.option('--profile <type>', 'Profile mode: temp, default-full, default-medium, or default-lite (default: default-lite)')
 	.option('--dev-tools', 'Open DevTools for new tabs')
+	.option('--headless', 'Run Chrome in headless mode (no visible window)')
 	.option('--config <path>', 'Path to Argus config file')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --from-watcher app\n  $ argus chrome start --profile default-full\n  $ argus chrome start --profile default-medium\n  $ argus chrome start --profile default-lite\n  $ argus chrome start --profile temp\n  $ argus chrome start --dev-tools\n  $ argus chrome start --json\n',
+		'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --from-watcher app\n  $ argus chrome start --profile default-full\n  $ argus chrome start --profile default-medium\n  $ argus chrome start --profile default-lite\n  $ argus chrome start --profile temp\n  $ argus chrome start --dev-tools\n  $ argus chrome start --headless\n  $ argus chrome start --json\n',
 	)
 	.action(async (options, command) => {
 		const { config: configPath, ...cliOptions } = options
@@ -700,13 +701,14 @@ dom.command('hover')
 
 dom.command('click')
 	.argument('[id]', 'Watcher id to query')
-	.description('Click element(s) matching a CSS selector')
-	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
+	.description('Click at coordinates or on element(s) matching a CSS selector')
+	.option('--selector <css>', 'CSS selector to match element(s)')
+	.option('--pos <x,y>', 'Viewport coordinates or offset from element top-left')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus dom click app --selector "#btn"\n  $ argus dom click app --selector ".item" --all\n  $ argus dom click app --selector "#btn" --json\n',
+		'\nExamples:\n  $ argus dom click app --pos 100,200\n  $ argus dom click app --selector "#btn"\n  $ argus dom click app --selector "#btn" --pos 10,5\n  $ argus dom click app --selector ".item" --all\n  $ argus dom click app --selector "#btn" --json\n',
 	)
 	.action(async (id, options) => {
 		await runDomClick(id, options)
