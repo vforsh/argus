@@ -6,7 +6,8 @@ import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the dom click command. */
 export type DomClickOptions = {
-	selector: string
+	selector?: string
+	pos?: string
 	all?: boolean
 	json?: boolean
 }
@@ -14,10 +15,32 @@ export type DomClickOptions = {
 /** Execute the dom click command for a watcher id. */
 export const runDomClick = async (id: string | undefined, options: DomClickOptions): Promise<void> => {
 	const output = createOutput(options)
-	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector is required')
+
+	const hasSelector = options.selector != null && options.selector.trim() !== ''
+	const hasPos = options.pos != null
+
+	if (!hasSelector && !hasPos) {
+		output.writeWarn('--selector or --pos is required')
 		process.exitCode = 2
 		return
+	}
+
+	let x: number | undefined
+	let y: number | undefined
+	if (hasPos) {
+		const parts = options.pos!.split(',')
+		if (parts.length !== 2) {
+			output.writeWarn('--pos must be in the format "x,y" (e.g. --pos 100,200)')
+			process.exitCode = 2
+			return
+		}
+		x = Number(parts[0])
+		y = Number(parts[1])
+		if (!Number.isFinite(x) || !Number.isFinite(y)) {
+			output.writeWarn('--pos coordinates must be finite numbers')
+			process.exitCode = 2
+			return
+		}
 	}
 
 	const resolved = await resolveWatcher({ id })
@@ -33,15 +56,23 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 
 	const { watcher } = resolved
 	const url = `http://${watcher.host}:${watcher.port}/dom/click`
+
+	const body: Record<string, unknown> = {}
+	if (hasSelector) {
+		body.selector = options.selector
+		body.all = options.all ?? false
+	}
+	if (hasPos) {
+		body.x = x
+		body.y = y
+	}
+
 	let response: DomClickResponse | ErrorResponse
 
 	try {
 		response = await fetchJson<DomClickResponse | ErrorResponse>(url, {
 			method: 'POST',
-			body: {
-				selector: options.selector,
-				all: options.all ?? false,
-			},
+			body,
 			timeoutMs: 30_000,
 			returnErrorResponse: true,
 		})
@@ -69,6 +100,12 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 		return
 	}
 
+	// Coordinate-only click
+	if (!hasSelector) {
+		output.writeHuman(`Clicked at (${x}, ${y})`)
+		return
+	}
+
 	if (successResp.matches === 0) {
 		output.writeWarn(`No element found for selector: ${options.selector}`)
 		process.exitCode = 1
@@ -76,7 +113,11 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 	}
 
 	const label = successResp.clicked === 1 ? 'element' : 'elements'
-	output.writeHuman(`Clicked ${successResp.clicked} ${label} for selector: ${options.selector}`)
+	if (hasPos) {
+		output.writeHuman(`Clicked ${successResp.clicked} ${label} for selector: ${options.selector} at offset (${x}, ${y})`)
+	} else {
+		output.writeHuman(`Clicked ${successResp.clicked} ${label} for selector: ${options.selector}`)
+	}
 }
 
 const formatError = (error: unknown): string => {

@@ -44,7 +44,7 @@ import type { Screenshotter } from '../cdp/screenshot.js'
 import type { CdpSourceHandle } from '../sources/types.js'
 import { evaluateExpression } from '../cdp/eval.js'
 import { fetchDomSubtreeBySelector, fetchDomInfoBySelector, insertAdjacentHtml, removeElements, modifyElements } from '../cdp/dom.js'
-import { resolveDomSelectorMatches, hoverDomNodes, clickDomNodes } from '../cdp/mouse.js'
+import { resolveDomSelectorMatches, hoverDomNodes, clickDomNodes, clickAtPoint, resolveNodeTopLeft } from '../cdp/mouse.js'
 import { dispatchKeydown, parseModifiers } from '../cdp/keyboard.js'
 import { executeStorageLocal } from '../cdp/storageLocal.js'
 import {
@@ -632,8 +632,17 @@ const handleDomClick = async (req: http.IncomingMessage, res: http.ServerRespons
 		return
 	}
 
-	if (!payload.selector || typeof payload.selector !== 'string') {
-		return respondInvalidBody(res, 'selector is required')
+	const hasSelector = typeof payload.selector === 'string' && payload.selector.length > 0
+	const hasCoords = payload.x != null || payload.y != null
+
+	if (!hasSelector && !hasCoords) {
+		return respondInvalidBody(res, 'selector or x,y coordinates are required')
+	}
+
+	if (hasCoords) {
+		if (payload.x == null || payload.y == null || !Number.isFinite(payload.x) || !Number.isFinite(payload.y)) {
+			return respondInvalidBody(res, 'both x and y must be finite numbers')
+		}
 	}
 
 	const all = payload.all ?? false
@@ -648,7 +657,14 @@ const handleDomClick = async (req: http.IncomingMessage, res: http.ServerRespons
 	})
 
 	try {
-		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(options.cdpSession, payload.selector, all)
+		// Coordinate-only click (no selector)
+		if (!hasSelector) {
+			await clickAtPoint(options.cdpSession, payload.x!, payload.y!)
+			const response: DomClickResponse = { ok: true, matches: 0, clicked: 1 }
+			return respondJson(res, response)
+		}
+
+		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(options.cdpSession, payload.selector!, all)
 
 		if (!all && allNodeIds.length > 1) {
 			return respondJson(
@@ -669,6 +685,17 @@ const handleDomClick = async (req: http.IncomingMessage, res: http.ServerRespons
 			return respondJson(res, response)
 		}
 
+		// Selector + coordinates: click at offset from each element's top-left
+		if (hasCoords) {
+			for (const nodeId of nodeIds) {
+				const topLeft = await resolveNodeTopLeft(options.cdpSession, nodeId)
+				await clickAtPoint(options.cdpSession, topLeft.x + payload.x!, topLeft.y + payload.y!)
+			}
+			const response: DomClickResponse = { ok: true, matches: allNodeIds.length, clicked: nodeIds.length }
+			return respondJson(res, response)
+		}
+
+		// Selector only: click element center (existing behavior)
 		await clickDomNodes(options.cdpSession, nodeIds)
 		const response: DomClickResponse = { ok: true, matches: allNodeIds.length, clicked: nodeIds.length }
 		respondJson(res, response)

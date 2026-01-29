@@ -262,9 +262,13 @@ export type DomHoverResponse = {
  */
 export type DomClickRequest = {
 	/** CSS selector to match element(s). */
-	selector: string
+	selector?: string
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
+	/** Viewport x-coordinate, or x-offset from element top-left when selector is set. */
+	x?: number
+	/** Viewport y-coordinate, or y-offset from element top-left when selector is set. */
+	y?: number
 }
 
 /**

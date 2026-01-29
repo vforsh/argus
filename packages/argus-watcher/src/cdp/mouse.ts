@@ -33,6 +33,19 @@ export const hoverDomNodes = async (session: CdpSessionHandle, nodeIds: number[]
 	}
 }
 
+export const clickAtPoint = async (session: CdpSessionHandle, x: number, y: number): Promise<void> => {
+	await dispatchMouseEvent(session, { type: 'mouseMoved', x, y })
+	await dispatchMouseEvent(session, { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 })
+	await dispatchMouseEvent(session, { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 })
+}
+
+export const resolveNodeTopLeft = async (session: CdpSessionHandle, nodeId: number): Promise<Point> => {
+	const quad = await resolveNodeQuad(session, nodeId)
+	const rect = quadToRect(quad)
+	const { pageX, pageY } = await resolveViewportOffset(session)
+	return { x: rect.x - pageX, y: rect.y - pageY }
+}
+
 export const clickDomNodes = async (session: CdpSessionHandle, nodeIds: number[]): Promise<void> => {
 	if (nodeIds.length === 0) {
 		return
