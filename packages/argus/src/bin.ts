@@ -791,10 +791,14 @@ watcher
 watcher
 	.command('stop')
 	.alias('kill')
+	.alias('detach')
 	.argument('[id]', 'Watcher id to stop')
 	.option('--id <watcherId>', 'Watcher id to stop')
 	.description('Stop a watcher')
-	.addHelpText('after', '\nExamples:\n  $ argus watcher stop app\n  $ argus watcher stop --id app\n  $ argus watcher kill app\n')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus watcher stop app\n  $ argus watcher stop --id app\n  $ argus watcher kill app\n  $ argus watcher detach app\n',
+	)
 	.action(async (id, options) => {
 		await runWatcherStop(id ?? options.id, options)
 	})
