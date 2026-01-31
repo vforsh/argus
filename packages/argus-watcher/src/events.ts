@@ -83,6 +83,7 @@ export type HttpRequestEvent = {
 		| 'trace/start'
 		| 'trace/stop'
 		| 'screenshot'
+		| 'snapshot'
 		| 'dom/tree'
 		| 'dom/info'
 		| 'dom/hover'

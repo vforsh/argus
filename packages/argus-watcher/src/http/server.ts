@@ -35,6 +35,8 @@ import type {
 	DomSetFileResponse,
 	DomFillRequest,
 	DomFillResponse,
+	SnapshotRequest,
+	SnapshotResponse,
 	StorageLocalRequest,
 	ShutdownResponse,
 	ReloadRequest,
@@ -56,6 +58,7 @@ import {
 	setFileInputFiles,
 	fillElements,
 } from '../cdp/dom.js'
+import { fetchAccessibilitySnapshot } from '../cdp/accessibility.js'
 import { resolveDomSelectorMatches, hoverDomNodes, clickDomNodes, clickAtPoint, resolveNodeTopLeft } from '../cdp/mouse.js'
 import { dispatchKeydown, parseModifiers } from '../cdp/keyboard.js'
 import { executeStorageLocal } from '../cdp/storageLocal.js'
@@ -87,6 +90,7 @@ export type HttpRequestEventMetadata = {
 		| 'trace/start'
 		| 'trace/stop'
 		| 'screenshot'
+		| 'snapshot'
 		| 'dom/tree'
 		| 'dom/info'
 		| 'dom/hover'
@@ -182,6 +186,10 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 
 		if (req.method === 'POST' && url.pathname === '/screenshot') {
 			return handleScreenshot(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/snapshot') {
+			return handleSnapshot(req, res, options)
 		}
 
 		if (req.method === 'POST' && url.pathname === '/dom/tree') {
@@ -492,6 +500,38 @@ const handleScreenshot = async (req: http.IncomingMessage, res: http.ServerRespo
 
 	try {
 		const response: ScreenshotResponse = await options.screenshotter.capture(payload)
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleSnapshot = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<SnapshotRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (payload.selector != null && (typeof payload.selector !== 'string' || payload.selector.trim() === '')) {
+		return respondInvalidBody(res, 'selector must be a non-empty string')
+	}
+
+	if (payload.depth != null && (!Number.isFinite(payload.depth) || payload.depth < 0 || !Number.isInteger(payload.depth))) {
+		return respondInvalidBody(res, 'depth must be a non-negative integer')
+	}
+
+	options.onRequest?.({
+		endpoint: 'snapshot',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const response: SnapshotResponse = await fetchAccessibilitySnapshot(options.cdpSession, {
+			selector: payload.selector,
+			depth: payload.depth,
+			interactive: payload.interactive ?? false,
+		})
 		respondJson(res, response)
 	} catch (error) {
 		respondError(res, error)

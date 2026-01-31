@@ -10,6 +10,7 @@ import { runEvalUntil } from './commands/evalUntil.js'
 import { runIframeHelper } from './commands/iframeHelper.js'
 import { runTrace, runTraceStart, runTraceStop } from './commands/trace.js'
 import { runScreenshot } from './commands/screenshot.js'
+import { runSnapshot } from './commands/snapshot.js'
 import { runReload } from './commands/reload.js'
 import { runDomTree } from './commands/domTree.js'
 import { runDomInfo } from './commands/domInfo.js'
@@ -1016,6 +1017,24 @@ program
 	)
 	.action(async (id, options) => {
 		await runScreenshot(id, options)
+	})
+
+program
+	.command('snapshot')
+	.alias('snap')
+	.alias('ax')
+	.argument('[id]', 'Watcher id to query')
+	.description('Capture an accessibility tree snapshot of the page')
+	.option('--selector <css>', 'Scope snapshot to a DOM subtree')
+	.option('--depth <n>', 'Max tree depth')
+	.option('-i, --interactive', 'Only show interactive elements (buttons, links, inputs, etc.)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus snapshot app\n  $ argus snapshot app --interactive\n  $ argus snapshot app --selector "form"\n  $ argus snapshot app --depth 3\n  $ argus snap app -i\n  $ argus ax app\n',
+	)
+	.action(async (id, options) => {
+		await runSnapshot(id, options)
 	})
 
 const trace = program
