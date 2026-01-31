@@ -92,6 +92,7 @@ export type HttpRequestEvent = {
 		| 'dom/remove'
 		| 'dom/modify'
 		| 'dom/set-file'
+		| 'dom/fill'
 		| 'storage/local'
 		| 'reload'
 		| 'shutdown'

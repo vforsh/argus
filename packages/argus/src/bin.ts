@@ -20,6 +20,7 @@ import { runDomAdd } from './commands/domAdd.js'
 import { runDomAddScript } from './commands/domAddScript.js'
 import { runDomRemove } from './commands/domRemove.js'
 import { runDomSetFile } from './commands/domSetFile.js'
+import { runDomFill } from './commands/domFill.js'
 import { runDomModifyAttr, runDomModifyClass, runDomModifyStyle, runDomModifyText, runDomModifyHtml } from './commands/domModify.js'
 import { runChromeStart } from './commands/chromeStart.js'
 import {
@@ -921,6 +922,22 @@ dom.command('set-file')
 	)
 	.action(async (id, options) => {
 		await runDomSetFile(id, options)
+	})
+
+dom.command('fill')
+	.argument('[id]', 'Watcher id to query')
+	.argument('<value>', 'Value to fill into the element')
+	.description('Fill input/textarea/contenteditable elements with a value (triggers framework events)')
+	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
+	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom fill app --selector "#username" "Bob"\n  $ argus dom fill app --selector "textarea" "New content"\n  $ argus dom fill app --selector "input[type=text]" --all "reset"\n',
+	)
+	.action(async (id, value, options) => {
+		await runDomFill(id, value, options)
 	})
 
 const storage = program.command('storage').description('Interact with browser storage APIs')

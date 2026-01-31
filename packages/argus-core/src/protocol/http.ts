@@ -428,6 +428,35 @@ export type DomSetFileResponse = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Fill operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Request payload for POST /dom/fill.
+ */
+export type DomFillRequest = {
+	/** CSS selector to match input/textarea/contenteditable element(s). */
+	selector: string
+	/** Value to fill into the element. */
+	value: string
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+	/** Filter elements by exact trimmed textContent. */
+	text?: string
+}
+
+/**
+ * Response payload for POST /dom/fill.
+ */
+export type DomFillResponse = {
+	ok: true
+	/** Number of elements matched by selector. */
+	matches: number
+	/** Number of elements filled. */
+	filled: number
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // localStorage operations
 // ─────────────────────────────────────────────────────────────────────────────
 

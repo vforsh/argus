@@ -33,6 +33,8 @@ import type {
 	DomModifyResponse,
 	DomSetFileRequest,
 	DomSetFileResponse,
+	DomFillRequest,
+	DomFillResponse,
 	StorageLocalRequest,
 	ShutdownResponse,
 	ReloadRequest,
@@ -52,6 +54,7 @@ import {
 	removeElements,
 	modifyElements,
 	setFileInputFiles,
+	fillElements,
 } from '../cdp/dom.js'
 import { resolveDomSelectorMatches, hoverDomNodes, clickDomNodes, clickAtPoint, resolveNodeTopLeft } from '../cdp/mouse.js'
 import { dispatchKeydown, parseModifiers } from '../cdp/keyboard.js'
@@ -93,6 +96,7 @@ export type HttpRequestEventMetadata = {
 		| 'dom/remove'
 		| 'dom/modify'
 		| 'dom/set-file'
+		| 'dom/fill'
 		| 'storage/local'
 		| 'reload'
 		| 'shutdown'
@@ -214,6 +218,10 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 
 		if (req.method === 'POST' && url.pathname === '/dom/set-file') {
 			return handleDomSetFile(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/dom/fill') {
+			return handleDomFill(req, res, options)
 		}
 
 		if (req.method === 'POST' && url.pathname === '/storage/local') {
@@ -1041,6 +1049,60 @@ const handleDomSetFile = async (req: http.IncomingMessage, res: http.ServerRespo
 		}
 
 		const response: DomSetFileResponse = { ok: true, matches: allNodeIds.length, updated: updatedCount }
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleDomFill = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<DomFillRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.selector || typeof payload.selector !== 'string') {
+		return respondInvalidBody(res, 'selector is required')
+	}
+
+	if (typeof payload.value !== 'string') {
+		return respondInvalidBody(res, 'value is required')
+	}
+
+	const all = payload.all ?? false
+	if (typeof all !== 'boolean') {
+		return respondInvalidBody(res, 'all must be a boolean')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/fill',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const { allNodeIds, filledCount } = await fillElements(options.cdpSession, {
+			selector: payload.selector,
+			value: payload.value,
+			all,
+			text: payload.text,
+		})
+
+		if (!all && allNodeIds.length > 1) {
+			return respondJson(
+				res,
+				{
+					ok: false,
+					error: {
+						message: `Selector matched ${allNodeIds.length} elements; pass all=true to fill all matches`,
+						code: 'multiple_matches',
+					},
+				},
+				400,
+			)
+		}
+
+		const response: DomFillResponse = { ok: true, matches: allNodeIds.length, filled: filledCount }
 		respondJson(res, response)
 	} catch (error) {
 		respondError(res, error)
