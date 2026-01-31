@@ -53,6 +53,7 @@ export type FetchDomTreeOptions = {
 	depth?: number
 	maxNodes?: number
 	all?: boolean
+	text?: string
 }
 
 /** Options for fetching DOM element info by selector. */
@@ -60,6 +61,7 @@ export type FetchDomInfoOptions = {
 	selector: string
 	all?: boolean
 	outerHtmlMaxChars?: number
+	text?: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,7 +80,7 @@ export const fetchDomSubtreeBySelector = async (session: CdpSessionHandle, optio
 	await session.sendAndWait('DOM.enable')
 
 	const rootId = await getDomRootId(session)
-	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, all)
+	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, all, options.text)
 
 	if (allNodeIds.length === 0) {
 		return { ok: true, matches: 0, roots: [], truncated: false }
@@ -128,7 +130,7 @@ export const fetchDomInfoBySelector = async (session: CdpSessionHandle, options:
 	await session.sendAndWait('DOM.enable')
 
 	const rootId = await getDomRootId(session)
-	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, all)
+	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, all, options.text)
 
 	if (allNodeIds.length === 0) {
 		return { ok: true, matches: 0, elements: [] }
@@ -198,15 +200,45 @@ type SelectorMatchResult = {
 	nodeIds: number[]
 }
 
-const resolveSelectorMatches = async (session: CdpSessionHandle, rootId: number, selector: string, all: boolean): Promise<SelectorMatchResult> => {
+const resolveSelectorMatches = async (
+	session: CdpSessionHandle,
+	rootId: number,
+	selector: string,
+	all: boolean,
+	text?: string,
+): Promise<SelectorMatchResult> => {
 	// Always use querySelectorAll to get the true match count
 	const result = (await session.sendAndWait('DOM.querySelectorAll', { nodeId: rootId, selector })) as CdpQueryAllResult
-	const allNodeIds = result.nodeIds ?? []
+	let allNodeIds = result.nodeIds ?? []
+
+	if (text != null) {
+		allNodeIds = await filterNodesByText(session, allNodeIds, text)
+	}
 
 	// If all=false, only return the first match (if any)
 	const nodeIds = all ? allNodeIds : allNodeIds.slice(0, 1)
 
 	return { allNodeIds, nodeIds }
+}
+
+const filterNodesByText = async (session: CdpSessionHandle, nodeIds: number[], text: string): Promise<number[]> => {
+	const filtered: number[] = []
+	for (const nodeId of nodeIds) {
+		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+		const objectId = resolved.object?.objectId
+		if (!objectId) {
+			continue
+		}
+		const evalResult = (await session.sendAndWait('Runtime.callFunctionOn', {
+			objectId,
+			functionDeclaration: 'function() { return this.textContent?.trim(); }',
+			returnByValue: true,
+		})) as { result?: { value?: unknown } }
+		if (evalResult.result?.value === text) {
+			filtered.push(nodeId)
+		}
+	}
+	return filtered
 }
 
 const toAttributesRecord = (attributes?: string[]): Record<string, string> => {
@@ -359,6 +391,7 @@ export const insertAdjacentHtml = async (session: CdpSessionHandle, options: Ins
 export type RemoveElementsOptions = {
 	selector: string
 	all?: boolean
+	text?: string
 }
 
 /** Result of removeElements operation. */
@@ -374,7 +407,7 @@ export const removeElements = async (session: CdpSessionHandle, options: RemoveE
 	await session.sendAndWait('DOM.enable')
 
 	const rootId = await getDomRootId(session)
-	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false)
+	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false, options.text)
 
 	if (nodeIds.length === 0) {
 		return { allNodeIds, removedCount: 0 }
@@ -402,6 +435,7 @@ export const removeElements = async (session: CdpSessionHandle, options: RemoveE
 type ModifyElementsBaseOptions = {
 	selector: string
 	all?: boolean
+	text?: string
 }
 
 /** Attribute modification options. */
@@ -455,7 +489,7 @@ export const modifyElements = async (session: CdpSessionHandle, options: ModifyE
 	await session.sendAndWait('DOM.enable')
 
 	const rootId = await getDomRootId(session)
-	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false)
+	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false, options.text)
 
 	if (nodeIds.length === 0) {
 		return { allNodeIds, modifiedCount: 0 }
@@ -496,6 +530,7 @@ export type SetFileInputFilesOptions = {
 	selector: string
 	files: string[]
 	all?: boolean
+	text?: string
 }
 
 /** Result of setFileInputFiles operation. */
@@ -512,7 +547,7 @@ export const setFileInputFiles = async (session: CdpSessionHandle, options: SetF
 	await session.sendAndWait('DOM.enable')
 
 	const rootId = await getDomRootId(session)
-	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false)
+	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false, options.text)
 
 	if (nodeIds.length === 0) {
 		return { allNodeIds, updatedCount: 0 }

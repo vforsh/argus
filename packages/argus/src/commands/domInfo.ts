@@ -10,6 +10,7 @@ export type DomInfoOptions = {
 	selector: string
 	all?: boolean
 	outerHtmlMax?: string
+	text?: string
 	json?: boolean
 }
 
@@ -51,6 +52,7 @@ export const runDomInfo = async (id: string | undefined, options: DomInfoOptions
 				selector: options.selector,
 				all: options.all ?? false,
 				outerHtmlMaxChars,
+				text: options.text,
 			},
 			timeoutMs: 30_000,
 			returnErrorResponse: true,

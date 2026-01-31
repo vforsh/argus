@@ -517,6 +517,7 @@ const handleDomTree = async (req: http.IncomingMessage, res: http.ServerResponse
 			depth: payload.depth,
 			maxNodes: payload.maxNodes,
 			all,
+			text: payload.text,
 		})
 
 		// Enforce "single match" policy server-side when all=false
@@ -566,6 +567,7 @@ const handleDomInfo = async (req: http.IncomingMessage, res: http.ServerResponse
 			selector: payload.selector,
 			all,
 			outerHtmlMaxChars: payload.outerHtmlMaxChars,
+			text: payload.text,
 		})
 
 		// Enforce "single match" policy server-side when all=false
@@ -611,7 +613,7 @@ const handleDomHover = async (req: http.IncomingMessage, res: http.ServerRespons
 	})
 
 	try {
-		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(options.cdpSession, payload.selector, all)
+		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(options.cdpSession, payload.selector, all, payload.text)
 
 		if (!all && allNodeIds.length > 1) {
 			return respondJson(
@@ -678,7 +680,7 @@ const handleDomClick = async (req: http.IncomingMessage, res: http.ServerRespons
 			return respondJson(res, response)
 		}
 
-		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(options.cdpSession, payload.selector!, all)
+		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(options.cdpSession, payload.selector!, all, payload.text)
 
 		if (!all && allNodeIds.length > 1) {
 			return respondJson(
@@ -910,6 +912,7 @@ const handleDomRemove = async (req: http.IncomingMessage, res: http.ServerRespon
 		const { allNodeIds, removedCount } = await removeElements(options.cdpSession, {
 			selector: payload.selector,
 			all,
+			text: payload.text,
 		})
 
 		if (!all && allNodeIds.length > 1) {
@@ -1020,6 +1023,7 @@ const handleDomSetFile = async (req: http.IncomingMessage, res: http.ServerRespo
 			selector: payload.selector,
 			files: payload.files,
 			all,
+			text: payload.text,
 		})
 
 		if (!all && allNodeIds.length > 1) {

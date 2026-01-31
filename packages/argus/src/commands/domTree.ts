@@ -11,6 +11,7 @@ export type DomTreeOptions = {
 	depth?: string
 	maxNodes?: string
 	all?: boolean
+	text?: string
 	json?: boolean
 }
 
@@ -60,6 +61,7 @@ export const runDomTree = async (id: string | undefined, options: DomTreeOptions
 				depth,
 				maxNodes,
 				all: options.all ?? false,
+				text: options.text,
 			},
 			timeoutMs: 30_000,
 			returnErrorResponse: true,

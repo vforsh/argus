@@ -122,6 +122,17 @@ program
 		await runDoctor(options)
 	})
 
+program
+	.command('reload')
+	.argument('[id]', 'Watcher id to reload')
+	.description('Reload the page attached to a watcher')
+	.option('--ignore-cache', 'Bypass browser cache')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText('after', '\nExamples:\n  $ argus reload app\n  $ argus reload app --ignore-cache\n  $ argus reload app --json\n')
+	.action(async (id, options) => {
+		await runReload(id, options)
+	})
+
 // ---------------------------------------------------------------------------
 // Setup & infrastructure
 // ---------------------------------------------------------------------------
@@ -662,6 +673,7 @@ dom.command('tree')
 	.option('--depth <n>', 'Max depth to traverse (default: 2)')
 	.option('--max-nodes <n>', 'Max total nodes to return (default: 5000)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -677,6 +689,7 @@ dom.command('info')
 	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
 	.option('--outer-html-max <n>', 'Max characters for outerHTML (default: 50000)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -691,6 +704,7 @@ dom.command('hover')
 	.description('Hover over element(s) matching a CSS selector')
 	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -706,6 +720,7 @@ dom.command('click')
 	.option('--selector <css>', 'CSS selector to match element(s)')
 	.option('--pos <x,y>', 'Viewport coordinates or offset from element top-left')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -798,6 +813,7 @@ dom.command('remove')
 	.description('Remove elements from the page')
 	.requiredOption('--selector <css>', 'CSS selector for elements to remove')
 	.option('--all', 'Remove all matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -816,6 +832,7 @@ domModify
 	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
 	.option('--remove <attrs...>', 'Attributes to remove')
 	.option('--all', 'Apply to all matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -834,6 +851,7 @@ domModify
 	.option('--remove <classes...>', 'Classes to remove')
 	.option('--toggle <classes...>', 'Classes to toggle')
 	.option('--all', 'Apply to all matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -850,6 +868,7 @@ domModify
 	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
 	.option('--remove <props...>', 'Style properties to remove')
 	.option('--all', 'Apply to all matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -865,13 +884,14 @@ domModify
 	.argument('<text>', 'Text content to set')
 	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
 	.option('--all', 'Apply to all matches (default: error if >1 match)')
+	.option('--text-filter <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
 		'\nExamples:\n  $ argus dom modify text app --selector "#msg" "Hello World"\n  $ argus dom modify text app --selector ".counter" --all "0"\n',
 	)
 	.action(async (id, text, options) => {
-		await runDomModifyText(id, text, options)
+		await runDomModifyText(id, text, { ...options, text: options.textFilter })
 	})
 
 domModify
@@ -880,6 +900,7 @@ domModify
 	.argument('<html>', 'HTML content to set')
 	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
 	.option('--all', 'Apply to all matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText('after', '\nExamples:\n  $ argus dom modify html app --selector "#container" "<p>New <strong>content</strong></p>"\n')
 	.action(async (id, html, options) => {
@@ -892,6 +913,7 @@ dom.command('set-file')
 	.requiredOption('--selector <css>', 'CSS selector for file input element(s)')
 	.requiredOption('--file <path...>', 'File path(s) to set on the input (repeatable)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by exact textContent (trimmed)')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',

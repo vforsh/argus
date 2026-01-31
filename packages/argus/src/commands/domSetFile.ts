@@ -11,6 +11,7 @@ export type DomSetFileOptions = {
 	selector: string
 	file: string[]
 	all?: boolean
+	text?: string
 	json?: boolean
 }
 
@@ -65,6 +66,7 @@ export const runDomSetFile = async (id: string | undefined, options: DomSetFileO
 				selector: options.selector,
 				files,
 				all: options.all ?? false,
+				text: options.text,
 			},
 			timeoutMs: 30_000,
 			returnErrorResponse: true,

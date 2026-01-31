@@ -10,15 +10,45 @@ type Point = {
 	y: number
 }
 
-export const resolveDomSelectorMatches = async (session: CdpSessionHandle, selector: string, all: boolean): Promise<SelectorMatchResult> => {
+export const resolveDomSelectorMatches = async (
+	session: CdpSessionHandle,
+	selector: string,
+	all: boolean,
+	text?: string,
+): Promise<SelectorMatchResult> => {
 	await session.sendAndWait('DOM.enable')
 
 	const rootId = await getDomRootId(session)
 	const result = (await session.sendAndWait('DOM.querySelectorAll', { nodeId: rootId, selector })) as { nodeIds?: number[] }
-	const allNodeIds = result.nodeIds ?? []
+	let allNodeIds = result.nodeIds ?? []
+
+	if (text != null) {
+		allNodeIds = await filterNodesByText(session, allNodeIds, text)
+	}
+
 	const nodeIds = all ? allNodeIds : allNodeIds.slice(0, 1)
 
 	return { allNodeIds, nodeIds }
+}
+
+const filterNodesByText = async (session: CdpSessionHandle, nodeIds: number[], text: string): Promise<number[]> => {
+	const filtered: number[] = []
+	for (const nodeId of nodeIds) {
+		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+		const objectId = resolved.object?.objectId
+		if (!objectId) {
+			continue
+		}
+		const evalResult = (await session.sendAndWait('Runtime.callFunctionOn', {
+			objectId,
+			functionDeclaration: 'function() { return this.textContent?.trim(); }',
+			returnByValue: true,
+		})) as { result?: { value?: unknown } }
+		if (evalResult.result?.value === text) {
+			filtered.push(nodeId)
+		}
+	}
+	return filtered
 }
 
 export const hoverDomNodes = async (session: CdpSessionHandle, nodeIds: number[]): Promise<void> => {

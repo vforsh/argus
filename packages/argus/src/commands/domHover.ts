@@ -8,6 +8,7 @@ import { resolveWatcher } from '../watchers/resolveWatcher.js'
 export type DomHoverOptions = {
 	selector: string
 	all?: boolean
+	text?: string
 	json?: boolean
 }
 
@@ -41,6 +42,7 @@ export const runDomHover = async (id: string | undefined, options: DomHoverOptio
 			body: {
 				selector: options.selector,
 				all: options.all ?? false,
+				text: options.text,
 			},
 			timeoutMs: 30_000,
 			returnErrorResponse: true,

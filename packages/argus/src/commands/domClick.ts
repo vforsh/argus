@@ -9,6 +9,7 @@ export type DomClickOptions = {
 	selector?: string
 	pos?: string
 	all?: boolean
+	text?: string
 	json?: boolean
 }
 
@@ -61,6 +62,9 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 	if (hasSelector) {
 		body.selector = options.selector
 		body.all = options.all ?? false
+		if (options.text != null) {
+			body.text = options.text
+		}
 	}
 	if (hasPos) {
 		body.x = x

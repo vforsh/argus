@@ -8,6 +8,7 @@ import { resolveWatcher } from '../watchers/resolveWatcher.js'
 export type DomRemoveOptions = {
 	selector: string
 	all?: boolean
+	text?: string
 	json?: boolean
 }
 
@@ -42,6 +43,7 @@ export const runDomRemove = async (id: string | undefined, options: DomRemoveOpt
 			body: {
 				selector: options.selector,
 				all: options.all ?? false,
+				text: options.text,
 			},
 			timeoutMs: 30_000,
 			returnErrorResponse: true,

@@ -21,6 +21,7 @@ const formatError = (error: unknown): string => {
 type BaseModifyOptions = {
 	selector: string
 	all?: boolean
+	text?: string
 	json?: boolean
 }
 
@@ -60,10 +61,12 @@ const executeModify = async (
 	const url = `http://${watcher.host}:${watcher.port}/dom/modify`
 	let response: DomModifyResponse | ErrorResponse
 
+	const body = options.text != null ? { ...payload, text: options.text } : payload
+
 	try {
 		response = await fetchJson<DomModifyResponse | ErrorResponse>(url, {
 			method: 'POST',
-			body: payload,
+			body,
 			timeoutMs: 30_000,
 			returnErrorResponse: true,
 		})
