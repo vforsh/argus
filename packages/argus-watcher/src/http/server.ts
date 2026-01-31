@@ -31,6 +31,8 @@ import type {
 	DomRemoveResponse,
 	DomModifyRequest,
 	DomModifyResponse,
+	DomSetFileRequest,
+	DomSetFileResponse,
 	StorageLocalRequest,
 	ShutdownResponse,
 	ReloadRequest,
@@ -43,7 +45,14 @@ import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
 import type { CdpSourceHandle } from '../sources/types.js'
 import { evaluateExpression } from '../cdp/eval.js'
-import { fetchDomSubtreeBySelector, fetchDomInfoBySelector, insertAdjacentHtml, removeElements, modifyElements } from '../cdp/dom.js'
+import {
+	fetchDomSubtreeBySelector,
+	fetchDomInfoBySelector,
+	insertAdjacentHtml,
+	removeElements,
+	modifyElements,
+	setFileInputFiles,
+} from '../cdp/dom.js'
 import { resolveDomSelectorMatches, hoverDomNodes, clickDomNodes, clickAtPoint, resolveNodeTopLeft } from '../cdp/mouse.js'
 import { dispatchKeydown, parseModifiers } from '../cdp/keyboard.js'
 import { executeStorageLocal } from '../cdp/storageLocal.js'
@@ -83,6 +92,7 @@ export type HttpRequestEventMetadata = {
 		| 'dom/add'
 		| 'dom/remove'
 		| 'dom/modify'
+		| 'dom/set-file'
 		| 'storage/local'
 		| 'reload'
 		| 'shutdown'
@@ -200,6 +210,10 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 
 		if (req.method === 'POST' && url.pathname === '/dom/modify') {
 			return handleDomModify(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/dom/set-file') {
+			return handleDomSetFile(req, res, options)
 		}
 
 		if (req.method === 'POST' && url.pathname === '/storage/local') {
@@ -970,6 +984,59 @@ const handleDomModify = async (req: http.IncomingMessage, res: http.ServerRespon
 		}
 
 		const response: DomModifyResponse = { ok: true, matches: allNodeIds.length, modified: modifiedCount }
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleDomSetFile = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<DomSetFileRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	if (!payload.selector || typeof payload.selector !== 'string') {
+		return respondInvalidBody(res, 'selector is required')
+	}
+
+	if (!Array.isArray(payload.files) || payload.files.length === 0) {
+		return respondInvalidBody(res, 'files array is required and must not be empty')
+	}
+
+	const all = payload.all ?? false
+	if (typeof all !== 'boolean') {
+		return respondInvalidBody(res, 'all must be a boolean')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/set-file',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const { allNodeIds, updatedCount } = await setFileInputFiles(options.cdpSession, {
+			selector: payload.selector,
+			files: payload.files,
+			all,
+		})
+
+		if (!all && allNodeIds.length > 1) {
+			return respondJson(
+				res,
+				{
+					ok: false,
+					error: {
+						message: `Selector matched ${allNodeIds.length} elements; pass all=true to set files on all matches`,
+						code: 'multiple_matches',
+					},
+				},
+				400,
+			)
+		}
+
+		const response: DomSetFileResponse = { ok: true, matches: allNodeIds.length, updated: updatedCount }
 		respondJson(res, response)
 	} catch (error) {
 		respondError(res, error)

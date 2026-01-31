@@ -390,6 +390,29 @@ export type DomModifyResponse = {
 	modified: number
 }
 
+/**
+ * Request payload for POST /dom/set-file.
+ */
+export type DomSetFileRequest = {
+	/** CSS selector to match file input element(s). */
+	selector: string
+	/** Absolute file paths to set on the input. */
+	files: string[]
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+}
+
+/**
+ * Response payload for POST /dom/set-file.
+ */
+export type DomSetFileResponse = {
+	ok: true
+	/** Number of elements matched by selector. */
+	matches: number
+	/** Number of file inputs updated. */
+	updated: number
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // localStorage operations
 // ─────────────────────────────────────────────────────────────────────────────

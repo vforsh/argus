@@ -19,6 +19,7 @@ import { runDomKeydown } from './commands/domKeydown.js'
 import { runDomAdd } from './commands/domAdd.js'
 import { runDomAddScript } from './commands/domAddScript.js'
 import { runDomRemove } from './commands/domRemove.js'
+import { runDomSetFile } from './commands/domSetFile.js'
 import { runDomModifyAttr, runDomModifyClass, runDomModifyStyle, runDomModifyText, runDomModifyHtml } from './commands/domModify.js'
 import { runChromeStart } from './commands/chromeStart.js'
 import {
@@ -883,6 +884,21 @@ domModify
 	.addHelpText('after', '\nExamples:\n  $ argus dom modify html app --selector "#container" "<p>New <strong>content</strong></p>"\n')
 	.action(async (id, html, options) => {
 		await runDomModifyHtml(id, html, options)
+	})
+
+dom.command('set-file')
+	.argument('[id]', 'Watcher id to query')
+	.description('Set file(s) on a <input type="file"> element via CDP')
+	.requiredOption('--selector <css>', 'CSS selector for file input element(s)')
+	.requiredOption('--file <path...>', 'File path(s) to set on the input (repeatable)')
+	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom set-file app --selector "input[type=file]" --file ./build.zip\n  $ argus dom set-file app --selector "#upload" --file a.png --file b.png\n',
+	)
+	.action(async (id, options) => {
+		await runDomSetFile(id, options)
 	})
 
 const storage = program.command('storage').description('Interact with browser storage APIs')
