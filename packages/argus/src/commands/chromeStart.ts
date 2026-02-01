@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, rmSync, statSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { fetchJson } from '../httpClient.js'
@@ -114,6 +114,20 @@ const copyDefaultProfile = (sourceDir: string): string => {
 	return destRoot
 }
 
+const stripExtensionsFromPrefs = (prefsPath: string): void => {
+	if (!existsSync(prefsPath)) {
+		return
+	}
+	try {
+		const raw = readFileSync(prefsPath, 'utf-8')
+		const prefs = JSON.parse(raw)
+		delete prefs.extensions
+		writeFileSync(prefsPath, JSON.stringify(prefs))
+	} catch {
+		// Unparseable — leave as-is
+	}
+}
+
 const copyDefaultProfileLite = (sourceDir: string): string => {
 	const destRoot = mkdtempSync(path.join(tmpdir(), 'argus-chrome-profile-lite-'))
 	const defaultDir = path.join(destRoot, 'Default')
@@ -133,6 +147,9 @@ const copyDefaultProfileLite = (sourceDir: string): string => {
 	copyIfExists(path.join(sourceDir, 'Default', 'Login Data-journal'), path.join(defaultDir, 'Login Data-journal'))
 	copyIfExists(path.join(sourceDir, 'Default', 'Preferences'), path.join(defaultDir, 'Preferences'))
 	copyIfExists(path.join(sourceDir, 'Default', 'Secure Preferences'), path.join(defaultDir, 'Secure Preferences'))
+
+	stripExtensionsFromPrefs(path.join(defaultDir, 'Preferences'))
+	stripExtensionsFromPrefs(path.join(defaultDir, 'Secure Preferences'))
 
 	return destRoot
 }

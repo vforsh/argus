@@ -3,8 +3,7 @@
 	"chrome": {
 		"start": {
 			"url": "http://localhost:3333",
-			"profile": "default-lite",
-			"devTools": true
+			"profile": "default-lite"
 		}
 	},
 	"watcher": {
