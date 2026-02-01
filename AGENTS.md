@@ -79,3 +79,48 @@
 - **Cross-origin iframe**: The page includes both a same-origin iframe (`#playground-iframe`, port 3333) and a cross-origin iframe (`#cross-origin-iframe`, port 3334). Both embed the Argus iframe helper script, so `--iframe` eval works on either. Use this to verify postMessage-based eval across origins.
 
 - **Extending**: When adding new Argus commands or capabilities, add matching controls/structure to `playground/index.html` so they can be tested interactively. Keep the HTML self-contained (inline scripts, no build step).
+
+---
+
+## Repo Tour (edit compass)
+
+- **CLI entry**: `packages/argus/src/bin.ts` (register order) + `packages/argus/src/cli/register/*` (flags/help).
+- **CLI commands**: `packages/argus/src/commands/*` (use `requestWatcherJson`).
+- **Watcher API**: `packages/argus-watcher/src/http/routes/*` + `packages/argus-watcher/src/http/router.ts`.
+- **Route helpers**: `packages/argus-watcher/src/http/httpUtils.ts` (body parsing + errors).
+- **Protocol types**: `packages/argus-core/src/protocol/http/*` + `packages/argus-core/src/protocol/version.ts`.
+- **Client SDK**: `packages/argus-client/src/client/createArgusClient.ts`.
+- **Tests**: `e2e/*` + `playground/`.
+
+---
+
+## Debug Cookbook (1-liners)
+
+- **Watcher not found**: `argus list` → `argus doctor` → `argus watcher status <id>`.
+- **Unreachable watcher**: check registry host/port; restart `argus watcher start ...`; verify `argus chrome start`.
+- **CLI change not visible**: `npm run build:packages`.
+- **Weird CLI vs watcher mismatch**: rebuild + run `npm run test:playground`.
+
+---
+
+## Tests / Gate (exact commands)
+
+- **Quick**: `npm run lint` + `npm run typecheck` + `npm run typecheck:packages`.
+- **Focused**: `npm run test:playground`.
+- **Full**: `npm run test:e2e`.
+
+---
+
+## Golden Paths (checklists)
+
+- **New CLI command (no new watcher API)**: add to `register*.ts` → implement in `packages/argus/src/commands/*` → ensure `--json` → add/adjust `e2e/*` → update `skill/argus/SKILL.md`.
+- **New watcher endpoint**: add types in `packages/argus-core/src/protocol/http/<domain>.ts` → add route in `packages/argus-watcher/src/http/routes/*` + wire in `packages/argus-watcher/src/http/router.ts` → call via `requestWatcherJson` (CLI) / `createArgusClient` (client) → `e2e/*` → SKILL + (if interactive) playground UI.
+- **Protocol change rules**: additive-by-default; breaking => bump `ARGUS_PROTOCOL_VERSION`; keep `ok`/`error` shapes stable.
+
+---
+
+## Contracts / Invariants (don’t break these)
+
+- **HTTP payload shape**: success `ok: true`; failure `ok: false` with `{ error: { message, code? } }` (see `packages/argus-core/src/protocol/http/errors.ts`).
+- **Watcher route conventions**: GET vs POST, path naming, `extensionOnly` behavior in `packages/argus-watcher/src/http/router.ts`.
+- **Body parsing gotcha**: `readJsonBody` returns `{}` on empty body; routes must validate required fields explicitly.
