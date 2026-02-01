@@ -428,6 +428,42 @@ export type DomSetFileResponse = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Scroll operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Request payload for POST /dom/scroll.
+ * At least one of selector, to, or by must be provided.
+ */
+export type DomScrollRequest = {
+	/** CSS selector to match element(s). */
+	selector?: string
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
+	text?: string
+	/** Scroll to absolute position { x, y }. Applies to viewport or matched element. */
+	to?: { x: number; y: number }
+	/** Scroll by delta { x, y }. Applies to viewport or matched element. */
+	by?: { x: number; y: number }
+}
+
+/**
+ * Response payload for POST /dom/scroll.
+ */
+export type DomScrollResponse = {
+	ok: true
+	/** Number of elements matched by selector (only when selector is used). */
+	matches?: number
+	/** Number of elements scrolled (only when selector is used). */
+	scrolled?: number
+	/** Final horizontal scroll position. */
+	scrollX: number
+	/** Final vertical scroll position. */
+	scrollY: number
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Fill operations
 // ─────────────────────────────────────────────────────────────────────────────
 

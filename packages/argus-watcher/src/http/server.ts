@@ -35,6 +35,8 @@ import type {
 	DomSetFileResponse,
 	DomFillRequest,
 	DomFillResponse,
+	DomScrollRequest,
+	DomScrollResponse,
 	SnapshotRequest,
 	SnapshotResponse,
 	StorageLocalRequest,
@@ -59,7 +61,15 @@ import {
 	fillElements,
 } from '../cdp/dom.js'
 import { fetchAccessibilitySnapshot } from '../cdp/accessibility.js'
-import { resolveDomSelectorMatches, hoverDomNodes, clickDomNodes, clickAtPoint, resolveNodeTopLeft } from '../cdp/mouse.js'
+import {
+	resolveDomSelectorMatches,
+	hoverDomNodes,
+	clickDomNodes,
+	clickAtPoint,
+	resolveNodeTopLeft,
+	scrollDomNodes,
+	scrollViewport,
+} from '../cdp/mouse.js'
 import { dispatchKeydown, parseModifiers } from '../cdp/keyboard.js'
 import { executeStorageLocal } from '../cdp/storageLocal.js'
 import {
@@ -101,6 +111,7 @@ export type HttpRequestEventMetadata = {
 		| 'dom/modify'
 		| 'dom/set-file'
 		| 'dom/fill'
+		| 'dom/scroll'
 		| 'storage/local'
 		| 'reload'
 		| 'shutdown'
@@ -230,6 +241,10 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 
 		if (req.method === 'POST' && url.pathname === '/dom/fill') {
 			return handleDomFill(req, res, options)
+		}
+
+		if (req.method === 'POST' && url.pathname === '/dom/scroll') {
+			return handleDomScroll(req, res, options)
 		}
 
 		if (req.method === 'POST' && url.pathname === '/storage/local') {
@@ -1143,6 +1158,96 @@ const handleDomFill = async (req: http.IncomingMessage, res: http.ServerResponse
 		}
 
 		const response: DomFillResponse = { ok: true, matches: allNodeIds.length, filled: filledCount }
+		respondJson(res, response)
+	} catch (error) {
+		respondError(res, error)
+	}
+}
+
+const handleDomScroll = async (req: http.IncomingMessage, res: http.ServerResponse, options: HttpServerOptions): Promise<void> => {
+	const payload = await readJsonBody<DomScrollRequest>(req, res)
+	if (!payload) {
+		return
+	}
+
+	const hasSelector = typeof payload.selector === 'string' && payload.selector.length > 0
+	const hasTo = payload.to != null
+	const hasBy = payload.by != null
+
+	if (!hasSelector && !hasTo && !hasBy) {
+		return respondInvalidBody(res, 'at least one of selector, to, or by is required')
+	}
+
+	if (hasTo && hasBy) {
+		return respondInvalidBody(res, 'to and by are mutually exclusive')
+	}
+
+	if (hasTo) {
+		if (
+			typeof payload.to!.x !== 'number' ||
+			typeof payload.to!.y !== 'number' ||
+			!Number.isFinite(payload.to!.x) ||
+			!Number.isFinite(payload.to!.y)
+		) {
+			return respondInvalidBody(res, 'to.x and to.y must be finite numbers')
+		}
+	}
+
+	if (hasBy) {
+		if (
+			typeof payload.by!.x !== 'number' ||
+			typeof payload.by!.y !== 'number' ||
+			!Number.isFinite(payload.by!.x) ||
+			!Number.isFinite(payload.by!.y)
+		) {
+			return respondInvalidBody(res, 'by.x and by.y must be finite numbers')
+		}
+	}
+
+	const all = payload.all ?? false
+	if (typeof all !== 'boolean') {
+		return respondInvalidBody(res, 'all must be a boolean')
+	}
+
+	options.onRequest?.({
+		endpoint: 'dom/scroll',
+		remoteAddress: res.req.socket.remoteAddress ?? null,
+		ts: Date.now(),
+	})
+
+	try {
+		const mode = { to: payload.to, by: payload.by }
+
+		// Viewport-only scroll (no selector)
+		if (!hasSelector) {
+			const { scrollX, scrollY } = await scrollViewport(options.cdpSession, mode)
+			const response: DomScrollResponse = { ok: true, scrollX, scrollY }
+			return respondJson(res, response)
+		}
+
+		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(options.cdpSession, payload.selector!, all, payload.text)
+
+		if (!all && allNodeIds.length > 1) {
+			return respondJson(
+				res,
+				{
+					ok: false,
+					error: {
+						message: `Selector matched ${allNodeIds.length} elements; pass all=true to scroll all matches`,
+						code: 'multiple_matches',
+					},
+				},
+				400,
+			)
+		}
+
+		if (allNodeIds.length === 0) {
+			const response: DomScrollResponse = { ok: true, matches: 0, scrolled: 0, scrollX: 0, scrollY: 0 }
+			return respondJson(res, response)
+		}
+
+		const { scrollX, scrollY } = await scrollDomNodes(options.cdpSession, nodeIds, mode)
+		const response: DomScrollResponse = { ok: true, matches: allNodeIds.length, scrolled: nodeIds.length, scrollX, scrollY }
 		respondJson(res, response)
 	} catch (error) {
 		respondError(res, error)

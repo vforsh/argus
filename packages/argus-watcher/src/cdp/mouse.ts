@@ -81,7 +81,7 @@ const getDomRootId = async (session: CdpSessionHandle): Promise<number> => {
 	return rootId
 }
 
-const scrollIntoView = async (session: CdpSessionHandle, nodeId: number): Promise<void> => {
+export const scrollIntoView = async (session: CdpSessionHandle, nodeId: number): Promise<void> => {
 	try {
 		await session.sendAndWait('DOM.scrollIntoViewIfNeeded', { nodeId })
 		return
@@ -101,6 +101,70 @@ const scrollIntoView = async (session: CdpSessionHandle, nodeId: number): Promis
 		awaitPromise: false,
 		returnByValue: true,
 	})
+}
+
+type ScrollPosition = { scrollX: number; scrollY: number }
+
+type ScrollMode = { to?: { x: number; y: number }; by?: { x: number; y: number } }
+
+/**
+ * Scroll matched DOM elements. If mode has to/by, scrolls within the element container.
+ * Otherwise scrolls each element into view.
+ */
+export const scrollDomNodes = async (session: CdpSessionHandle, nodeIds: number[], mode: ScrollMode): Promise<ScrollPosition> => {
+	if (nodeIds.length === 0) {
+		return getViewportScroll(session)
+	}
+
+	for (const nodeId of nodeIds) {
+		if (mode.to || mode.by) {
+			await scrollElementContainer(session, nodeId, mode)
+		} else {
+			await scrollIntoView(session, nodeId)
+		}
+	}
+
+	return getViewportScroll(session)
+}
+
+/** Scroll the page viewport to an absolute or relative position. */
+export const scrollViewport = async (session: CdpSessionHandle, mode: ScrollMode): Promise<ScrollPosition> => {
+	const fn = mode.to ? `window.scrollTo(${mode.to.x}, ${mode.to.y})` : `window.scrollBy(${mode.by!.x}, ${mode.by!.y})`
+
+	await session.sendAndWait('Runtime.evaluate', {
+		expression: fn,
+		awaitPromise: false,
+		returnByValue: true,
+	})
+
+	return getViewportScroll(session)
+}
+
+const scrollElementContainer = async (session: CdpSessionHandle, nodeId: number, mode: ScrollMode): Promise<void> => {
+	const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+	const objectId = resolved.object?.objectId
+	if (!objectId) {
+		throw createNotInteractableError('Unable to resolve node for scrolling')
+	}
+
+	const fn = mode.to ? `function() { this.scrollTo(${mode.to!.x}, ${mode.to!.y}); }` : `function() { this.scrollBy(${mode.by!.x}, ${mode.by!.y}); }`
+
+	await session.sendAndWait('Runtime.callFunctionOn', {
+		objectId,
+		functionDeclaration: fn,
+		awaitPromise: false,
+		returnByValue: true,
+	})
+}
+
+const getViewportScroll = async (session: CdpSessionHandle): Promise<ScrollPosition> => {
+	const result = (await session.sendAndWait('Runtime.evaluate', {
+		expression: 'JSON.stringify({scrollX:window.scrollX,scrollY:window.scrollY})',
+		returnByValue: true,
+	})) as { result?: { value?: string } }
+
+	const parsed = result.result?.value ? JSON.parse(result.result.value) : { scrollX: 0, scrollY: 0 }
+	return { scrollX: parsed.scrollX, scrollY: parsed.scrollY }
 }
 
 const resolveNodeCenter = async (session: CdpSessionHandle, nodeId: number): Promise<Point> => {

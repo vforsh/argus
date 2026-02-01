@@ -194,6 +194,19 @@ argus dom keydown app --key a --modifiers shift,ctrl
 
 `dom fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). `--text` filters by textContent, `--all` fills multiple matches. `dom keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos.
 
+### DOM (scroll)
+
+```bash
+argus dom scroll app --selector "#footer"
+argus dom scroll app --testid "footer"
+argus dom scroll app --to 0,1000
+argus dom scroll app --by 0,500
+argus dom scroll app --selector ".panel" --to 0,1000
+argus dom scroll app --selector ".panel" --by 0,500
+```
+
+`--selector` alone scrolls element into view (`scrollIntoView`). `--to x,y` / `--by x,y` alone scrolls the viewport. Combine `--selector` with `--to`/`--by` to scroll within a scrollable container. Returns `{ scrollX, scrollY }`.
+
 ### Targets / Pages
 
 ```bash

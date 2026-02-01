@@ -22,6 +22,7 @@ import { runDomAddScript } from './commands/domAddScript.js'
 import { runDomRemove } from './commands/domRemove.js'
 import { runDomSetFile } from './commands/domSetFile.js'
 import { runDomFill } from './commands/domFill.js'
+import { runDomScroll } from './commands/domScroll.js'
 import { runDomModifyAttr, runDomModifyClass, runDomModifyStyle, runDomModifyText, runDomModifyHtml } from './commands/domModify.js'
 import { resolveTestId } from './commands/resolveTestId.js'
 import { runChromeStart } from './commands/chromeStart.js'
@@ -1028,6 +1029,25 @@ dom.command('fill')
 		}
 		if (!resolveTestId(options)) return
 		await runDomFill(id, value, options)
+	})
+
+dom.command('scroll')
+	.argument('[id]', 'Watcher id to query')
+	.description('Scroll the viewport or elements into view / to a position')
+	.option('--selector <css>', 'CSS selector to match element(s)')
+	.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
+	.option('--to <x,y>', 'Scroll to absolute position (viewport or element)')
+	.option('--by <x,y>', 'Scroll by delta (viewport or element)')
+	.option('--all', 'Allow multiple matches (default: error if >1 match)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
+	.option('--json', 'Output JSON for automation')
+	.addHelpText(
+		'after',
+		'\nExamples:\n  $ argus dom scroll app --selector "#footer"\n  $ argus dom scroll app --testid "footer"\n  $ argus dom scroll app --to 0,1000\n  $ argus dom scroll app --by 0,500\n  $ argus dom scroll app --selector ".panel" --to 0,1000\n  $ argus dom scroll app --selector ".panel" --by 0,500\n',
+	)
+	.action(async (id, options) => {
+		if (!resolveTestId(options)) return
+		await runDomScroll(id, options)
 	})
 
 const storage = program.command('storage').description('Interact with browser storage APIs')
