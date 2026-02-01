@@ -1,29 +1,32 @@
 # Argus
 
-A developer’s command-line Swiss Army knife for Chromium.
-
-Argus connects to one or more Chromium targets via CDP (Chrome DevTools Protocol) and provides a powerful HTTP-based bridge for remote inspection, automation, and debugging directly from your terminal.
+Command-line Swiss Army knife for Chromium. Connects to one or more browser targets via CDP (Chrome DevTools Protocol) and provides an HTTP-based bridge for inspection, automation, and debugging from the terminal.
 
 ## Features
 
-- **Logs & Console**: Fetch bounded log history (`logs`) or stream them in real-time (`tail`).
-- **Network Monitoring**: Query recent network request summaries (`net`) or follow them live (`net tail`).
-- **DOM & HTML**: Inspect the DOM tree (`dom tree`) or get detailed element information (`dom info`) via CSS selectors.
-- **Remote Evaluation**: Execute JavaScript expressions (`eval`) with support for awaiting promises, retries, and interval-based polling.
-- **Storage Management**: Interact with `localStorage` (`storage local`) to get, set, list, or clear items for any origin.
-- **Artifacts & Debugging**: Capture performance traces (`trace`) or element-specific screenshots (`screenshot`) to disk.
-- **Browser Control**: Launch Chrome with custom profiles (`chrome start`) and manage tabs (`page open`, `reload`, `close`).
+- **Logs & Console** — Fetch bounded history (`logs`) or stream live (`logs tail`). Filter by level, source, regex.
+- **Network** — Query request summaries (`net`) or tail them live (`net tail`). Grep by URL.
+- **DOM Inspection** — Tree view (`dom tree`), detailed element info (`dom info`), accessibility snapshots (`snapshot`).
+- **DOM Interaction** — Click, hover, scroll, fill inputs, dispatch keyboard events. CSS selectors, `--testid`, `--text` regex filtering.
+- **DOM Manipulation** — Add/remove elements, inject scripts, modify attributes/classes/styles/text/innerHTML, set files on `<input type="file">`.
+- **Eval** — Execute JS expressions (`eval`) with async/await, retries, interval polling, cross-origin iframe support via postMessage.
+- **Eval-Until** — Poll until truthy (`eval-until` / `wait`). Configurable interval, timeout, count.
+- **Storage** — `localStorage` get/set/remove/list/clear for any origin.
+- **Screenshots & Traces** — Element or full-page screenshots, Chrome performance traces with start/stop control.
+- **Browser Control** — Launch Chrome with profiles (`chrome start`), manage tabs (`page open/close/activate/reload`), target tree view.
+- **One-Command Start** — `argus start` launches Chrome + watcher in a single command.
+- **Extension Support** — Chrome extension integration via native messaging host.
+- **Config** — Auto-discovered config files (`.argus/config.json` etc.) for persistent defaults.
+- **JSON Output** — `--json` flag on every command for programmatic use.
 
 ## Architecture
 
-Argus consists of four main packages:
+Four packages:
 
-- **`@vforsh/argus` (CLI)**: The primary tool for interacting with watchers.
-- **`@vforsh/argus-watcher`**: The core service that connects to CDP, buffers events, and exposes a rich HTTP API.
-- **`@vforsh/argus-client`**: A programmatic Node.js client for building your own tools on top of Argus.
-- **`@vforsh/argus-core`**: Shared protocol definitions and registry utilities.
-
-Diagram (data flow):
+- **`@vforsh/argus`** — CLI. The primary interface.
+- **`@vforsh/argus-watcher`** — Core service. Connects to CDP, buffers events, exposes HTTP API.
+- **`@vforsh/argus-client`** — Programmatic Node.js client for building tools on top of Argus.
+- **`@vforsh/argus-core`** — Shared protocol definitions and registry utilities.
 
 ```
             (CDP: WebSocket)
@@ -55,50 +58,108 @@ Diagram (data flow):
 
 ## Quickstart
 
-1. **Install dependencies & build**:
+**Install & build:**
 
 ```bash
 npm install
 npm run build:packages
 ```
 
-2. **Launch Chrome with CDP enabled**:
+**Option A — One command (recommended):**
 
 ```bash
-argus chrome start --url http://localhost:3000
+argus start --id app --url http://localhost:3000
 ```
 
-3. **Start a watcher** (in a separate terminal):
+Launches Chrome with CDP, attaches a watcher, registers it as `app`.
+
+**Option B — Separate processes:**
 
 ```bash
+# Terminal 1: launch Chrome
+argus chrome start --url http://localhost:3000
+
+# Terminal 2: attach watcher
 argus watcher start --id app --url localhost:3000
 ```
 
-This watcher will capture events from any page matching the URL pattern and announce itself in the local registry.
-
-4. **Use the CLI**:
+**Use the CLI:**
 
 ```bash
 # Discovery
 argus list
 
-# Logs & Network
-argus tail app
+# Logs & network
+argus logs tail app
 argus net tail app
 
-# Interaction & Inspection
+# Eval
 argus eval app "document.title"
+argus eval-until app "document.querySelector('.loaded')"
+
+# DOM inspection
 argus dom tree app --selector "#root"
+argus dom info app --testid "submit-btn"
+argus snapshot app --interactive
+
+# DOM interaction
+argus dom click app --selector "button.primary"
+argus dom fill app "hello" --name email
+argus dom scroll app --by 0,500
+
+# DOM manipulation
+argus dom add app --selector "#root" --html "<div>injected</div>"
+argus dom modify style app "color=red" --selector "h1"
+
+# Storage
 argus storage local list app
 
-# Artifacts
+# Capture
 argus screenshot app --out shot.png
+argus trace app --duration 3s
 ```
+
+## CLI Commands
+
+| Command                                       | Description                            |
+| --------------------------------------------- | -------------------------------------- |
+| `start`                                       | Launch Chrome + watcher in one command |
+| `list`                                        | List watchers and Chrome instances     |
+| `doctor`                                      | Run environment diagnostics            |
+| `reload`                                      | Reload the attached page               |
+| `chrome start\|ls\|version\|status\|stop`     | Chrome lifecycle management            |
+| `watcher start\|stop\|status\|ls\|prune`      | Watcher lifecycle management           |
+| `page ls\|open\|activate\|close\|reload`      | Tab/target management                  |
+| `logs` / `logs tail`                          | Fetch or stream console logs           |
+| `net` / `net tail`                            | Fetch or stream network requests       |
+| `eval`                                        | Evaluate JS expression                 |
+| `eval-until` / `wait`                         | Poll JS expression until truthy        |
+| `dom tree`                                    | Fetch DOM subtree                      |
+| `dom info`                                    | Detailed element info                  |
+| `dom click\|hover\|scroll\|fill\|keydown`     | DOM interaction                        |
+| `dom add\|add-script\|remove\|set-file`       | DOM manipulation                       |
+| `dom modify attr\|class\|style\|text\|html`   | Element property modification          |
+| `snapshot` / `ax`                             | Accessibility tree snapshot            |
+| `screenshot`                                  | Capture screenshot                     |
+| `trace` / `trace start\|stop`                 | Chrome performance tracing             |
+| `storage local get\|set\|remove\|list\|clear` | localStorage management                |
+| `config init`                                 | Create config file                     |
+| `extension setup\|remove\|status\|info`       | Chrome extension native messaging      |
+
+## Common Flags
+
+- `--selector <css>` — Target elements by CSS selector.
+- `--testid <id>` — Shorthand for `--selector "[data-testid='<id>']"`.
+- `--text <string>` — Filter by textContent. Supports `/regex/flags`.
+- `--name <attr>` — Shorthand for `--selector "[name=<attr>]"` (fill).
+- `--all` — Allow multiple element matches.
+- `--json` — Machine-readable JSON output.
+- `--iframe <selector>` — Eval in cross-origin iframe via postMessage.
 
 ## Registry
 
-Watchers announce themselves in `~/.argus/registry.json` (macOS/Linux) or `%USERPROFILE%\.argus\registry.json` (Windows). Entries are updated periodically and pruned when stale or unreachable.
+Watchers register in `~/.argus/registry.json` (macOS/Linux) or `%USERPROFILE%\.argus\registry.json` (Windows). Entries are heartbeat-updated and pruned when stale.
 
-## Why “Argus”?
+## Why "Argus"?
 
-“Argus” is a nod to **Argus Panoptes** (the many‑eyed, all‑seeing watcher in Greek mythology). This project “keeps an eye” on Chromium targets and streams what it sees to your preferred environment.
+Named after **Argus Panoptes**, the all-seeing watcher of Greek mythology.
