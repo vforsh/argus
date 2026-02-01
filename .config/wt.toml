@@ -3,14 +3,14 @@
 
 [post-create]
 # Ensure the worktree has a .env by copying it from the main worktree (if missing).
-copy-env = "npx tsx ./scripts/worktree/ensure-env.ts"
+copy-env = "bun ./scripts/worktree/ensure-env.ts"
 
 # Install root dependencies for the worktree.
-install = "npx tsx ./scripts/worktree/install-deps.ts"
+install = "bun ./scripts/worktree/install-deps.ts"
 
 # Build workspace packages.
-build-packages = "npm run build:packages"
+build-packages = "bun run build:packages"
 
 [pre-merge]
-typecheck = "npm run typecheck"
-lint = "npm run lint:fix"
+typecheck = "bun run typecheck"
+lint = "bun run lint:fix"

@@ -9,17 +9,17 @@ import { getMainWorktreeDir } from './worktree-utils'
  * - Speed up worktree creation by reusing the `main` worktree's `node_modules`.
  * - If the current lockfile matches the `main` lockfile, perform a clone-on-write copy
  *   (using `cp -cR` on macOS/APFS) which is near-instant and saves disk space.
- * - Otherwise, fall back to a tuned `npm ci`.
+ * - Otherwise, fall back to `bun install --frozen-lockfile`.
  *
  * This avoids repetitive and slow full installs for every new worktree.
  */
 
-function runNpmCi() {
-	execFileSync('npm', ['ci', '--no-audit', '--no-fund', '--prefer-offline', '--progress=false'], { stdio: 'inherit' })
+function runBunInstallFrozen() {
+	execFileSync('bun', ['install', '--frozen-lockfile'], { stdio: 'inherit' })
 }
 
-function runNpmInstall() {
-	execFileSync('npm', ['install', '--no-audit', '--no-fund', '--prefer-offline', '--progress=false'], { stdio: 'inherit' })
+function runBunInstall() {
+	execFileSync('bun', ['install'], { stdio: 'inherit' })
 }
 
 function shouldRelinkWorkspacePackages() {
@@ -51,28 +51,28 @@ function main() {
 
 	const mainWorktreeDir = getMainWorktreeDir()
 	if (!mainWorktreeDir) {
-		runNpmCi()
+		runBunInstallFrozen()
 		return
 	}
 
-	const mainLockPath = resolve(mainWorktreeDir, 'package-lock.json')
+	const mainLockPath = resolve(mainWorktreeDir, 'bun.lock')
 	const mainNodeModulesPath = resolve(mainWorktreeDir, 'node_modules')
 
 	if (!existsSync(mainLockPath) || !existsSync(mainNodeModulesPath)) {
-		runNpmCi()
+		runBunInstallFrozen()
 		return
 	}
 
-	const thisLockPath = resolve('package-lock.json')
+	const thisLockPath = resolve('bun.lock')
 	if (!existsSync(thisLockPath)) {
-		runNpmCi()
+		runBunInstallFrozen()
 		return
 	}
 
 	const mainLock = readFileSync(mainLockPath, 'utf8')
 	const thisLock = readFileSync(thisLockPath, 'utf8')
 	if (mainLock !== thisLock) {
-		runNpmCi()
+		runBunInstallFrozen()
 		return
 	}
 
@@ -88,15 +88,15 @@ function main() {
 			// Copied node_modules may still have missing/broken workspace links for this worktree.
 			// Run a minimal install only if we need to relink workspace packages.
 			if (shouldRelinkWorkspacePackages()) {
-				runNpmInstall()
+				runBunInstall()
 			}
 			return
 		} catch {
-			// Fall through to npm ci.
+			// Fall through to bun install.
 		}
 	}
 
-	runNpmCi()
+	runBunInstallFrozen()
 }
 
 try {
