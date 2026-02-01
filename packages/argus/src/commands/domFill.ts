@@ -28,7 +28,7 @@ export const runDomFill = async (id: string | undefined, value: string, options:
 	}
 
 	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector or --name is required')
+		output.writeWarn('--selector, --name, or --testid is required')
 		process.exitCode = 2
 		return
 	}

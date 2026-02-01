@@ -20,7 +20,7 @@ export const runDomSetFile = async (id: string | undefined, options: DomSetFileO
 	const output = createOutput(options)
 
 	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector is required')
+		output.writeWarn('--selector or --testid is required')
 		process.exitCode = 2
 		return
 	}

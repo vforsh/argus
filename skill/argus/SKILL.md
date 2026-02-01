@@ -163,13 +163,17 @@ argus trace stop app --out trace.json
 
 ```bash
 argus dom tree app --selector "body"
+argus dom tree app --testid "main-content"
 argus dom tree app --selector "div" --all --depth 3
 argus dom info app --selector "#root"
 argus dom info app --selector "div" --all --json
 argus snapshot app
 argus snapshot app --interactive
 argus snapshot app --selector "form" --depth 3
+argus snapshot app --testid "login-form"
 ```
+
+`--testid <id>` is shorthand for `--selector "[data-testid='<id>']"` and works on all commands that accept `--selector`. Cannot be combined with `--selector`.
 
 `dom tree` returns a DOM subtree; control depth with `--depth` (default 2), cap nodes with `--max-nodes`. `dom info` returns detailed element info (attributes, outerHTML, box model). `snapshot` (aliases: `snap`, `ax`) captures an accessibility tree; `--interactive` / `-i` filters to buttons, links, inputs, etc.
 
@@ -177,8 +181,10 @@ argus snapshot app --selector "form" --depth 3
 
 ```bash
 argus dom click app --selector "button.submit"
+argus dom click app --testid "submit-btn"
 argus dom hover app --selector ".menu-item"
 argus dom fill app --selector "#username" "Bob"
+argus dom fill app --testid "username" "Bob"
 argus dom fill app --selector "textarea" "New content"
 argus dom fill app --selector "input[type=text]" --all "reset"
 argus dom keydown app --key Enter
