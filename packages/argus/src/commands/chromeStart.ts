@@ -39,7 +39,10 @@ export type LaunchChromeResult = {
 	cdpPort: number
 	userDataDir: string | null
 	startupUrl: string | null
+	/** Kill Chrome and remove temp profile. Use `closeGracefully` when possible. */
 	cleanup: () => void
+	/** Send Browser.close via CDP, wait for exit, then remove temp profile. Falls back to kill. */
+	closeGracefully: () => Promise<void>
 }
 
 type ChromeStartReadyResult = {
@@ -183,6 +186,41 @@ const waitForCdpReady = async (host: string, port: number, chrome: ChildProcess)
 	return { ready: false, error: lastError ?? 'Timed out waiting for CDP.' }
 }
 
+const sendBrowserClose = (wsUrl: string, timeoutMs = 3_000): Promise<void> =>
+	new Promise((resolve) => {
+		const ws = new WebSocket(wsUrl)
+		const timer = setTimeout(() => {
+			try {
+				ws.close()
+			} catch {}
+			resolve()
+		}, timeoutMs)
+
+		ws.addEventListener('open', () => {
+			try {
+				ws.send(JSON.stringify({ id: 1, method: 'Browser.close' }))
+			} catch {}
+		})
+
+		ws.addEventListener('message', () => {
+			clearTimeout(timer)
+			try {
+				ws.close()
+			} catch {}
+			resolve()
+		})
+
+		ws.addEventListener('error', () => {
+			clearTimeout(timer)
+			resolve()
+		})
+
+		ws.addEventListener('close', () => {
+			clearTimeout(timer)
+			resolve()
+		})
+	})
+
 const normalizeProfile = (profile?: string): ChromeStartOptions['profile'] | null => {
 	if (!profile) {
 		return 'default-lite'
@@ -291,7 +329,39 @@ export const launchChrome = async (options: LaunchChromeOptions): Promise<Launch
 		cleanupDir()
 	}
 
-	return { chrome, cdpHost, cdpPort, userDataDir, startupUrl, cleanup }
+	const closeGracefully = async () => {
+		if (chrome.exitCode !== null) {
+			cleanupDir()
+			return
+		}
+
+		try {
+			const versionUrl = `http://${cdpHost}:${cdpPort}/json/version`
+			const response = await fetchJson<ChromeVersionResponse>(versionUrl, { timeoutMs: 2_000 })
+			if (response.webSocketDebuggerUrl) {
+				await sendBrowserClose(response.webSocketDebuggerUrl)
+			}
+		} catch {
+			// CDP unreachable — fall through to kill
+		}
+
+		// Wait for Chrome to exit on its own, then fall back to kill
+		if (chrome.exitCode === null) {
+			const exited = await Promise.race([
+				new Promise<boolean>((resolve) => chrome.once('exit', () => resolve(true))),
+				new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3_000)),
+			])
+			if (!exited) {
+				try {
+					chrome.kill()
+				} catch {}
+			}
+		}
+
+		cleanupDir()
+	}
+
+	return { chrome, cdpHost, cdpPort, userDataDir, startupUrl, cleanup, closeGracefully }
 }
 
 export const runChromeStart = async (options: ChromeStartOptions): Promise<void> => {
@@ -340,12 +410,10 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 	}
 
 	process.on('SIGINT', () => {
-		result.cleanup()
-		process.exit(0)
+		void result.closeGracefully().then(() => process.exit(0))
 	})
 	process.on('SIGTERM', () => {
-		result.cleanup()
-		process.exit(0)
+		void result.closeGracefully().then(() => process.exit(0))
 	})
 
 	result.chrome.on('exit', () => {

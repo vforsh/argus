@@ -159,18 +159,18 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 	}
 
 	// --- Cleanup on exit ---
-	const cleanup = async () => {
+	const shutdown = async () => {
 		try {
 			await handle.close()
 		} catch {}
-		chrome.cleanup()
+		await chrome.closeGracefully()
 	}
 
 	process.on('SIGINT', () => {
-		void cleanup().then(() => process.exit(0))
+		void shutdown().then(() => process.exit(0))
 	})
 	process.on('SIGTERM', () => {
-		void cleanup().then(() => process.exit(0))
+		void shutdown().then(() => process.exit(0))
 	})
 
 	chrome.chrome.on('exit', () => {
@@ -213,7 +213,25 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		output.writeHuman(`  argus eval ${result.id} "document.title"`)
 		output.writeHuman(`  argus screenshot ${result.id}`)
 		output.writeHuman('')
-		output.writeHuman('Press Ctrl+C to stop.')
+		output.writeHuman('Press Q or Ctrl+C to stop.')
+	}
+
+	// --- Keyboard shortcut: X to stop ---
+	if (process.stdin.isTTY) {
+		process.stdin.setRawMode(true)
+		process.stdin.resume()
+		process.stdin.setEncoding('utf8')
+		process.stdin.on('data', (key: string) => {
+			// Ctrl+C in raw mode
+			if (key === '\x03') {
+				void shutdown().then(() => process.exit(0))
+				return
+			}
+			if (key === 'q' || key === 'Q') {
+				output.writeHuman('\nStopping...')
+				void shutdown().then(() => process.exit(0))
+			}
+		})
 	}
 
 	await new Promise(() => {})
