@@ -213,6 +213,29 @@
 			<button data-testid="btn-increment" onclick="incrementCounter()">Increment</button>
 		</section>
 
+		<!-- ── Scroll test ── -->
+		<section data-testid="scroll-section">
+			<h2>Scroll Test</h2>
+			<p>The button below is placed after a tall spacer to guarantee it is off-screen on load.</p>
+			<div
+				style="
+					height: 1200px;
+					background: repeating-linear-gradient(180deg, #f0f0f0 0px, #f0f0f0 40px, #fff 40px, #fff 80px);
+					display: flex;
+					align-items: center;
+					justify-content: center;
+					color: #999;
+					font-size: 0.9rem;
+				"
+			>
+				1200px spacer
+			</div>
+			<button data-testid="btn-scroll-target" id="btn-scroll-target" style="padding: 0.6rem 1.2rem; font-size: 1rem">
+				Scroll Target Button
+			</button>
+			<pre data-testid="scroll-click-log" id="scroll-click-log">no clicks yet</pre>
+		</section>
+
 		<!-- ── Iframe (same-origin) ── -->
 		<section data-testid="iframe-section">
 			<h2>Iframe (same-origin)</h2>
@@ -320,6 +343,14 @@
 			})
 			document.addEventListener('keydown', (e) => {
 				window.__events.push(`keydown:${e.key}`)
+			})
+
+			// ── Scroll target click tracking ──
+			document.getElementById('btn-scroll-target').addEventListener('click', (e) => {
+				const log = document.getElementById('scroll-click-log')
+				const entry = { x: Math.round(e.clientX), y: Math.round(e.clientY), target: e.target.tagName, testid: e.target.dataset.testid }
+				log.textContent = JSON.stringify(entry)
+				window.__scrollClickResult = entry
 			})
 
 			// ── Cross-origin iframe src ──

@@ -51,10 +51,11 @@ export const clickAtPoint = async (session: CdpSessionHandle, x: number, y: numb
 }
 
 export const resolveNodeTopLeft = async (session: CdpSessionHandle, nodeId: number): Promise<Point> => {
-	const quad = await resolveNodeQuad(session, nodeId)
-	const rect = quadToRect(quad)
-	const { pageX, pageY } = await resolveViewportOffset(session)
-	return { x: rect.x - pageX, y: rect.y - pageY }
+	const { x, y, w, h } = await resolveNodeRect(session, nodeId)
+	if (w <= 0 || h <= 0) {
+		throw createNotInteractableError('Element has zero area')
+	}
+	return { x, y }
 }
 
 export const clickDomNodes = async (session: CdpSessionHandle, nodeIds: number[]): Promise<void> => {
@@ -103,68 +104,33 @@ const scrollIntoView = async (session: CdpSessionHandle, nodeId: number): Promis
 }
 
 const resolveNodeCenter = async (session: CdpSessionHandle, nodeId: number): Promise<Point> => {
-	const quad = await resolveNodeQuad(session, nodeId)
-	const rect = quadToRect(quad)
-	if (rect.width <= 0 || rect.height <= 0) {
+	const { x, y, w, h } = await resolveNodeRect(session, nodeId)
+	if (w <= 0 || h <= 0) {
 		throw createNotInteractableError('Element has zero area')
 	}
-
-	const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
-	const { pageX, pageY } = await resolveViewportOffset(session)
-	const x = center.x - pageX
-	const y = center.y - pageY
-
-	if (!Number.isFinite(x) || !Number.isFinite(y)) {
-		throw createNotInteractableError('Element center is not a finite point')
-	}
-
-	return { x, y }
+	return { x: x + w / 2, y: y + h / 2 }
 }
 
-const resolveNodeQuad = async (session: CdpSessionHandle, nodeId: number): Promise<number[]> => {
-	try {
-		const contentQuads = (await session.sendAndWait('DOM.getContentQuads', { nodeId })) as { quads?: number[][] }
-		const quad = contentQuads.quads?.[0]
-		if (quad && quad.length >= 8) {
-			return quad
-		}
-	} catch {
-		// Fall back to box model when content quads are unavailable.
+/** Uses getBoundingClientRect() to get viewport-relative coordinates (no scroll-offset ambiguity). */
+const resolveNodeRect = async (session: CdpSessionHandle, nodeId: number): Promise<{ x: number; y: number; w: number; h: number }> => {
+	const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+	const objectId = resolved.object?.objectId
+	if (!objectId) {
+		throw createNotInteractableError('Unable to resolve node')
 	}
 
-	const boxResult = (await session.sendAndWait('DOM.getBoxModel', { nodeId })) as {
-		model?: { content?: number[]; border?: number[] }
-	}
-	const boxQuad = boxResult.model?.content ?? boxResult.model?.border
-	if (!boxQuad || boxQuad.length < 8) {
-		throw createNotInteractableError('Unable to compute element box')
+	const result = (await session.sendAndWait('Runtime.callFunctionOn', {
+		objectId,
+		functionDeclaration: 'function(){var r=this.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}}',
+		returnByValue: true,
+	})) as { result?: { value?: { x: number; y: number; w: number; h: number } } }
+
+	const rect = result.result?.value
+	if (!rect || !Number.isFinite(rect.x) || !Number.isFinite(rect.y)) {
+		throw createNotInteractableError('Unable to compute element rect')
 	}
 
-	return boxQuad
-}
-
-const resolveViewportOffset = async (session: CdpSessionHandle): Promise<{ pageX: number; pageY: number }> => {
-	const metrics = (await session.sendAndWait('Page.getLayoutMetrics')) as { visualViewport?: { pageX?: number; pageY?: number } }
-	return {
-		pageX: metrics.visualViewport?.pageX ?? 0,
-		pageY: metrics.visualViewport?.pageY ?? 0,
-	}
-}
-
-const quadToRect = (quad: number[]): { x: number; y: number; width: number; height: number } => {
-	const xs = [quad[0], quad[2], quad[4], quad[6]]
-	const ys = [quad[1], quad[3], quad[5], quad[7]]
-	const minX = Math.min(...xs)
-	const maxX = Math.max(...xs)
-	const minY = Math.min(...ys)
-	const maxY = Math.max(...ys)
-
-	return {
-		x: minX,
-		y: minY,
-		width: maxX - minX,
-		height: maxY - minY,
-	}
+	return rect
 }
 
 const dispatchMouseEvent = async (
