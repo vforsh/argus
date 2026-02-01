@@ -1,10 +1,9 @@
 import type { NetResponse } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { formatNetworkRequest } from '../output/format.js'
 import { createOutput } from '../output/io.js'
+import { parseNumber, normalizeQueryValue } from '../cli/parse.js'
 import { parseDurationMs } from '../time.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the net command. */
 export type NetOptions = {
@@ -18,18 +17,6 @@ export type NetOptions = {
 /** Execute the net command for a watcher id. */
 export const runNet = async (id: string | undefined, options: NetOptions): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
-
-	const { watcher } = resolved
 
 	const params = new URLSearchParams()
 	const after = parseNumber(options.after)
@@ -54,58 +41,24 @@ export const runNet = async (id: string | undefined, options: NetOptions): Promi
 		params.set('grep', grep)
 	}
 
-	const url = `http://${watcher.host}:${watcher.port}/net?${params.toString()}`
-	let response: NetResponse
-	try {
-		response = await fetchJson<NetResponse>(url, { timeoutMs: 5_000 })
-	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		process.exitCode = 1
+	const result = await requestWatcherJson<NetResponse>({
+		id,
+		path: '/net',
+		query: params,
+		timeoutMs: 5_000,
+	})
+
+	if (!result.ok) {
+		writeRequestError(result, output)
 		return
 	}
 
 	if (options.json) {
-		output.writeJson(response.requests)
+		output.writeJson(result.data.requests)
 		return
 	}
 
-	for (const request of response.requests) {
+	for (const request of result.data.requests) {
 		output.writeHuman(formatNetworkRequest(request))
 	}
-}
-
-const parseNumber = (value?: string): number | null => {
-	if (!value) {
-		return null
-	}
-
-	const parsed = Number(value)
-	if (!Number.isFinite(parsed)) {
-		return null
-	}
-
-	return parsed
-}
-
-const normalizeQueryValue = (value?: string): string | undefined => {
-	if (value == null) {
-		return undefined
-	}
-
-	const trimmed = value.trim()
-	if (!trimmed) {
-		return undefined
-	}
-
-	return trimmed
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

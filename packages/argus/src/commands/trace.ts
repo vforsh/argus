@@ -1,9 +1,9 @@
 import type { TraceStartResponse, TraceStopResponse, WatcherRecord } from '@vforsh/argus-core'
 import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
+import { formatError } from '../cli/parse.js'
 import { parseDurationMs } from '../time.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 
 /** Options for the trace command (start + stop). */
 export type TraceOptions = {
@@ -44,16 +44,8 @@ export const runTrace = async (id: string | undefined, options: TraceOptions): P
 		return
 	}
 
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
+	const resolved = await resolveWatcherOrExit({ id }, output)
+	if (!resolved) return
 
 	const watcher = resolved.watcher
 
@@ -80,16 +72,8 @@ export const runTrace = async (id: string | undefined, options: TraceOptions): P
 /** Execute the trace start command for a watcher id. */
 export const runTraceStart = async (id: string | undefined, options: TraceStartOptions): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
+	const resolved = await resolveWatcherOrExit({ id }, output)
+	if (!resolved) return
 
 	const start = await runTraceStartInternal(resolved.watcher, options, output)
 	if (!start) {
@@ -108,16 +92,8 @@ export const runTraceStart = async (id: string | undefined, options: TraceStartO
 /** Execute the trace stop command for a watcher id. */
 export const runTraceStop = async (id: string | undefined, options: TraceStopOptions): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
+	const resolved = await resolveWatcherOrExit({ id }, output)
+	if (!resolved) return
 
 	const stop = await runTraceStopInternal(resolved.watcher, options, output)
 	if (!stop) {
@@ -177,13 +153,3 @@ const runTraceStopInternal = async (
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}

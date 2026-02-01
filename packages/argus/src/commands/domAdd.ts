@@ -1,9 +1,8 @@
 import type { DomAddResponse, DomInsertPosition, ErrorResponse } from '@vforsh/argus-core'
 import { readFile } from 'node:fs/promises'
-import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { formatError } from '../cli/parse.js'
+import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the dom add command. */
 export type DomAddOptions = {
@@ -73,42 +72,29 @@ export const runDomAdd = async (id: string | undefined, options: DomAddOptions):
 		return
 	}
 
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
+	const result = await requestWatcherJson<DomAddResponse | ErrorResponse>({
+		id,
+		path: '/dom/add',
+		method: 'POST',
+		body: {
+			selector: options.selector,
+			html,
+			position,
+			all: options.all ?? false,
+			nth,
+			expect,
+			text: options.text ?? false,
+		},
+		timeoutMs: 30_000,
+		returnErrorResponse: true,
+	})
+
+	if (!result.ok) {
+		writeRequestError(result, output)
 		return
 	}
 
-	const { watcher } = resolved
-	const url = `http://${watcher.host}:${watcher.port}/dom/add`
-	let response: DomAddResponse | ErrorResponse
-
-	try {
-		response = await fetchJson<DomAddResponse | ErrorResponse>(url, {
-			method: 'POST',
-			body: {
-				selector: options.selector,
-				html,
-				position,
-				all: options.all ?? false,
-				nth,
-				expect,
-				text: options.text ?? false,
-			},
-			timeoutMs: 30_000,
-			returnErrorResponse: true,
-		})
-	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		process.exitCode = 1
-		return
-	}
-
+	const response = result.data
 	if (!response.ok) {
 		const errorResp = response as ErrorResponse
 		if (options.json) {
@@ -135,18 +121,8 @@ export const runDomAdd = async (id: string | undefined, options: DomAddOptions):
 	}
 
 	const label = successResp.inserted === 1 ? 'element' : 'elements'
-	const prefix = watcher.id ? `${watcher.id}: ` : ''
+	const prefix = result.watcher.id ? `${result.watcher.id}: ` : ''
 	output.writeHuman(`${prefix}Inserted at ${successResp.inserted}/${successResp.matches} ${label} (${position}) for selector: ${options.selector}`)
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }
 
 const normalizePosition = (value?: string): DomInsertPosition | null => {

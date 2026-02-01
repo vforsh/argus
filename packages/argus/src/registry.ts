@@ -1,4 +1,4 @@
-import { DEFAULT_TTL_MS, pruneStaleWatchers, readRegistry, removeWatcherEntry, writeRegistry } from '@vforsh/argus-core'
+import { DEFAULT_TTL_MS, pruneStaleWatchers, readRegistry, removeWatcherEntry, updateRegistry } from '@vforsh/argus-core'
 import type { RegistryV1 } from '@vforsh/argus-core'
 
 /** Read registry and emit warnings to stderr. */
@@ -10,31 +10,30 @@ export const loadRegistry = async (): Promise<RegistryV1> => {
 	return registry
 }
 
-/** Prune stale entries and persist if changed. */
-export const pruneRegistry = async (registry: RegistryV1, ttlMs = DEFAULT_TTL_MS): Promise<RegistryV1> => {
-	const { registry: pruned, removedIds } = pruneStaleWatchers(registry, Date.now(), ttlMs)
-	if (removedIds.length > 0) {
-		await writeRegistry(pruned)
-	}
-	return pruned
+/** Prune stale entries atomically (locked read-modify-write) and return the pruned registry. */
+export const pruneRegistry = async (ttlMs = DEFAULT_TTL_MS): Promise<RegistryV1> => {
+	return updateRegistry((registry) => {
+		const { registry: pruned } = pruneStaleWatchers(registry, Date.now(), ttlMs)
+		return pruned
+	})
 }
 
-/** Remove watcher entry and persist registry. */
-export const removeWatcherAndPersist = async (registry: RegistryV1, id: string): Promise<RegistryV1> => {
-	const next = removeWatcherEntry(registry, id)
-	await writeRegistry(next)
-	return next
+/** Remove watcher entry atomically (locked read-modify-write) and return the updated registry. */
+export const removeWatcherAndPersist = async (id: string): Promise<RegistryV1> => {
+	return updateRegistry((registry) => removeWatcherEntry(registry, id))
 }
 
-/** Remove multiple watcher entries and persist registry once. */
-export const removeWatchersAndPersist = async (registry: RegistryV1, ids: string[]): Promise<RegistryV1> => {
+/** Remove multiple watcher entries atomically (locked read-modify-write) and return the updated registry. */
+export const removeWatchersAndPersist = async (ids: string[]): Promise<RegistryV1> => {
 	if (ids.length === 0) {
+		const { registry } = await readRegistry()
 		return registry
 	}
-	let next = registry
-	for (const id of ids) {
-		next = removeWatcherEntry(next, id)
-	}
-	await writeRegistry(next)
-	return next
+	return updateRegistry((registry) => {
+		let next = registry
+		for (const id of ids) {
+			next = removeWatcherEntry(next, id)
+		}
+		return next
+	})
 }

@@ -3,7 +3,7 @@ import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync,
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { fetchJson } from '../httpClient.js'
-import { loadRegistry, pruneRegistry } from '../registry.js'
+import { pruneRegistry } from '../registry.js'
 import { createOutput } from '../output/io.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
 import { getCdpPort } from '../utils/ports.js'
@@ -392,7 +392,7 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 	let startupUrl: string | null = null
 
 	if (options.fromWatcher) {
-		const registry = await pruneRegistry(await loadRegistry())
+		const registry = await pruneRegistry()
 		const watcher = registry.watchers[options.fromWatcher]
 		if (!watcher) {
 			output.writeWarn(`Watcher not found: ${options.fromWatcher}`)

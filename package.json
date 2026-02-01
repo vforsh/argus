@@ -18,6 +18,7 @@
 		"build:packages": "tsc -b packages/* && bun run --filter @vforsh/argus bundle",
 		"chrome:start": "bun packages/argus/src/bin.ts chrome start",
 		"test:e2e": "bun run build:packages && bun test e2e/",
+		"test:playground": "bun run build:packages && bun test e2e/playground-*.test.ts",
 		"playground": "bun playground/start.ts",
 		"playground:serve": "bun playground/serve.ts",
 		"playground:chrome": "bun packages/argus/src/bin.ts chrome start --url http://127.0.0.1:3333",

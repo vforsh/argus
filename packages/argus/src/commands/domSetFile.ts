@@ -1,10 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { DomSetFileResponse, ErrorResponse } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the dom set-file command. */
 export type DomSetFileOptions = {
@@ -43,40 +41,26 @@ export const runDomSetFile = async (id: string | undefined, options: DomSetFileO
 		files.push(absolute)
 	}
 
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
+	const result = await requestWatcherJson<DomSetFileResponse | ErrorResponse>({
+		id,
+		path: '/dom/set-file',
+		method: 'POST',
+		body: {
+			selector: options.selector,
+			files,
+			all: options.all ?? false,
+			text: options.text,
+		},
+		timeoutMs: 30_000,
+		returnErrorResponse: true,
+	})
+
+	if (!result.ok) {
+		writeRequestError(result, output)
 		return
 	}
 
-	const { watcher } = resolved
-	const url = `http://${watcher.host}:${watcher.port}/dom/set-file`
-
-	let response: DomSetFileResponse | ErrorResponse
-
-	try {
-		response = await fetchJson<DomSetFileResponse | ErrorResponse>(url, {
-			method: 'POST',
-			body: {
-				selector: options.selector,
-				files,
-				all: options.all ?? false,
-				text: options.text,
-			},
-			timeoutMs: 30_000,
-			returnErrorResponse: true,
-		})
-	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		process.exitCode = 1
-		return
-	}
-
+	const response = result.data
 	if (!response.ok) {
 		const errorResp = response as ErrorResponse
 		if (options.json) {
@@ -104,14 +88,4 @@ export const runDomSetFile = async (id: string | undefined, options: DomSetFileO
 	const fileLabel = files.length === 1 ? '1 file' : `${files.length} files`
 	const elLabel = successResp.updated === 1 ? '1 element' : `${successResp.updated} elements`
 	output.writeHuman(`Set ${fileLabel} on ${elLabel} for selector: ${options.selector}`)
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

@@ -1,5 +1,5 @@
 import type { StatusResponse, WatcherRecord } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry, removeWatchersAndPersist } from '../registry.js'
+import { pruneRegistry, removeWatchersAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
 
@@ -28,8 +28,7 @@ export const runWatcherPrune = async (options: WatcherPruneOptions): Promise<voi
 		return
 	}
 
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
+	const registry = await pruneRegistry()
 
 	let watchers = Object.values(registry.watchers)
 
@@ -83,7 +82,7 @@ export const runWatcherPrune = async (options: WatcherPruneOptions): Promise<voi
 		return
 	}
 
-	await removeWatchersAndPersist(registry, removedIds)
+	await removeWatchersAndPersist(removedIds)
 
 	if (options.json) {
 		output.writeJson({ keptIds, removedIds, dryRun: false } satisfies PruneResult)

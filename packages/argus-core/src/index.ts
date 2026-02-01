@@ -1,5 +1,6 @@
 export * from './protocol/logs.js'
 export * from './protocol/http.js'
+export * from './protocol/version.js'
 export * from './registry/registry.js'
 export * from './registry/types.js'
 export * from './registry/paths.js'

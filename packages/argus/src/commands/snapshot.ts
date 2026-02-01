@@ -1,9 +1,8 @@
 import type { SnapshotResponse, ErrorResponse } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { formatAccessibilityTree } from '../output/accessibility.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { parsePositiveInt } from '../cli/parse.js'
+import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the snapshot command. */
 export type SnapshotOptions = {
@@ -24,39 +23,25 @@ export const runSnapshot = async (id: string | undefined, options: SnapshotOptio
 		return
 	}
 
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
+	const result = await requestWatcherJson<SnapshotResponse | ErrorResponse>({
+		id,
+		path: '/snapshot',
+		method: 'POST',
+		body: {
+			selector: options.selector,
+			depth,
+			interactive: options.interactive ?? false,
+		},
+		timeoutMs: 30_000,
+		returnErrorResponse: true,
+	})
+
+	if (!result.ok) {
+		writeRequestError(result, output)
 		return
 	}
 
-	const { watcher } = resolved
-	const url = `http://${watcher.host}:${watcher.port}/snapshot`
-
-	let response: SnapshotResponse | ErrorResponse
-
-	try {
-		response = await fetchJson<SnapshotResponse | ErrorResponse>(url, {
-			method: 'POST',
-			body: {
-				selector: options.selector,
-				depth,
-				interactive: options.interactive ?? false,
-			},
-			timeoutMs: 30_000,
-			returnErrorResponse: true,
-		})
-	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		process.exitCode = 1
-		return
-	}
-
+	const response = result.data
 	if (!response.ok) {
 		const errorResp = response as ErrorResponse
 		if (options.json) {
@@ -82,25 +67,4 @@ export const runSnapshot = async (id: string | undefined, options: SnapshotOptio
 
 	const formatted = formatAccessibilityTree(successResp.roots)
 	output.writeHuman(formatted)
-}
-
-const parsePositiveInt = (value?: string): number | undefined => {
-	if (value === undefined) {
-		return undefined
-	}
-	const parsed = Number(value)
-	if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
-		return undefined
-	}
-	return parsed
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

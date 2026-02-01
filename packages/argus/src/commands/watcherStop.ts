@@ -1,8 +1,9 @@
 import type { ShutdownResponse } from '@vforsh/argus-core'
 import { removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
+import { formatError } from '../cli/parse.js'
+import { formatWatcherLine } from '../output/format.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
 import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the watcher stop command. */
@@ -15,7 +16,9 @@ export const runWatcherStop = async (id: string | undefined, _options: WatcherSt
 	if (!resolved.ok) {
 		output.writeWarn(resolved.error)
 		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
+			for (const watcher of resolved.candidates) {
+				output.writeWarn(formatWatcherLine(watcher))
+			}
 			output.writeWarn('Hint: run `argus list` to see all watchers.')
 		}
 		process.exitCode = resolved.exitCode
@@ -23,7 +26,6 @@ export const runWatcherStop = async (id: string | undefined, _options: WatcherSt
 	}
 
 	const { watcher } = resolved
-	let registry = resolved.registry
 
 	const shutdownUrl = `http://${watcher.host}:${watcher.port}/shutdown`
 	try {
@@ -47,7 +49,7 @@ export const runWatcherStop = async (id: string | undefined, _options: WatcherSt
 		process.kill(pid, 'SIGTERM')
 	} catch (error) {
 		if (isNoSuchProcessError(error)) {
-			registry = await removeWatcherAndPersist(registry, watcher.id)
+			await removeWatcherAndPersist(watcher.id)
 			output.writeHuman(`stopped ${watcher.id}`)
 			return
 		}
@@ -58,7 +60,7 @@ export const runWatcherStop = async (id: string | undefined, _options: WatcherSt
 
 	const waitResult = await waitForProcessExit(pid, 2_000, 100)
 	if (waitResult.state === 'dead') {
-		registry = await removeWatcherAndPersist(registry, watcher.id)
+		await removeWatcherAndPersist(watcher.id)
 		output.writeHuman(`stopped ${watcher.id}`)
 		return
 	}
@@ -105,14 +107,4 @@ const isNoSuchProcessError = (error: unknown): boolean => {
 
 const isErrnoError = (error: unknown): error is NodeJS.ErrnoException => {
 	return !!error && typeof error === 'object' && 'code' in error
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

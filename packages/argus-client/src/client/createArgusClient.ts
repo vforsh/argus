@@ -54,7 +54,6 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 			}
 
 			const results: ListResult[] = []
-			let nextRegistry = registry
 
 			for (const watcher of watchers) {
 				const url = buildStatusUrl(watcher.host, watcher.port)
@@ -64,14 +63,14 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 				} catch (error) {
 					const message = formatError(error)
 					results.push({ watcher, reachable: false, error: message })
-					nextRegistry = await removeWatcherAndPersist(nextRegistry, watcher.id, registryPath)
+					await removeWatcherAndPersist(watcher.id, registryPath)
 				}
 			}
 
 			return results
 		},
 		logs: async (watcherId: string, logsOptions: LogsOptions = {}): Promise<LogsResult> => {
-			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const registry = await readAndPruneRegistry({ registryPath, ttlMs })
 			const watcher = registry.watchers[watcherId]
 			if (!watcher) {
 				throw new Error(`Watcher not found: ${watcherId}`)
@@ -84,7 +83,7 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 			try {
 				response = await fetchJson<LogsResponse>(url, { timeoutMs: logsTimeoutMs })
 			} catch (error) {
-				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				await removeWatcherAndPersist(watcher.id, registryPath)
 				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
 			}
 
@@ -97,7 +96,7 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 			}
 		},
 		net: async (watcherId: string, netOptions: NetOptions = {}): Promise<NetResult> => {
-			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const registry = await readAndPruneRegistry({ registryPath, ttlMs })
 			const watcher = registry.watchers[watcherId]
 			if (!watcher) {
 				throw new Error(`Watcher not found: ${watcherId}`)
@@ -110,7 +109,7 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 			try {
 				response = await fetchJson<NetResponse>(url, { timeoutMs: logsTimeoutMs })
 			} catch (error) {
-				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				await removeWatcherAndPersist(watcher.id, registryPath)
 				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
 			}
 
@@ -124,7 +123,7 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 				throw new Error('expression is required')
 			}
 
-			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const registry = await readAndPruneRegistry({ registryPath, ttlMs })
 			const watcher = registry.watchers[watcherId]
 			if (!watcher) {
 				throw new Error(`Watcher not found: ${watcherId}`)
@@ -140,7 +139,7 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 					body: evalOptions,
 				})
 			} catch (error) {
-				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				await removeWatcherAndPersist(watcher.id, registryPath)
 				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
 			}
 
@@ -151,7 +150,7 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 			}
 		},
 		traceStart: async (watcherId: string, traceOptions: TraceStartOptions = {}): Promise<TraceStartResult> => {
-			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const registry = await readAndPruneRegistry({ registryPath, ttlMs })
 			const watcher = registry.watchers[watcherId]
 			if (!watcher) {
 				throw new Error(`Watcher not found: ${watcherId}`)
@@ -166,14 +165,14 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 					body: traceOptions,
 				})
 			} catch (error) {
-				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				await removeWatcherAndPersist(watcher.id, registryPath)
 				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
 			}
 
 			return { traceId: response.traceId, outFile: response.outFile }
 		},
 		traceStop: async (watcherId: string, traceOptions: TraceStopOptions = {}): Promise<TraceStopResult> => {
-			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const registry = await readAndPruneRegistry({ registryPath, ttlMs })
 			const watcher = registry.watchers[watcherId]
 			if (!watcher) {
 				throw new Error(`Watcher not found: ${watcherId}`)
@@ -188,14 +187,14 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 					body: traceOptions,
 				})
 			} catch (error) {
-				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				await removeWatcherAndPersist(watcher.id, registryPath)
 				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
 			}
 
 			return { outFile: response.outFile }
 		},
 		screenshot: async (watcherId: string, screenshotOptions: ScreenshotOptions = {}): Promise<ScreenshotResult> => {
-			let registry = await readAndPruneRegistry({ registryPath, ttlMs })
+			const registry = await readAndPruneRegistry({ registryPath, ttlMs })
 			const watcher = registry.watchers[watcherId]
 			if (!watcher) {
 				throw new Error(`Watcher not found: ${watcherId}`)
@@ -210,7 +209,7 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 					body: screenshotOptions,
 				})
 			} catch (error) {
-				registry = await removeWatcherAndPersist(registry, watcher.id, registryPath)
+				await removeWatcherAndPersist(watcher.id, registryPath)
 				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
 			}
 

@@ -3,8 +3,8 @@ import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
 import { createOutput } from '../output/io.js'
 import { previewLogEvent } from '../output/preview.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { formatError, parseNumber, normalizeQueryValue } from '../cli/parse.js'
+import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 
 /** Options for the tail command. */
 export type TailOptions = {
@@ -23,16 +23,8 @@ export type TailOptions = {
 /** Execute the tail command for a watcher id. */
 export const runTail = async (id: string | undefined, options: TailOptions): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
+	const resolved = await resolveWatcherOrExit({ id }, output)
+	if (!resolved) return
 
 	const { watcher } = resolved
 
@@ -111,29 +103,6 @@ export const runTail = async (id: string | undefined, options: TailOptions): Pro
 	}
 }
 
-const parseNumber = (value?: string): number | null => {
-	if (!value) {
-		return null
-	}
-
-	const parsed = Number(value)
-	if (!Number.isFinite(parsed)) {
-		return null
-	}
-
-	return parsed
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}
-
 const normalizeMatch = (match?: string[]): { match?: string[]; error?: string } => {
 	if (!match || match.length === 0) {
 		return {}
@@ -156,17 +125,4 @@ const resolveMatchCase = (options: { ignoreCase?: boolean; caseSensitive?: boole
 		return 'insensitive'
 	}
 	return undefined
-}
-
-const normalizeQueryValue = (value?: string): string | undefined => {
-	if (value == null) {
-		return undefined
-	}
-
-	const trimmed = value.trim()
-	if (!trimmed) {
-		return undefined
-	}
-
-	return trimmed
 }

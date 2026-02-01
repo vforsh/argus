@@ -1,8 +1,7 @@
 import type { EvalResponse } from '@vforsh/argus-core'
 import { evalWithRetries } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import {
 	formatError,
 	parseCount,
@@ -101,16 +100,8 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		return
 	}
 
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
+	const resolved = await resolveWatcherOrExit({ id }, output)
+	if (!resolved) return
 
 	const { watcher } = resolved
 

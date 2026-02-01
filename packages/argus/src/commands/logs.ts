@@ -1,11 +1,10 @@
 import type { LogsResponse } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
 import { createOutput } from '../output/io.js'
 import { previewLogEvent } from '../output/preview.js'
+import { parseNumber, normalizeQueryValue } from '../cli/parse.js'
 import { parseDurationMs } from '../time.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the logs command. */
 export type LogsOptions = {
@@ -24,18 +23,6 @@ export type LogsOptions = {
 /** Execute the logs command for a watcher id. */
 export const runLogs = async (id: string | undefined, options: LogsOptions): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
-
-	const { watcher } = resolved
 
 	const params = new URLSearchParams()
 	const after = parseNumber(options.after)
@@ -78,57 +65,36 @@ export const runLogs = async (id: string | undefined, options: LogsOptions): Pro
 		params.set('sinceTs', String(Date.now() - duration))
 	}
 
-	const url = `http://${watcher.host}:${watcher.port}/logs?${params.toString()}`
-	let response: LogsResponse
-	try {
-		response = await fetchJson<LogsResponse>(url, { timeoutMs: 5_000 })
-	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		process.exitCode = 1
+	const result = await requestWatcherJson<LogsResponse>({
+		id,
+		path: '/logs',
+		query: params,
+		timeoutMs: 5_000,
+	})
+
+	if (!result.ok) {
+		writeRequestError(result, output)
 		return
 	}
 
 	if (options.jsonFull) {
-		output.writeJson(response.events)
+		output.writeJson(result.data.events)
 		return
 	}
 
 	if (options.json) {
-		const previewEvents = response.events.map((event) => previewLogEvent(event))
+		const previewEvents = result.data.events.map((event) => previewLogEvent(event))
 		output.writeJson(previewEvents)
 		return
 	}
 
-	for (const event of response.events) {
+	for (const event of result.data.events) {
 		output.writeHuman(
 			formatLogEvent(event, {
-				includeTimestamps: watcher.includeTimestamps,
+				includeTimestamps: result.watcher.includeTimestamps,
 			}),
 		)
 	}
-}
-
-const parseNumber = (value?: string): number | null => {
-	if (!value) {
-		return null
-	}
-
-	const parsed = Number(value)
-	if (!Number.isFinite(parsed)) {
-		return null
-	}
-
-	return parsed
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }
 
 const normalizeMatch = (match?: string[]): { match?: string[]; error?: string } => {
@@ -153,17 +119,4 @@ const resolveMatchCase = (options: { ignoreCase?: boolean; caseSensitive?: boole
 		return 'insensitive'
 	}
 	return undefined
-}
-
-const normalizeQueryValue = (value?: string): string | undefined => {
-	if (value == null) {
-		return undefined
-	}
-
-	const trimmed = value.trim()
-	if (!trimmed) {
-		return undefined
-	}
-
-	return trimmed
 }

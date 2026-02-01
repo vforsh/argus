@@ -1,22 +1,10 @@
 import type { DomModifyResponse, ErrorResponse } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared utilities
 // ─────────────────────────────────────────────────────────────────────────────
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}
 
 type BaseModifyOptions = {
 	selector: string
@@ -46,36 +34,23 @@ const executeModify = async (
 		return
 	}
 
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
-
-	const { watcher } = resolved
-	const url = `http://${watcher.host}:${watcher.port}/dom/modify`
-	let response: DomModifyResponse | ErrorResponse
-
 	const body = options.text != null ? { ...payload, text: options.text } : payload
 
-	try {
-		response = await fetchJson<DomModifyResponse | ErrorResponse>(url, {
-			method: 'POST',
-			body,
-			timeoutMs: 30_000,
-			returnErrorResponse: true,
-		})
-	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		process.exitCode = 1
+	const result = await requestWatcherJson<DomModifyResponse | ErrorResponse>({
+		id,
+		path: '/dom/modify',
+		method: 'POST',
+		body,
+		timeoutMs: 30_000,
+		returnErrorResponse: true,
+	})
+
+	if (!result.ok) {
+		writeRequestError(result, output)
 		return
 	}
 
+	const response = result.data
 	if (!response.ok) {
 		const errorResp = response as ErrorResponse
 		if (options.json) {

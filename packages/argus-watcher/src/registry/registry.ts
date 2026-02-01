@@ -1,11 +1,9 @@
-import { readRegistry, removeWatcherEntry, setWatcherEntry, writeRegistry } from '@vforsh/argus-core'
+import { removeWatcherEntry, setWatcherEntry, updateRegistry } from '@vforsh/argus-core'
 import type { WatcherRecord } from '@vforsh/argus-core'
 
-/** Write watcher entry to registry. */
+/** Write watcher entry to registry (locked read-modify-write). */
 export const announceWatcher = async (watcher: WatcherRecord): Promise<void> => {
-	const { registry } = await readRegistry()
-	const next = setWatcherEntry(registry, watcher)
-	await writeRegistry(next)
+	await updateRegistry((registry) => setWatcherEntry(registry, watcher))
 }
 
 /** Refresh watcher entry in registry. */
@@ -13,11 +11,9 @@ export const updateWatcherHeartbeat = async (watcher: WatcherRecord): Promise<vo
 	await announceWatcher(watcher)
 }
 
-/** Remove watcher entry from registry by id. */
+/** Remove watcher entry from registry by id (locked read-modify-write). */
 export const removeWatcher = async (id: string): Promise<void> => {
-	const { registry } = await readRegistry()
-	const next = removeWatcherEntry(registry, id)
-	await writeRegistry(next)
+	await updateRegistry((registry) => removeWatcherEntry(registry, id))
 }
 
 /** Periodically refresh registry entry until stopped. */

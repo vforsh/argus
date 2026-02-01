@@ -1,8 +1,6 @@
 import type { DomKeydownResponse, ErrorResponse } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the dom keydown command. */
 export type DomKeydownOptions = {
@@ -21,38 +19,25 @@ export const runDomKeydown = async (id: string | undefined, options: DomKeydownO
 		return
 	}
 
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
+	const result = await requestWatcherJson<DomKeydownResponse | ErrorResponse>({
+		id,
+		path: '/dom/keydown',
+		method: 'POST',
+		body: {
+			key: options.key,
+			selector: options.selector,
+			modifiers: options.modifiers,
+		},
+		timeoutMs: 30_000,
+		returnErrorResponse: true,
+	})
+
+	if (!result.ok) {
+		writeRequestError(result, output)
 		return
 	}
 
-	const { watcher } = resolved
-	const url = `http://${watcher.host}:${watcher.port}/dom/keydown`
-	let response: DomKeydownResponse | ErrorResponse
-
-	try {
-		response = await fetchJson<DomKeydownResponse | ErrorResponse>(url, {
-			method: 'POST',
-			body: {
-				key: options.key,
-				selector: options.selector,
-				modifiers: options.modifiers,
-			},
-			timeoutMs: 30_000,
-			returnErrorResponse: true,
-		})
-	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		process.exitCode = 1
-		return
-	}
-
+	const response = result.data
 	if (!response.ok) {
 		const errorResp = response as ErrorResponse
 		if (options.json) {
@@ -72,14 +57,4 @@ export const runDomKeydown = async (id: string | undefined, options: DomKeydownO
 	}
 
 	output.writeHuman(`Dispatched keydown: ${successResp.key}`)
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

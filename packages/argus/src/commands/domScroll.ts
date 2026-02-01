@@ -1,8 +1,6 @@
 import type { DomScrollResponse, ErrorResponse } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the dom scroll command. */
 export type DomScrollOptions = {
@@ -57,20 +55,6 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 		by = parsed
 	}
 
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
-
-	const { watcher } = resolved
-	const url = `http://${watcher.host}:${watcher.port}/dom/scroll`
-
 	const body: Record<string, unknown> = {}
 	if (hasSelector) {
 		body.selector = options.selector
@@ -86,21 +70,21 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 		body.by = by
 	}
 
-	let response: DomScrollResponse | ErrorResponse
+	const result = await requestWatcherJson<DomScrollResponse | ErrorResponse>({
+		id,
+		path: '/dom/scroll',
+		method: 'POST',
+		body,
+		timeoutMs: 30_000,
+		returnErrorResponse: true,
+	})
 
-	try {
-		response = await fetchJson<DomScrollResponse | ErrorResponse>(url, {
-			method: 'POST',
-			body,
-			timeoutMs: 30_000,
-			returnErrorResponse: true,
-		})
-	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		process.exitCode = 1
+	if (!result.ok) {
+		writeRequestError(result, output)
 		return
 	}
 
+	const response = result.data
 	if (!response.ok) {
 		const errorResp = response as ErrorResponse
 		if (options.json) {
@@ -144,14 +128,4 @@ const parseXY = (value: string): { x: number; y: number } | null => {
 		return null
 	}
 	return { x, y }
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

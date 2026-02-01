@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { evalOnce } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { formatError } from '../cli/parse.js'
+import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 
 /** Options for the dom add-script command. */
 export type DomAddScriptOptions = {
@@ -32,16 +32,8 @@ export const runDomAddScript = async (id: string | undefined, code: string | und
 		return
 	}
 
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
+	const resolved = await resolveWatcherOrExit({ id }, output)
+	if (!resolved) return
 
 	const { watcher } = resolved
 
@@ -221,13 +213,3 @@ const readStdin = async (): Promise<string> =>
 		process.stdin.on('error', (error) => reject(error))
 		process.stdin.resume()
 	})
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}

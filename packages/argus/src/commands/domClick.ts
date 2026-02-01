@@ -1,8 +1,6 @@
 import type { DomClickResponse, ErrorResponse } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the dom click command. */
 export type DomClickOptions = {
@@ -44,20 +42,6 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 		}
 	}
 
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
-
-	const { watcher } = resolved
-	const url = `http://${watcher.host}:${watcher.port}/dom/click`
-
 	const body: Record<string, unknown> = {}
 	if (hasSelector) {
 		body.selector = options.selector
@@ -71,21 +55,21 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 		body.y = y
 	}
 
-	let response: DomClickResponse | ErrorResponse
+	const result = await requestWatcherJson<DomClickResponse | ErrorResponse>({
+		id,
+		path: '/dom/click',
+		method: 'POST',
+		body,
+		timeoutMs: 30_000,
+		returnErrorResponse: true,
+	})
 
-	try {
-		response = await fetchJson<DomClickResponse | ErrorResponse>(url, {
-			method: 'POST',
-			body,
-			timeoutMs: 30_000,
-			returnErrorResponse: true,
-		})
-	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
-		process.exitCode = 1
+	if (!result.ok) {
+		writeRequestError(result, output)
 		return
 	}
 
+	const response = result.data
 	if (!response.ok) {
 		const errorResp = response as ErrorResponse
 		if (options.json) {
@@ -122,14 +106,4 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 	} else {
 		output.writeHuman(`Clicked ${successResp.clicked} ${label} for selector: ${options.selector}`)
 	}
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

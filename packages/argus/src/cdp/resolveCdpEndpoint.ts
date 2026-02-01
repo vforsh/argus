@@ -1,5 +1,5 @@
 import type { RegistryV1 } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry } from '../registry.js'
+import { pruneRegistry } from '../registry.js'
 
 export type CdpEndpointOptions = {
 	cdp?: string
@@ -53,7 +53,7 @@ export const resolveCdpEndpoint = async (options: CdpEndpointOptions): Promise<C
 	if (options.id != null) {
 		let registry: RegistryV1
 		try {
-			registry = await pruneRegistry(await loadRegistry())
+			registry = await pruneRegistry()
 		} catch (error) {
 			return { ok: false, error: `Failed to load registry: ${error instanceof Error ? error.message : error}`, exitCode: 1 }
 		}

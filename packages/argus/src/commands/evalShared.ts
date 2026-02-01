@@ -1,8 +1,12 @@
 import type { EvalResponse } from '@vforsh/argus-core'
 import { previewStringify } from '@vforsh/argus-core'
 import { readFile } from 'node:fs/promises'
+import { formatError, parseNumber } from '../cli/parse.js'
 import type { Output } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
+
+// Re-export shared parsers so existing eval imports keep working
+export { formatError, parseNumber } from '../cli/parse.js'
 
 // ---------------------------------------------------------------------------
 // Expression resolution
@@ -94,20 +98,6 @@ export const readStdin = async (): Promise<string> =>
 // Parsing helpers
 // ---------------------------------------------------------------------------
 
-/** Parse a string to a finite number, or return `undefined`. */
-export const parseNumber = (value?: string): number | undefined => {
-	if (!value) {
-		return undefined
-	}
-
-	const parsed = Number(value)
-	if (!Number.isFinite(parsed)) {
-		return undefined
-	}
-
-	return parsed
-}
-
 /** Parse `--retry` flag into a non-negative integer. */
 export const parseRetryCount = (value?: string): { value: number; error?: string } => {
 	if (value == null) {
@@ -173,17 +163,6 @@ export const sleep = async (durationMs: number): Promise<void> => {
 // ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
-
-/** Extract an error message from an unknown thrown value. */
-export const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}
 
 /** Format an exception response into a human-readable string. */
 export const formatException = (response: EvalResponse): string => {

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { withRegistryLock } from './lock.js'
 import { getRegistryPath } from './paths.js'
 import type { RegistryReadResult, RegistryV1, WatcherRecord } from './types.js'
 
@@ -52,6 +53,22 @@ export const writeRegistry = async (registry: RegistryV1, registryPath = getRegi
 	const dir = path.dirname(registryPath)
 	await fs.mkdir(dir, { recursive: true })
 	await atomicWrite(registryPath, JSON.stringify(registry, null, 2))
+}
+
+/**
+ * Atomically read-modify-write the registry under an exclusive lock.
+ * The `updater` receives the current registry and must return the next state.
+ * Returns the registry after the update has been persisted.
+ */
+export const updateRegistry = async (updater: (registry: RegistryV1) => RegistryV1, registryPath = getRegistryPath()): Promise<RegistryV1> => {
+	return withRegistryLock(async () => {
+		const { registry } = await readRegistry(registryPath)
+		const next = updater(registry)
+		if (next !== registry) {
+			await writeRegistry(next, registryPath)
+		}
+		return next
+	}, registryPath)
 }
 
 /** Return registry watchers as a list. */

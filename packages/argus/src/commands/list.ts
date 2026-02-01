@@ -1,6 +1,7 @@
 import type { StatusResponse, WatcherRecord } from '@vforsh/argus-core'
-import { loadRegistry, pruneRegistry } from '../registry.js'
+import { pruneRegistry } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
+import { formatError } from '../cli/parse.js'
 import { formatWatcherLine } from '../output/format.js'
 import { createOutput } from '../output/io.js'
 import { discoverChromeInstances, formatChromeInstanceLine } from './chrome.js'
@@ -49,8 +50,7 @@ const listWatchers = async (
 	options: ListOptions,
 	output: ReturnType<typeof createOutput>,
 ): Promise<Array<{ watcher: WatcherRecord; status?: StatusResponse }>> => {
-	let registry = await loadRegistry()
-	registry = await pruneRegistry(registry)
+	const registry = await pruneRegistry()
 
 	let watchers = Object.values(registry.watchers)
 
@@ -75,14 +75,4 @@ const listWatchers = async (
 	}
 
 	return results
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

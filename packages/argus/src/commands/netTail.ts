@@ -2,9 +2,9 @@ import type { NetTailResponse } from '@vforsh/argus-core'
 import { fetchJson } from '../httpClient.js'
 import { formatNetworkRequest } from '../output/format.js'
 import { createOutput } from '../output/io.js'
+import { formatError, parseNumber, normalizeQueryValue } from '../cli/parse.js'
 import { parseDurationMs } from '../time.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 
 /** Options for the net tail command. */
 export type NetTailOptions = {
@@ -19,16 +19,8 @@ export type NetTailOptions = {
 /** Execute the net tail command for a watcher id. */
 export const runNetTail = async (id: string | undefined, options: NetTailOptions): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
-		return
-	}
+	const resolved = await resolveWatcherOrExit({ id }, output)
+	if (!resolved) return
 
 	const { watcher } = resolved
 
@@ -99,40 +91,4 @@ const resolveSinceTs = (value?: string): { value: number | null; error?: string 
 		return { value: null, error: `Invalid --since value: ${value}` }
 	}
 	return { value: Date.now() - duration }
-}
-
-const parseNumber = (value?: string): number | null => {
-	if (!value) {
-		return null
-	}
-
-	const parsed = Number(value)
-	if (!Number.isFinite(parsed)) {
-		return null
-	}
-
-	return parsed
-}
-
-const normalizeQueryValue = (value?: string): string | undefined => {
-	if (value == null) {
-		return undefined
-	}
-
-	const trimmed = value.trim()
-	if (!trimmed) {
-		return undefined
-	}
-
-	return trimmed
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

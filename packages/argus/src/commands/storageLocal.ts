@@ -7,10 +7,8 @@ import type {
 	StorageLocalClearResponse,
 	ErrorResponse,
 } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for storage local commands. */
 export type StorageLocalOptions = {
@@ -40,13 +38,6 @@ export const runStorageLocalSet = async (
 	value: string,
 	options: StorageLocalOptions & { raw?: boolean },
 ): Promise<void> => {
-	// If --json flag is passed for input parsing (not output), parse value as JSON
-	// Note: --json on set means parse input as JSON, not output format
-	// We need a separate flag for JSON output, but per spec --json on set is for input
-	// Actually re-reading spec: --json on set means output JSON response
-	// --raw means treat value as raw string (default)
-	// If neither --raw nor --json: default is raw string
-
 	const output = createOutput(options)
 	const response = await callStorageLocal(id, { action: 'set', key, value, origin: options.origin }, options, output)
 	if (!response) return
@@ -120,45 +111,27 @@ const callStorageLocal = async (
 	options: StorageLocalOptions,
 	output: ReturnType<typeof createOutput>,
 ): Promise<StorageLocalResponse | null> => {
-	const resolved = await resolveWatcher({ id })
-	if (!resolved.ok) {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			writeWatcherCandidates(resolved.candidates, output)
-			output.writeWarn('Hint: run `argus list` to see all watchers.')
-		}
-		process.exitCode = resolved.exitCode
+	const result = await requestWatcherJson<StorageLocalResponse | ErrorResponse>({
+		id,
+		path: '/storage/local',
+		method: 'POST',
+		body: payload,
+		timeoutMs: 10_000,
+		returnErrorResponse: true,
+	})
+
+	if (!result.ok) {
+		writeRequestError(result, output)
 		return null
 	}
 
-	const { watcher } = resolved
-
-	const url = `http://${watcher.host}:${watcher.port}/storage/local`
-	try {
-		const response = await fetchJson<StorageLocalResponse | ErrorResponse>(url, {
-			method: 'POST',
-			body: payload,
-			timeoutMs: 10_000,
-			returnErrorResponse: true,
-		})
-
-		if (!response.ok) {
-			const err = response as ErrorResponse
-			output.writeWarn(`Error: ${err.error.message}`)
-			process.exitCode = 1
-			return null
-		}
-
-		return response as StorageLocalResponse
-	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+	const response = result.data
+	if (!response.ok) {
+		const err = response as ErrorResponse
+		output.writeWarn(`Error: ${err.error.message}`)
 		process.exitCode = 1
 		return null
 	}
-}
 
-const formatError = (error: unknown): string => {
-	if (!error) return 'unknown error'
-	if (error instanceof Error) return error.message
-	return String(error)
+	return response as StorageLocalResponse
 }
