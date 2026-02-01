@@ -15,7 +15,7 @@
 		"typecheck": "tsc -b --pretty false",
 		"typecheck:packages": "tsc -b packages/* --pretty false",
 		"build": "tsc -b",
-		"build:packages": "tsc -b packages/*",
+		"build:packages": "tsc -b packages/* && npm run bundle -w @vforsh/argus",
 		"chrome:start": "bun packages/argus/src/bin.ts chrome start",
 		"test:e2e": "bun run build:packages && bun test e2e/",
 		"playground": "bun playground/start.ts",

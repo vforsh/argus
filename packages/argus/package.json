@@ -8,7 +8,7 @@
 	},
 	"type": "module",
 	"bin": {
-		"argus": "dist/bin.js"
+		"argus": "dist/argus.js"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -32,7 +32,8 @@
 		"commander": "14.0.2"
 	},
 	"scripts": {
-		"build": "tsc -b",
+		"build": "tsc -b && bun run bundle",
+		"bundle": "bun build dist/bin.js --outfile dist/argus.js --target bun",
 		"typecheck": "tsc -b --pretty false",
 		"chrome:start": "bun src/bin.ts chrome start"
 	}
