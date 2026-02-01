@@ -2,15 +2,15 @@
 	"$schema": "../schemas/argus.config.schema.json",
 	"chrome": {
 		"start": {
-			"url": "https://google.com",
+			"url": "http://localhost:3333",
 			"profile": "default-lite",
 			"devTools": true
 		}
 	},
 	"watcher": {
 		"start": {
-			"id": "test",
-			"url": "google.com",
+			"id": "playground",
+			"url": "localhost:3333",
 			"chromeHost": "127.0.0.1",
 			"chromePort": 9222,
 			"artifacts": "./artifacts",

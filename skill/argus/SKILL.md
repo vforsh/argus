@@ -1,6 +1,6 @@
 ---
 name: argus
-description: Guides use of the Argus CLI to debug local web apps via Chrome CDP or the Argus Chrome extension (start Chrome/watcher, select targets including iframes, tail logs, eval JavaScript, and capture screenshots).
+description: Guides use of the Argus CLI to debug and inspect web apps via Chrome CDP or the Argus Chrome extension (start Chrome/watcher, select targets including iframes, tail logs, eval JavaScript, and capture screenshots).
 ---
 
 ## Argus CLI
@@ -9,86 +9,56 @@ Debug local web apps via Chrome CDP or extension. Logs, eval, screenshots, targe
 
 ---
 
-## CDP Workflow (Recommended)
+## Workflow
 
 Launch Chrome with CDP enabled, auto-select targets via `--url` matching.
 
-**CRITICAL for agents:** `argus watcher start` and `argus chrome start` are **long-running processes that never exit on their own**. You **MUST** start them in the background (e.g., `run_in_background: true` in Bash tool). If you run them in the foreground, they will block indefinitely and you will not be able to execute any further commands.
+**CRITICAL for agents:** `argus start`, `argus watcher start`, and `argus chrome start` are **long-running processes that never exit on their own**. You **MUST** start them in the background (e.g., `run_in_background: true` in Bash tool). If you run them in the foreground, they will block indefinitely and you will not be able to execute any further commands.
 
 ```bash
 # 1) Start app
 npm run dev && export APP_URL="http://localhost:3000"
 
-# 2) Start Chrome with CDP in background (uses 9222 if available; prints port)
-argus chrome start --url "$APP_URL"  # Run with run_in_background: true
+# 2) Launch Chrome + watcher in one command
+argus start --id app --url localhost:3000  # Run with run_in_background: true
 
-# 3) Start watcher in background — MUST use run_in_background: true (blocks forever otherwise)
-argus watcher start --id app --url "$APP_URL" --chrome-port 9222  # run_in_background: true
-
-# 4) Use CLI (these are quick commands, run normally)
+# 3) Use CLI (these are quick commands, run normally)
 argus logs app --since 10m --levels error,warning
-argus tail app
 argus eval app "location.href"
 argus screenshot app --out shot.png
+argus snapshot app --interactive
 ```
 
-Chrome variants:
+Alternatively, launch Chrome and watcher separately for more control:
 
 ```bash
-argus chrome start --dev-tools
-argus chrome start --profile default-full
-argus chrome start --json
-argus chrome start --from-watcher app
+argus chrome start --url "$APP_URL"  # run_in_background: true
+argus watcher start --id app --url "$APP_URL" --chrome-port 9222  # run_in_background: true
 ```
-
----
-
-## Extension Workflow
-
-Debug normal Chrome session without CDP flags.
-
-### One-Time Setup
-
-```bash
-# 1) Build extension
-cd packages/argus-extension && npm run build
-
-# 2) Load in Chrome
-#    chrome://extensions → Developer mode → Load unpacked → select packages/argus-extension
-#    Copy Extension ID (e.g. kkoefnlnjlnlbohcifcbkpgmjaokmipi)
-
-# 3) Install native host
-argus extension setup <EXTENSION_ID>
-argus extension status
-```
-
-### Usage
-
-1. Click Argus extension icon
-2. Click **Attach** on target tab
-3. Chrome shows orange "debugging" bar (expected)
-
-```bash
-argus list
-argus logs extension
-argus eval extension "document.title"
-```
-
-### Limitations
-
-- Debugging bar can't be hidden (Chrome security)
-- One debugger per tab
-- Tab must stay open
-- Manual tab selection (no `--url` matching)
-- Cross-origin iframes: use helper script (see [IFRAMES.md](./reference/IFRAMES.md))
 
 ---
 
 ## Commands Cheat Sheet
 
+### Start (Chrome + Watcher)
+
+**Long-running process — must use `run_in_background: true`.** Convenience command that launches Chrome and attaches a watcher in one step.
+
+```bash
+argus start --id app --url localhost:3000
+argus start --id app --url localhost:3000 --dev-tools
+argus start --id app --url localhost:3000 --profile temp
+argus start --id app --type page --headless
+argus start --id app --url localhost:3000 --inject ./debug.js
+argus start --id app --url localhost:3000 --no-page-indicator
+argus start --id app --url localhost:3000 --json
+```
+
+`--url` opens in Chrome and matches the watcher target. Accepts all chrome options (`--profile`, `--dev-tools`, `--headless`) and watcher options (`--type`, `--origin`, `--target`, `--parent`, `--inject`, `--artifacts`, `--no-page-indicator`). CDP port is wired automatically.
+
 ### Chrome Start
 
-**Long-running process — must use `run_in_background: true`.**
+**Long-running process — must use `run_in_background: true`.** Use when you need Chrome without a watcher, or need separate control.
 
 ```bash
 argus chrome start --url http://localhost:3000
@@ -101,7 +71,7 @@ argus chrome start --headless
 
 ### Watcher Start
 
-**Long-running process — must use `run_in_background: true`.**
+**Long-running process — must use `run_in_background: true`.** Use when Chrome is already running with CDP enabled.
 
 ```bash
 argus watcher start --id app --url localhost:3000
@@ -126,16 +96,8 @@ argus logs app --match "Error|Exception" --ignore-case
 argus logs app --source console
 argus logs app --json          # bounded JSON preview
 argus logs app --json-full     # full JSON (can be large)
-```
-
-### Tail (follow)
-
-**Note:** `tail` is a long-running streaming command. Run in background if you need to continue other work.
-
-```bash
-argus logs tail app
+argus logs tail app            # stream via long-polling (use run_in_background)
 argus logs tail app --levels error --json
-argus logs tail app --timeout 30000
 ```
 
 ### Eval
@@ -245,7 +207,7 @@ argus reload app --ignore-cache
 
 ## Config Defaults
 
-Load defaults for `argus chrome start` and `argus watcher start` from config file.
+Load defaults for `argus start`, `argus chrome start`, and `argus watcher start` from config file.
 
 Auto-discovery: `.argus/config.json`, `.config/argus.json`, `argus.config.json`, `argus/config.json`
 
@@ -318,6 +280,8 @@ await close()
 
 ## Reference (specialized topics)
 
+- [EXTENSION.md](./reference/EXTENSION.md) — Extension workflow (non-CDP debugging)
+- [EXTENSION_IFRAME_EVAL.md](./reference/EXTENSION_IFRAME_EVAL.md) — Cross-origin iframe eval in extension mode
 - [EVAL.md](./reference/EVAL.md) — Polling, flags, iframe eval
 - [IFRAMES.md](./reference/IFRAMES.md) — Target selection, cross-origin eval
 - [INJECT.md](./reference/INJECT.md) — Script injection on watcher attach
