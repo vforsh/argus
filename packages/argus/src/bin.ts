@@ -54,7 +54,6 @@ import {
 	mergeWatcherStartOptionsWithConfig,
 	resolveArgusConfigPath,
 } from './config/argusConfig.js'
-import { PluginRegistry } from './plugins/registry.js'
 
 const collectMatch = (value: string, previous: string[]): string[] => [...previous, value]
 const collectParam = (value: string, previous: string[]): string[] => [...previous, value]
@@ -1188,37 +1187,7 @@ extension
 // Main
 // ---------------------------------------------------------------------------
 
-async function main(): Promise<void> {
-	const cwd = process.cwd()
-	const configPath = resolveArgusConfigPath({ cwd })
-	const configResult = configPath ? loadArgusConfig(configPath) : null
-	const config = configResult?.config ?? {}
-	const configDir = configResult?.configDir ?? cwd
-
-	const registry = new PluginRegistry()
-	try {
-		await registry.loadFromConfig(config, {
-			cwd,
-			configDir,
-			argusConfig: config,
-		})
-		registry.registerWith(program)
-	} catch (error) {
-		console.error('Plugin loading failed:', error)
-		process.exit(1)
-	}
-
-	const cleanup = async (): Promise<void> => {
-		await registry.cleanup()
-	}
-	process.on('exit', () => void cleanup())
-	process.on('SIGINT', () => void cleanup())
-	process.on('SIGTERM', () => void cleanup())
-
-	await program.parseAsync(process.argv)
-}
-
-main().catch((error) => {
+program.parseAsync(process.argv).catch((error) => {
 	console.error(error)
 	process.exit(1)
 })

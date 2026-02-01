@@ -1,7 +1,5 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { PluginConfig } from '@vforsh/argus-core'
-
 export type ChromeStartConfig = {
 	url?: string
 	watcherId?: string
@@ -35,15 +33,6 @@ export type ArgusConfig = {
 	watcher?: {
 		start?: WatcherStartConfig
 	}
-	/**
-	 * Plugin modules to load.
-	 * Each entry can be:
-	 * - npm package name: "gameX-argus-plugin"
-	 * - relative path: "./plugins/gameX.js"
-	 * - absolute path: "/path/to/plugin.js"
-	 * - object with metadata: { name: "gameX", module: "./plugins/gameX.js" }
-	 */
-	plugins?: PluginConfig[]
 }
 
 export type ArgusConfigLoadResult = {
@@ -272,64 +261,6 @@ const validateWatcherStartConfig = (value: unknown): { ok: true; value: WatcherS
 	return { ok: true, value: config }
 }
 
-const validatePluginsConfig = (value: unknown): { ok: true; value: PluginConfig[] } | { ok: false; error: string } => {
-	if (!Array.isArray(value)) {
-		return { ok: false, error: '"plugins" must be an array.' }
-	}
-
-	const plugins: PluginConfig[] = []
-	for (let i = 0; i < value.length; i++) {
-		const item = value[i]
-
-		// String format
-		if (typeof item === 'string') {
-			plugins.push(item)
-			continue
-		}
-
-		// Object format
-		if (!isRecord(item)) {
-			return { ok: false, error: `"plugins[${i}]" must be a string or an object.` }
-		}
-
-		const nameResult = validateOptionalString(item.name, `"plugins[${i}].name"`)
-		if (!nameResult.ok) {
-			return nameResult
-		}
-
-		const moduleResult = validateOptionalString(item.module, `"plugins[${i}].module"`)
-		if (!moduleResult.ok) {
-			return moduleResult
-		}
-
-		if (!moduleResult.value) {
-			return { ok: false, error: `"plugins[${i}].module" is required.` }
-		}
-
-		const enabledResult = validateOptionalBoolean(item.enabled, `"plugins[${i}].enabled"`)
-		if (!enabledResult.ok) {
-			return enabledResult
-		}
-
-		const pluginConfig: PluginConfig = {
-			name: nameResult.value || moduleResult.value,
-			module: moduleResult.value,
-			enabled: enabledResult.value,
-		}
-
-		if (item.config !== undefined) {
-			if (!isRecord(item.config)) {
-				return { ok: false, error: `"plugins[${i}].config" must be an object.` }
-			}
-			pluginConfig.config = item.config
-		}
-
-		plugins.push(pluginConfig)
-	}
-
-	return { ok: true, value: plugins }
-}
-
 const validateArgusConfig = (value: unknown): { ok: true; value: ArgusConfig } | { ok: false; error: string } => {
 	if (!isRecord(value)) {
 		return { ok: false, error: 'Config root must be an object.' }
@@ -367,16 +298,7 @@ const validateArgusConfig = (value: unknown): { ok: true; value: ArgusConfig } |
 		}
 	}
 
-	let pluginsConfig: ArgusConfig['plugins']
-	if (value.plugins !== undefined) {
-		const pluginsResult = validatePluginsConfig(value.plugins)
-		if (!pluginsResult.ok) {
-			return pluginsResult
-		}
-		pluginsConfig = pluginsResult.value
-	}
-
-	return { ok: true, value: { chrome: chromeConfig, watcher: watcherConfig, plugins: pluginsConfig } }
+	return { ok: true, value: { chrome: chromeConfig, watcher: watcherConfig } }
 }
 
 export const resolveArgusConfigPath = ({ cliPath, cwd }: { cliPath?: string; cwd: string }): string | null => {
