@@ -2,8 +2,6 @@
 
 - **Keep files small**: Keep files under ~500 LOC so changes stay reviewable. If a file starts to sprawl, split it before adding more logic. Prefer extracting cohesive helpers/hooks/subcomponents over adding branching in-place.
 
-- **Stable UI test IDs**: For app UI, add `data-testid` to _stable, large components_ (things tests/automation will target long-term). Use durable IDs; stable across copy/layout refactors. Don’t derive IDs from labels or DOM structure.
-
 - **Writing style**: Direct; information-dense. Avoid filler, repetition, and long preambles (esp. in agent replies and “how-to” docs). Optimize for scanability: someone should find the rule fast and apply it correctly.
 
 - **Adding rules**: When adding new rules/sections to `AGENTS.md`, keep them short and scannable. 3-5 sentences per bullet. Use the existing format: `##` section headers, bold-labeled bullets, and `---` separators between sections. Prefer telegraph style; add extra sentences only when they prevent misinterpretation.
@@ -61,16 +59,6 @@
 - **Merging worktree**: Don’t let `wt merge` create the squash commit if it would fall back to “Squash commits from …” (commitlint will fail). Do the squash commit yourself, then let Worktrunk fast-forward without creating a commit. From the feature worktree run: `base=$(git merge-base master HEAD) && git reset --soft "$base" && git add -A && git commit -m "feat: <summary>" && wt merge --no-commit -y`. (Use `fix:`/`refactor:` etc. as appropriate.)
 
 - **Plan files before merge**: If the worktree was created from a plan file (e.g. `tasks/*.md`), remove that file before running `wt merge`. Remove it without asking for confirmation.
-
----
-
-## Logging
-
-- **Log channels**: For app logging, use the channel-based logger from `src/renderer/logs/logs.ts` (import `logger`) and pick the channel that best matches the purpose via `logger.getOrCreate(<channel>)`. Channels are defined in `src/renderer/logs/LogChannel.ts`. Avoid raw `console.*` for non-trivial logging; it’s easy to lose context and harder to filter.
-
-- **String-first logging**: Put the main information in a string so it survives into text logs reliably. If you need to log structured data, serialize it (e.g. JSON) into the message string (or include a short, string summary + a serialized payload). Don’t rely on logging raw objects as separate args for anything important.
-
-- **Signal, not noise**: Add `info` logs around crucial transitions (open/save, persistence, cache invalidate, RPC boundaries) so flows are traceable, but keep volume low. Prefer one log per milestone with compact counts/ids over per-item spam. If a loop would log per node/asset/object, gate it behind debug or aggregate counts first.
 
 ---
 

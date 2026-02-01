@@ -86,6 +86,37 @@ argus eval extension "document.title"
 
 ## Commands Cheat Sheet
 
+### Chrome Start
+
+**Long-running process — must use `run_in_background: true`.**
+
+```bash
+argus chrome start --url http://localhost:3000
+argus chrome start --from-watcher app
+argus chrome start --dev-tools
+argus chrome start --headless
+```
+
+`--from-watcher` reads URL from a registered watcher's config. `--headless` runs without a visible window.
+
+### Watcher Start
+
+**Long-running process — must use `run_in_background: true`.**
+
+```bash
+argus watcher start --id app --url localhost:3000
+argus watcher start --id app --url localhost:3000 --chrome-port 9222
+argus watcher start --id app --type iframe --url localhost:3007
+argus watcher start --id app --type iframe --parent yandex.ru
+argus watcher start --id app --origin https://localhost:3007
+argus watcher start --id app --target CC1135709D9AC3B9CC0446F8B58CC344
+argus watcher start --id app --url localhost:3000 --inject ./debug.js
+argus watcher start --id app --url localhost:3000 --no-page-indicator
+argus watcher start --id app --source extension
+```
+
+`--url` matches target URL substring. `--origin` matches protocol+host+port only. `--target` connects to a specific Chrome target ID. `--type` filters by target type (page, iframe, worker). `--parent` filters by parent target URL. `--inject` runs a JS file on attach + navigation. `--no-page-indicator` hides the in-page overlay.
+
 ### Logs
 
 ```bash
@@ -93,7 +124,8 @@ argus logs app --since 10m
 argus logs app --levels error,warning
 argus logs app --match "Error|Exception" --ignore-case
 argus logs app --source console
-argus logs app --json          # NDJSON output
+argus logs app --json          # bounded JSON preview
+argus logs app --json-full     # full JSON (can be large)
 ```
 
 ### Tail (follow)
@@ -101,9 +133,9 @@ argus logs app --json          # NDJSON output
 **Note:** `tail` is a long-running streaming command. Run in background if you need to continue other work.
 
 ```bash
-argus tail app
-argus tail app --levels error --json
-argus tail app --timeout 30000 --limit 200
+argus logs tail app
+argus logs tail app --levels error --json
+argus logs tail app --timeout 30000
 ```
 
 ### Eval
@@ -112,11 +144,12 @@ argus tail app --timeout 30000 --limit 200
 argus eval app "location.href"
 argus eval app "await fetch('/ping').then(r => r.status)"
 argus eval app "document.title" --json
+argus eval app --file ./script.js
 ```
 
 ### Eval-Until
 
-Poll until expression returns truthy. Simpler than `eval --interval --until` for "wait for ready" cases.
+Poll until expression returns truthy.
 
 ```bash
 argus eval-until app "document.querySelector('#loaded')"
@@ -136,14 +169,76 @@ argus screenshot app --out shot.png
 argus screenshot app --selector "canvas" --out canvas.png
 ```
 
+### Network
+
+```bash
+argus net app --since 5m
+argus net app --grep api
+argus net app --json
+argus net tail app
+argus net tail app --grep api --json
+```
+
+### Storage
+
+```bash
+argus storage local get app theme
+argus storage local set app theme dark
+argus storage local remove app theme
+argus storage local ls app
+argus storage local clear app
+```
+
+### Trace
+
+```bash
+argus trace app --duration 3s --out trace.json
+argus trace start app --categories "devtools.timeline"
+argus trace stop app --out trace.json
+```
+
+### DOM (query)
+
+```bash
+argus dom tree app --selector "body"
+argus dom tree app --selector "div" --all --depth 3
+argus dom info app --selector "#root"
+argus dom info app --selector "div" --all --json
+argus snapshot app
+argus snapshot app --interactive
+argus snapshot app --selector "form" --depth 3
+```
+
+`dom tree` returns a DOM subtree; control depth with `--depth` (default 2), cap nodes with `--max-nodes`. `dom info` returns detailed element info (attributes, outerHTML, box model). `snapshot` (aliases: `snap`, `ax`) captures an accessibility tree; `--interactive` / `-i` filters to buttons, links, inputs, etc.
+
+### DOM (interact)
+
+```bash
+argus dom click app --selector "button.submit"
+argus dom hover app --selector ".menu-item"
+argus dom fill app --selector "#username" "Bob"
+argus dom fill app --selector "textarea" "New content"
+argus dom fill app --selector "input[type=text]" --all "reset"
+argus dom keydown app --key Enter
+argus dom keydown app --key a --selector "#input"
+argus dom keydown app --key a --modifiers shift,ctrl
+```
+
+`dom fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). `--text` filters by textContent, `--all` fills multiple matches. `dom keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos.
+
 ### Targets / Pages
 
 ```bash
-argus page targets --id app
-argus page targets --type iframe --id app
+argus page ls --id app
+argus page ls --type iframe --id app
+argus page ls --tree --id app
 argus page open --url http://example.com --id app
-argus page reload <targetId> --id app
-argus page reload <targetId> --id app --param foo=bar
+argus page reload --attached --id app
+argus page reload <targetId> --param foo=bar
+argus page activate <targetId>
+argus page close <targetId>
+argus reload app                  # shortcut: reload watcher's attached page
+argus reload app --ignore-cache
 ```
 
 ---
