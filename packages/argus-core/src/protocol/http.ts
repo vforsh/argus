@@ -196,7 +196,7 @@ export type DomTreeRequest = {
 	maxNodes?: number
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
-	/** Filter elements by exact trimmed textContent. */
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
 }
 
@@ -225,7 +225,7 @@ export type DomInfoRequest = {
 	all?: boolean
 	/** Max characters for outerHTML. Default: 50000. */
 	outerHtmlMaxChars?: number
-	/** Filter elements by exact trimmed textContent. */
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
 }
 
@@ -248,7 +248,7 @@ export type DomHoverRequest = {
 	selector: string
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
-	/** Filter elements by exact trimmed textContent. */
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
 }
 
@@ -275,7 +275,7 @@ export type DomClickRequest = {
 	x?: number
 	/** Viewport y-coordinate, or y-offset from element top-left when selector is set. */
 	y?: number
-	/** Filter elements by exact trimmed textContent. */
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
 }
 
@@ -357,7 +357,7 @@ export type DomRemoveRequest = {
 	selector: string
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
-	/** Filter elements by exact trimmed textContent. */
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
 }
 
@@ -381,7 +381,7 @@ export type DomModifyRequest = {
 	selector: string
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
-	/** Filter elements by exact trimmed textContent. */
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
 } & (
 	| { type: 'attr'; set?: Record<string, string | true>; remove?: string[] }
@@ -412,7 +412,7 @@ export type DomSetFileRequest = {
 	files: string[]
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
-	/** Filter elements by exact trimmed textContent. */
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
 }
 
@@ -441,7 +441,7 @@ export type DomFillRequest = {
 	value: string
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
-	/** Filter elements by exact trimmed textContent. */
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
 }
 

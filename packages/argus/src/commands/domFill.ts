@@ -6,7 +6,8 @@ import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 /** Options for the dom fill command. */
 export type DomFillOptions = {
-	selector: string
+	selector?: string
+	name?: string
 	all?: boolean
 	text?: string
 	json?: boolean
@@ -16,8 +17,18 @@ export type DomFillOptions = {
 export const runDomFill = async (id: string | undefined, value: string, options: DomFillOptions): Promise<void> => {
 	const output = createOutput(options)
 
+	if (options.name && options.selector) {
+		output.writeWarn('Cannot use both --name and --selector')
+		process.exitCode = 2
+		return
+	}
+
+	if (options.name) {
+		options.selector = `[name="${options.name}"]`
+	}
+
 	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector is required')
+		output.writeWarn('--selector or --name is required')
 		process.exitCode = 2
 		return
 	}

@@ -729,7 +729,7 @@ dom.command('tree')
 	.option('--depth <n>', 'Max depth to traverse (default: 2)')
 	.option('--max-nodes <n>', 'Max total nodes to return (default: 5000)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -745,7 +745,7 @@ dom.command('info')
 	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
 	.option('--outer-html-max <n>', 'Max characters for outerHTML (default: 50000)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -760,7 +760,7 @@ dom.command('hover')
 	.description('Hover over element(s) matching a CSS selector')
 	.requiredOption('--selector <css>', 'CSS selector to match element(s)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -776,7 +776,7 @@ dom.command('click')
 	.option('--selector <css>', 'CSS selector to match element(s)')
 	.option('--pos <x,y>', 'Viewport coordinates or offset from element top-left')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -869,7 +869,7 @@ dom.command('remove')
 	.description('Remove elements from the page')
 	.requiredOption('--selector <css>', 'CSS selector for elements to remove')
 	.option('--all', 'Remove all matches (default: error if >1 match)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -888,7 +888,7 @@ domModify
 	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
 	.option('--remove <attrs...>', 'Attributes to remove')
 	.option('--all', 'Apply to all matches (default: error if >1 match)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -907,7 +907,7 @@ domModify
 	.option('--remove <classes...>', 'Classes to remove')
 	.option('--toggle <classes...>', 'Classes to toggle')
 	.option('--all', 'Apply to all matches (default: error if >1 match)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -924,7 +924,7 @@ domModify
 	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
 	.option('--remove <props...>', 'Style properties to remove')
 	.option('--all', 'Apply to all matches (default: error if >1 match)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -940,7 +940,7 @@ domModify
 	.argument('<text>', 'Text content to set')
 	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
 	.option('--all', 'Apply to all matches (default: error if >1 match)')
-	.option('--text-filter <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text-filter <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -956,7 +956,7 @@ domModify
 	.argument('<html>', 'HTML content to set')
 	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
 	.option('--all', 'Apply to all matches (default: error if >1 match)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText('after', '\nExamples:\n  $ argus dom modify html app --selector "#container" "<p>New <strong>content</strong></p>"\n')
 	.action(async (id, html, options) => {
@@ -969,7 +969,7 @@ dom.command('set-file')
 	.requiredOption('--selector <css>', 'CSS selector for file input element(s)')
 	.requiredOption('--file <path...>', 'File path(s) to set on the input (repeatable)')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
@@ -983,13 +983,14 @@ dom.command('fill')
 	.argument('[id]', 'Watcher id to query')
 	.argument('<value>', 'Value to fill into the element')
 	.description('Fill input/textarea/contenteditable elements with a value (triggers framework events)')
-	.requiredOption('--selector <css>', 'CSS selector for target element(s)')
+	.option('--selector <css>', 'CSS selector for target element(s)')
+	.option('--name <attr>', 'Shorthand for --selector "[name=<attr>]"')
 	.option('--all', 'Allow multiple matches (default: error if >1 match)')
-	.option('--text <string>', 'Filter by exact textContent (trimmed)')
+	.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 	.option('--json', 'Output JSON for automation')
 	.addHelpText(
 		'after',
-		'\nExamples:\n  $ argus dom fill app --selector "#username" "Bob"\n  $ argus dom fill app --selector "textarea" "New content"\n  $ argus dom fill app --selector "input[type=text]" --all "reset"\n',
+		'\nExamples:\n  $ argus dom fill app --selector "#username" "Bob"\n  $ argus dom fill app --name "title" "Hello"\n  $ argus dom fill app --selector "textarea" "New content"\n  $ argus dom fill app --selector "input[type=text]" --all "reset"\n',
 	)
 	.action(async (id, value, options) => {
 		await runDomFill(id, value, options)

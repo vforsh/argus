@@ -1,5 +1,6 @@
 import type { DomNode, DomElementInfo, DomTreeResponse, DomInfoResponse, DomInsertPosition } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
+import { filterNodesByText } from './text-filter.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -219,26 +220,6 @@ const resolveSelectorMatches = async (
 	const nodeIds = all ? allNodeIds : allNodeIds.slice(0, 1)
 
 	return { allNodeIds, nodeIds }
-}
-
-const filterNodesByText = async (session: CdpSessionHandle, nodeIds: number[], text: string): Promise<number[]> => {
-	const filtered: number[] = []
-	for (const nodeId of nodeIds) {
-		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
-		const objectId = resolved.object?.objectId
-		if (!objectId) {
-			continue
-		}
-		const evalResult = (await session.sendAndWait('Runtime.callFunctionOn', {
-			objectId,
-			functionDeclaration: 'function() { return this.textContent?.trim(); }',
-			returnByValue: true,
-		})) as { result?: { value?: unknown } }
-		if (evalResult.result?.value === text) {
-			filtered.push(nodeId)
-		}
-	}
-	return filtered
 }
 
 const toAttributesRecord = (attributes?: string[]): Record<string, string> => {
