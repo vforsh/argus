@@ -12,7 +12,13 @@
 
 - **Plans (implementation/refactor)**: When the user asks for an implementation or refactor plan, always end the plan with a short “final checklist”. It must explicitly say to run `npm run typecheck` and `npm run lint` after implementation, and to fix any errors found (use `npm run lint:fix` when appropriate). Keep this checklist to 1–2 short sentences.
 
-- **Typechecking**: Use `npm run typecheck` for one-shot typechecking. Don’t use `typecheck-dev` for “quick checks” (watch mode).
+- **Typechecking**: Use `npm run typecheck` for one-shot typechecking. Don't use `typecheck-dev` for "quick checks" (watch mode).
+
+- **Runtime & deps**: Bun is the runtime and package manager (`bun install`, `bun run`). Prefer Bun/Node built-ins over new deps. Add deps to the specific package that needs them, not root. Keep `argus-core` dependency-free.
+
+- **Code formatting**: Prettier runs on pre-commit via lint-staged. Config: tabs, no semicolons, single quotes, 150-char line width. Write in repo style; the hook handles edge cases. Linter: `npm run lint` (oxlint). Use `npm run lint:fix` for auto-fixable issues.
+
+- **Skill docs**: `skill/argus/SKILL.md` is the AI-facing cheat sheet for the CLI. When adding or changing a command, update SKILL.md to match. Keep examples minimal and behavior-focused. Advanced topics go in `skill/argus/reference/`.
 
 ---
 
