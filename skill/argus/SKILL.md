@@ -85,7 +85,7 @@ argus watcher start --id app --url localhost:3000 --no-page-indicator
 argus watcher start --id app --source extension
 ```
 
-`--url` matches target URL substring. `--origin` matches protocol+host+port only. `--target` connects to a specific Chrome target ID. `--type` filters by target type (page, iframe, worker). `--parent` filters by parent target URL. `--inject` runs a JS file on attach + navigation. `--no-page-indicator` hides the in-page overlay.
+`--url` matches target URL substring. `--origin` matches protocol+host+port only. `--target` connects to a specific Chrome target ID. `--type` filters by target type (page, iframe, worker). `--parent` filters by parent target URL. `--inject` runs a JS file on attach + navigation. `--no-page-indicator` hides the in-page overlay — use this when capturing screenshots so the indicator badge doesn't appear in the image.
 
 ### Logs
 
@@ -206,6 +206,26 @@ argus dom scroll app --selector ".panel" --by 0,500
 ```
 
 `--selector` alone scrolls element into view (`scrollIntoView`). `--to x,y` / `--by x,y` alone scrolls the viewport. Combine `--selector` with `--to`/`--by` to scroll within a scrollable container. Returns `{ scrollX, scrollY }`.
+
+### Emulation
+
+```bash
+argus page emulation set app --device iphone-14
+argus page emulation set app --device pixel-7
+argus page emulation set app --device ipad-mini
+argus page emulation set app --device desktop-1440
+argus page emulation set app --device desktop-1600
+argus page emulation set app --width 1600 --height 900
+argus page emulation set app --device iphone-14 --width 500
+argus page emulation set app --width 800 --height 600 --dpr 2 --mobile --touch
+argus page emulation set app --device iphone-14 --ua "Custom UA"
+argus page emu set app --device iphone-14          # alias
+argus page emulation clear app
+argus page emulation status app
+argus page emulation status app --json
+```
+
+Emulates device viewport (width/height/DPR/mobile), touch, and user-agent on the watcher-attached page. `--device` selects a preset; `--width`, `--height`, `--dpr`, `--mobile`/`--no-mobile`, `--touch`/`--no-touch`, `--ua` override individual fields. State persists until cleared (survives detach/reattach). Available presets: `iphone-14`, `iphone-15-pro-max`, `pixel-7`, `ipad-mini`, `desktop-1440`, `desktop-1600`.
 
 ### Targets / Pages
 
