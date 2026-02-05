@@ -5,7 +5,7 @@ import Emittery from 'emittery'
 import { LogBuffer } from './buffer/LogBuffer.js'
 import { NetBuffer } from './buffer/NetBuffer.js'
 import { startHttpServer } from './http/server.js'
-import { announceWatcher, removeWatcher, startRegistryHeartbeat, ensureUniqueWatcherId } from './registry/registry.js'
+import { announceWatcher, removeWatcher, startRegistryHeartbeat, resolveUniqueWatcherId } from './registry/registry.js'
 import { WatcherFileLogger } from './fileLogs/WatcherFileLogger.js'
 import { buildIgnoreMatcher } from './cdp/ignoreList.js'
 import { createNetworkCapture } from './cdp/networkCapture.js'
@@ -187,7 +187,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		throw new Error('Watcher id is required')
 	}
 
-	await ensureUniqueWatcherId(options.id)
+	const watcherId = await resolveUniqueWatcherId(options.id)
 
 	const sourceMode = options.source ?? 'cdp'
 	const host = options.host ?? '127.0.0.1'
@@ -200,7 +200,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const stripUrlPrefixes = options.location?.stripUrlPrefixes
 
 	// Resolve artifacts configuration
-	const artifactsBaseDir = resolveArtifactsBaseDir(options.artifacts?.base, options.id)
+	const artifactsBaseDir = resolveArtifactsBaseDir(options.artifacts?.base, watcherId)
 	const logsEnabled = options.artifacts?.logs?.enabled === true
 	const logsDir = path.join(artifactsBaseDir, 'logs')
 	const includeTimestamps = options.artifacts?.logs?.includeTimestamps ?? false
@@ -211,7 +211,6 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 
 	// Page console logging (default: minimal)
 	const pageConsoleLogging = options.pageConsoleLogging ?? 'minimal'
-	const watcherId = options.id
 
 	const events = new Emittery<ArgusWatcherEventMap>()
 	const buffer = new LogBuffer(bufferSize)
@@ -224,7 +223,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 
 	const fileLogger = logsEnabled
 		? new WatcherFileLogger({
-				watcherId: options.id,
+				watcherId,
 				startedAt,
 				logsDir,
 				chrome: sourceMode === 'cdp' ? chrome : undefined,
@@ -236,7 +235,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		: null
 
 	const record: WatcherRecord = {
-		id: options.id,
+		id: watcherId,
 		host,
 		port,
 		pid: process.pid,
@@ -284,7 +283,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	}
 
 	const buildIndicatorInfo = (target: { title: string | null; url: string | null } | null) => ({
-		watcherId: options.id,
+		watcherId,
 		watcherHost: host,
 		watcherPort: record.port,
 		watcherPid: process.pid,
@@ -366,13 +365,13 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 						logToPageConsole(`attached (url=${url})`)
 						void events.emit('cdpAttached', {
 							ts: Date.now(),
-							watcherId: options.id,
+							watcherId,
 							target: status.target,
 						})
 					} else if (!status.attached && prevAttached) {
 						void events.emit('cdpDetached', {
 							ts: Date.now(),
-							watcherId: options.id,
+							watcherId,
 							target: status.target,
 							reason: status.reason ?? 'unknown',
 						})
@@ -420,13 +419,13 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 						logToPageConsole(`attached (url=${url})`)
 						void events.emit('cdpAttached', {
 							ts: Date.now(),
-							watcherId: options.id,
+							watcherId,
 							target: status.target,
 						})
 					} else if (!status.attached && prevAttached) {
 						void events.emit('cdpDetached', {
 							ts: Date.now(),
-							watcherId: options.id,
+							watcherId,
 							target: status.target,
 							reason: status.reason ?? 'unknown',
 						})
@@ -496,7 +495,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 			}
 			void events.emit('httpRequested', {
 				...event,
-				watcherId: options.id,
+				watcherId,
 			})
 		},
 		onShutdown: () => {

@@ -2,23 +2,47 @@ import { readRegistry, removeWatcherEntry, setWatcherEntry, updateRegistry } fro
 import type { WatcherRecord } from '@vforsh/argus-core'
 
 /**
- * Ensure no live watcher is using the given ID.
- * If a stale entry exists (process dead), it is removed automatically.
- * Throws if a watcher with the same ID is already running.
+ * Resolve a unique watcher ID. If the requested ID is taken by a live watcher,
+ * appends `-2`, `-3`, etc. until a free slot is found.
+ * Stale entries (dead process) are cleaned up automatically.
+ * Returns the ID that should be used.
  */
-export const ensureUniqueWatcherId = async (id: string): Promise<void> => {
+export const resolveUniqueWatcherId = async (id: string): Promise<string> => {
 	const { registry } = await readRegistry()
-	const existing = registry.watchers[id]
-	if (!existing) {
-		return
+	const staleIds: string[] = []
+
+	const isIdAvailable = (candidate: string): boolean => {
+		const existing = registry.watchers[candidate]
+		if (!existing) {
+			return true
+		}
+		if (existing.pid == null || !isProcessAlive(existing.pid)) {
+			staleIds.push(candidate)
+			return true
+		}
+		return false
 	}
 
-	if (existing.pid != null && isProcessAlive(existing.pid)) {
-		throw new Error(`Watcher "${id}" is already running (pid ${existing.pid}). Pick a different --id or stop the existing one first.`)
+	let resolvedId = id
+	if (!isIdAvailable(id)) {
+		let suffix = 2
+		while (!isIdAvailable(`${id}-${suffix}`)) {
+			suffix++
+		}
+		resolvedId = `${id}-${suffix}`
 	}
 
-	// Stale entry — clean it up
-	await updateRegistry((reg) => removeWatcherEntry(reg, id))
+	if (staleIds.length > 0) {
+		await updateRegistry((reg) => {
+			let next = reg
+			for (const staleId of staleIds) {
+				next = removeWatcherEntry(next, staleId)
+			}
+			return next
+		})
+	}
+
+	return resolvedId
 }
 
 const isProcessAlive = (pid: number): boolean => {
