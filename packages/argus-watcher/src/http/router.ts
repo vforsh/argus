@@ -21,8 +21,11 @@ import { handle as postDomAdd } from './routes/postDomAdd.js'
 import { handle as postDomRemove } from './routes/postDomRemove.js'
 import { handle as postDomModify } from './routes/postDomModify.js'
 import { handle as postDomSetFile } from './routes/postDomSetFile.js'
+import { handle as postDomFocus } from './routes/postDomFocus.js'
 import { handle as postDomFill } from './routes/postDomFill.js'
 import { handle as postDomScroll } from './routes/postDomScroll.js'
+import { handle as getEmulation } from './routes/getEmulation.js'
+import { handle as postEmulation } from './routes/postEmulation.js'
 import { handle as postStorageLocal } from './routes/postStorageLocal.js'
 import { handle as postReload } from './routes/postReload.js'
 import { handle as postShutdown } from './routes/postShutdown.js'
@@ -52,8 +55,11 @@ const routes: Record<string, RouteEntry> = {
 	'POST /dom/remove': { handler: postDomRemove },
 	'POST /dom/modify': { handler: postDomModify },
 	'POST /dom/set-file': { handler: postDomSetFile },
+	'POST /dom/focus': { handler: postDomFocus },
 	'POST /dom/fill': { handler: postDomFill },
 	'POST /dom/scroll': { handler: postDomScroll },
+	'GET /emulation': { handler: getEmulation },
+	'POST /emulation': { handler: postEmulation },
 	'POST /storage/local': { handler: postStorageLocal },
 	'POST /reload': { handler: postReload },
 	'POST /shutdown': { handler: postShutdown },

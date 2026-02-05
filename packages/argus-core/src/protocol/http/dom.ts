@@ -332,3 +332,26 @@ export type DomFillResponse = {
 	/** Number of elements filled. */
 	filled: number
 }
+
+/**
+ * Request payload for POST /dom/focus.
+ */
+export type DomFocusRequest = {
+	/** CSS selector to match element(s). */
+	selector: string
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
+	text?: string
+}
+
+/**
+ * Response payload for POST /dom/focus.
+ */
+export type DomFocusResponse = {
+	ok: true
+	/** Number of elements matched by selector. */
+	matches: number
+	/** Number of elements focused. */
+	focused: number
+}

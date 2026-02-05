@@ -6,6 +6,7 @@ import type { CdpSessionHandle } from '../cdp/connection.js'
 import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
 import type { CdpSourceHandle } from '../sources/types.js'
+import type { EmulationController } from '../emulation/EmulationController.js'
 import { dispatch } from './router.js'
 
 /** Optional metadata for the HTTP request event. */
@@ -29,8 +30,10 @@ export type HttpRequestEventMetadata = {
 		| 'dom/remove'
 		| 'dom/modify'
 		| 'dom/set-file'
+		| 'dom/focus'
 		| 'dom/fill'
 		| 'dom/scroll'
+		| 'emulation'
 		| 'storage/local'
 		| 'reload'
 		| 'shutdown'
@@ -64,6 +67,8 @@ export type HttpServerOptions = {
 	cdpSession: CdpSessionHandle
 	traceRecorder: TraceRecorder
 	screenshotter: Screenshotter
+	/** Emulation controller for GET/POST /emulation endpoints. */
+	emulationController: EmulationController
 	/** Source handle for extension mode (enables /targets, /attach, /detach endpoints). */
 	sourceHandle?: CdpSourceHandle
 	/** Optional callback invoked when logs or tail are requested. */

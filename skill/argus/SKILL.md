@@ -183,6 +183,8 @@ argus snapshot app --testid "login-form"
 argus dom click app --selector "button.submit"
 argus dom click app --testid "submit-btn"
 argus dom hover app --selector ".menu-item"
+argus dom focus app --selector "#input"
+argus dom focus app --testid "search-box"
 argus dom fill app --selector "#username" "Bob"
 argus dom fill app --testid "username" "Bob"
 argus dom fill app --selector "textarea" "New content"
@@ -192,7 +194,7 @@ argus dom keydown app --key a --selector "#input"
 argus dom keydown app --key a --modifiers shift,ctrl
 ```
 
-`dom fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). `--text` filters by textContent, `--all` fills multiple matches. `dom keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos.
+`dom focus` programmatically focuses an element via CDP (`DOM.focus`); useful before typing or keyboard interactions. `dom fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). `--text` filters by textContent, `--all` fills multiple matches. `dom keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos.
 
 ### DOM (scroll)
 

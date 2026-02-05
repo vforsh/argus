@@ -72,6 +72,17 @@ export const clickDomNodes = async (session: CdpSessionHandle, nodeIds: number[]
 	}
 }
 
+export const focusDomNodes = async (session: CdpSessionHandle, nodeIds: number[]): Promise<void> => {
+	if (nodeIds.length === 0) {
+		return
+	}
+
+	for (const nodeId of nodeIds) {
+		await scrollIntoView(session, nodeId)
+		await session.sendAndWait('DOM.focus', { nodeId })
+	}
+}
+
 const getDomRootId = async (session: CdpSessionHandle): Promise<number> => {
 	const result = (await session.sendAndWait('DOM.getDocument', { depth: 1 })) as { root?: { nodeId?: number } }
 	const rootId = result.root?.nodeId
