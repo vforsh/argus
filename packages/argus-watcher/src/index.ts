@@ -5,7 +5,7 @@ import Emittery from 'emittery'
 import { LogBuffer } from './buffer/LogBuffer.js'
 import { NetBuffer } from './buffer/NetBuffer.js'
 import { startHttpServer } from './http/server.js'
-import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
+import { announceWatcher, removeWatcher, startRegistryHeartbeat, ensureUniqueWatcherId } from './registry/registry.js'
 import { WatcherFileLogger } from './fileLogs/WatcherFileLogger.js'
 import { buildIgnoreMatcher } from './cdp/ignoreList.js'
 import { createNetworkCapture } from './cdp/networkCapture.js'
@@ -18,6 +18,7 @@ import {
 	type PageIndicatorOptions,
 	type PageIndicatorController,
 } from './cdp/pageIndicator.js'
+import { createEmulationController } from './emulation/EmulationController.js'
 import { createCdpSource } from './sources/cdp-source.js'
 import { createExtensionSource } from './sources/extension-source.js'
 import type { CdpSourceHandle, CdpSourceStatus } from './sources/types.js'
@@ -186,6 +187,8 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		throw new Error('Watcher id is required')
 	}
 
+	await ensureUniqueWatcherId(options.id)
+
 	const sourceMode = options.source ?? 'cdp'
 	const host = options.host ?? '127.0.0.1'
 	const port = options.port ?? 0
@@ -248,6 +251,9 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 
 	// Create session handle for CDP mode (used by network capture, tracing, etc.)
 	const sessionHandle = createCdpSessionHandle()
+
+	// Emulation controller (shared across CDP and extension modes)
+	const emulationController = createEmulationController()
 
 	const logToPageConsole = (message: string): void => {
 		if (pageConsoleLogging === 'none') {
@@ -379,6 +385,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 					fileLogger?.setPageIntl(info)
 				},
 				onAttach: async (session, target) => {
+					await emulationController.onAttach(session)
 					await maybeInjectOnAttach(session, target)
 				},
 			},
@@ -440,6 +447,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 					fileLogger?.setPageIntl(info)
 				},
 				onAttach: async (session, target) => {
+					await emulationController.onAttach(session)
 					await networkCapture?.onAttached()
 					if (indicatorController) {
 						indicatorAttachedAt = Date.now()
@@ -479,6 +487,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		cdpSession: sourceHandle.session,
 		traceRecorder,
 		screenshotter,
+		emulationController,
 		// Extension mode endpoints
 		sourceHandle: sourceMode === 'extension' ? sourceHandle : undefined,
 		onRequest: (event) => {

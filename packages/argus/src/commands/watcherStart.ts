@@ -1,4 +1,5 @@
 import { startWatcher, type WatcherHandle, type PageConsoleLogging, type WatcherSourceMode } from '@vforsh/argus-watcher'
+import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createOutput } from '../output/io.js'
@@ -79,11 +80,6 @@ const resolveInjectScript = async (
 
 export const runWatcherStart = async (options: WatcherStartOptions): Promise<void> => {
 	const output = createOutput(options)
-	if (!options.id || options.id.trim() === '') {
-		output.writeWarn('--id is required.')
-		process.exitCode = 2
-		return
-	}
 
 	// Validate source option
 	const sourceMode: WatcherSourceMode = options.source ?? 'cdp'
@@ -136,7 +132,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		}
 	}
 
-	const watcherId = options.id.trim()
+	const watcherId = options.id?.trim() || generateWatcherId()
 	const matchUrl = options.url?.trim()
 	let artifactsBaseDir: string | undefined
 	if (options.artifacts != null) {
@@ -267,3 +263,6 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 
 	await new Promise(() => {})
 }
+
+/** Generate a short random watcher ID (e.g. "a3f1b2"). */
+const generateWatcherId = (): string => crypto.randomBytes(3).toString('hex')
