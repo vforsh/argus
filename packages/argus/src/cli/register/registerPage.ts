@@ -1,6 +1,8 @@
 import type { Command } from 'commander'
 import { runChromeTargets, runChromeOpen, runChromeActivate, runChromeClose } from '../../commands/chrome.js'
 import { runPageReload } from '../../commands/page.js'
+import { runPageEmulationSet, runPageEmulationClear, runPageEmulationStatus } from '../../commands/pageEmulation.js'
+import { listPresetNames } from '../../emulation/devices.js'
 import { collectParam } from '../validation.js'
 
 export function registerPage(program: Command): void {
@@ -80,5 +82,51 @@ export function registerPage(program: Command): void {
 		)
 		.action(async (targetId, options) => {
 			await runPageReload({ ...options, targetId })
+		})
+
+	// -- emulation subcommand group --
+	const emulation = page.command('emulation').alias('emu').description('Device emulation controls (viewport, touch, user-agent)')
+	const presetList = listPresetNames().join(', ')
+
+	emulation
+		.command('set')
+		.description('Set device emulation on the watcher-attached page')
+		.argument('[id]', 'Watcher ID')
+		.option('--device <name>', `Device preset (${presetList})`)
+		.option('--width <n>', 'Viewport width (px)')
+		.option('--height <n>', 'Viewport height (px)')
+		.option('--dpr <n>', 'Device pixel ratio')
+		.option('--mobile', 'Enable mobile emulation')
+		.option('--no-mobile', 'Disable mobile emulation')
+		.option('--touch', 'Enable touch emulation')
+		.option('--no-touch', 'Disable touch emulation')
+		.option('--ua <string>', 'Override user-agent string')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			`\nExamples:\n  $ argus page emulation set app --device iphone-14\n  $ argus page emulation set app --width 1600 --height 900\n  $ argus page emulation set app --device pixel-7 --width 500\n  $ argus page emu set app --device desktop-1440\n\nAvailable devices: ${presetList}\n`,
+		)
+		.action(async (id, options) => {
+			await runPageEmulationSet(id, options)
+		})
+
+	emulation
+		.command('clear')
+		.description('Clear device emulation (restore defaults)')
+		.argument('[id]', 'Watcher ID')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText('after', '\nExamples:\n  $ argus page emulation clear app\n  $ argus page emu clear app --json\n')
+		.action(async (id, options) => {
+			await runPageEmulationClear(id, options)
+		})
+
+	emulation
+		.command('status')
+		.description('Show current emulation state')
+		.argument('[id]', 'Watcher ID')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText('after', '\nExamples:\n  $ argus page emulation status app\n  $ argus page emu status app --json\n')
+		.action(async (id, options) => {
+			await runPageEmulationStatus(id, options)
 		})
 }
