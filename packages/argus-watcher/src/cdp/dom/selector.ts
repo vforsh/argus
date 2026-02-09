@@ -55,6 +55,29 @@ export const resolveSelectorMatches = async (
 	return { allNodeIds, nodeIds }
 }
 
+/**
+ * Poll for selector matches until at least one is found or the deadline is reached.
+ * Returns the last resolution result (which may have zero matches on timeout).
+ */
+export const waitForSelectorMatches = async (
+	session: CdpSessionHandle,
+	selector: string,
+	all: boolean,
+	text: string | undefined,
+	waitMs: number,
+	intervalMs = 100,
+): Promise<SelectorMatchResult> => {
+	const deadline = Date.now() + waitMs
+	while (true) {
+		const rootId = await getDomRootId(session)
+		const result = await resolveSelectorMatches(session, rootId, selector, all, text)
+		if (result.allNodeIds.length > 0) return result
+		const remaining = deadline - Date.now()
+		if (remaining <= 0) return result
+		await new Promise((r) => setTimeout(r, Math.min(intervalMs, remaining)))
+	}
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
 // ─────────────────────────────────────────────────────────────────────────────

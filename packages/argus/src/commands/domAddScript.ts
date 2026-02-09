@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { evalOnce } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
 import { formatError } from '../cli/parse.js'
+import { resolvePath } from '../utils/paths.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 
 /** Options for the dom add-script command. */
@@ -109,7 +110,7 @@ const resolveCodeInput = async (
 
 	if (hasFile) {
 		try {
-			const content = await readFile(options.file!, 'utf8')
+			const content = await readFile(resolvePath(options.file!), 'utf8')
 			if (!content.trim()) {
 				output.writeWarn(`File is empty: ${options.file}`)
 				return null

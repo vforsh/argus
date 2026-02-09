@@ -1,10 +1,10 @@
 import { rmSync } from 'node:fs'
 import fs from 'node:fs/promises'
-import path from 'node:path'
 import { startWatcher, type WatcherHandle, type PageConsoleLogging } from '@vforsh/argus-watcher'
 import { launchChrome, type LaunchChromeResult } from './chromeStart.js'
 import { createOutput } from '../output/io.js'
 import type { WatcherInjectConfig } from '../config/argusConfig.js'
+import { resolvePath } from '../utils/paths.js'
 
 export type StartOptions = {
 	id: string
@@ -41,7 +41,7 @@ const resolveInjectScript = async (
 		return null
 	}
 
-	const resolvedPath = path.isAbsolute(inject.file) ? inject.file : path.resolve(process.cwd(), inject.file)
+	const resolvedPath = resolvePath(inject.file)
 	let script: string
 	try {
 		script = await fs.readFile(resolvedPath, 'utf8')
@@ -132,7 +132,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 			process.exitCode = 2
 			return
 		}
-		artifactsBaseDir = path.resolve(process.cwd(), trimmed)
+		artifactsBaseDir = resolvePath(trimmed)
 	}
 
 	const inject = await resolveInjectScript(options.inject, output)

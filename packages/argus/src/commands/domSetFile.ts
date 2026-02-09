@@ -1,7 +1,8 @@
 import fs from 'node:fs'
-import path from 'node:path'
 import type { DomSetFileResponse, ErrorResponse } from '@vforsh/argus-core'
+import { resolvePath } from '../utils/paths.js'
 import { createOutput } from '../output/io.js'
+import { parseDurationMs } from '../time.js'
 import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the dom set-file command. */
@@ -10,6 +11,7 @@ export type DomSetFileOptions = {
 	file: string[]
 	all?: boolean
 	text?: string
+	wait?: string
 	json?: boolean
 }
 
@@ -32,7 +34,7 @@ export const runDomSetFile = async (id: string | undefined, options: DomSetFileO
 	// Resolve to absolute paths and validate existence
 	const files: string[] = []
 	for (const f of options.file) {
-		const absolute = path.resolve(f)
+		const absolute = resolvePath(f)
 		if (!fs.existsSync(absolute)) {
 			output.writeWarn(`File not found: ${absolute}`)
 			process.exitCode = 2
@@ -41,17 +43,33 @@ export const runDomSetFile = async (id: string | undefined, options: DomSetFileO
 		files.push(absolute)
 	}
 
+	let waitMs = 0
+	if (options.wait != null) {
+		const parsed = parseDurationMs(options.wait)
+		if (parsed == null || parsed < 0) {
+			output.writeWarn('Invalid --wait value: expected a duration like 5s, 500ms, 2m.')
+			process.exitCode = 2
+			return
+		}
+		waitMs = parsed
+	}
+
+	const body: Record<string, unknown> = {
+		selector: options.selector,
+		files,
+		all: options.all ?? false,
+		text: options.text,
+	}
+	if (waitMs > 0) {
+		body.wait = waitMs
+	}
+
 	const result = await requestWatcherJson<DomSetFileResponse | ErrorResponse>({
 		id,
 		path: '/dom/set-file',
 		method: 'POST',
-		body: {
-			selector: options.selector,
-			files,
-			all: options.all ?? false,
-			text: options.text,
-		},
-		timeoutMs: 30_000,
+		body,
+		timeoutMs: Math.max(30_000, waitMs + 5_000),
 		returnErrorResponse: true,
 	})
 

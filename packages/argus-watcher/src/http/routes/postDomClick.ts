@@ -2,6 +2,7 @@ import type { DomClickRequest, DomClickResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
 import { emitRequest } from './types.js'
 import { resolveDomSelectorMatches, clickDomNodes, clickAtPoint, resolveNodeTopLeft } from '../../cdp/mouse.js'
+import { waitForSelectorMatches } from '../../cdp/dom/selector.js'
 import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
 
 export const handle: RouteHandler = async (req, res, _url, ctx) => {
@@ -28,6 +29,11 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		return respondInvalidBody(res, 'all must be a boolean')
 	}
 
+	const waitMs = payload.wait ?? 0
+	if (typeof waitMs !== 'number' || !Number.isFinite(waitMs) || waitMs < 0) {
+		return respondInvalidBody(res, 'wait must be a non-negative number (ms)')
+	}
+
 	emitRequest(ctx, res, 'dom/click')
 
 	try {
@@ -38,7 +44,19 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 			return respondJson(res, response)
 		}
 
-		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(ctx.cdpSession, payload.selector!, all, payload.text)
+		let allNodeIds: number[]
+		let nodeIds: number[]
+
+		if (waitMs > 0) {
+			await ctx.cdpSession.sendAndWait('DOM.enable')
+			const result = await waitForSelectorMatches(ctx.cdpSession, payload.selector!, all, payload.text, waitMs)
+			allNodeIds = result.allNodeIds
+			nodeIds = result.nodeIds
+		} else {
+			const result = await resolveDomSelectorMatches(ctx.cdpSession, payload.selector!, all, payload.text)
+			allNodeIds = result.allNodeIds
+			nodeIds = result.nodeIds
+		}
 
 		if (!all && allNodeIds.length > 1) {
 			return respondJson(

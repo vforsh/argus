@@ -15,8 +15,8 @@ export type { RemoveElementsOptions, RemoveElementsResult } from './dom/remove.j
 export { modifyElements } from './dom/modify.js'
 export type { ModifyElementsOptions, ModifyElementsResult } from './dom/modify.js'
 
-export { setFileInputFiles } from './dom/setFile.js'
+export { setFileInputFiles, setFileOnResolvedNodes } from './dom/setFile.js'
 export type { SetFileInputFilesOptions, SetFileInputFilesResult } from './dom/setFile.js'
 
-export { fillElements } from './dom/fill.js'
+export { fillElements, fillResolvedNodes } from './dom/fill.js'
 export type { FillElementsOptions, FillElementsResult } from './dom/fill.js'

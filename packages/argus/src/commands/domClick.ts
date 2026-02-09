@@ -1,5 +1,6 @@
 import type { DomClickResponse, ErrorResponse } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
+import { parseDurationMs } from '../time.js'
 import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the dom click command. */
@@ -8,6 +9,7 @@ export type DomClickOptions = {
 	pos?: string
 	all?: boolean
 	text?: string
+	wait?: string
 	json?: boolean
 }
 
@@ -42,6 +44,17 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 		}
 	}
 
+	let waitMs = 0
+	if (options.wait != null) {
+		const parsed = parseDurationMs(options.wait)
+		if (parsed == null || parsed < 0) {
+			output.writeWarn('Invalid --wait value: expected a duration like 5s, 500ms, 2m.')
+			process.exitCode = 2
+			return
+		}
+		waitMs = parsed
+	}
+
 	const body: Record<string, unknown> = {}
 	if (hasSelector) {
 		body.selector = options.selector
@@ -54,13 +67,16 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 		body.x = x
 		body.y = y
 	}
+	if (waitMs > 0) {
+		body.wait = waitMs
+	}
 
 	const result = await requestWatcherJson<DomClickResponse | ErrorResponse>({
 		id,
 		path: '/dom/click',
 		method: 'POST',
 		body,
-		timeoutMs: 30_000,
+		timeoutMs: Math.max(30_000, waitMs + 5_000),
 		returnErrorResponse: true,
 	})
 

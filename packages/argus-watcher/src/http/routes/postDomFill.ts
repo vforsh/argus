@@ -1,7 +1,8 @@
 import type { DomFillRequest, DomFillResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
 import { emitRequest } from './types.js'
-import { fillElements } from '../../cdp/dom.js'
+import { fillResolvedNodes } from '../../cdp/dom.js'
+import { getDomRootId, resolveSelectorMatches, waitForSelectorMatches } from '../../cdp/dom/selector.js'
 import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
 
 export const handle: RouteHandler = async (req, res, _url, ctx) => {
@@ -23,15 +24,29 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		return respondInvalidBody(res, 'all must be a boolean')
 	}
 
+	const waitMs = payload.wait ?? 0
+	if (typeof waitMs !== 'number' || !Number.isFinite(waitMs) || waitMs < 0) {
+		return respondInvalidBody(res, 'wait must be a non-negative number (ms)')
+	}
+
 	emitRequest(ctx, res, 'dom/fill')
 
 	try {
-		const { allNodeIds, filledCount } = await fillElements(ctx.cdpSession, {
-			selector: payload.selector,
-			value: payload.value,
-			all,
-			text: payload.text,
-		})
+		let allNodeIds: number[]
+		let nodeIds: number[]
+
+		if (waitMs > 0) {
+			await ctx.cdpSession.sendAndWait('DOM.enable')
+			const result = await waitForSelectorMatches(ctx.cdpSession, payload.selector, all, payload.text, waitMs)
+			allNodeIds = result.allNodeIds
+			nodeIds = result.nodeIds
+		} else {
+			await ctx.cdpSession.sendAndWait('DOM.enable')
+			const rootId = await getDomRootId(ctx.cdpSession)
+			const result = await resolveSelectorMatches(ctx.cdpSession, rootId, payload.selector, all, payload.text)
+			allNodeIds = result.allNodeIds
+			nodeIds = result.nodeIds
+		}
 
 		if (!all && allNodeIds.length > 1) {
 			return respondJson(
@@ -47,6 +62,7 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 			)
 		}
 
+		const filledCount = await fillResolvedNodes(ctx.cdpSession, nodeIds, payload.value)
 		const response: DomFillResponse = { ok: true, matches: allNodeIds.length, filled: filledCount }
 		respondJson(res, response)
 	} catch (error) {

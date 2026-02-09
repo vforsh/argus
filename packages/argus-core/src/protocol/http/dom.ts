@@ -126,6 +126,8 @@ export type DomClickRequest = {
 	y?: number
 	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
+	/** Wait up to this many ms for selector to appear before executing. */
+	wait?: number
 }
 
 /**
@@ -263,6 +265,8 @@ export type DomSetFileRequest = {
 	all?: boolean
 	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
+	/** Wait up to this many ms for selector to appear before executing. */
+	wait?: number
 }
 
 /**
@@ -350,6 +354,8 @@ export type DomFillRequest = {
 	all?: boolean
 	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
+	/** Wait up to this many ms for selector to appear before executing. */
+	wait?: number
 }
 
 /**

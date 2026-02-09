@@ -2,6 +2,7 @@ import type { DomAddResponse, DomInsertPosition, ErrorResponse } from '@vforsh/a
 import { readFile } from 'node:fs/promises'
 import { createOutput } from '../output/io.js'
 import { formatError } from '../cli/parse.js'
+import { resolvePath } from '../utils/paths.js'
 import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 /** Options for the dom add command. */
@@ -190,7 +191,7 @@ const resolveHtmlInput = async (options: DomAddOptions, output: ReturnType<typeo
 
 	if (hasFile) {
 		try {
-			return await readFile(options.htmlFile ?? '', 'utf8')
+			return await readFile(resolvePath(options.htmlFile ?? ''), 'utf8')
 		} catch (error) {
 			output.writeWarn(`Failed to read --html-file: ${formatError(error)}`)
 			return null

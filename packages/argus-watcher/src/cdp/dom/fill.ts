@@ -42,6 +42,27 @@ const FILL_FUNCTION = `function(value) {
 	el.dispatchEvent(new Event('change', { bubbles: true }));
 }`
 
+/** Fill pre-resolved node IDs with a value. Skips selector resolution. */
+export const fillResolvedNodes = async (session: CdpSessionHandle, nodeIds: number[], value: string): Promise<number> => {
+	if (nodeIds.length === 0) return 0
+
+	for (const nodeId of nodeIds) {
+		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+		const objectId = resolved.object?.objectId
+		if (!objectId) continue
+
+		await session.sendAndWait('Runtime.callFunctionOn', {
+			objectId,
+			functionDeclaration: FILL_FUNCTION,
+			arguments: [{ value }],
+			awaitPromise: false,
+			returnByValue: true,
+		})
+	}
+
+	return nodeIds.length
+}
+
 /**
  * Fill input/textarea/contenteditable element(s) with a value.
  * Uses the native setter trick to bypass framework property wrappers,
@@ -53,25 +74,6 @@ export const fillElements = async (session: CdpSessionHandle, options: FillEleme
 	const rootId = await getDomRootId(session)
 	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false, options.text)
 
-	if (nodeIds.length === 0) {
-		return { allNodeIds, filledCount: 0 }
-	}
-
-	for (const nodeId of nodeIds) {
-		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
-		const objectId = resolved.object?.objectId
-		if (!objectId) {
-			continue
-		}
-
-		await session.sendAndWait('Runtime.callFunctionOn', {
-			objectId,
-			functionDeclaration: FILL_FUNCTION,
-			arguments: [{ value: options.value }],
-			awaitPromise: false,
-			returnByValue: true,
-		})
-	}
-
-	return { allNodeIds, filledCount: nodeIds.length }
+	const filledCount = await fillResolvedNodes(session, nodeIds, options.value)
+	return { allNodeIds, filledCount }
 }

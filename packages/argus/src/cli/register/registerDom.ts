@@ -97,6 +97,7 @@ export function registerDom(program: Command): void {
 		.option('--pos <x,y>', 'Viewport coordinates or offset from element top-left')
 		.option('--all', 'Allow multiple matches (default: error if >1 match)')
 		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
+		.option('--wait <duration>', 'Wait for selector to appear (e.g. 5s, 500ms)')
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
@@ -216,10 +217,11 @@ Examples:
 		.requiredOption('--file <path...>', 'File path(s) to set on the input (repeatable)')
 		.option('--all', 'Allow multiple matches (default: error if >1 match)')
 		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
+		.option('--wait <duration>', 'Wait for selector to appear (e.g. 5s, 500ms)')
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus dom set-file app --selector "input[type=file]" --file ./build.zip\n  $ argus dom set-file app --selector "#upload" --file a.png --file b.png\n',
+			'\nExamples:\n  $ argus dom set-file app --selector "input[type=file]" --file ./build.zip\n  $ argus dom set-file app --selector "#upload" --file a.png --file b.png\n  $ argus dom set-file app --selector "input[type=file]" --file ./build.zip --wait 5s\n',
 		)
 		.action(async (id, options) => {
 			if (!resolveTestId(options)) return
@@ -228,17 +230,20 @@ Examples:
 
 	dom.command('fill')
 		.argument('[id]', 'Watcher id to query')
-		.argument('<value>', 'Value to fill into the element')
+		.argument('[value]', 'Value to fill (or use --value-file / --value-stdin / "-" for stdin)')
 		.description('Fill input/textarea/contenteditable elements with a value (triggers framework events)')
 		.option('--selector <css>', 'CSS selector for target element(s)')
 		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
 		.option('--name <attr>', 'Shorthand for --selector "[name=<attr>]"')
+		.option('--value-file <path>', 'Read value from a file')
+		.option('--value-stdin', 'Read value from stdin (also triggered by "-" as value arg)')
 		.option('--all', 'Allow multiple matches (default: error if >1 match)')
 		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
+		.option('--wait <duration>', 'Wait for selector to appear (e.g. 5s, 500ms)')
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus dom fill app --selector "#username" "Bob"\n  $ argus dom fill app --testid "username" "Bob"\n  $ argus dom fill app --name "title" "Hello"\n  $ argus dom fill app --selector "textarea" "New content"\n  $ argus dom fill app --selector "input[type=text]" --all "reset"\n',
+			'\nExamples:\n  $ argus dom fill app --selector "#username" "Bob"\n  $ argus dom fill app --testid "username" "Bob"\n  $ argus dom fill app --name "title" "Hello"\n  $ argus dom fill app --selector "textarea" "New content"\n  $ argus dom fill app --selector "input[type=text]" --all "reset"\n  $ argus dom fill app --selector "#desc" --value-file ./description.txt\n  $ echo "hello" | argus dom fill app --selector "#input" --value-stdin\n  $ argus dom fill app --selector "#input" - < value.txt\n',
 		)
 		.action(async (id, value, options) => {
 			if (options.testid && options.name) {
