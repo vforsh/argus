@@ -69,8 +69,7 @@ export function registerPage(program: Command): void {
 
 	page.command('reload')
 		.description('Reload a Chrome target')
-		.argument('[targetId]', 'Target ID to reload')
-		.option('--attached', 'Reload the attached page for a watcher (requires --id)')
+		.argument('[targetId]', 'Target ID to reload (omit with --id to reload the attached page)')
 		.option('--cdp <host:port>', 'CDP host:port')
 		.option('--id <watcherId>', 'Use chrome config from a registered watcher')
 		.option('--param <key=value>', 'Update query param (repeatable, overwrite semantics)', collectParam, [])
@@ -78,7 +77,7 @@ export function registerPage(program: Command): void {
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus page reload ABCD1234\n  $ argus page reload --attached --id app\n  $ argus page reload ABCD1234 --json\n  $ argus page reload ABCD1234 --param foo=bar\n  $ argus page reload ABCD1234 --param foo=bar --param baz=qux\n  $ argus page reload ABCD1234 --params "a=1&b=2"\n',
+			'\nExamples:\n  $ argus page reload ABCD1234\n  $ argus page reload --id app\n  $ argus page reload ABCD1234 --json\n  $ argus page reload ABCD1234 --param foo=bar\n  $ argus page reload ABCD1234 --param foo=bar --param baz=qux\n  $ argus page reload ABCD1234 --params "a=1&b=2"\n',
 		)
 		.action(async (targetId, options) => {
 			await runPageReload({ ...options, targetId })

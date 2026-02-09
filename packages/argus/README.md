@@ -132,9 +132,9 @@ Manage tabs/targets via CDP (aliases: `tab`).
     - Example: `argus page close E63A3ED201BFC02DA06134F506A7498C`.
 
 - **`argus page reload [targetId]`**: Reload a Chrome target.
-    - Use `--attached --id <watcherId>` to reload the attached page without a target ID.
+    - Omit `targetId` with `--id <watcherId>` to reload the watcher's attached page.
     - Use `--param`/`--params` to update query params before reload.
-    - Example: `argus page reload --attached --id app`.
+    - Example: `argus page reload --id app`.
 
 **CDP endpoint resolution** (applies to `chrome version/status/stop` and all `page` commands):
 
@@ -316,7 +316,7 @@ argus page ls --type page --json
 argus page open --url localhost:3000
 argus page activate --title \"Docs\"
 argus page close E63A3ED201BFC02DA06134F506A7498C
-argus page reload --attached --id app
+argus page reload --id app
 
 # Watcher with custom Chrome port
 argus chrome start --json  # note the cdpPort in output

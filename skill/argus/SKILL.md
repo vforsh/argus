@@ -247,7 +247,7 @@ argus page ls --id app
 argus page ls --type iframe --id app
 argus page ls --tree --id app
 argus page open --url http://example.com --id app
-argus page reload --attached --id app
+argus page reload --id app
 argus page reload <targetId> --param foo=bar
 argus page activate <targetId>
 argus page close <targetId>

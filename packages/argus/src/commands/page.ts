@@ -175,7 +175,6 @@ export type PageReloadOptions = PageCommandOptions & {
 	targetId?: string
 	param?: string[]
 	params?: string
-	attached?: boolean
 }
 
 export const runPageReload = async (options: PageReloadOptions): Promise<void> => {
@@ -183,19 +182,9 @@ export const runPageReload = async (options: PageReloadOptions): Promise<void> =
 	const hasParamFlag = (options.param?.length ?? 0) > 0
 	const hasParamsFlag = options.params != null
 
-	if (options.attached) {
-		if (options.targetId) {
-			output.writeWarn('Do not provide targetId when using --attached.')
-			process.exitCode = 2
-			return
-		}
-		if (!options.id) {
-			output.writeWarn('--attached requires --id <watcherId>.')
-			process.exitCode = 2
-			return
-		}
+	if (!options.targetId && options.id) {
 		if (options.cdp) {
-			output.writeWarn('--attached cannot be combined with --cdp. Use --id to resolve the endpoint.')
+			output.writeWarn('--cdp cannot be used without a targetId. Use --id to resolve the endpoint.')
 			process.exitCode = 2
 			return
 		}
@@ -216,9 +205,7 @@ export const runPageReload = async (options: PageReloadOptions): Promise<void> =
 		try {
 			status = await fetchJson<StatusResponse>(statusUrl, { timeoutMs: 2_000 })
 		} catch (error) {
-			output.writeWarn(
-				`${resolvedWatcher.watcher.id}: failed to reach watcher (${error instanceof Error ? error.message : error})`,
-			)
+			output.writeWarn(`${resolvedWatcher.watcher.id}: failed to reach watcher (${error instanceof Error ? error.message : error})`)
 			process.exitCode = 1
 			return
 		}
@@ -265,7 +252,7 @@ export const runPageReload = async (options: PageReloadOptions): Promise<void> =
 	}
 
 	if (!options.targetId || options.targetId.trim() === '') {
-		output.writeWarn('targetId is required.')
+		output.writeWarn('Provide a targetId or use --id <watcherId> to reload the attached page.')
 		process.exitCode = 2
 		return
 	}
@@ -396,10 +383,7 @@ const reloadTarget = async (target: ChromeTargetResponse, context: ReloadContext
 	}
 }
 
-const findTargetsByAttached = (
-	attached: { title: string | null; url: string | null },
-	targets: ChromeTargetResponse[],
-): ChromeTargetResponse[] => {
+const findTargetsByAttached = (attached: { title: string | null; url: string | null }, targets: ChromeTargetResponse[]): ChromeTargetResponse[] => {
 	if (attached.url) {
 		const urlMatches = targets.filter((target) => target.url === attached.url)
 		if (urlMatches.length > 0) {
