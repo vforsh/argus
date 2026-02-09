@@ -33,6 +33,7 @@ export type HttpRequestEventMetadata = {
 		| 'dom/focus'
 		| 'dom/fill'
 		| 'dom/scroll'
+		| 'dom/scroll-to'
 		| 'emulation'
 		| 'storage/local'
 		| 'reload'

@@ -208,6 +208,30 @@ const resolveNodeRect = async (session: CdpSessionHandle, nodeId: number): Promi
 	return rect
 }
 
+/** Dispatch a mouseWheel event at the given viewport coordinates. */
+export const emulateScroll = async (session: CdpSessionHandle, x: number, y: number, delta: { x: number; y: number }): Promise<void> => {
+	await session.sendAndWait('Input.dispatchMouseEvent', {
+		type: 'mouseWheel',
+		x,
+		y,
+		deltaX: delta.x,
+		deltaY: delta.y,
+	})
+}
+
+/** Emulate touch scroll gestures on resolved DOM nodes (scrolls at each element's center). */
+export const emulateScrollOnNodes = async (session: CdpSessionHandle, nodeIds: number[], delta: { x: number; y: number }): Promise<void> => {
+	if (nodeIds.length === 0) {
+		return
+	}
+
+	for (const nodeId of nodeIds) {
+		await scrollIntoView(session, nodeId)
+		const point = await resolveNodeCenter(session, nodeId)
+		await emulateScroll(session, point.x, point.y, delta)
+	}
+}
+
 const dispatchMouseEvent = async (
 	session: CdpSessionHandle,
 	options: {

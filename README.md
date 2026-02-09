@@ -105,7 +105,7 @@ argus snapshot app --interactive
 # DOM interaction
 argus dom click app --selector "button.primary"
 argus dom fill app "hello" --name email
-argus dom scroll app --by 0,500
+argus dom scroll app --by 0,300
 
 # DOM manipulation
 argus dom add app --selector "#root" --html "<div>injected</div>"
@@ -121,30 +121,30 @@ argus trace app --duration 3s
 
 ## CLI Commands
 
-| Command                                       | Description                            |
-| --------------------------------------------- | -------------------------------------- |
-| `start`                                       | Launch Chrome + watcher in one command |
-| `list`                                        | List watchers and Chrome instances     |
-| `doctor`                                      | Run environment diagnostics            |
-| `reload`                                      | Reload the attached page               |
-| `chrome start\|ls\|version\|status\|stop`     | Chrome lifecycle management            |
-| `watcher start\|stop\|status\|ls\|prune`      | Watcher lifecycle management           |
-| `page ls\|open\|activate\|close\|reload`      | Tab/target management                  |
-| `logs` / `logs tail`                          | Fetch or stream console logs           |
-| `net` / `net tail`                            | Fetch or stream network requests       |
-| `eval`                                        | Evaluate JS expression                 |
-| `eval-until` / `wait`                         | Poll JS expression until truthy        |
-| `dom tree`                                    | Fetch DOM subtree                      |
-| `dom info`                                    | Detailed element info                  |
-| `dom click\|hover\|scroll\|fill\|keydown`     | DOM interaction                        |
-| `dom add\|add-script\|remove\|set-file`       | DOM manipulation                       |
-| `dom modify attr\|class\|style\|text\|html`   | Element property modification          |
-| `snapshot` / `ax`                             | Accessibility tree snapshot            |
-| `screenshot`                                  | Capture screenshot                     |
-| `trace` / `trace start\|stop`                 | Chrome performance tracing             |
-| `storage local get\|set\|remove\|list\|clear` | localStorage management                |
-| `config init`                                 | Create config file                     |
-| `extension setup\|remove\|status\|info`       | Chrome extension native messaging      |
+| Command                                              | Description                            |
+| ---------------------------------------------------- | -------------------------------------- |
+| `start`                                              | Launch Chrome + watcher in one command |
+| `list`                                               | List watchers and Chrome instances     |
+| `doctor`                                             | Run environment diagnostics            |
+| `reload`                                             | Reload the attached page               |
+| `chrome start\|ls\|version\|status\|stop`            | Chrome lifecycle management            |
+| `watcher start\|stop\|status\|ls\|prune`             | Watcher lifecycle management           |
+| `page ls\|open\|activate\|close\|reload`             | Tab/target management                  |
+| `logs` / `logs tail`                                 | Fetch or stream console logs           |
+| `net` / `net tail`                                   | Fetch or stream network requests       |
+| `eval`                                               | Evaluate JS expression                 |
+| `eval-until` / `wait`                                | Poll JS expression until truthy        |
+| `dom tree`                                           | Fetch DOM subtree                      |
+| `dom info`                                           | Detailed element info                  |
+| `dom click\|hover\|scroll\|scroll-to\|fill\|keydown` | DOM interaction                        |
+| `dom add\|add-script\|remove\|set-file`              | DOM manipulation                       |
+| `dom modify attr\|class\|style\|text\|html`          | Element property modification          |
+| `snapshot` / `ax`                                    | Accessibility tree snapshot            |
+| `screenshot`                                         | Capture screenshot                     |
+| `trace` / `trace start\|stop`                        | Chrome performance tracing             |
+| `storage local get\|set\|remove\|list\|clear`        | localStorage management                |
+| `config init`                                        | Create config file                     |
+| `extension setup\|remove\|status\|info`              | Chrome extension native messaging      |
 
 ## Common Flags
 

@@ -96,6 +96,7 @@ export type HttpRequestEvent = {
 		| 'dom/focus'
 		| 'dom/fill'
 		| 'dom/scroll'
+		| 'dom/scroll-to'
 		| 'emulation'
 		| 'storage/local'
 		| 'reload'

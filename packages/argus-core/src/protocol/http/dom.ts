@@ -277,10 +277,10 @@ export type DomSetFileResponse = {
 }
 
 /**
- * Request payload for POST /dom/scroll.
+ * Request payload for POST /dom/scroll-to.
  * At least one of selector, to, or by must be provided.
  */
-export type DomScrollRequest = {
+export type DomScrollToRequest = {
 	/** CSS selector to match element(s). */
 	selector?: string
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
@@ -294,9 +294,9 @@ export type DomScrollRequest = {
 }
 
 /**
- * Response payload for POST /dom/scroll.
+ * Response payload for POST /dom/scroll-to.
  */
-export type DomScrollResponse = {
+export type DomScrollToResponse = {
 	ok: true
 	/** Number of elements matched by selector (only when selector is used). */
 	matches?: number
@@ -306,6 +306,36 @@ export type DomScrollResponse = {
 	scrollX: number
 	/** Final vertical scroll position. */
 	scrollY: number
+}
+
+/**
+ * Request payload for POST /dom/scroll.
+ * Emulates touch scroll gestures via CDP Input.emulateTouchScrollGesture.
+ */
+export type DomScrollRequest = {
+	/** CSS selector to match element(s) — scroll origin is element center. */
+	selector?: string
+	/** Allow multiple matches. If false and >1 match, error. Default: false. */
+	all?: boolean
+	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
+	text?: string
+	/** Viewport x-coordinate to scroll at (alternative to selector). */
+	x?: number
+	/** Viewport y-coordinate to scroll at (alternative to selector). */
+	y?: number
+	/** Scroll delta. Required. Positive y = scroll down. */
+	delta: { x: number; y: number }
+}
+
+/**
+ * Response payload for POST /dom/scroll.
+ */
+export type DomScrollResponse = {
+	ok: true
+	/** Number of elements matched by selector (only when selector is used). */
+	matches?: number
+	/** Number of elements scrolled (only when selector is used). */
+	scrolled?: number
 }
 
 /**

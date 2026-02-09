@@ -24,6 +24,7 @@ import { handle as postDomSetFile } from './routes/postDomSetFile.js'
 import { handle as postDomFocus } from './routes/postDomFocus.js'
 import { handle as postDomFill } from './routes/postDomFill.js'
 import { handle as postDomScroll } from './routes/postDomScroll.js'
+import { handle as postDomScrollTo } from './routes/postDomScrollTo.js'
 import { handle as getEmulation } from './routes/getEmulation.js'
 import { handle as postEmulation } from './routes/postEmulation.js'
 import { handle as postStorageLocal } from './routes/postStorageLocal.js'
@@ -58,6 +59,7 @@ const routes: Record<string, RouteEntry> = {
 	'POST /dom/focus': { handler: postDomFocus },
 	'POST /dom/fill': { handler: postDomFill },
 	'POST /dom/scroll': { handler: postDomScroll },
+	'POST /dom/scroll-to': { handler: postDomScrollTo },
 	'GET /emulation': { handler: getEmulation },
 	'POST /emulation': { handler: postEmulation },
 	'POST /storage/local': { handler: postStorageLocal },

@@ -196,18 +196,29 @@ argus dom keydown app --key a --modifiers shift,ctrl
 
 `dom focus` programmatically focuses an element via CDP (`DOM.focus`); useful before typing or keyboard interactions. `dom fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). `--text` filters by textContent, `--all` fills multiple matches. `dom keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos.
 
-### DOM (scroll)
+### DOM (scroll — emulate gesture)
 
 ```bash
-argus dom scroll app --selector "#footer"
-argus dom scroll app --testid "footer"
-argus dom scroll app --to 0,1000
-argus dom scroll app --by 0,500
-argus dom scroll app --selector ".panel" --to 0,1000
-argus dom scroll app --selector ".panel" --by 0,500
+argus dom scroll app --by 0,300
+argus dom scroll app --selector ".panel" --by 0,200
+argus dom scroll app --testid "feed" --by 0,500
+argus dom scroll app --pos 400,300 --by 0,200
 ```
 
-`--selector` alone scrolls element into view (`scrollIntoView`). `--to x,y` / `--by x,y` alone scrolls the viewport. Combine `--selector` with `--to`/`--by` to scroll within a scrollable container. Returns `{ scrollX, scrollY }`.
+Emulates touch scroll gestures via CDP `Input.emulateTouchScrollGesture` — fires real wheel/scroll events. `--by dx,dy` is required (positive y = scroll down). Without `--selector` or `--pos`, scrolls at viewport center. `--selector`/`--testid` scrolls at element center. `--pos` scrolls at explicit viewport coordinates (mutually exclusive with selector).
+
+### DOM (scroll-to — programmatic)
+
+```bash
+argus dom scroll-to app --selector "#footer"
+argus dom scroll-to app --testid "footer"
+argus dom scroll-to app --to 0,1000
+argus dom scroll-to app --by 0,500
+argus dom scroll-to app --selector ".panel" --to 0,1000
+argus dom scroll-to app --selector ".panel" --by 0,500
+```
+
+Programmatically sets scroll position via `scrollTo()`/`scrollBy()`/`scrollIntoView()`. `--selector` alone scrolls element into view. `--to x,y` / `--by x,y` alone scrolls the viewport. Combine `--selector` with `--to`/`--by` to scroll within a scrollable container. Returns `{ scrollX, scrollY }`.
 
 ### Emulation
 

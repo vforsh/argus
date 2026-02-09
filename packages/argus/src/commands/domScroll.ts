@@ -5,57 +5,53 @@ import { requestWatcherJson, writeRequestError } from '../watchers/requestWatche
 /** Options for the dom scroll command. */
 export type DomScrollOptions = {
 	selector?: string
-	to?: string
+	pos?: string
 	by?: string
 	all?: boolean
 	text?: string
 	json?: boolean
 }
 
-/** Execute the dom scroll command for a watcher id. */
+/** Execute the dom scroll command (emulate touch scroll gesture) for a watcher id. */
 export const runDomScroll = async (id: string | undefined, options: DomScrollOptions): Promise<void> => {
 	const output = createOutput(options)
 
+	if (options.by == null) {
+		output.writeWarn('--by is required (e.g. --by 0,300)')
+		process.exitCode = 2
+		return
+	}
+
+	const delta = parseXY(options.by)
+	if (!delta) {
+		output.writeWarn('--by must be in the format "x,y" (e.g. --by 0,300)')
+		process.exitCode = 2
+		return
+	}
+
 	const hasSelector = options.selector != null && options.selector.trim() !== ''
-	const hasTo = options.to != null
-	const hasBy = options.by != null
+	const hasPos = options.pos != null
 
-	if (!hasSelector && !hasTo && !hasBy) {
-		output.writeWarn('--selector, --to, or --by is required')
+	if (hasSelector && hasPos) {
+		output.writeWarn('--selector and --pos are mutually exclusive')
 		process.exitCode = 2
 		return
 	}
 
-	if (hasTo && hasBy) {
-		output.writeWarn('--to and --by are mutually exclusive')
-		process.exitCode = 2
-		return
-	}
-
-	let to: { x: number; y: number } | undefined
-	let by: { x: number; y: number } | undefined
-
-	if (hasTo) {
-		const parsed = parseXY(options.to!)
+	let x: number | undefined
+	let y: number | undefined
+	if (hasPos) {
+		const parsed = parseXY(options.pos!)
 		if (!parsed) {
-			output.writeWarn('--to must be in the format "x,y" (e.g. --to 0,1000)')
+			output.writeWarn('--pos must be in the format "x,y" (e.g. --pos 400,300)')
 			process.exitCode = 2
 			return
 		}
-		to = parsed
+		x = parsed.x
+		y = parsed.y
 	}
 
-	if (hasBy) {
-		const parsed = parseXY(options.by!)
-		if (!parsed) {
-			output.writeWarn('--by must be in the format "x,y" (e.g. --by 0,500)')
-			process.exitCode = 2
-			return
-		}
-		by = parsed
-	}
-
-	const body: Record<string, unknown> = {}
+	const body: Record<string, unknown> = { delta }
 	if (hasSelector) {
 		body.selector = options.selector
 		body.all = options.all ?? false
@@ -63,11 +59,9 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 			body.text = options.text
 		}
 	}
-	if (to) {
-		body.to = to
-	}
-	if (by) {
-		body.by = by
+	if (hasPos) {
+		body.x = x
+		body.y = y
 	}
 
 	const result = await requestWatcherJson<DomScrollResponse | ErrorResponse>({
@@ -103,17 +97,18 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 		return
 	}
 
-	if (hasSelector && successResp.matches === 0) {
-		output.writeWarn(`No element found for selector: ${options.selector}`)
-		process.exitCode = 1
-		return
-	}
-
 	if (hasSelector) {
+		if (successResp.matches === 0) {
+			output.writeWarn(`No element found for selector: ${options.selector}`)
+			process.exitCode = 1
+			return
+		}
 		const label = successResp.scrolled === 1 ? 'element' : 'elements'
-		output.writeHuman(`Scrolled ${successResp.scrolled} ${label} (scrollX=${successResp.scrollX}, scrollY=${successResp.scrollY})`)
+		output.writeHuman(`Emulated scroll on ${successResp.scrolled} ${label} by (${delta.x}, ${delta.y})`)
+	} else if (hasPos) {
+		output.writeHuman(`Emulated scroll at (${x}, ${y}) by (${delta.x}, ${delta.y})`)
 	} else {
-		output.writeHuman(`Scrolled viewport (scrollX=${successResp.scrollX}, scrollY=${successResp.scrollY})`)
+		output.writeHuman(`Emulated scroll at viewport center by (${delta.x}, ${delta.y})`)
 	}
 }
 
