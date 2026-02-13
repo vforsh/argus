@@ -44,10 +44,14 @@ export const hoverDomNodes = async (session: CdpSessionHandle, nodeIds: number[]
 	}
 }
 
-export const clickAtPoint = async (session: CdpSessionHandle, x: number, y: number): Promise<void> => {
+/** CDP buttons bitmask per button name. */
+const BUTTON_MASK: Record<string, number> = { left: 1, middle: 4, right: 2 }
+
+export const clickAtPoint = async (session: CdpSessionHandle, x: number, y: number, button: 'left' | 'middle' | 'right' = 'left'): Promise<void> => {
+	const mask = BUTTON_MASK[button] ?? 1
 	await dispatchMouseEvent(session, { type: 'mouseMoved', x, y })
-	await dispatchMouseEvent(session, { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 })
-	await dispatchMouseEvent(session, { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 })
+	await dispatchMouseEvent(session, { type: 'mousePressed', x, y, button, buttons: mask, clickCount: 1 })
+	await dispatchMouseEvent(session, { type: 'mouseReleased', x, y, button, buttons: 0, clickCount: 1 })
 }
 
 export const resolveNodeTopLeft = async (session: CdpSessionHandle, nodeId: number): Promise<Point> => {
@@ -58,17 +62,18 @@ export const resolveNodeTopLeft = async (session: CdpSessionHandle, nodeId: numb
 	return { x, y }
 }
 
-export const clickDomNodes = async (session: CdpSessionHandle, nodeIds: number[]): Promise<void> => {
+export const clickDomNodes = async (session: CdpSessionHandle, nodeIds: number[], button: 'left' | 'middle' | 'right' = 'left'): Promise<void> => {
 	if (nodeIds.length === 0) {
 		return
 	}
 
+	const mask = BUTTON_MASK[button] ?? 1
 	for (const nodeId of nodeIds) {
 		await scrollIntoView(session, nodeId)
 		const point = await resolveNodeCenter(session, nodeId)
 		await dispatchMouseEvent(session, { type: 'mouseMoved', x: point.x, y: point.y })
-		await dispatchMouseEvent(session, { type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1 })
-		await dispatchMouseEvent(session, { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1 })
+		await dispatchMouseEvent(session, { type: 'mousePressed', x: point.x, y: point.y, button, buttons: mask, clickCount: 1 })
+		await dispatchMouseEvent(session, { type: 'mouseReleased', x: point.x, y: point.y, button, buttons: 0, clickCount: 1 })
 	}
 }
 

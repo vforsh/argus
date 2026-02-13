@@ -184,6 +184,8 @@ argus click app --selector "button.submit"
 argus click app --testid "submit-btn"
 argus click app --selector ".delayed-btn" --wait 5s
 argus click app --pos 100,200
+argus click app --selector "#item" --button right
+argus click app --pos 100,200 --button middle
 argus hover app --selector ".menu-item"
 argus hover app --selector ".item" --all
 argus fill app --selector "#username" "Bob"
@@ -199,7 +201,7 @@ argus keydown app --key a --selector "#input"
 argus keydown app --key a --modifiers shift,ctrl
 ```
 
-`click` clicks at coordinates (`--pos x,y`) or on elements matching `--selector`/`--testid`. `hover` dispatches mouseover/mouseenter on matched elements. `fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). Value can come from inline arg, `--value-file <path>`, or `--value-stdin` (also `-` as value arg). `keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos.
+`click` clicks at coordinates (`--pos x,y`) or on elements matching `--selector`/`--testid`. `--button left|middle|right` selects the mouse button (default: left). `hover` dispatches mouseover/mouseenter on matched elements. `fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). Value can come from inline arg, `--value-file <path>`, or `--value-stdin` (also `-` as value arg). `keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos.
 
 `--wait <duration>` (on click, fill) polls for the selector to appear before executing the action — useful for reactive UIs where elements render after navigation/SPA transitions. Duration format: `5s`, `500ms`, `2m`. `--text` filters by textContent, `--all` allows multiple matches.
 

@@ -29,6 +29,12 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		return respondInvalidBody(res, 'all must be a boolean')
 	}
 
+	const validButtons = ['left', 'middle', 'right']
+	const button = payload.button ?? 'left'
+	if (!validButtons.includes(button)) {
+		return respondInvalidBody(res, `button must be one of: ${validButtons.join(', ')}`)
+	}
+
 	const waitMs = payload.wait ?? 0
 	if (typeof waitMs !== 'number' || !Number.isFinite(waitMs) || waitMs < 0) {
 		return respondInvalidBody(res, 'wait must be a non-negative number (ms)')
@@ -39,7 +45,7 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 	try {
 		// Coordinate-only click (no selector)
 		if (!hasSelector) {
-			await clickAtPoint(ctx.cdpSession, payload.x!, payload.y!)
+			await clickAtPoint(ctx.cdpSession, payload.x!, payload.y!, button)
 			const response: DomClickResponse = { ok: true, matches: 0, clicked: 1 }
 			return respondJson(res, response)
 		}
@@ -81,14 +87,14 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		if (hasCoords) {
 			for (const nodeId of nodeIds) {
 				const topLeft = await resolveNodeTopLeft(ctx.cdpSession, nodeId)
-				await clickAtPoint(ctx.cdpSession, topLeft.x + payload.x!, topLeft.y + payload.y!)
+				await clickAtPoint(ctx.cdpSession, topLeft.x + payload.x!, topLeft.y + payload.y!, button)
 			}
 			const response: DomClickResponse = { ok: true, matches: allNodeIds.length, clicked: nodeIds.length }
 			return respondJson(res, response)
 		}
 
 		// Selector only: click element center (existing behavior)
-		await clickDomNodes(ctx.cdpSession, nodeIds)
+		await clickDomNodes(ctx.cdpSession, nodeIds, button)
 		const response: DomClickResponse = { ok: true, matches: allNodeIds.length, clicked: nodeIds.length }
 		respondJson(res, response)
 	} catch (error) {

@@ -7,6 +7,7 @@ import { requestWatcherJson, writeRequestError } from '../watchers/requestWatche
 export type DomClickOptions = {
 	selector?: string
 	pos?: string
+	button?: string
 	all?: boolean
 	text?: string
 	wait?: string
@@ -55,6 +56,14 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 		waitMs = parsed
 	}
 
+	const validButtons = ['left', 'middle', 'right']
+	const button = options.button ?? 'left'
+	if (!validButtons.includes(button)) {
+		output.writeWarn(`--button must be one of: ${validButtons.join(', ')}`)
+		process.exitCode = 2
+		return
+	}
+
 	const body: Record<string, unknown> = {}
 	if (hasSelector) {
 		body.selector = options.selector
@@ -66,6 +75,9 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 	if (hasPos) {
 		body.x = x
 		body.y = y
+	}
+	if (button !== 'left') {
+		body.button = button
 	}
 	if (waitMs > 0) {
 		body.wait = waitMs

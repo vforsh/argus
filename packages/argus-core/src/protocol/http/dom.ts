@@ -115,6 +115,9 @@ export type DomHoverResponse = {
 /**
  * Request payload for POST /dom/click.
  */
+/** Mouse button for click commands. Default: 'left'. */
+export type MouseButton = 'left' | 'middle' | 'right'
+
 export type DomClickRequest = {
 	/** CSS selector to match element(s). */
 	selector?: string
@@ -124,6 +127,8 @@ export type DomClickRequest = {
 	x?: number
 	/** Viewport y-coordinate, or y-offset from element top-left when selector is set. */
 	y?: number
+	/** Mouse button to click. Default: 'left'. */
+	button?: MouseButton
 	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
 	/** Wait up to this many ms for selector to appear before executing. */
