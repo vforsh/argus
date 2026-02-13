@@ -8,6 +8,10 @@ import { registerLogs } from './cli/register/registerLogs.js'
 import { registerNet } from './cli/register/registerNet.js'
 import { registerEval } from './cli/register/registerEval.js'
 import { registerDom } from './cli/register/registerDom.js'
+import { registerClick } from './cli/register/registerClick.js'
+import { registerKeydown } from './cli/register/registerKeydown.js'
+import { registerFill } from './cli/register/registerFill.js'
+import { registerHover } from './cli/register/registerHover.js'
 import { registerStorage } from './cli/register/registerStorage.js'
 import { registerThrottle } from './cli/register/registerThrottle.js'
 import { registerSnapshot } from './cli/register/registerSnapshot.js'
@@ -30,6 +34,10 @@ registerLogs(program)
 registerNet(program)
 registerEval(program)
 registerDom(program)
+registerClick(program)
+registerKeydown(program)
+registerFill(program)
+registerHover(program)
 registerStorage(program)
 registerThrottle(program)
 

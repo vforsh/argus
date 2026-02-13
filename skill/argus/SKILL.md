@@ -177,34 +177,43 @@ argus snapshot app --testid "login-form"
 
 `dom tree` returns a DOM subtree; control depth with `--depth` (default 2), cap nodes with `--max-nodes`. `dom info` returns detailed element info (attributes, outerHTML, box model). `snapshot` (aliases: `snap`, `ax`) captures an accessibility tree; `--interactive` / `-i` filters to buttons, links, inputs, etc.
 
+### Interact (top-level)
+
+```bash
+argus click app --selector "button.submit"
+argus click app --testid "submit-btn"
+argus click app --selector ".delayed-btn" --wait 5s
+argus click app --pos 100,200
+argus hover app --selector ".menu-item"
+argus hover app --selector ".item" --all
+argus fill app --selector "#username" "Bob"
+argus fill app --testid "username" "Bob"
+argus fill app --selector "textarea" "New content"
+argus fill app --selector "input[type=text]" --all "reset"
+argus fill app --selector "#desc" --value-file ./description.txt
+echo "hello" | argus fill app --selector "#input" --value-stdin
+argus fill app --selector "#input" - < value.txt
+argus fill app --selector ".dynamic-input" "text" --wait 3s
+argus keydown app --key Enter
+argus keydown app --key a --selector "#input"
+argus keydown app --key a --modifiers shift,ctrl
+```
+
+`click` clicks at coordinates (`--pos x,y`) or on elements matching `--selector`/`--testid`. `hover` dispatches mouseover/mouseenter on matched elements. `fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). Value can come from inline arg, `--value-file <path>`, or `--value-stdin` (also `-` as value arg). `keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos.
+
+`--wait <duration>` (on click, fill) polls for the selector to appear before executing the action — useful for reactive UIs where elements render after navigation/SPA transitions. Duration format: `5s`, `500ms`, `2m`. `--text` filters by textContent, `--all` allows multiple matches.
+
 ### DOM (interact)
 
 ```bash
-argus dom click app --selector "button.submit"
-argus dom click app --testid "submit-btn"
-argus dom click app --selector ".delayed-btn" --wait 5s
-argus dom hover app --selector ".menu-item"
 argus dom focus app --selector "#input"
 argus dom focus app --testid "search-box"
-argus dom fill app --selector "#username" "Bob"
-argus dom fill app --testid "username" "Bob"
-argus dom fill app --selector "textarea" "New content"
-argus dom fill app --selector "input[type=text]" --all "reset"
-argus dom fill app --selector "#desc" --value-file ./description.txt
-echo "hello" | argus dom fill app --selector "#input" --value-stdin
-argus dom fill app --selector "#input" - < value.txt
-argus dom fill app --selector ".dynamic-input" "text" --wait 3s
 argus dom set-file app --selector "input[type=file]" --file ./build.zip
 argus dom set-file app --selector "input[type=file]" --file ~/Downloads/test.zip
 argus dom set-file app --selector "#upload" --file a.png --wait 5s
-argus dom keydown app --key Enter
-argus dom keydown app --key a --selector "#input"
-argus dom keydown app --key a --modifiers shift,ctrl
 ```
 
-`dom focus` programmatically focuses an element via CDP (`DOM.focus`); useful before typing or keyboard interactions. `dom fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). Value can come from inline arg, `--value-file <path>`, or `--value-stdin` (also `-` as value arg). `--text` filters by textContent, `--all` fills multiple matches. `dom set-file` sets files on `<input type="file">` elements. `dom keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos.
-
-`--wait <duration>` (on click, fill, set-file) polls for the selector to appear before executing the action — useful for reactive UIs where elements render after navigation/SPA transitions. Duration format: `5s`, `500ms`, `2m`. Path flags (`--file`, `--value-file`, `--html-file`, `--artifacts`, inject paths) all support `~/` expansion.
+`dom focus` programmatically focuses an element via CDP (`DOM.focus`); useful before typing or keyboard interactions. `dom set-file` sets files on `<input type="file">` elements; `--wait` polls for selector. Path flags (`--file`, `--value-file`, `--html-file`, `--artifacts`, inject paths) all support `~/` expansion.
 
 ### DOM (scroll — emulate gesture)
 

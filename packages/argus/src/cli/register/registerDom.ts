@@ -1,15 +1,11 @@
 import type { Command } from 'commander'
 import { runDomTree } from '../../commands/domTree.js'
 import { runDomInfo } from '../../commands/domInfo.js'
-import { runDomHover } from '../../commands/domHover.js'
 import { runDomFocus } from '../../commands/domFocus.js'
-import { runDomClick } from '../../commands/domClick.js'
-import { runDomKeydown } from '../../commands/domKeydown.js'
 import { runDomAdd } from '../../commands/domAdd.js'
 import { runDomAddScript } from '../../commands/domAddScript.js'
 import { runDomRemove } from '../../commands/domRemove.js'
 import { runDomSetFile } from '../../commands/domSetFile.js'
-import { runDomFill } from '../../commands/domFill.js'
 import { runDomScroll } from '../../commands/domScroll.js'
 import { runDomScrollTo } from '../../commands/domScrollTo.js'
 import { runDomModifyAttr, runDomModifyClass, runDomModifyStyle, runDomModifyText, runDomModifyHtml } from '../../commands/domModify.js'
@@ -55,23 +51,6 @@ export function registerDom(program: Command): void {
 			await runDomInfo(id, options)
 		})
 
-	dom.command('hover')
-		.argument('[id]', 'Watcher id to query')
-		.description('Hover over element(s) matching a CSS selector')
-		.option('--selector <css>', 'CSS selector to match element(s)')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--all', 'Allow multiple matches (default: error if >1 match)')
-		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom hover app --selector "#btn"\n  $ argus dom hover app --selector ".item" --all\n  $ argus dom hover app --selector "#btn" --json\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomHover(id, options)
-		})
-
 	dom.command('focus')
 		.argument('[id]', 'Watcher id to query')
 		.description('Focus element(s) matching a CSS selector')
@@ -87,42 +66,6 @@ export function registerDom(program: Command): void {
 		.action(async (id, options) => {
 			if (!resolveTestId(options)) return
 			await runDomFocus(id, options)
-		})
-
-	dom.command('click')
-		.argument('[id]', 'Watcher id to query')
-		.description('Click at coordinates or on element(s) matching a CSS selector')
-		.option('--selector <css>', 'CSS selector to match element(s)')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--pos <x,y>', 'Viewport coordinates or offset from element top-left')
-		.option('--all', 'Allow multiple matches (default: error if >1 match)')
-		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
-		.option('--wait <duration>', 'Wait for selector to appear (e.g. 5s, 500ms)')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom click app --pos 100,200\n  $ argus dom click app --selector "#btn"\n  $ argus dom click app --testid "submit-btn"\n  $ argus dom click app --selector "#btn" --pos 10,5\n  $ argus dom click app --selector ".item" --all\n  $ argus dom click app --selector "#btn" --json\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomClick(id, options)
-		})
-
-	dom.command('keydown')
-		.argument('[id]', 'Watcher id to query')
-		.description('Dispatch a keyboard event to the connected page')
-		.requiredOption('--key <name>', 'Key name (e.g. Enter, a, ArrowUp)')
-		.option('--selector <css>', 'Focus element before dispatching')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--modifiers <list>', 'Comma-separated modifiers: shift,ctrl,alt,meta')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom keydown app --key Enter\n  $ argus dom keydown app --key a --selector "#input"\n  $ argus dom keydown app --key a --modifiers shift,ctrl\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomKeydown(id, options)
 		})
 
 	dom.command('add')
@@ -226,33 +169,6 @@ Examples:
 		.action(async (id, options) => {
 			if (!resolveTestId(options)) return
 			await runDomSetFile(id, options)
-		})
-
-	dom.command('fill')
-		.argument('[id]', 'Watcher id to query')
-		.argument('[value]', 'Value to fill (or use --value-file / --value-stdin / "-" for stdin)')
-		.description('Fill input/textarea/contenteditable elements with a value (triggers framework events)')
-		.option('--selector <css>', 'CSS selector for target element(s)')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--name <attr>', 'Shorthand for --selector "[name=<attr>]"')
-		.option('--value-file <path>', 'Read value from a file')
-		.option('--value-stdin', 'Read value from stdin (also triggered by "-" as value arg)')
-		.option('--all', 'Allow multiple matches (default: error if >1 match)')
-		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
-		.option('--wait <duration>', 'Wait for selector to appear (e.g. 5s, 500ms)')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom fill app --selector "#username" "Bob"\n  $ argus dom fill app --testid "username" "Bob"\n  $ argus dom fill app --name "title" "Hello"\n  $ argus dom fill app --selector "textarea" "New content"\n  $ argus dom fill app --selector "input[type=text]" --all "reset"\n  $ argus dom fill app --selector "#desc" --value-file ./description.txt\n  $ echo "hello" | argus dom fill app --selector "#input" --value-stdin\n  $ argus dom fill app --selector "#input" - < value.txt\n',
-		)
-		.action(async (id, value, options) => {
-			if (options.testid && options.name) {
-				console.error('Cannot use both --testid and --name.')
-				process.exitCode = 2
-				return
-			}
-			if (!resolveTestId(options)) return
-			await runDomFill(id, value, options)
 		})
 
 	dom.command('scroll')
