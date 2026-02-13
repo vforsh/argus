@@ -253,22 +253,14 @@ Emulates device viewport (width/height/DPR/mobile), touch, and user-agent on the
 ### Throttle
 
 ```bash
-argus throttle set app --cpu 4
-argus throttle set app --network slow-3g
-argus throttle set app --network slow-3g --no-cache
-argus throttle set app --network fast-3g
-argus throttle set app --network 4g
-argus throttle set app --offline
-argus throttle set app --latency 200 --down 50000 --up 25000
-argus throttle set app --cpu 4 --network slow-3g --no-cache
+argus throttle set app 4
+argus throttle set app 6
 argus throttle clear app
-argus throttle clear app --cpu
-argus throttle clear app --network --cache
 argus throttle status app
 argus throttle status app --json
 ```
 
-Throttles CPU, network, and cache on the watcher-attached page via CDP. `--cpu <rate>` sets CPU slowdown (1 = none, 4 = 4x). `--network <preset>` applies a built-in profile; `--latency`/`--down`/`--up`/`--offline` for custom conditions. `--no-cache` disables browser cache. Aspects are independent — set one without affecting others. `clear` resets all or specific aspects (`--cpu`, `--network`, `--cache`). State persists until cleared (survives detach/reattach). Network presets: `slow-3g`, `fast-3g`, `4g`, `offline`.
+CPU throttling via CDP. `set <rate>` applies a slowdown multiplier (1 = none, 4 = 4x). State persists until cleared (survives detach/reattach).
 
 ### Targets / Pages
 
