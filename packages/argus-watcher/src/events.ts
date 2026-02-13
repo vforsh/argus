@@ -98,6 +98,7 @@ export type HttpRequestEvent = {
 		| 'dom/scroll'
 		| 'dom/scroll-to'
 		| 'emulation'
+		| 'throttle'
 		| 'storage/local'
 		| 'reload'
 		| 'shutdown'

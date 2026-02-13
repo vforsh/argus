@@ -7,6 +7,7 @@ import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
 import type { CdpSourceHandle } from '../sources/types.js'
 import type { EmulationController } from '../emulation/EmulationController.js'
+import type { ThrottleController } from '../throttle/ThrottleController.js'
 import { dispatch } from './router.js'
 
 /** Optional metadata for the HTTP request event. */
@@ -35,6 +36,7 @@ export type HttpRequestEventMetadata = {
 		| 'dom/scroll'
 		| 'dom/scroll-to'
 		| 'emulation'
+		| 'throttle'
 		| 'storage/local'
 		| 'reload'
 		| 'shutdown'
@@ -70,6 +72,8 @@ export type HttpServerOptions = {
 	screenshotter: Screenshotter
 	/** Emulation controller for GET/POST /emulation endpoints. */
 	emulationController: EmulationController
+	/** Throttle controller for GET/POST /throttle endpoints. */
+	throttleController: ThrottleController
 	/** Source handle for extension mode (enables /targets, /attach, /detach endpoints). */
 	sourceHandle?: CdpSourceHandle
 	/** Optional callback invoked when logs or tail are requested. */

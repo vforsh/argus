@@ -19,6 +19,7 @@ import {
 	type PageIndicatorController,
 } from './cdp/pageIndicator.js'
 import { createEmulationController } from './emulation/EmulationController.js'
+import { createThrottleController } from './throttle/ThrottleController.js'
 import { createCdpSource } from './sources/cdp-source.js'
 import { createExtensionSource } from './sources/extension-source.js'
 import type { CdpSourceHandle, CdpSourceStatus } from './sources/types.js'
@@ -254,6 +255,9 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	// Emulation controller (shared across CDP and extension modes)
 	const emulationController = createEmulationController()
 
+	// Throttle controller (CPU, network, cache — shared across CDP and extension modes)
+	const throttleController = createThrottleController()
+
 	const logToPageConsole = (message: string): void => {
 		if (pageConsoleLogging === 'none') {
 			return
@@ -385,6 +389,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 				},
 				onAttach: async (session, target) => {
 					await emulationController.onAttach(session)
+					await throttleController.onAttach(session)
 					await maybeInjectOnAttach(session, target)
 				},
 			},
@@ -447,6 +452,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 				},
 				onAttach: async (session, target) => {
 					await emulationController.onAttach(session)
+					await throttleController.onAttach(session)
 					await networkCapture?.onAttached()
 					if (indicatorController) {
 						indicatorAttachedAt = Date.now()
@@ -487,6 +493,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		traceRecorder,
 		screenshotter,
 		emulationController,
+		throttleController,
 		// Extension mode endpoints
 		sourceHandle: sourceMode === 'extension' ? sourceHandle : undefined,
 		onRequest: (event) => {

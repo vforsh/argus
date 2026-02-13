@@ -27,6 +27,8 @@ import { handle as postDomScroll } from './routes/postDomScroll.js'
 import { handle as postDomScrollTo } from './routes/postDomScrollTo.js'
 import { handle as getEmulation } from './routes/getEmulation.js'
 import { handle as postEmulation } from './routes/postEmulation.js'
+import { handle as getThrottle } from './routes/getThrottle.js'
+import { handle as postThrottle } from './routes/postThrottle.js'
 import { handle as postStorageLocal } from './routes/postStorageLocal.js'
 import { handle as postReload } from './routes/postReload.js'
 import { handle as postShutdown } from './routes/postShutdown.js'
@@ -62,6 +64,8 @@ const routes: Record<string, RouteEntry> = {
 	'POST /dom/scroll-to': { handler: postDomScrollTo },
 	'GET /emulation': { handler: getEmulation },
 	'POST /emulation': { handler: postEmulation },
+	'GET /throttle': { handler: getThrottle },
+	'POST /throttle': { handler: postThrottle },
 	'POST /storage/local': { handler: postStorageLocal },
 	'POST /reload': { handler: postReload },
 	'POST /shutdown': { handler: postShutdown },

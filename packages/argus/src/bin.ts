@@ -9,6 +9,7 @@ import { registerNet } from './cli/register/registerNet.js'
 import { registerEval } from './cli/register/registerEval.js'
 import { registerDom } from './cli/register/registerDom.js'
 import { registerStorage } from './cli/register/registerStorage.js'
+import { registerThrottle } from './cli/register/registerThrottle.js'
 import { registerSnapshot } from './cli/register/registerSnapshot.js'
 import { registerTrace } from './cli/register/registerTrace.js'
 import { registerConfig } from './cli/register/registerConfig.js'
@@ -30,6 +31,7 @@ registerNet(program)
 registerEval(program)
 registerDom(program)
 registerStorage(program)
+registerThrottle(program)
 
 // Capture
 registerSnapshot(program)
