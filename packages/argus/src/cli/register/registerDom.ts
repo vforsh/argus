@@ -153,6 +153,7 @@ Examples:
 	registerDomModify(dom)
 
 	dom.command('set-file')
+		.alias('upload')
 		.argument('[id]', 'Watcher id to query')
 		.description('Set file(s) on a <input type="file"> element via CDP')
 		.option('--selector <css>', 'CSS selector for file input element(s)')

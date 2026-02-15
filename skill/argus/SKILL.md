@@ -199,9 +199,15 @@ argus fill app --selector ".dynamic-input" "text" --wait 3s
 argus keydown app --key Enter
 argus keydown app --key a --selector "#input"
 argus keydown app --key a --modifiers shift,ctrl
+argus scroll-to app --selector "#footer"
+argus scroll-to app --testid "footer"
+argus scroll-to app --to 0,1000
+argus scroll-to app --by 0,500
+argus scroll-to app --selector ".panel" --to 0,1000
+argus scroll-to app --selector ".panel" --by 0,500
 ```
 
-`click` clicks at coordinates (`--pos x,y`) or on elements matching `--selector`/`--testid`. `--button left|middle|right` selects the mouse button (default: left). `hover` dispatches mouseover/mouseenter on matched elements. `fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). Value can come from inline arg, `--value-file <path>`, or `--value-stdin` (also `-` as value arg). `keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos.
+`click` clicks at coordinates (`--pos x,y`) or on elements matching `--selector`/`--testid`. `--button left|middle|right` selects the mouse button (default: left). `hover` dispatches mouseover/mouseenter on matched elements. `fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). Value can come from inline arg, `--value-file <path>`, or `--value-stdin` (also `-` as value arg). `keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos. `scroll-to` programmatically scrolls via `scrollTo()`/`scrollBy()`/`scrollIntoView()`. `--selector` alone scrolls element into view. `--to x,y` / `--by x,y` alone scrolls the viewport. Combine `--selector` with `--to`/`--by` to scroll within a scrollable container. Returns `{ scrollX, scrollY }`.
 
 `--wait <duration>` (on click, fill) polls for the selector to appear before executing the action — useful for reactive UIs where elements render after navigation/SPA transitions. Duration format: `5s`, `500ms`, `2m`. `--text` filters by textContent, `--all` allows multiple matches.
 
@@ -211,11 +217,11 @@ argus keydown app --key a --modifiers shift,ctrl
 argus dom focus app --selector "#input"
 argus dom focus app --testid "search-box"
 argus dom set-file app --selector "input[type=file]" --file ./build.zip
-argus dom set-file app --selector "input[type=file]" --file ~/Downloads/test.zip
+argus dom upload app --selector "input[type=file]" --file ~/Downloads/test.zip
 argus dom set-file app --selector "#upload" --file a.png --wait 5s
 ```
 
-`dom focus` programmatically focuses an element via CDP (`DOM.focus`); useful before typing or keyboard interactions. `dom set-file` sets files on `<input type="file">` elements; `--wait` polls for selector. Path flags (`--file`, `--value-file`, `--html-file`, `--artifacts`, inject paths) all support `~/` expansion.
+`dom focus` programmatically focuses an element via CDP (`DOM.focus`); useful before typing or keyboard interactions. `dom set-file` (alias: `dom upload`) sets files on `<input type="file">` elements; `--wait` polls for selector. Path flags (`--file`, `--value-file`, `--html-file`, `--artifacts`, inject paths) all support `~/` expansion.
 
 ### DOM (scroll — emulate gesture)
 
@@ -227,19 +233,6 @@ argus dom scroll app --pos 400,300 --by 0,200
 ```
 
 Emulates touch scroll gestures via CDP `Input.emulateTouchScrollGesture` — fires real wheel/scroll events. `--by dx,dy` is required (positive y = scroll down). Without `--selector` or `--pos`, scrolls at viewport center. `--selector`/`--testid` scrolls at element center. `--pos` scrolls at explicit viewport coordinates (mutually exclusive with selector).
-
-### DOM (scroll-to — programmatic)
-
-```bash
-argus dom scroll-to app --selector "#footer"
-argus dom scroll-to app --testid "footer"
-argus dom scroll-to app --to 0,1000
-argus dom scroll-to app --by 0,500
-argus dom scroll-to app --selector ".panel" --to 0,1000
-argus dom scroll-to app --selector ".panel" --by 0,500
-```
-
-Programmatically sets scroll position via `scrollTo()`/`scrollBy()`/`scrollIntoView()`. `--selector` alone scrolls element into view. `--to x,y` / `--by x,y` alone scrolls the viewport. Combine `--selector` with `--to`/`--by` to scroll within a scrollable container. Returns `{ scrollX, scrollY }`.
 
 ### Emulation
 

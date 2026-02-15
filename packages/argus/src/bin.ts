@@ -12,6 +12,7 @@ import { registerClick } from './cli/register/registerClick.js'
 import { registerKeydown } from './cli/register/registerKeydown.js'
 import { registerFill } from './cli/register/registerFill.js'
 import { registerHover } from './cli/register/registerHover.js'
+import { registerScrollTo } from './cli/register/registerScrollTo.js'
 import { registerStorage } from './cli/register/registerStorage.js'
 import { registerThrottle } from './cli/register/registerThrottle.js'
 import { registerSnapshot } from './cli/register/registerSnapshot.js'
@@ -38,6 +39,7 @@ registerClick(program)
 registerKeydown(program)
 registerFill(program)
 registerHover(program)
+registerScrollTo(program)
 registerStorage(program)
 registerThrottle(program)
 
