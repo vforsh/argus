@@ -7,7 +7,7 @@ export function registerFill(program: Command): void {
 		.command('fill')
 		.argument('[id]', 'Watcher id to query')
 		.argument('[value]', 'Value to fill (or use --value-file / --value-stdin / "-" for stdin)')
-		.description('Fill input/textarea/contenteditable elements with a value (triggers framework events)')
+		.description('Fill input/textarea/contenteditable elements with a value')
 		.option('--selector <css>', 'CSS selector for target element(s)')
 		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
 		.option('--name <attr>', 'Shorthand for --selector "[name=<attr>]"')
