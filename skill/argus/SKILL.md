@@ -7,6 +7,14 @@ description: Guides use of the Argus CLI to debug and inspect web apps via Chrom
 
 Debug local web apps via Chrome CDP or extension. Logs, eval, screenshots, target management.
 
+Install/run:
+
+```bash
+npm i -g @vforsh/argus
+argus --help
+npx -y @vforsh/argus --help
+```
+
 ---
 
 ## Workflow
@@ -316,6 +324,18 @@ Script injection runs custom JS on attach and page navigation. See [INJECT.md](.
 
 ---
 
+## CLI Plugins
+
+Argus can load optional CLI plugins that register extra top-level commands.
+
+- Config: add `"plugins": ["<module-or-path>"]` to Argus config.
+- Env: set `ARGUS_PLUGINS` to comma-separated specifiers/paths.
+- Module contract: default export `{ apiVersion: 1, name, register(ctx) }`.
+
+TypeScript plugin types are exported from `@vforsh/argus/plugin`.
+
+---
+
 ## Programmatic Watcher (Node API)
 
 Use `@vforsh/argus-watcher` to create watchers from code.
@@ -342,7 +362,7 @@ await close()
 
 **Chrome binary not found** — Set `ARGUS_CHROME_BIN` to absolute path.
 
-**Watcher can't attach (CDP)** — Check `--chrome-port` matches Chrome's port. Probe: `argus chrome status --port 9222`
+**Watcher can't attach (CDP)** — Check `--chrome-port` matches Chrome's port. Probe: `argus chrome status --cdp 127.0.0.1:9222`
 
 **Reload with params fails** — Only http/https targets (not `chrome://`, `devtools://`).
 
