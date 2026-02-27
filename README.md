@@ -156,6 +156,27 @@ argus trace app --duration 3s
 - `--json` — Machine-readable JSON output.
 - `--iframe <selector>` — Eval in cross-origin iframe via postMessage.
 
+## Plugins
+
+Argus can load optional CLI plugins that register additional top-level commands (example: `argus yagames`).
+
+- **Config:** add `"plugins": [...]` to `.argus/config.json` (or any auto-discovered config file).
+- **Env:** set `ARGUS_PLUGINS` to a comma-separated list of module specifiers or resolvable paths.
+
+Plugin modules must default-export:
+
+```ts
+export default {
+	apiVersion: 1,
+	name: 'my-plugin',
+	register(ctx) {
+		ctx.program.command('mycmd').action(() => {})
+	},
+}
+```
+
+TypeScript plugin authors can import the types from `@vforsh/argus/plugin`.
+
 ## Registry
 
 Watchers register in `~/.argus/registry.json` (macOS/Linux) or `%USERPROFILE%\.argus\registry.json` (Windows). Entries are heartbeat-updated and pruned when stale.

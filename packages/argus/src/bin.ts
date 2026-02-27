@@ -19,6 +19,7 @@ import { registerSnapshot } from './cli/register/registerSnapshot.js'
 import { registerTrace } from './cli/register/registerTrace.js'
 import { registerConfig } from './cli/register/registerConfig.js'
 import { registerExtension } from './cli/register/registerExtension.js'
+import { registerPlugins } from './cli/plugins/registerPlugins.js'
 
 const program = createProgram()
 
@@ -50,6 +51,8 @@ registerTrace(program)
 // Configuration
 registerConfig(program)
 registerExtension(program)
+
+await registerPlugins(program)
 
 program.parseAsync(process.argv).catch((error) => {
 	console.error(error)

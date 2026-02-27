@@ -21,7 +21,7 @@
       "name": "@vforsh/argus",
       "version": "0.1.3",
       "bin": {
-        "argus": "dist/bin.js",
+        "argus": "dist/argus.js",
       },
       "dependencies": {
         "@vforsh/argus-client": "workspace:*",

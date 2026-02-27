@@ -11,6 +11,7 @@ const DEFAULT_CONFIG_PATH = '.argus/config.json'
 
 const buildConfigTemplate = (schemaRef: string) => ({
 	$schema: schemaRef,
+	plugins: [],
 	chrome: {
 		start: {
 			url: 'http://localhost:3000',

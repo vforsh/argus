@@ -33,6 +33,12 @@ export type ArgusConfig = {
 	watcher?: {
 		start?: WatcherStartConfig
 	}
+	/**
+	 * Optional CLI plugins to load at startup.
+	 * Each entry is a Node/Bun module specifier (e.g. "@vforsh/argus-plugin-yagames")
+	 * or a path resolvable from the config directory / cwd (e.g. "./plugins/yagames.js").
+	 */
+	plugins?: string[]
 }
 
 export type ArgusConfigLoadResult = {
@@ -266,6 +272,22 @@ const validateArgusConfig = (value: unknown): { ok: true; value: ArgusConfig } |
 		return { ok: false, error: 'Config root must be an object.' }
 	}
 
+	let plugins: ArgusConfig['plugins']
+	if (value.plugins !== undefined) {
+		if (!Array.isArray(value.plugins)) {
+			return { ok: false, error: '"plugins" must be an array of strings.' }
+		}
+		for (const [index, item] of value.plugins.entries()) {
+			if (typeof item !== 'string') {
+				return { ok: false, error: `"plugins[${index}]" must be a string.` }
+			}
+			if (item.trim() === '') {
+				return { ok: false, error: `"plugins[${index}]" must be a non-empty string.` }
+			}
+		}
+		plugins = value.plugins
+	}
+
 	let chromeConfig: ArgusConfig['chrome']
 	if (value.chrome !== undefined) {
 		if (!isRecord(value.chrome)) {
@@ -298,7 +320,7 @@ const validateArgusConfig = (value: unknown): { ok: true; value: ArgusConfig } |
 		}
 	}
 
-	return { ok: true, value: { chrome: chromeConfig, watcher: watcherConfig } }
+	return { ok: true, value: { chrome: chromeConfig, watcher: watcherConfig, plugins } }
 }
 
 export const resolveArgusConfigPath = ({ cliPath, cwd }: { cliPath?: string; cwd: string }): string | null => {
