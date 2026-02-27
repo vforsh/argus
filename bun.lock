@@ -19,14 +19,11 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.1.3",
+      "version": "0.1.7",
       "bin": {
         "argus": "dist/argus.js",
       },
       "dependencies": {
-        "@vforsh/argus-client": "workspace:*",
-        "@vforsh/argus-core": "workspace:*",
-        "@vforsh/argus-watcher": "workspace:*",
         "commander": "14.0.2",
       },
     },
