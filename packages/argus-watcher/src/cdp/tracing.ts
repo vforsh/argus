@@ -44,7 +44,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 	}
 
 	options.session.onEvent('Tracing.dataCollected', (params) => {
-		if (!active || active.state !== 'recording') {
+		if (!active) {
 			return
 		}
 		const payload = params as { value?: unknown[] }
