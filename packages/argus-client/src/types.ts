@@ -1,10 +1,4 @@
-import type {
-	LogEvent,
-	LogLevel,
-	NetworkRequestSummary,
-	StatusResponse,
-	WatcherRecord,
-} from '@vforsh/argus-core'
+import type { LogEvent, LogLevel, NetworkRequestSummary, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
 
 /** Options for configuring the Argus client. */
 export type ArgusClientOptions = {
@@ -112,17 +106,22 @@ export type TraceStartOptions = {
 /** Trace start result metadata. */
 export type TraceStartResult = {
 	traceId: string
+	sessionName: string
 	outFile: string
 }
 
 /** Options for stopping an active trace. */
 export type TraceStopOptions = {
 	traceId?: string
+	outFile?: string
 }
 
 /** Trace stop result metadata. */
 export type TraceStopResult = {
+	sessionName: string
 	outFile: string
+	eventCount: number
+	durationMs: number
 }
 
 /** Options for capturing a screenshot. */

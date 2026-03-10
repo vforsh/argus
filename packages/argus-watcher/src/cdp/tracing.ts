@@ -7,9 +7,13 @@ import { ensureArtifactsDir, ensureParentDir, resolveArtifactPath } from '../art
 
 type TraceState = {
 	traceId: string
+	sessionName: string
+	absolutePath: string
 	outFile: string
 	stream: fs.WriteStream
 	hasWritten: boolean
+	eventCount: number
+	startedAt: number
 	state: 'recording' | 'stopping'
 	completion: Promise<void>
 	resolveCompletion: () => void
@@ -18,7 +22,7 @@ type TraceState = {
 
 export type TraceRecorder = {
 	start: (options: TraceStartRequest) => Promise<TraceStartResponse>
-	stop: (options: { traceId?: string }) => Promise<TraceStopResponse>
+	stop: (options: { traceId?: string; outFile?: string }) => Promise<TraceStopResponse>
 	onDetached: (reason?: string) => void
 }
 
@@ -59,8 +63,37 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 				active.stream.write(json)
 				active.hasWritten = true
 			}
+			active.eventCount += 1
 		}
 	})
+
+	const resolveFinalPath = async (state: TraceState, outFile: string | undefined): Promise<{ absolutePath: string; displayPath: string }> => {
+		if (!outFile?.trim()) {
+			return { absolutePath: state.absolutePath, displayPath: state.outFile }
+		}
+
+		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, outFile, `traces/${state.sessionName}.json`)
+		if (absolutePath === state.absolutePath) {
+			return { absolutePath, displayPath }
+		}
+
+		await ensureParentDir(absolutePath)
+		try {
+			await fs.promises.rename(state.absolutePath, absolutePath)
+		} catch (error) {
+			const nodeError = error as NodeJS.ErrnoException
+			if (nodeError.code !== 'EXDEV') {
+				throw error
+			}
+
+			await fs.promises.copyFile(state.absolutePath, absolutePath)
+			await fs.promises.unlink(state.absolutePath)
+		}
+
+		state.absolutePath = absolutePath
+		state.outFile = displayPath
+		return { absolutePath, displayPath }
+	}
 
 	options.session.onEvent('Tracing.tracingComplete', () => {
 		if (!active) {
@@ -85,7 +118,8 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 
 		await ensureArtifactsDir(options.artifactsDir)
 		const traceId = crypto.randomUUID()
-		const defaultName = `traces/trace-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+		const sessionName = `trace-${new Date().toISOString().replace(/[:.]/g, '-')}`
+		const defaultName = `traces/${sessionName}.json`
 		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
 		await ensureParentDir(absolutePath)
 
@@ -95,9 +129,13 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		const deferred = createDeferred()
 		active = {
 			traceId,
+			sessionName,
+			absolutePath: path.resolve(absolutePath),
 			outFile: displayPath,
 			stream,
 			hasWritten: false,
+			eventCount: 0,
+			startedAt: Date.now(),
 			state: 'recording',
 			completion: deferred.completion,
 			resolveCompletion: deferred.resolveCompletion,
@@ -110,10 +148,10 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 			transferMode: 'ReportEvents',
 		})
 
-		return { ok: true, traceId, outFile: displayPath }
+		return { ok: true, traceId, sessionName, outFile: displayPath }
 	}
 
-	const stop = async ({ traceId }: { traceId?: string }): Promise<TraceStopResponse> => {
+	const stop = async ({ traceId, outFile }: { traceId?: string; outFile?: string }): Promise<TraceStopResponse> => {
 		if (!active) {
 			throw new Error('No active trace to stop')
 		}
@@ -123,13 +161,27 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		const current = active
 		if (current.state === 'stopping') {
 			await current.completion
-			return { ok: true, outFile: current.outFile }
+			await resolveFinalPath(current, outFile)
+			return {
+				ok: true,
+				sessionName: current.sessionName,
+				outFile: current.outFile,
+				eventCount: current.eventCount,
+				durationMs: Math.max(0, Date.now() - current.startedAt),
+			}
 		}
 
 		current.state = 'stopping'
 		await options.session.sendAndWait('Tracing.end', {}, { timeoutMs: 15_000 })
 		await current.completion
-		return { ok: true, outFile: current.outFile }
+		await resolveFinalPath(current, outFile)
+		return {
+			ok: true,
+			sessionName: current.sessionName,
+			outFile: current.outFile,
+			eventCount: current.eventCount,
+			durationMs: Math.max(0, Date.now() - current.startedAt),
+		}
 	}
 
 	const onDetached = (reason?: string): void => {

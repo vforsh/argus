@@ -169,7 +169,7 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
 			}
 
-			return { traceId: response.traceId, outFile: response.outFile }
+			return { traceId: response.traceId, sessionName: response.sessionName, outFile: response.outFile }
 		},
 		traceStop: async (watcherId: string, traceOptions: TraceStopOptions = {}): Promise<TraceStopResult> => {
 			const registry = await readAndPruneRegistry({ registryPath, ttlMs })
@@ -191,7 +191,12 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 				throw new Error(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
 			}
 
-			return { outFile: response.outFile }
+			return {
+				sessionName: response.sessionName,
+				outFile: response.outFile,
+				eventCount: response.eventCount,
+				durationMs: response.durationMs,
+			}
 		},
 		screenshot: async (watcherId: string, screenshotOptions: ScreenshotOptions = {}): Promise<ScreenshotResult> => {
 			const registry = await readAndPruneRegistry({ registryPath, ttlMs })

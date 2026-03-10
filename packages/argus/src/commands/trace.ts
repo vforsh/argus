@@ -26,6 +26,7 @@ export type TraceStartOptions = {
 export type TraceStopOptions = {
 	json?: boolean
 	traceId?: string
+	out?: string
 }
 
 /** Execute trace start + stop with duration. */
@@ -56,7 +57,7 @@ export const runTrace = async (id: string | undefined, options: TraceOptions): P
 
 	await delay(durationMs)
 
-	const stop = await runTraceStopInternal(watcher, {}, output)
+	const stop = await runTraceStopInternal(watcher, { outFile: options.out }, output)
 	if (!stop) {
 		return
 	}
@@ -66,7 +67,7 @@ export const runTrace = async (id: string | undefined, options: TraceOptions): P
 		return
 	}
 
-	output.writeHuman(`Trace saved: ${stop.outFile}`)
+	output.writeHuman(`Trace saved: ${stop.outFile} (${stop.eventCount} events, ${formatDurationMs(stop.durationMs)})`)
 }
 
 /** Execute the trace start command for a watcher id. */
@@ -86,6 +87,7 @@ export const runTraceStart = async (id: string | undefined, options: TraceStartO
 	}
 
 	output.writeHuman(`Trace started: ${start.traceId}`)
+	output.writeHuman(`Session: ${start.sessionName}`)
 	output.writeHuman(`Output: ${start.outFile}`)
 }
 
@@ -95,7 +97,7 @@ export const runTraceStop = async (id: string | undefined, options: TraceStopOpt
 	const resolved = await resolveWatcherOrExit({ id }, output)
 	if (!resolved) return
 
-	const stop = await runTraceStopInternal(resolved.watcher, options, output)
+	const stop = await runTraceStopInternal(resolved.watcher, { traceId: options.traceId, outFile: options.out }, output)
 	if (!stop) {
 		return
 	}
@@ -105,7 +107,7 @@ export const runTraceStop = async (id: string | undefined, options: TraceStopOpt
 		return
 	}
 
-	output.writeHuman(`Trace saved: ${stop.outFile}`)
+	output.writeHuman(`Trace saved: ${stop.outFile} (${stop.eventCount} events, ${formatDurationMs(stop.durationMs)})`)
 }
 
 const runTraceStartInternal = async (
@@ -134,14 +136,14 @@ const runTraceStartInternal = async (
 
 const runTraceStopInternal = async (
 	watcher: WatcherRecord,
-	options: { traceId?: string },
+	options: { traceId?: string; outFile?: string },
 	output: ReturnType<typeof createOutput>,
 ): Promise<TraceStopResponse | null> => {
 	const url = `http://${watcher.host}:${watcher.port}/trace/stop`
 	try {
 		const response = await fetchJson<TraceStopResponse>(url, {
 			method: 'POST',
-			body: { traceId: options.traceId },
+			body: { traceId: options.traceId, outFile: options.outFile },
 			timeoutMs: 20_000,
 		})
 		return response
@@ -153,3 +155,5 @@ const runTraceStopInternal = async (
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+const formatDurationMs = (ms: number): string => `${(ms / 1000).toFixed(3)}s`

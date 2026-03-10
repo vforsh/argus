@@ -9,16 +9,21 @@ export type TraceStartRequest = {
 export type TraceStartResponse = {
 	ok: true
 	traceId: string
+	sessionName: string
 	outFile: string
 }
 
 /** Request payload for POST /trace/stop. */
 export type TraceStopRequest = {
 	traceId?: string
+	outFile?: string
 }
 
 /** Response payload for POST /trace/stop. */
 export type TraceStopResponse = {
 	ok: true
+	sessionName: string
 	outFile: string
+	eventCount: number
+	durationMs: number
 }
