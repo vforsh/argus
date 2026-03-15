@@ -46,6 +46,22 @@ export type TargetSelectedMessage = {
 	frameId?: string | null
 }
 
+export type HostInfoMessage = {
+	type: 'host_info'
+	watcherId: string
+	watcherHost: string
+	watcherPort: number
+	pid: number
+}
+
+export type TargetInfoMessage = {
+	type: 'target_info'
+	targetId: string
+	title: string | null
+	url: string | null
+	attachedAt: number
+}
+
 export type TabInfo = {
 	tabId: number
 	url: string
@@ -98,7 +114,14 @@ export type EnableDomainMessage = {
 	domain: string
 }
 
-export type HostToExtension = AttachTabMessage | DetachTabMessage | CdpCommandMessage | ListTabsMessage | EnableDomainMessage
+export type HostToExtension =
+	| AttachTabMessage
+	| DetachTabMessage
+	| CdpCommandMessage
+	| ListTabsMessage
+	| EnableDomainMessage
+	| HostInfoMessage
+	| TargetInfoMessage
 
 // ============================================================
 // CDP Session types

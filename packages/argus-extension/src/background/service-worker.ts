@@ -3,6 +3,7 @@
  * Orchestrates the DebuggerManager, BridgeClient, and CdpProxy.
  */
 
+import type { HostToExtension } from '../types/messages.js'
 import { DebuggerManager } from './debugger-manager.js'
 import { BridgeClient } from './bridge-client.js'
 import { CdpProxy } from './cdp-proxy.js'
@@ -14,8 +15,65 @@ const cdpProxy = new CdpProxy(debuggerManager, bridgeClient)
 
 // Track connection status for badge
 let isConnected = false
+let watcherId: string | null = null
+let watcherHost: string | null = null
+let watcherPort: number | null = null
+let nativeHostPid: number | null = null
+let lastBridgeMessageAt: number | null = null
+let watcherTargetInfo: { targetId: string; title: string | null; url: string | null; attachedAt: number } | null = null
 // Popup selection is tab-scoped: one attached tab can expose multiple virtual iframe targets.
 const selectedFrameByTabId = new Map<number, string | null>()
+const recentEvents: PopupEvent[] = []
+const MAX_RECENT_EVENTS = 8
+
+type PopupEvent = {
+	ts: number
+	level: 'info' | 'error'
+	source: 'bridge' | 'debugger' | 'popup'
+	message: string
+}
+
+type PopupTarget = {
+	type: 'page' | 'iframe'
+	frameId: string | null
+	parentFrameId: string | null
+	title: string
+	url: string
+}
+
+type PopupTabWithTargets = Awaited<ReturnType<typeof cdpProxy.getTabsForPopup>>[number] & {
+	targets: PopupTarget[]
+	selectedFrameId: string | null
+}
+
+type CurrentTargetSummary = {
+	tabId: number
+	type: 'page' | 'iframe'
+	title: string | null
+	url: string
+	targetId: string
+	frameId: string | null
+	attachedAt: number | null
+}
+
+type PopupActionMessage = {
+	action: string
+	tabId?: number
+	frameId?: string | null
+}
+
+function recordEvent(level: PopupEvent['level'], source: PopupEvent['source'], message: string): void {
+	recentEvents.unshift({
+		ts: Date.now(),
+		level,
+		source,
+		message,
+	})
+
+	if (recentEvents.length > MAX_RECENT_EVENTS) {
+		recentEvents.length = MAX_RECENT_EVENTS
+	}
+}
 
 // Update extension badge based on state
 function updateBadge(): void {
@@ -36,36 +94,57 @@ function updateBadge(): void {
 bridgeClient.onConnect(() => {
 	console.log('[ServiceWorker] Bridge connected')
 	isConnected = true
+	recordEvent('info', 'bridge', 'Native host connected')
 	updateBadge()
 })
 
 bridgeClient.onDisconnect(() => {
 	console.log('[ServiceWorker] Bridge disconnected')
 	isConnected = false
+	recordEvent('error', 'bridge', 'Native host disconnected')
 	updateBadge()
 })
 
 // Update badge when tabs attach/detach
-debuggerManager.onDetach(() => {
+debuggerManager.onDetach((tabId, reason) => {
+	selectedFrameByTabId.delete(tabId)
+	if (watcherTargetInfo?.targetId.startsWith(`tab:${tabId}`) || watcherTargetInfo?.targetId.startsWith(`frame:${tabId}:`)) {
+		watcherTargetInfo = null
+	}
+	recordEvent('error', 'debugger', `Tab ${tabId} detached: ${reason}`)
 	updateBadge()
+})
+
+bridgeClient.onMessage((message: HostToExtension) => {
+	lastBridgeMessageAt = Date.now()
+	if (message.type !== 'host_info') {
+		if (message.type === 'target_info') {
+			watcherTargetInfo = {
+				targetId: message.targetId,
+				title: message.title,
+				url: message.url,
+				attachedAt: message.attachedAt,
+			}
+		}
+		return
+	}
+
+	watcherId = message.watcherId
+	watcherHost = message.watcherHost
+	watcherPort = message.watcherPort
+	nativeHostPid = message.pid
+	recordEvent('info', 'bridge', `Watcher ready: ${message.watcherId} (pid ${message.pid})`)
 })
 
 // Handle messages from popup
 chrome.runtime.onMessage.addListener(
-	(
-		message: { action: string; tabId?: number; frameId?: string | null },
-		_sender: chrome.runtime.MessageSender,
-		sendResponse: (response: unknown) => void,
-	) => {
+	(message: PopupActionMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
 		handlePopupMessage(message, sendResponse)
 		return true // Async response
 	},
 )
 
-async function handlePopupMessage(
-	message: { action: string; tabId?: number; frameId?: string | null },
-	sendResponse: (response: unknown) => void,
-): Promise<void> {
+async function handlePopupMessage(message: PopupActionMessage, sendResponse: (response: unknown) => void): Promise<void> {
 	try {
 		switch (message.action) {
 			case 'getTargets': {
@@ -75,59 +154,75 @@ async function handlePopupMessage(
 			}
 
 			case 'attach': {
-				if (message.tabId === undefined) {
-					sendResponse({ success: false, error: 'No tabId provided' })
+				const tabId = requireTabId(message, sendResponse)
+				if (tabId === null) {
 					return
 				}
-				await cdpProxy.attachTab(message.tabId)
-				selectedFrameByTabId.set(message.tabId, null)
+
+				await cdpProxy.attachTab(tabId)
+				selectedFrameByTabId.set(tabId, null)
+				recordEvent('info', 'popup', `Attached tab ${tabId}`)
 				updateBadge()
 				sendResponse({ success: true })
 				break
 			}
 
 			case 'detach': {
-				if (message.tabId === undefined) {
-					sendResponse({ success: false, error: 'No tabId provided' })
+				const tabId = requireTabId(message, sendResponse)
+				if (tabId === null) {
 					return
 				}
-				await cdpProxy.detachTab(message.tabId)
-				selectedFrameByTabId.delete(message.tabId)
+
+				await cdpProxy.detachTab(tabId)
+				selectedFrameByTabId.delete(tabId)
+				recordEvent('info', 'popup', `Detached tab ${tabId}`)
 				updateBadge()
 				sendResponse({ success: true })
 				break
 			}
 
 			case 'selectTarget': {
-				if (message.tabId === undefined) {
-					sendResponse({ success: false, error: 'No tabId provided' })
+				const tabId = requireTabId(message, sendResponse)
+				if (tabId === null) {
 					return
 				}
-				const restoreSelection = updateSelectedFrame(message.tabId, message.frameId ?? null)
+
+				const frameId = message.frameId ?? null
+				const restoreSelection = updateSelectedFrame(tabId, frameId)
 				const sent = bridgeClient.send({
 					type: 'target_selected',
-					tabId: message.tabId,
-					frameId: message.frameId ?? null,
+					tabId,
+					frameId,
 				})
 				if (!sent) {
 					restoreSelection()
+					recordEvent('error', 'popup', `Failed to select target for tab ${tabId}: bridge disconnected`)
 					sendResponse({ success: false, error: 'Bridge is not connected' })
 					return
 				}
+				recordEvent('info', 'popup', `Selected ${frameId ? `iframe ${frameId}` : 'page'} on tab ${tabId}`)
 				sendResponse({ success: true })
 				break
 			}
 
 			case 'getStatus': {
+				const tabsWithTargets = await getTabsWithTargets()
 				sendResponse({
 					success: true,
 					status: {
 						bridgeConnected: isConnected,
+						watcherId,
+						watcherHost,
+						watcherPort,
+						nativeHostPid,
+						lastMessageAt: lastBridgeMessageAt,
 						attachedTabs: debuggerManager.listAttached().map((t) => ({
 							tabId: t.tabId,
 							url: t.url,
 							title: t.title,
 						})),
+						currentTarget: getCurrentTargetSummary(tabsWithTargets),
+						recentEvents,
 					},
 				})
 				break
@@ -143,6 +238,7 @@ async function handlePopupMessage(
 				sendResponse({ success: false, error: `Unknown action: ${message.action}` })
 		}
 	} catch (err) {
+		recordEvent('error', 'popup', err instanceof Error ? err.message : 'Unknown popup error')
 		sendResponse({
 			success: false,
 			error: err instanceof Error ? err.message : 'Unknown error',
@@ -150,9 +246,16 @@ async function handlePopupMessage(
 	}
 }
 
-async function getTabsWithTargets(): Promise<
-	Array<Awaited<ReturnType<typeof cdpProxy.getTabsForPopup>>[number] & { targets: PopupTarget[]; selectedFrameId: string | null }>
-> {
+function requireTabId(message: PopupActionMessage, sendResponse: (response: unknown) => void): number | null {
+	if (message.tabId !== undefined) {
+		return message.tabId
+	}
+
+	sendResponse({ success: false, error: 'No tabId provided' })
+	return null
+}
+
+async function getTabsWithTargets(): Promise<PopupTabWithTargets[]> {
 	const tabs = await cdpProxy.getTabsForPopup()
 	return Promise.all(
 		tabs.map(async (tab) => ({
@@ -171,12 +274,40 @@ function updateSelectedFrame(tabId: number, frameId: string | null): () => void 
 	}
 }
 
-type PopupTarget = {
-	type: 'page' | 'iframe'
-	frameId: string | null
-	parentFrameId: string | null
-	title: string
-	url: string
+function getCurrentTargetSummary(tabs: PopupTabWithTargets[]): CurrentTargetSummary | null {
+	const attachedTabs = tabs.filter((tab) => tab.attached)
+	const selectedTab = attachedTabs.find((tab) => (tab.selectedFrameId ?? null) !== null) ?? attachedTabs[0]
+	if (!selectedTab) {
+		return null
+	}
+
+	const selectedTarget =
+		selectedTab.targets.find((target) => (target.frameId ?? null) === (selectedTab.selectedFrameId ?? null)) ?? selectedTab.targets[0]
+
+	if (!selectedTarget) {
+		return null
+	}
+
+	const targetId = selectedTarget.frameId ? formatFrameTargetId(selectedTab.tabId, selectedTarget.frameId) : formatPageTargetId(selectedTab.tabId)
+	const targetInfo = watcherTargetInfo?.targetId === targetId ? watcherTargetInfo : null
+
+	return {
+		tabId: selectedTab.tabId,
+		type: selectedTarget.type,
+		title: (targetInfo?.title ?? selectedTarget.title) || null,
+		url: (targetInfo?.url ?? selectedTarget.url) || selectedTab.url,
+		targetId,
+		frameId: selectedTarget.frameId,
+		attachedAt: targetInfo?.attachedAt ?? debuggerManager.getTarget(selectedTab.tabId)?.attachedAt ?? null,
+	}
+}
+
+function formatPageTargetId(tabId: number): string {
+	return `tab:${tabId}`
+}
+
+function formatFrameTargetId(tabId: number, frameId: string): string {
+	return `frame:${tabId}:${frameId}`
 }
 
 async function getPopupTargets(tabId: number): Promise<PopupTarget[]> {

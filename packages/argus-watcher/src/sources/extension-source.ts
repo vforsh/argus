@@ -21,9 +21,15 @@ export type ExtensionSourceOptions = CdpSourceBaseOptions
  * Returns a handle that can be used to control the source and access CDP session.
  */
 export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourceHandle => {
-	const { events, ignoreMatcher, stripUrlPrefixes } = options
+	const { events, ignoreMatcher, stripUrlPrefixes, watcherId, watcherHost, watcherPort } = options
 
 	const messaging = createNativeMessaging()
+	const hostInfo = {
+		watcherId: watcherId ?? 'extension',
+		watcherHost: watcherHost ?? '127.0.0.1',
+		watcherPort: watcherPort ?? 0,
+		watcherPid: process.pid,
+	}
 	let currentSession: ExtensionSession | null = null
 	let stopping = false
 	const frameStateByTabId = new Map<number, ExtensionFrameState>()
@@ -41,25 +47,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 			currentSession = session
 			frameStateByTabId.set(session.tabId, createEmptyFrameState())
-
-			sessionManager.enableDomain(session.tabId, 'Runtime')
-			sessionManager.enableDomain(session.tabId, 'Page')
-			registerSessionEventHandlers(session)
-
-			const target = buildPageTarget(session, { attached: true })
-
-			emitStatus(target, null)
-
-			void events.onAttach?.(session.handle, target)
-			void refreshFrameTree(session).then(() => {
-				const pendingFrameId = pendingSelectionByTabId.get(session.tabId)
-				if (pendingFrameId !== undefined) {
-					pendingSelectionByTabId.delete(session.tabId)
-					selectTargetSafely(session, pendingFrameId, 'pending frame')
-					return
-				}
-				emitTargetChanged(session)
-			})
+			void bootstrapAttachedSession(session)
 		},
 
 		onDetach: (tabId: number, reason: string) => {
@@ -115,6 +103,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	})
 
 	messaging.start()
+	sendHostInfo()
 	messaging.onDisconnect(() => {
 		console.error('[ExtensionSource] Extension disconnected')
 		if (!stopping) {
@@ -165,10 +154,72 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	return {
 		session: proxySession,
 		pageSession,
+		syncWatcherInfo: (info) => {
+			hostInfo.watcherId = info.watcherId
+			hostInfo.watcherHost = info.watcherHost
+			hostInfo.watcherPort = info.watcherPort
+			hostInfo.watcherPid = info.watcherPid
+			sendHostInfo()
+		},
 		stop,
 		listTargets,
 		attachTarget,
 		detachTarget,
+	}
+
+	function sendHostInfo(): void {
+		messaging.send({
+			type: 'host_info',
+			watcherId: hostInfo.watcherId,
+			watcherHost: hostInfo.watcherHost,
+			watcherPort: hostInfo.watcherPort,
+			pid: hostInfo.watcherPid,
+		})
+	}
+
+	async function bootstrapAttachedSession(session: ExtensionSession): Promise<void> {
+		try {
+			registerSessionEventHandlers(session)
+			await enableBootstrapDomains(session)
+			await refreshFrameTree(session)
+
+			if (currentSession?.tabId !== session.tabId) {
+				return
+			}
+
+			const target = buildPageTarget(session, { attached: true })
+			emitStatus(target, null)
+			await events.onAttach?.(session.handle, target)
+			restorePendingSelection(session)
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			console.error(`[ExtensionSource] Failed to bootstrap attached tab ${session.tabId}: ${message}`)
+
+			if (currentSession?.tabId === session.tabId) {
+				emitStatus(null, message)
+				events.onDetach?.(message)
+			}
+		}
+	}
+
+	/**
+	 * Subscribe before enabling Runtime/Page so we don't miss the initial execution contexts
+	 * that Chrome emits as soon as Runtime becomes active.
+	 */
+	async function enableBootstrapDomains(session: ExtensionSession): Promise<void> {
+		await session.handle.sendAndWait('Runtime.enable')
+		await session.handle.sendAndWait('Page.enable')
+	}
+
+	function restorePendingSelection(session: ExtensionSession): void {
+		const pendingFrameId = pendingSelectionByTabId.get(session.tabId)
+		if (pendingFrameId !== undefined) {
+			pendingSelectionByTabId.delete(session.tabId)
+			selectTargetSafely(session, pendingFrameId, 'pending frame')
+			return
+		}
+
+		emitTargetChanged(session)
 	}
 
 	function registerSessionEventHandlers(session: ExtensionSession): void {
@@ -177,12 +228,16 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			if (!context?.isDefault || !context.frameId) {
 				return
 			}
-			getOrCreateFrameState(session.tabId).executionContexts.set(context.frameId, context.id)
+			const state = getOrCreateFrameState(session.tabId)
+			state.executionContexts.set(context.frameId, context.id)
+			void refreshFrameTitle(session, context.frameId, context.id)
 			emitTargetChanged(session)
 		})
 
 		session.handle.onEvent('Runtime.executionContextsCleared', () => {
-			getOrCreateFrameState(session.tabId).executionContexts.clear()
+			const state = getOrCreateFrameState(session.tabId)
+			state.executionContexts.clear()
+			state.pendingTitleLoads.clear()
 		})
 
 		session.handle.onEvent('Runtime.executionContextDestroyed', (params) => {
@@ -195,6 +250,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			for (const [frameId, contextId] of state.executionContexts.entries()) {
 				if (contextId === record.executionContextId) {
 					state.executionContexts.delete(frameId)
+					state.pendingTitleLoads.delete(frameId)
 				}
 			}
 		})
@@ -210,6 +266,8 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			if (!frame.parentFrameId) {
 				state.topFrameId = frame.frameId
 				session.url = frame.url
+			} else if (state.executionContexts.has(frame.frameId)) {
+				void refreshFrameTitle(session, frame.frameId)
 			}
 			currentSession = session
 
@@ -245,6 +303,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			const state = getOrCreateFrameState(session.tabId)
 			if (state.selectedFrameId === record.frameId) {
 				state.selectedFrameId = null
+				state.selectedAttachedAt = Date.now()
 				emitTargetChanged(session)
 			}
 		})
@@ -311,7 +370,18 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		if (!target) {
 			return
 		}
+		const state = getOrCreateFrameState(session.tabId)
+		if (state.selectedAttachedAt == null) {
+			state.selectedAttachedAt = Date.now()
+		}
 		emitStatus(target, null)
+		messaging.send({
+			type: 'target_info',
+			targetId: target.id,
+			title: target.title,
+			url: target.url,
+			attachedAt: state.selectedAttachedAt,
+		})
 		events.onTargetChanged?.(session.handle, target)
 	}
 
@@ -335,6 +405,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			throw new Error(`Frame not found: ${frameId}`)
 		}
 		state.selectedFrameId = frameId
+		state.selectedAttachedAt = Date.now()
 		emitTargetChanged(session)
 	}
 
@@ -351,6 +422,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		const frameTree = (await session.handle.sendAndWait('Page.getFrameTree')) as { frameTree?: CdpFrameTreeNode }
 		state.frames.clear()
 		collectFrameTree(frameTree.frameTree, state)
+		await Promise.all([...state.executionContexts.keys()].map((frameId) => refreshFrameTitle(session, frameId)))
 	}
 
 	function removeFrame(tabId: number, frameId: string): void {
@@ -361,6 +433,53 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		}
 		state.frames.delete(frameId)
 		state.executionContexts.delete(frameId)
+		state.pendingTitleLoads.delete(frameId)
+	}
+
+	/**
+	 * Frame tree metadata does not include the iframe document title, so we resolve it from the
+	 * frame's default execution context and cache it alongside the rest of the frame state.
+	 */
+	async function refreshFrameTitle(session: ExtensionSession, frameId: string, contextId?: number): Promise<void> {
+		const state = getOrCreateFrameState(session.tabId)
+		if (frameId === state.topFrameId || state.pendingTitleLoads.has(frameId)) {
+			return
+		}
+
+		const executionContextId = contextId ?? state.executionContexts.get(frameId)
+		if (executionContextId == null) {
+			return
+		}
+
+		const frame = state.frames.get(frameId)
+		if (!frame) {
+			return
+		}
+
+		state.pendingTitleLoads.add(frameId)
+		try {
+			const evaluated = (await session.handle.sendAndWait('Runtime.evaluate', {
+				expression: 'document.title',
+				contextId: executionContextId,
+				returnByValue: true,
+				silent: true,
+			})) as { result?: { value?: unknown } }
+
+			const title = typeof evaluated.result?.value === 'string' ? evaluated.result.value.trim() : ''
+			const latestFrame = state.frames.get(frameId)
+			if (!latestFrame) {
+				return
+			}
+
+			latestFrame.title = title || null
+			if (state.selectedFrameId === frameId) {
+				emitTargetChanged(session)
+			}
+		} catch {
+			// Ignore transient frame-title lookup failures during navigation/bootstrap.
+		} finally {
+			state.pendingTitleLoads.delete(frameId)
+		}
 	}
 
 	function createDelegatingSession(config: {
@@ -400,15 +519,19 @@ const tabToTarget = (tab: TabInfo): CdpSourceTarget => ({
 type ExtensionFrameState = {
 	topFrameId: string | null
 	selectedFrameId: string | null
+	selectedAttachedAt: number | null
 	frames: Map<string, ExtensionFrame>
 	executionContexts: Map<string, number>
+	pendingTitleLoads: Set<string>
 }
 
 const createEmptyFrameState = (): ExtensionFrameState => ({
 	topFrameId: null,
 	selectedFrameId: null,
+	selectedAttachedAt: null,
 	frames: new Map(),
 	executionContexts: new Map(),
+	pendingTitleLoads: new Set(),
 })
 
 type ExtensionFrame = {

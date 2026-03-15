@@ -72,6 +72,8 @@ export type CdpSourceHandle = {
 	session: CdpSessionHandle
 	/** The raw top-level page session handle, for page-scoped operations like indicators. */
 	pageSession?: CdpSessionHandle
+	/** Sync watcher metadata after the HTTP server has its final host/port (extension mode only). */
+	syncWatcherInfo?: (info: { watcherId: string; watcherHost: string; watcherPort: number; watcherPid: number }) => void
 	/** Stop the source and clean up resources. */
 	stop: () => Promise<void>
 	/** List available targets (extension mode only). */
@@ -88,6 +90,12 @@ export type CdpSourceHandle = {
 export type CdpSourceBaseOptions = {
 	/** Event handlers for the source. */
 	events: CdpSourceEvents
+	/** Watcher id for source-specific metadata/events. */
+	watcherId?: string
+	/** Watcher HTTP host for source-specific metadata/events. */
+	watcherHost?: string
+	/** Watcher HTTP port for source-specific metadata/events. */
+	watcherPort?: number
 	/** Optional ignore list filtering for log/exception locations. */
 	ignoreMatcher?: ((url: string) => boolean) | null
 	/** Strip these literal prefixes from event.file for display/logging. */

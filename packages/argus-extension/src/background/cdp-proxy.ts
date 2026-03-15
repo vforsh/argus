@@ -75,6 +75,10 @@ export class CdpProxy {
 				await this.handleEnableDomain(message)
 				break
 
+			case 'host_info':
+			case 'target_info':
+				break
+
 			default:
 				console.warn('[CdpProxy] Unknown message type:', (message as { type: string }).type)
 		}
@@ -86,10 +90,6 @@ export class CdpProxy {
 	private async handleAttachTab(message: AttachTabMessage): Promise<void> {
 		try {
 			const target = await this.debuggerManager.attach(message.tabId)
-
-			// Enable core domains needed for Argus functionality
-			await this.debuggerManager.enableDomain(message.tabId, 'Runtime')
-			await this.debuggerManager.enableDomain(message.tabId, 'Page')
 
 			this.bridgeClient.send({
 				type: 'tab_attached',

@@ -1,7 +1,15 @@
 /**
  * Popup UI for the Argus CDP Bridge extension.
- * Displays available tabs and allows attaching/detaching.
+ * Displays tabs, target selection, and bridge/debugger health.
  */
+
+type PopupTarget = {
+	type: 'page' | 'iframe'
+	frameId: string | null
+	parentFrameId: string | null
+	title: string
+	url: string
+}
 
 type TabInfo = {
 	tabId: number
@@ -13,20 +21,38 @@ type TabInfo = {
 	targets?: PopupTarget[]
 }
 
-type PopupTarget = {
+type PopupEvent = {
+	ts: number
+	level: 'info' | 'error'
+	source: 'bridge' | 'debugger' | 'popup'
+	message: string
+}
+
+type CurrentTargetSummary = {
+	tabId: number
 	type: 'page' | 'iframe'
-	frameId: string | null
-	parentFrameId: string | null
-	title: string
+	title: string | null
 	url: string
+	targetId: string
+	frameId: string | null
+	attachedAt: number | null
+}
+
+type StatusPayload = {
+	bridgeConnected: boolean
+	watcherId: string | null
+	watcherHost: string | null
+	watcherPort: number | null
+	nativeHostPid: number | null
+	lastMessageAt: number | null
+	attachedTabs: Array<{ tabId: number; url: string; title: string }>
+	currentTarget: CurrentTargetSummary | null
+	recentEvents: PopupEvent[]
 }
 
 type StatusResponse = {
 	success: boolean
-	status?: {
-		bridgeConnected: boolean
-		attachedTabs: Array<{ tabId: number; url: string; title: string }>
-	}
+	status?: StatusPayload
 	error?: string
 }
 
@@ -36,59 +62,125 @@ type TabsResponse = {
 	error?: string
 }
 
+type ActionResponse = {
+	success: boolean
+	error?: string
+}
+
+type PopupAction = 'attach' | 'detach' | 'selectTarget'
+
 // DOM elements
 const statusIndicator = document.getElementById('statusIndicator') as HTMLDivElement
 const statusText = document.getElementById('statusText') as HTMLSpanElement
 const content = document.getElementById('content') as HTMLDivElement
 const attachedCount = document.getElementById('attachedCount') as HTMLSpanElement
+const errorBanner = document.getElementById('errorBanner') as HTMLDivElement
+const currentTargetPill = document.getElementById('currentTargetPill') as HTMLDivElement
+const currentTargetKind = document.getElementById('currentTargetKind') as HTMLSpanElement
+const currentTargetTitle = document.getElementById('currentTargetTitle') as HTMLDivElement
+const currentTargetUrl = document.getElementById('currentTargetUrl') as HTMLDivElement
+const copyInfoButton = document.getElementById('copyInfoButton') as HTMLButtonElement
+const healthBridge = document.getElementById('healthBridge') as HTMLDivElement
+const healthWatcherId = document.getElementById('healthWatcherId') as HTMLDivElement
+const healthAttachedCount = document.getElementById('healthAttachedCount') as HTMLDivElement
+const healthSelectedTarget = document.getElementById('healthSelectedTarget') as HTMLDivElement
+const healthLastMessage = document.getElementById('healthLastMessage') as HTMLDivElement
+const healthPid = document.getElementById('healthPid') as HTMLDivElement
+const eventList = document.getElementById('eventList') as HTMLDivElement
 
-// Previous state for diffing (avoid unnecessary re-renders)
 let prevStateHash = ''
+let currentError: string | null = null
+let latestStatus: StatusPayload | null = null
 
-/**
- * Send a message to the service worker.
- */
+copyInfoButton.addEventListener('click', () => {
+	void copyWatcherInfo()
+})
+
 async function sendMessage<T>(message: { action: string; tabId?: number; frameId?: string | null }): Promise<T> {
 	return new Promise((resolve) => {
 		chrome.runtime.sendMessage(message, resolve)
 	})
 }
 
-/**
- * Update the connection status display.
- */
-function updateStatus(connected: boolean, tabCount: number): void {
-	if (connected) {
-		statusIndicator.classList.add('connected')
-		statusText.textContent = 'Bridge connected'
-	} else {
-		statusIndicator.classList.remove('connected')
-		statusText.textContent = 'Bridge disconnected'
-	}
+function setEmptyState(icon: string, message: string): void {
+	content.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">${escapeHtml(icon)}</div>
+        <div>${escapeHtml(message)}</div>
+      </div>
+    `
+}
 
+function updateStatus(connected: boolean, tabCount: number): void {
+	statusIndicator.classList.toggle('connected', connected)
+	statusText.textContent = connected ? 'Bridge connected' : 'Bridge disconnected'
 	attachedCount.textContent = `${tabCount} attached`
 }
 
-/**
- * Render the tab list.
- */
-function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
-	if (tabs.length === 0) {
-		content.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">🔍</div>
-        <div>No tabs available</div>
-      </div>
-    `
+function showError(message: string | null): void {
+	currentError = message
+	errorBanner.textContent = message ?? ''
+	errorBanner.classList.toggle('hidden', !message)
+}
+
+function updateCurrentTarget(status: StatusPayload | undefined): void {
+	const target = status?.currentTarget ?? null
+	const hasTarget = Boolean(target)
+
+	currentTargetPill.classList.toggle('empty', !hasTarget)
+	currentTargetKind.textContent = target ? (target.type === 'page' ? 'Page' : 'Iframe') : 'Target'
+	currentTargetTitle.textContent = target ? target.title || shortenUrl(target.url) : 'No target selected'
+	currentTargetUrl.textContent = target?.url ? shortenUrl(target.url) : 'Attach a tab to get started'
+	copyInfoButton.disabled = !canCopyWatcherInfo(status)
+}
+
+function updateHealth(status: StatusPayload | undefined): void {
+	const connected = status?.bridgeConnected ?? false
+	const target = status?.currentTarget ?? null
+
+	healthBridge.textContent = connected ? 'Connected' : 'Disconnected'
+	healthBridge.classList.toggle('connected', connected)
+	healthBridge.classList.toggle('disconnected', !connected)
+	healthWatcherId.textContent = status?.watcherId ?? '-'
+	healthAttachedCount.textContent = String(status?.attachedTabs.length ?? 0)
+	healthSelectedTarget.textContent = target ? `${target.type === 'page' ? 'Page' : 'Iframe'} ${target.targetId}` : '-'
+	healthLastMessage.textContent = formatTimestamp(status?.lastMessageAt ?? null)
+	healthPid.textContent = status?.nativeHostPid ? String(status.nativeHostPid) : '-'
+}
+
+function renderEvents(events: PopupEvent[]): void {
+	if (events.length === 0) {
+		eventList.innerHTML = '<div class="loading">No events yet</div>'
 		return
 	}
 
-	const attachedTabs = tabs.filter((t) => t.attached)
-	let availableTabs = tabs.filter((t) => !t.attached)
+	eventList.innerHTML = events
+		.map(
+			(event) => `
+      <div class="event-item ${event.level}">
+        <div class="event-meta">
+          <span class="event-level">${escapeHtml(event.level)}</span>
+          <span>${escapeHtml(event.source)}</span>
+          <span>${escapeHtml(formatTimestamp(event.ts))}</span>
+        </div>
+        <div class="event-message">${escapeHtml(event.message)}</div>
+      </div>
+    `,
+		)
+		.join('')
+}
 
-	// Move current tab to the beginning of Available Tabs list
+function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
+	if (tabs.length === 0) {
+		setEmptyState('🔍', 'No tabs available')
+		return
+	}
+
+	const attachedTabs = tabs.filter((tab) => tab.attached)
+	let availableTabs = tabs.filter((tab) => !tab.attached)
+
 	if (currentTabId !== undefined) {
-		const currentTabIndex = availableTabs.findIndex((t) => t.tabId === currentTabId)
+		const currentTabIndex = availableTabs.findIndex((tab) => tab.tabId === currentTabId)
 		if (currentTabIndex > 0) {
 			const [currentTab] = availableTabs.splice(currentTabIndex, 1)
 			availableTabs.unshift(currentTab)
@@ -96,7 +188,6 @@ function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
 	}
 
 	let html = ''
-
 	if (attachedTabs.length > 0) {
 		html += renderTabSection('Attached Tabs', attachedTabs, true)
 	}
@@ -109,32 +200,33 @@ function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
 	}
 
 	content.innerHTML = html
-
-	// Add event listeners
-	content.querySelectorAll('.tab-action').forEach((btn) => {
-		btn.addEventListener('click', handleTabAction)
+	content.querySelectorAll('.tab-action').forEach((button) => {
+		button.addEventListener('click', handleTabAction)
 	})
-	content.querySelectorAll('[data-action="select-target"]').forEach((btn) => {
-		btn.addEventListener('click', handleTargetSelection)
+	content.querySelectorAll('[data-action="select-target"]').forEach((button) => {
+		button.addEventListener('click', handleTargetSelection)
 	})
 	content.querySelectorAll('.tab-item').forEach((item) => {
 		item.addEventListener('click', handleTabItemClick)
 	})
 }
 
-/**
- * Render a single tab item.
- */
+function renderTabSection(title: string, tabs: TabInfo[], showTargets: boolean): string {
+	return `
+    <div class="section-title">${title}</div>
+    <div class="tab-list">
+      ${tabs.map((tab) => renderTabItem(tab, showTargets)).join('')}
+    </div>
+  `
+}
+
 function renderTabItem(tab: TabInfo, showTargets: boolean): string {
 	const favicon = tab.faviconUrl
 		? `<img class="tab-favicon" src="${escapeHtml(tab.faviconUrl)}" alt="">`
 		: `<div class="tab-favicon" style="background: #e0e0e0"></div>`
-
 	const actionButton = tab.attached
 		? `<button class="tab-action detach" data-tab-id="${tab.tabId}" data-action="detach">Detach</button>`
 		: `<button class="tab-action attach" data-tab-id="${tab.tabId}" data-action="attach">Attach</button>`
-
-	const targetsHtml = showTargets ? renderTargetList(tab) : ''
 
 	return `
     <div class="tab-item ${tab.attached ? 'attached' : ''}" data-tab-id="${tab.tabId}">
@@ -145,7 +237,7 @@ function renderTabItem(tab: TabInfo, showTargets: boolean): string {
       </div>
       ${actionButton}
     </div>
-    ${targetsHtml}
+    ${showTargets ? renderTargetList(tab) : ''}
   `
 }
 
@@ -182,47 +274,29 @@ function renderTargetList(tab: TabInfo): string {
   `
 }
 
-/**
- * Handle click on tab item (attach/detach based on current state).
- */
 async function handleTabItemClick(event: Event): Promise<void> {
 	const target = event.target as HTMLElement
-	// Ignore clicks on the button (it's handled separately)
 	if (target.closest('.tab-action')) {
 		return
 	}
 
 	const tabItem = event.currentTarget as HTMLElement
 	const tabId = parseInt(tabItem.dataset.tabId ?? '0', 10)
-	const isAttached = tabItem.classList.contains('attached')
-	const action = isAttached ? 'detach' : 'attach'
+	const action = tabItem.classList.contains('attached') ? 'detach' : 'attach'
 
-	// Show loading state
 	tabItem.style.opacity = '0.6'
 	tabItem.style.pointerEvents = 'none'
 
 	try {
-		await sendMessage({ action, tabId })
+		await runPopupAction(action, { tabId })
 		await refreshTabs(true)
-	} catch (err) {
-		console.error('Action failed:', err)
+	} catch (error) {
+		showError(error instanceof Error ? error.message : `${capitalize(action)} failed`)
 		tabItem.style.opacity = '1'
 		tabItem.style.pointerEvents = 'auto'
 	}
 }
 
-function renderTabSection(title: string, tabs: TabInfo[], showTargets: boolean): string {
-	return `
-    <div class="section-title">${title}</div>
-    <div class="tab-list">
-      ${tabs.map((tab) => renderTabItem(tab, showTargets)).join('')}
-    </div>
-  `
-}
-
-/**
- * Handle attach/detach button click.
- */
 async function handleTabAction(event: Event): Promise<void> {
 	const button = event.target as HTMLButtonElement
 	const tabId = parseInt(button.dataset.tabId ?? '0', 10)
@@ -232,11 +306,10 @@ async function handleTabAction(event: Event): Promise<void> {
 	button.textContent = action === 'attach' ? 'Attaching...' : 'Detaching...'
 
 	try {
-		await sendMessage({ action, tabId })
-		// Refresh the tab list
+		await runPopupAction(action, { tabId })
 		await refreshTabs(true)
-	} catch (err) {
-		console.error('Action failed:', err)
+	} catch (error) {
+		showError(error instanceof Error ? error.message : `${capitalize(action)} failed`)
 		button.disabled = false
 		button.textContent = action === 'attach' ? 'Attach' : 'Detach'
 	}
@@ -250,58 +323,137 @@ async function handleTargetSelection(event: Event): Promise<void> {
 	button.disabled = true
 
 	try {
-		await sendMessage({ action: 'selectTarget', tabId, frameId })
+		await runPopupAction('selectTarget', { tabId, frameId })
 		await refreshTabs(true)
-	} catch (err) {
-		console.error('Target selection failed:', err)
+	} catch (error) {
+		showError(error instanceof Error ? error.message : 'Target selection failed')
 		button.disabled = false
 	}
 }
 
-/**
- * Refresh the tab list and status.
- */
-async function refreshTabs(forceRender = false): Promise<void> {
-	const [statusResponse, tabsResponse, activeTab] = await Promise.all([
-		sendMessage<StatusResponse>({ action: 'getStatus' }),
-		sendMessage<TabsResponse>({ action: 'getTargets' }),
-		getCurrentTab(),
-	])
-
-	const connected = statusResponse.status?.bridgeConnected ?? false
-	const attachedTabCount = statusResponse.status?.attachedTabs.length ?? 0
-
-	// Compute state hash to avoid unnecessary re-renders
-	const stateHash = JSON.stringify({
-		connected,
-		attachedTabCount,
-		tabs: tabsResponse.tabs,
-		currentTabId: activeTab?.id,
-		error: tabsResponse.error,
-	})
-
-	if (!forceRender && stateHash === prevStateHash) {
-		return
+async function runPopupAction(action: PopupAction, args: { tabId: number; frameId?: string | null }): Promise<void> {
+	const response = await sendMessage<ActionResponse>({ action, ...args })
+	if (!response.success) {
+		throw new Error(response.error ?? `${capitalize(action)} failed`)
 	}
-	prevStateHash = stateHash
 
-	updateStatus(connected, attachedTabCount)
+	showError(null)
+}
 
-	if (tabsResponse.success && tabsResponse.tabs) {
-		renderTabs(tabsResponse.tabs, activeTab?.id)
-	} else {
-		content.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">⚠️</div>
-        <div>${tabsResponse.error ?? 'Failed to load tabs'}</div>
-      </div>
-    `
+async function refreshTabs(forceRender = false): Promise<void> {
+	try {
+		const [statusResponse, tabsResponse, activeTab] = await Promise.all([
+			sendMessage<StatusResponse>({ action: 'getStatus' }),
+			sendMessage<TabsResponse>({ action: 'getTargets' }),
+			getCurrentTab(),
+		])
+
+		if (!statusResponse.success) {
+			throw new Error(statusResponse.error ?? 'Failed to load bridge status')
+		}
+
+		const status = statusResponse.status
+		latestStatus = status ?? null
+
+		const stateHash = JSON.stringify({
+			status,
+			tabs: tabsResponse.tabs,
+			currentTabId: activeTab?.id,
+			error: currentError ?? tabsResponse.error ?? null,
+		})
+
+		if (!forceRender && stateHash === prevStateHash) {
+			return
+		}
+		prevStateHash = stateHash
+
+		updateStatus(status?.bridgeConnected ?? false, status?.attachedTabs.length ?? 0)
+		updateCurrentTarget(status)
+		updateHealth(status)
+		renderEvents(status?.recentEvents ?? [])
+
+		if (tabsResponse.success && tabsResponse.tabs) {
+			renderTabs(tabsResponse.tabs, activeTab?.id)
+			showError(currentError)
+			return
+		}
+
+		showError(tabsResponse.error ?? 'Failed to load tabs')
+		setEmptyState('⚠️', tabsResponse.error ?? 'Failed to load tabs')
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Failed to refresh popup'
+		showError(message)
+		updateStatus(false, 0)
+		updateCurrentTarget(undefined)
+		updateHealth(undefined)
+		renderEvents([])
+		setEmptyState('⚠️', message)
 	}
 }
 
-/**
- * Escape HTML entities.
- */
+function formatTimestamp(timestamp: number | null): string {
+	if (!timestamp) {
+		return '-'
+	}
+
+	return new Date(timestamp).toLocaleTimeString([], {
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+	})
+}
+
+function shortenUrl(input: string): string {
+	try {
+		const url = new URL(input)
+		const path = `${url.pathname}${url.hash}` || '/'
+		return `${url.host}${path.length > 28 ? `${path.slice(0, 27)}…` : path}`
+	} catch {
+		return input.length > 44 ? `${input.slice(0, 43)}…` : input
+	}
+}
+
+async function copyWatcherInfo(): Promise<void> {
+	const text = buildWatcherInfoText(latestStatus)
+	if (!text) {
+		return
+	}
+
+	await navigator.clipboard.writeText(text)
+	const previousText = copyInfoButton.textContent
+	copyInfoButton.textContent = 'Copied!'
+	setTimeout(() => {
+		copyInfoButton.textContent = previousText
+	}, 1500)
+}
+
+function canCopyWatcherInfo(status: StatusPayload | null | undefined): boolean {
+	return Boolean(status?.watcherId && status?.watcherHost && status?.watcherPort != null && status?.nativeHostPid && status?.currentTarget)
+}
+
+function buildWatcherInfoText(status: StatusPayload | null): string | null {
+	if (!canCopyWatcherInfo(status)) {
+		return null
+	}
+
+	const target = status!.currentTarget!
+	const attached = target.attachedAt ? new Date(target.attachedAt).toISOString() : new Date().toISOString()
+	const fields = [
+		['ID', status!.watcherId!],
+		['Host', `${status!.watcherHost!}:${status!.watcherPort!}`],
+		['PID', String(status!.nativeHostPid!)],
+		['Target', target.title || '(no title)'],
+		['URL', target.url || '(no url)'],
+		['Attached', attached],
+	]
+
+	return `Argus Watcher Info\n${fields.map(([label, value]) => `${label}: ${value}`).join('\n')}`
+}
+
+function capitalize(text: string): string {
+	return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 function escapeHtml(text: string): string {
 	const div = document.createElement('div')
 	div.textContent = text
@@ -313,8 +465,7 @@ async function getCurrentTab(): Promise<chrome.tabs.Tab | undefined> {
 	return tabs[0]
 }
 
-// Initial load
-refreshTabs()
-
-// Refresh periodically while popup is open
-setInterval(refreshTabs, 2000)
+void refreshTabs()
+setInterval(() => {
+	void refreshTabs()
+}, 2000)

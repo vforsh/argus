@@ -442,6 +442,9 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 					indicatorController?.onDetach()
 				},
 			},
+			watcherId,
+			watcherHost: host,
+			watcherPort: record.port,
 			ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
 			stripUrlPrefixes,
 		})
@@ -486,6 +489,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 					indicatorController?.onDetach()
 				},
 			},
+			watcherId,
 			ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
 			stripUrlPrefixes,
 		})
@@ -524,6 +528,12 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	})
 
 	record.port = server.port
+	sourceHandle.syncWatcherInfo?.({
+		watcherId,
+		watcherHost: host,
+		watcherPort: record.port,
+		watcherPid: process.pid,
+	})
 	await announceWatcher(record)
 
 	const heartbeat = startRegistryHeartbeat(() => record, options.heartbeatMs ?? 15_000)

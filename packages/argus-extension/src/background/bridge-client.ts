@@ -11,7 +11,7 @@ export type ConnectionHandler = () => void
 export class BridgeClient {
 	private port: chrome.runtime.Port | null = null
 	private hostName: string
-	private messageHandler: MessageHandler | null = null
+	private messageHandlers = new Set<MessageHandler>()
 	private connectHandler: ConnectionHandler | null = null
 	private disconnectHandler: ConnectionHandler | null = null
 	private reconnectAttempts = 0
@@ -26,7 +26,7 @@ export class BridgeClient {
 	 * Set handler for incoming messages from the host.
 	 */
 	onMessage(handler: MessageHandler): void {
-		this.messageHandler = handler
+		this.messageHandlers.add(handler)
 	}
 
 	/**
@@ -56,8 +56,8 @@ export class BridgeClient {
 
 			this.port.onMessage.addListener((message: HostToExtension) => {
 				this.reconnectAttempts = 0 // Reset on successful message
-				if (this.messageHandler) {
-					this.messageHandler(message)
+				for (const handler of this.messageHandlers) {
+					handler(message)
 				}
 			})
 
