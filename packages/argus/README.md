@@ -116,6 +116,7 @@ Manage tabs/targets via CDP (aliases: `tab`).
 - **`argus page targets`**: List all Chrome targets (tabs, workers, extensions).
     - Aliases: `list`, `ls`.
     - Options: `--type <type>` to filter (e.g. `--type page` for tabs only), `--json`.
+    - With `--id` on an extension-backed watcher, returns the watcher's virtual page/iframe targets instead of raw Chrome `/json/list`.
     - Example: `argus page targets --type page`.
 
 - **`argus page open --url <url>`**: Open a new tab in Chrome.
@@ -161,7 +162,7 @@ Also available via `argus watchers` (plural alias).
 
 - **`argus watcher start`**: Start an Argus watcher process.
     - Required (CLI or config): `--id <watcherId>`, `--url <pattern>`.
-    - Optional: `--chrome-host <host>` (default: `127.0.0.1`), `--chrome-port <port>` (default: `9222`), `--no-page-indicator`, `--config <path>`, `--json`.
+    - Optional: `--chrome-host <host>` (default: `127.0.0.1`), `--chrome-port <port>` (default: `9222`), `--no-page-indicator` (hide the in-page badge in both CDP and extension modes), `--config <path>`, `--json`.
     - Note: the in-page watcher indicator badge is enabled by default.
     - Example: `argus watcher start --id app --url localhost:3000 --chrome-port 9223`.
 

@@ -181,7 +181,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 			chrome: sourceMode === 'cdp' ? { host: chromeHost!, port: chromePort! } : undefined,
 			host: '127.0.0.1',
 			port: 0,
-			pageIndicator: sourceMode === 'cdp' ? (options.pageIndicator === false ? { enabled: false } : { enabled: true }) : { enabled: false },
+			pageIndicator: options.pageIndicator === false ? { enabled: false } : { enabled: true },
 			artifacts: artifactsBaseDir ? { base: artifactsBaseDir } : undefined,
 			pageConsoleLogging: options.pageConsoleLogging,
 			inject: inject ?? undefined,

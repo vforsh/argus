@@ -63,6 +63,7 @@ export const createCdpSource = (options: CdpSourceOptions): CdpSourceHandle => {
 
 	return {
 		session: watcher.session,
+		pageSession: watcher.session,
 		stop: watcher.stop,
 		// CDP mode doesn't support listTargets/attachTarget/detachTarget
 		// (auto-attaches based on match criteria)

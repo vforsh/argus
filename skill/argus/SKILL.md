@@ -93,7 +93,9 @@ argus watcher start --id app --url localhost:3000 --no-page-indicator
 argus watcher start --id app --source extension
 ```
 
-`--url` matches target URL substring. `--origin` matches protocol+host+port only. `--target` connects to a specific Chrome target ID. `--type` filters by target type (page, iframe, worker). `--parent` filters by parent target URL. `--inject` runs a JS file on attach + navigation. `--no-page-indicator` hides the in-page overlay — use this when capturing screenshots so the indicator badge doesn't appear in the image.
+`--url` matches target URL substring. `--origin` matches protocol+host+port only. `--target` connects to a specific Chrome target ID. `--type` filters by target type (page, iframe, worker). `--parent` filters by parent target URL. `--inject` runs a JS file on attach + navigation. `--no-page-indicator` hides the in-page overlay in both CDP and extension mode — use this when capturing screenshots so the badge doesn't end up in the image.
+
+In extension mode, the popup can switch the watcher's active target between the top page and discovered iframes inside the attached tab. `argus page ls --id <watcher>` also shows those virtual iframe targets.
 
 ### Logs
 

@@ -48,8 +48,9 @@ This creates:
     ```
 
 2. **Attach to tabs**: Click the Argus extension icon in Chrome toolbar, then click "Attach" on the tabs you want to monitor.
+3. **Connect to a specific iframe (optional)**: Once a tab is attached, the popup shows the top page plus discovered iframe targets. Selecting an iframe keeps the debugger attached to the tab but switches Argus commands (`eval`, `dom *`, selector-based screenshots, etc.) to that frame.
 
-3. **Use with Argus CLI**:
+4. **Use with Argus CLI**:
 
     ```bash
     # List watchers
@@ -60,6 +61,9 @@ This creates:
 
     # Evaluate JavaScript
     argus eval app "document.title"
+
+    # List extension-backed page/iframe targets
+    argus page ls --id app --tree
     ```
 
 ## How It Works

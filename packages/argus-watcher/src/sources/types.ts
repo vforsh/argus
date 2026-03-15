@@ -60,6 +60,8 @@ export type CdpSourceEvents = {
 	onPageLoad?: () => void
 	/** Called when page intl info is available. */
 	onPageIntl?: (info: { timezone: string | null; locale: string | null }) => void
+	/** Called when the attached source switches between page/frame targets without detaching. */
+	onTargetChanged?: (session: CdpSessionHandle, target: CdpSourceTarget) => void
 }
 
 /**
@@ -68,14 +70,16 @@ export type CdpSourceEvents = {
 export type CdpSourceHandle = {
 	/** The CDP session handle for sending commands and subscribing to events. */
 	session: CdpSessionHandle
+	/** The raw top-level page session handle, for page-scoped operations like indicators. */
+	pageSession?: CdpSessionHandle
 	/** Stop the source and clean up resources. */
 	stop: () => Promise<void>
 	/** List available targets (extension mode only). */
 	listTargets?: () => Promise<CdpSourceTarget[]>
 	/** Attach to a specific target by ID (extension mode only). */
-	attachTarget?: (targetId: number) => void
+	attachTarget?: (targetId: string) => void
 	/** Detach from a specific target by ID (extension mode only). */
-	detachTarget?: (targetId: number) => void
+	detachTarget?: (targetId: string) => void
 }
 
 /**

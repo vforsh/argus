@@ -25,8 +25,8 @@ export function registerWatcher(program: Command): void {
 		.option('--chrome-host <host>', 'Chrome CDP host (default: 127.0.0.1) (CDP mode only)')
 		.option('--chrome-port <port>', 'Chrome CDP port (default: 9222) (CDP mode only)')
 		.option('--artifacts <dir>', 'Artifacts base directory (default: $TMPDIR/argus)')
-		.option('--no-page-indicator', 'Disable the in-page watcher indicator (CDP mode only)')
-		.option('--inject <path>', 'Path to JavaScript file to inject on watcher attach (CDP mode only)')
+		.option('--no-page-indicator', 'Disable the in-page watcher indicator')
+		.option('--inject <path>', 'Path to JavaScript file to inject on watcher attach')
 		.option('--config <path>', 'Path to Argus config file')
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(

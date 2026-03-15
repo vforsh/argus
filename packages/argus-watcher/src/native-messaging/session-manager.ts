@@ -21,6 +21,7 @@ export type SessionManagerEvents = {
 	onAttach: (session: ExtensionSession) => void
 	onDetach: (tabId: number, reason: string) => void
 	onTabsUpdated: (tabs: TabInfo[]) => void
+	onTargetSelected: (tabId: number, frameId: string | null) => void
 }
 
 let nextRequestId = 1
@@ -77,6 +78,10 @@ export class SessionManager {
 
 			case 'list_tabs_response':
 				this.handleListTabsResponse(message)
+				break
+
+			case 'target_selected':
+				this.events.onTargetSelected(message.tabId, message.frameId ?? null)
 				break
 		}
 	}

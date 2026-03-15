@@ -23,7 +23,7 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 			source: 'extension',
 			host: '127.0.0.1',
 			port: 0,
-			pageIndicator: { enabled: false },
+			pageIndicator: { enabled: true },
 		})
 	} catch (error) {
 		// Write error to stderr (Native Messaging reads stdout only)

@@ -5,6 +5,7 @@ import { resolveCdpEndpoint } from '../cdp/resolveCdpEndpoint.js'
 import { filterTargets, selectTargetFromCandidates } from '../cdp/selectTarget.js'
 import { fetchJson, fetchText } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
+import { resolveWatcher } from '../watchers/resolveWatcher.js'
 
 export type ChromeEndpointOptions = CdpEndpointOptions
 
@@ -216,6 +217,32 @@ export type ChromeTargetsOptions = ChromeCommandOptions & {
 
 export const runChromeTargets = async (options: ChromeTargetsOptions): Promise<void> => {
 	const output = createOutput(options)
+	if (options.id) {
+		const resolved = await resolveWatcher({ id: options.id })
+		if (!resolved.ok) {
+			output.writeWarn(resolved.error)
+			process.exitCode = resolved.exitCode
+			return
+		}
+
+		if (resolved.watcher.source === 'extension') {
+			let targets: ChromeTargetResponse[]
+			try {
+				const response = await fetchJson<{ ok: true; targets: ChromeTargetResponse[] }>(
+					`http://${resolved.watcher.host}:${resolved.watcher.port}/targets`,
+				)
+				targets = response.targets
+			} catch (error) {
+				output.writeWarn(`Failed to load watcher targets from ${resolved.watcher.id}: ${error instanceof Error ? error.message : error}`)
+				process.exitCode = 1
+				return
+			}
+
+			renderTargets(targets, { output, type: options.type, tree: options.tree, json: options.json })
+			return
+		}
+	}
+
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
 		output.writeWarn(endpoint.error)
@@ -234,21 +261,33 @@ export const runChromeTargets = async (options: ChromeTargetsOptions): Promise<v
 		return
 	}
 
+	renderTargets(targets, { output, type: options.type, tree: options.tree, json: options.json })
+}
+
+const renderTargets = (
+	targets: ChromeTargetResponse[],
+	options: { output: ReturnType<typeof createOutput>; type?: string; tree?: boolean; json?: boolean },
+): void => {
+	let filteredTargets = targets
 	if (options.type) {
-		targets = targets.filter((t) => t.type === options.type)
+		filteredTargets = filteredTargets.filter((target) => target.type === options.type)
 	}
 
 	if (options.json) {
-		output.writeJson(targets)
-	} else if (options.tree) {
-		renderTargetTree(targets, output)
-	} else {
-		for (const target of targets) {
-			const title = target.title ? ` ${target.title}` : ''
-			const targetUrl = target.url ? ` ${target.url}` : ''
-			const parentInfo = target.parentId ? ` [parent: ${target.parentId.slice(0, 8)}...]` : ''
-			output.writeHuman(`${target.id} ${target.type}${title}${targetUrl}${parentInfo}`)
-		}
+		options.output.writeJson(filteredTargets)
+		return
+	}
+
+	if (options.tree) {
+		renderTargetTree(filteredTargets, options.output)
+		return
+	}
+
+	for (const target of filteredTargets) {
+		const title = target.title ? ` ${target.title}` : ''
+		const targetUrl = target.url ? ` ${target.url}` : ''
+		const parentInfo = target.parentId ? ` [parent: ${target.parentId.slice(0, 8)}...]` : ''
+		options.output.writeHuman(`${target.id} ${target.type}${title}${targetUrl}${parentInfo}`)
 	}
 }
 

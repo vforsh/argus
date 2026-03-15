@@ -7,19 +7,20 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
 	}
 
-	const payload = await readJsonBody<{ tabId: number }>(req, res)
+	const payload = await readJsonBody<{ tabId?: number; targetId?: string }>(req, res)
 	if (!payload) {
 		return
 	}
 
-	if (typeof payload.tabId !== 'number') {
-		return respondInvalidBody(res, 'tabId is required')
+	const targetId = typeof payload.targetId === 'string' ? payload.targetId : typeof payload.tabId === 'number' ? String(payload.tabId) : null
+	if (!targetId) {
+		return respondInvalidBody(res, 'targetId is required')
 	}
 
 	emitRequest(ctx, res, 'attach')
 
 	try {
-		ctx.sourceHandle.attachTarget(payload.tabId)
+		ctx.sourceHandle.attachTarget(targetId)
 		respondJson(res, { ok: true, message: 'Attach request sent' })
 	} catch (error) {
 		respondError(res, error)

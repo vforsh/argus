@@ -126,7 +126,7 @@ export type StartWatcherOptions = {
 	 * Optional in-page indicator showing that the watcher is attached.
 	 * When enabled, a small badge is injected into the page. Clicking it shows watcher info.
 	 * The indicator auto-removes via TTL if the watcher dies without cleanup.
-	 * Only supported in CDP mode.
+	 * Supported in both direct CDP and Chrome extension modes.
 	 */
 	pageIndicator?: PageIndicatorOptions
 	/**
@@ -276,14 +276,38 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		})
 	}
 
-	// Page indicator only supported in CDP mode
 	validatePageIndicatorOptions(options.pageIndicator)
-	const indicatorEnabled = sourceMode === 'cdp' && options.pageIndicator?.enabled === true
+	const indicatorEnabled = options.pageIndicator?.enabled === true
 	let indicatorController: PageIndicatorController | null = null
 	let indicatorAttachedAt: number | null = null
 
 	if (indicatorEnabled) {
 		indicatorController = createPageIndicatorController(options.pageIndicator!)
+	}
+
+	const updateCdpStatus = (status: CdpSourceStatus): void => {
+		const prevAttached = cdpStatus.attached
+		cdpStatus = status
+
+		if (status.attached && !prevAttached) {
+			const url = status.target?.url ?? 'unknown'
+			logToPageConsole(`attached (url=${url})`)
+			void events.emit('cdpAttached', {
+				ts: Date.now(),
+				watcherId,
+				target: status.target,
+			})
+			return
+		}
+
+		if (!status.attached && prevAttached) {
+			void events.emit('cdpDetached', {
+				ts: Date.now(),
+				watcherId,
+				target: status.target,
+				reason: status.reason ?? 'unknown',
+			})
+		}
 	}
 
 	const buildIndicatorInfo = (target: { title: string | null; url: string | null } | null) => ({
@@ -295,6 +319,42 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		targetUrl: target?.url ?? null,
 		attachedAt: indicatorAttachedAt ?? Date.now(),
 	})
+
+	const onIndicatorNavigation = (session: CdpSourceHandle['session'], info: { url: string }): void => {
+		if (!indicatorController) {
+			return
+		}
+		indicatorController.onNavigation(session, buildIndicatorInfo({ title: null, url: info.url }))
+	}
+
+	const onIndicatorLoad = (): void => {
+		indicatorController?.reinstall()
+	}
+
+	const getIndicatorSession = (): CdpSourceHandle['session'] => sourceHandle.pageSession ?? sourceHandle.session
+
+	const onIndicatorAttach = (
+		session: CdpSourceHandle['session'],
+		target: { id: string; title: string; url: string; type?: string | null; parentId?: string | null },
+	): void => {
+		if (!indicatorController) {
+			return
+		}
+
+		indicatorAttachedAt = Date.now()
+		indicatorController.onAttach(
+			session,
+			{
+				id: target.id,
+				title: target.title,
+				url: target.url,
+				type: target.type ?? 'page',
+				parentId: target.parentId ?? null,
+				webSocketDebuggerUrl: '',
+			},
+			buildIndicatorInfo({ title: target.title, url: target.url }),
+		)
+	}
 
 	const maybeInjectOnAttach = async (
 		session: CdpSourceHandle['session'],
@@ -360,37 +420,26 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 					buffer.add(event)
 					fileLogger?.writeEvent(event)
 				},
-				onStatus: (status) => {
-					const prevAttached = cdpStatus.attached
-					cdpStatus = status
-
-					if (status.attached && !prevAttached) {
-						const url = status.target?.url ?? 'unknown'
-						logToPageConsole(`attached (url=${url})`)
-						void events.emit('cdpAttached', {
-							ts: Date.now(),
-							watcherId,
-							target: status.target,
-						})
-					} else if (!status.attached && prevAttached) {
-						void events.emit('cdpDetached', {
-							ts: Date.now(),
-							watcherId,
-							target: status.target,
-							reason: status.reason ?? 'unknown',
-						})
-					}
-				},
+				onStatus: updateCdpStatus,
 				onPageNavigation: (info) => {
 					fileLogger?.rotate(info)
+					onIndicatorNavigation(getIndicatorSession(), info)
 				},
+				onPageLoad: onIndicatorLoad,
 				onPageIntl: (info) => {
 					fileLogger?.setPageIntl(info)
 				},
 				onAttach: async (session, target) => {
 					await emulationController.onAttach(session)
 					await throttleController.onAttach(session)
+					onIndicatorAttach(session, target)
 					await maybeInjectOnAttach(session, target)
+				},
+				onTargetChanged: (session, target) => {
+					onIndicatorAttach(session, target)
+				},
+				onDetach: () => {
+					indicatorController?.onDetach()
 				},
 			},
 			ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
@@ -415,38 +464,12 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 					buffer.add(event)
 					fileLogger?.writeEvent(event)
 				},
-				onStatus: (status) => {
-					const prevAttached = cdpStatus.attached
-					cdpStatus = status
-
-					if (status.attached && !prevAttached) {
-						const url = status.target?.url ?? 'unknown'
-						logToPageConsole(`attached (url=${url})`)
-						void events.emit('cdpAttached', {
-							ts: Date.now(),
-							watcherId,
-							target: status.target,
-						})
-					} else if (!status.attached && prevAttached) {
-						void events.emit('cdpDetached', {
-							ts: Date.now(),
-							watcherId,
-							target: status.target,
-							reason: status.reason ?? 'unknown',
-						})
-					}
-				},
+				onStatus: updateCdpStatus,
 				onPageNavigation: (info) => {
 					fileLogger?.rotate(info)
-					if (indicatorController) {
-						indicatorController.onNavigation(sessionHandle.session, buildIndicatorInfo({ title: null, url: info.url }))
-					}
+					onIndicatorNavigation(sessionHandle.session, info)
 				},
-				onPageLoad: () => {
-					if (indicatorController) {
-						indicatorController.reinstall()
-					}
-				},
+				onPageLoad: onIndicatorLoad,
 				onPageIntl: (info) => {
 					fileLogger?.setPageIntl(info)
 				},
@@ -454,21 +477,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 					await emulationController.onAttach(session)
 					await throttleController.onAttach(session)
 					await networkCapture?.onAttached()
-					if (indicatorController) {
-						indicatorAttachedAt = Date.now()
-						indicatorController.onAttach(
-							session,
-							{
-								id: target.id,
-								title: target.title,
-								url: target.url,
-								type: target.type ?? 'page',
-								parentId: target.parentId ?? null,
-								webSocketDebuggerUrl: '',
-							},
-							buildIndicatorInfo({ title: target.title, url: target.url }),
-						)
-					}
+					onIndicatorAttach(session, target)
 					await maybeInjectOnAttach(session, target)
 				},
 				onDetach: (reason) => {

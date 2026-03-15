@@ -1,5 +1,6 @@
 import type { CdpSessionHandle } from './connection.js'
 import { filterNodesByText } from './text-filter.js'
+import { getDomRootId } from './dom/selector.js'
 
 type SelectorMatchResult = {
 	allNodeIds: number[]
@@ -86,15 +87,6 @@ export const focusDomNodes = async (session: CdpSessionHandle, nodeIds: number[]
 		await scrollIntoView(session, nodeId)
 		await session.sendAndWait('DOM.focus', { nodeId })
 	}
-}
-
-const getDomRootId = async (session: CdpSessionHandle): Promise<number> => {
-	const result = (await session.sendAndWait('DOM.getDocument', { depth: 1 })) as { root?: { nodeId?: number } }
-	const rootId = result.root?.nodeId
-	if (!rootId) {
-		throw new Error('Unable to resolve DOM root')
-	}
-	return rootId
 }
 
 export const scrollIntoView = async (session: CdpSessionHandle, nodeId: number): Promise<void> => {
@@ -193,6 +185,20 @@ const resolveNodeCenter = async (session: CdpSessionHandle, nodeId: number): Pro
 
 /** Uses getBoundingClientRect() to get viewport-relative coordinates (no scroll-offset ambiguity). */
 const resolveNodeRect = async (session: CdpSessionHandle, nodeId: number): Promise<{ x: number; y: number; w: number; h: number }> => {
+	const boxModel = (await session.sendAndWait('DOM.getBoxModel', { nodeId }).catch(() => null)) as {
+		model?: { border?: number[]; content?: number[] }
+	} | null
+	const quad = boxModel?.model?.border ?? boxModel?.model?.content
+	if (quad && quad.length >= 8) {
+		const xs = [quad[0], quad[2], quad[4], quad[6]]
+		const ys = [quad[1], quad[3], quad[5], quad[7]]
+		const minX = Math.min(...xs)
+		const maxX = Math.max(...xs)
+		const minY = Math.min(...ys)
+		const maxY = Math.max(...ys)
+		return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+	}
+
 	const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
 	const objectId = resolved.object?.objectId
 	if (!objectId) {

@@ -60,6 +60,7 @@ await watcher.close()
     - `position`: `'left'` | `'center'` | `'right'` (default `'left'`, at bottom of page)
     - `heartbeatMs`: how often Node pings the page (default `2000`)
     - `ttlMs`: how long the page keeps the indicator without pings (default `6000`)
+    - Works in both direct CDP mode and Chrome extension mode; it is removed on detach and also self-expires if heartbeats stop.
 
 ## Directory layout
 

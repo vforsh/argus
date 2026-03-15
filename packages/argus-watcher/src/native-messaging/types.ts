@@ -40,6 +40,12 @@ export type ListTabsResponseMessage = {
 	tabs: TabInfo[]
 }
 
+export type TargetSelectedMessage = {
+	type: 'target_selected'
+	tabId: number
+	frameId?: string | null
+}
+
 export type TabInfo = {
 	tabId: number
 	url: string
@@ -48,7 +54,13 @@ export type TabInfo = {
 	attached: boolean
 }
 
-export type ExtensionToHost = TabAttachedMessage | TabDetachedMessage | CdpEventMessage | CdpResponseMessage | ListTabsResponseMessage
+export type ExtensionToHost =
+	| TabAttachedMessage
+	| TabDetachedMessage
+	| CdpEventMessage
+	| CdpResponseMessage
+	| ListTabsResponseMessage
+	| TargetSelectedMessage
 
 // ============================================================
 // Host -> Extension messages

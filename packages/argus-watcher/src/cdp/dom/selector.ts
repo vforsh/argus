@@ -26,6 +26,33 @@ export type SelectorMatchResult = {
 }
 
 export const getDomRootId = async (session: CdpSessionHandle): Promise<number> => {
+	const targetContext = session.getTargetContext?.()
+	if (targetContext?.kind === 'frame') {
+		// Extension mode keeps one tab-level debugger session and switches the active frame via
+		// executionContextId. Resolving `document` in that context gives us the right DOM root.
+		if (targetContext.executionContextId == null) {
+			throw new Error(`Selected frame is not ready yet: ${targetContext.frameId}`)
+		}
+
+		const evaluated = (await session.sendAndWait('Runtime.evaluate', {
+			expression: 'document',
+			contextId: targetContext.executionContextId,
+			returnByValue: false,
+		})) as { result?: { objectId?: string } }
+
+		const objectId = evaluated.result?.objectId
+		if (!objectId) {
+			throw new Error(`Unable to resolve document root for frame: ${targetContext.frameId}`)
+		}
+
+		const requested = (await session.sendAndWait('DOM.requestNode', { objectId })) as { nodeId?: number }
+		if (!requested.nodeId) {
+			throw new Error(`Unable to resolve DOM root for frame: ${targetContext.frameId}`)
+		}
+
+		return requested.nodeId
+	}
+
 	const result = (await session.sendAndWait('DOM.getDocument', { depth: 1 })) as CdpDocumentResult
 	const rootId = result.root?.nodeId
 	if (!rootId) {

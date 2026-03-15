@@ -168,6 +168,70 @@
 				background: #ffcdd2;
 			}
 
+			.target-list {
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+				margin: -2px 0 8px 26px;
+			}
+
+			.target-item {
+				display: flex;
+				align-items: flex-start;
+				gap: 10px;
+				width: 100%;
+				padding: 8px 10px;
+				border: 1px solid #dce3ea;
+				border-radius: 6px;
+				background: #fff;
+				cursor: pointer;
+				text-align: left;
+			}
+
+			.target-item:hover {
+				border-color: #90caf9;
+			}
+
+			.target-item.selected {
+				background: #e3f2fd;
+				border-color: #64b5f6;
+			}
+
+			.target-kind {
+				flex-shrink: 0;
+				min-width: 44px;
+				font-size: 10px;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: 0.4px;
+				color: #5f6b76;
+				padding-top: 2px;
+			}
+
+			.target-meta {
+				display: flex;
+				flex-direction: column;
+				min-width: 0;
+				gap: 2px;
+			}
+
+			.target-title {
+				font-size: 12px;
+				font-weight: 500;
+				color: #23303d;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+
+			.target-url {
+				font-size: 11px;
+				color: #7b8793;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+
 			.empty-state {
 				text-align: center;
 				padding: 40px 20px;

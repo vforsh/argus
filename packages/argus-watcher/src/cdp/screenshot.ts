@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import type { ScreenshotRequest, ScreenshotResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import { ensureArtifactsDir, ensureParentDir, resolveArtifactPath } from '../artifacts.js'
+import { getDomRootId } from './dom/selector.js'
 
 type Clip = { x: number; y: number; width: number; height: number; scale: number }
 
@@ -61,13 +62,7 @@ const captureScreenshot = async (session: CdpSessionHandle, options: { selector?
 const resolveClip = async (session: CdpSessionHandle, selector: string): Promise<Clip> => {
 	await session.sendAndWait('DOM.enable')
 
-	const documentResult = await session.sendAndWait('DOM.getDocument', { depth: 1 })
-	const root = documentResult as { root?: { nodeId?: number } }
-	const rootId = root.root?.nodeId
-	if (!rootId) {
-		throw new Error('Unable to resolve DOM root')
-	}
-
+	const rootId = await getDomRootId(session)
 	const queryResult = await session.sendAndWait('DOM.querySelector', { nodeId: rootId, selector })
 	const nodeId = (queryResult as { nodeId?: number }).nodeId
 	if (!nodeId) {

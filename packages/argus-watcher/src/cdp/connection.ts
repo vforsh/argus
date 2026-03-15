@@ -5,10 +5,20 @@ export type CdpSendOptions = {
 	timeoutMs?: number
 }
 
+export type CdpTargetContext =
+	| { kind: 'page' }
+	| {
+			kind: 'frame'
+			frameId: string
+			executionContextId: number | null
+	  }
+
 export type CdpSessionHandle = {
 	isAttached: () => boolean
 	sendAndWait: (method: string, params?: Record<string, unknown>, options?: CdpSendOptions) => Promise<unknown>
 	onEvent: (method: string, handler: CdpEventHandler) => () => void
+	/** Active target context for commands that need frame-aware behavior. */
+	getTargetContext?: () => CdpTargetContext
 }
 
 type PendingRequest = {
@@ -59,11 +69,7 @@ export const createCdpSessionHandle = (): CdpSessionController => {
 	const attach = (socket: WebSocket): CdpConnection => {
 		const pendingRequests = new Map<number, PendingRequest>()
 
-		const sendAndWait = async (
-			method: string,
-			params?: Record<string, unknown>,
-			options?: CdpSendOptions,
-		): Promise<unknown> => {
+		const sendAndWait = async (method: string, params?: Record<string, unknown>, options?: CdpSendOptions): Promise<unknown> => {
 			const id = nextId++
 			return new Promise((resolve, reject) => {
 				const pending: PendingRequest = { resolve, reject }

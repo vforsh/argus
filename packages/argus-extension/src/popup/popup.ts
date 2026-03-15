@@ -9,6 +9,16 @@ type TabInfo = {
 	title: string
 	faviconUrl?: string
 	attached: boolean
+	selectedFrameId?: string | null
+	targets?: PopupTarget[]
+}
+
+type PopupTarget = {
+	type: 'page' | 'iframe'
+	frameId: string | null
+	parentFrameId: string | null
+	title: string
+	url: string
 }
 
 type StatusResponse = {
@@ -38,7 +48,7 @@ let prevStateHash = ''
 /**
  * Send a message to the service worker.
  */
-async function sendMessage<T>(message: { action: string; tabId?: number }): Promise<T> {
+async function sendMessage<T>(message: { action: string; tabId?: number; frameId?: string | null }): Promise<T> {
 	return new Promise((resolve) => {
 		chrome.runtime.sendMessage(message, resolve)
 	})
@@ -88,24 +98,14 @@ function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
 	let html = ''
 
 	if (attachedTabs.length > 0) {
-		html += `
-      <div class="section-title">Attached Tabs</div>
-      <div class="tab-list">
-        ${attachedTabs.map((tab) => renderTabItem(tab)).join('')}
-      </div>
-    `
+		html += renderTabSection('Attached Tabs', attachedTabs, true)
 	}
 
 	if (availableTabs.length > 0) {
 		if (attachedTabs.length > 0) {
 			html += '<div style="height: 16px"></div>'
 		}
-		html += `
-      <div class="section-title">Available Tabs</div>
-      <div class="tab-list">
-        ${availableTabs.map((tab) => renderTabItem(tab)).join('')}
-      </div>
-    `
+		html += renderTabSection('Available Tabs', availableTabs, false)
 	}
 
 	content.innerHTML = html
@@ -113,6 +113,9 @@ function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
 	// Add event listeners
 	content.querySelectorAll('.tab-action').forEach((btn) => {
 		btn.addEventListener('click', handleTabAction)
+	})
+	content.querySelectorAll('[data-action="select-target"]').forEach((btn) => {
+		btn.addEventListener('click', handleTargetSelection)
 	})
 	content.querySelectorAll('.tab-item').forEach((item) => {
 		item.addEventListener('click', handleTabItemClick)
@@ -122,7 +125,7 @@ function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
 /**
  * Render a single tab item.
  */
-function renderTabItem(tab: TabInfo): string {
+function renderTabItem(tab: TabInfo, showTargets: boolean): string {
 	const favicon = tab.faviconUrl
 		? `<img class="tab-favicon" src="${escapeHtml(tab.faviconUrl)}" alt="">`
 		: `<div class="tab-favicon" style="background: #e0e0e0"></div>`
@@ -130,6 +133,8 @@ function renderTabItem(tab: TabInfo): string {
 	const actionButton = tab.attached
 		? `<button class="tab-action detach" data-tab-id="${tab.tabId}" data-action="detach">Detach</button>`
 		: `<button class="tab-action attach" data-tab-id="${tab.tabId}" data-action="attach">Attach</button>`
+
+	const targetsHtml = showTargets ? renderTargetList(tab) : ''
 
 	return `
     <div class="tab-item ${tab.attached ? 'attached' : ''}" data-tab-id="${tab.tabId}">
@@ -139,6 +144,40 @@ function renderTabItem(tab: TabInfo): string {
         <div class="tab-url">${escapeHtml(tab.url)}</div>
       </div>
       ${actionButton}
+    </div>
+    ${targetsHtml}
+  `
+}
+
+function renderTargetList(tab: TabInfo): string {
+	const targets = tab.targets ?? []
+	if (targets.length <= 1) {
+		return ''
+	}
+
+	return `
+    <div class="target-list">
+      ${targets
+			.map((target) => {
+				const isSelected = (tab.selectedFrameId ?? null) === (target.frameId ?? null)
+				const kindLabel = target.type === 'page' ? 'Page' : 'Iframe'
+				return `
+            <button
+              class="target-item ${isSelected ? 'selected' : ''}"
+              data-action="select-target"
+              data-tab-id="${tab.tabId}"
+              data-frame-id="${escapeHtml(target.frameId ?? '')}"
+              type="button"
+            >
+              <span class="target-kind">${kindLabel}</span>
+              <span class="target-meta">
+                <span class="target-title">${escapeHtml(target.title || kindLabel)}</span>
+                <span class="target-url">${escapeHtml(target.url || '(no url)')}</span>
+              </span>
+            </button>
+          `
+			})
+			.join('')}
     </div>
   `
 }
@@ -172,6 +211,15 @@ async function handleTabItemClick(event: Event): Promise<void> {
 	}
 }
 
+function renderTabSection(title: string, tabs: TabInfo[], showTargets: boolean): string {
+	return `
+    <div class="section-title">${title}</div>
+    <div class="tab-list">
+      ${tabs.map((tab) => renderTabItem(tab, showTargets)).join('')}
+    </div>
+  `
+}
+
 /**
  * Handle attach/detach button click.
  */
@@ -194,14 +242,30 @@ async function handleTabAction(event: Event): Promise<void> {
 	}
 }
 
+async function handleTargetSelection(event: Event): Promise<void> {
+	const button = event.currentTarget as HTMLButtonElement
+	const tabId = parseInt(button.dataset.tabId ?? '0', 10)
+	const frameId = button.dataset.frameId || null
+
+	button.disabled = true
+
+	try {
+		await sendMessage({ action: 'selectTarget', tabId, frameId })
+		await refreshTabs(true)
+	} catch (err) {
+		console.error('Target selection failed:', err)
+		button.disabled = false
+	}
+}
+
 /**
  * Refresh the tab list and status.
  */
 async function refreshTabs(forceRender = false): Promise<void> {
-	const [statusResponse, tabsResponse, [currentTab]] = await Promise.all([
+	const [statusResponse, tabsResponse, activeTab] = await Promise.all([
 		sendMessage<StatusResponse>({ action: 'getStatus' }),
-		sendMessage<TabsResponse>({ action: 'getTabs' }),
-		chrome.tabs.query({ active: true, currentWindow: true }),
+		sendMessage<TabsResponse>({ action: 'getTargets' }),
+		getCurrentTab(),
 	])
 
 	const connected = statusResponse.status?.bridgeConnected ?? false
@@ -212,7 +276,7 @@ async function refreshTabs(forceRender = false): Promise<void> {
 		connected,
 		attachedTabCount,
 		tabs: tabsResponse.tabs,
-		currentTabId: currentTab?.id,
+		currentTabId: activeTab?.id,
 		error: tabsResponse.error,
 	})
 
@@ -224,7 +288,7 @@ async function refreshTabs(forceRender = false): Promise<void> {
 	updateStatus(connected, attachedTabCount)
 
 	if (tabsResponse.success && tabsResponse.tabs) {
-		renderTabs(tabsResponse.tabs, currentTab?.id)
+		renderTabs(tabsResponse.tabs, activeTab?.id)
 	} else {
 		content.innerHTML = `
       <div class="empty-state">
@@ -242,6 +306,11 @@ function escapeHtml(text: string): string {
 	const div = document.createElement('div')
 	div.textContent = text
 	return div.innerHTML
+}
+
+async function getCurrentTab(): Promise<chrome.tabs.Tab | undefined> {
+	const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
+	return tabs[0]
 }
 
 // Initial load

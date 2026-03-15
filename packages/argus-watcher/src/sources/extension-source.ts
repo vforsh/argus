@@ -9,7 +9,7 @@ import { createNativeMessaging } from '../native-messaging/messaging.js'
 import { SessionManager, type ExtensionSession } from '../native-messaging/session-manager.js'
 import type { TabInfo } from '../native-messaging/types.js'
 import type { CdpSourceHandle, CdpSourceTarget, CdpSourceBaseOptions } from './types.js'
-import type { CdpSessionHandle } from '../cdp/connection.js'
+import type { CdpSessionHandle, CdpTargetContext } from '../cdp/connection.js'
 
 /**
  * Options for creating an extension source.
@@ -26,50 +26,40 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	const messaging = createNativeMessaging()
 	let currentSession: ExtensionSession | null = null
 	let stopping = false
+	const frameStateByTabId = new Map<number, ExtensionFrameState>()
+	const pendingSelectionByTabId = new Map<number, string | null>()
+	const getCurrentExtensionSession = (): ExtensionSession => {
+		if (!currentSession) {
+			throw createNotAttachedError()
+		}
+		return currentSession
+	}
 
-	// Create session manager with event handlers
 	const sessionManager = new SessionManager(messaging, {
 		onAttach: (session: ExtensionSession) => {
 			console.error(`[ExtensionSource] Tab attached: ${session.tabId} - ${session.url}`)
 
 			currentSession = session
+			frameStateByTabId.set(session.tabId, createEmptyFrameState())
 
+			sessionManager.enableDomain(session.tabId, 'Runtime')
 			sessionManager.enableDomain(session.tabId, 'Page')
+			registerSessionEventHandlers(session)
 
-			// Subscribe to console events
-			session.handle.onEvent('Runtime.consoleAPICalled', (params) => {
-				const logEvent = toConsoleEvent(params, session, { ignoreMatcher, stripUrlPrefixes })
-				events.onLog(logEvent)
-			})
+			const target = buildPageTarget(session, { attached: true })
 
-			// Subscribe to exception events
-			session.handle.onEvent('Runtime.exceptionThrown', (params) => {
-				const logEvent = toExceptionEvent(params, session, { ignoreMatcher, stripUrlPrefixes })
-				events.onLog(logEvent)
-			})
-
-			// Notify status change
-			const target: CdpSourceTarget = {
-				id: String(session.tabId),
-				title: session.title,
-				url: session.url,
-				type: 'page',
-				faviconUrl: session.faviconUrl,
-				attached: true,
-			}
-
-			events.onStatus({
-				attached: true,
-				target: {
-					title: session.title,
-					url: session.url,
-					type: 'page',
-					parentId: null,
-				},
-				reason: null,
-			})
+			emitStatus(target, null)
 
 			void events.onAttach?.(session.handle, target)
+			void refreshFrameTree(session).then(() => {
+				const pendingFrameId = pendingSelectionByTabId.get(session.tabId)
+				if (pendingFrameId !== undefined) {
+					pendingSelectionByTabId.delete(session.tabId)
+					selectTargetSafely(session, pendingFrameId, 'pending frame')
+					return
+				}
+				emitTargetChanged(session)
+			})
 		},
 
 		onDetach: (tabId: number, reason: string) => {
@@ -78,12 +68,10 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			if (currentSession?.tabId === tabId) {
 				currentSession = null
 			}
+			frameStateByTabId.delete(tabId)
+			pendingSelectionByTabId.delete(tabId)
 
-			events.onStatus({
-				attached: false,
-				target: null,
-				reason,
-			})
+			emitStatus(null, reason)
 
 			events.onDetach?.(reason)
 		},
@@ -91,43 +79,46 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		onTabsUpdated: () => {
 			// Tabs list updated - no action needed
 		},
+
+		onTargetSelected: (tabId, frameId) => {
+			const session = currentSession
+			if (!session || session.tabId !== tabId) {
+				pendingSelectionByTabId.set(tabId, frameId)
+				return
+			}
+			selectTargetSafely(session, frameId, 'target')
+		},
 	})
 
-	// Create a proxy session handle that delegates to the current session
-	const proxySession: CdpSessionHandle = {
-		isAttached: () => currentSession?.handle.isAttached() ?? false,
-
-		sendAndWait: async (method, params, options) => {
-			const session = currentSession
-			if (!session) {
-				const error = new Error('No tab attached via extension')
-				;(error as Error & { code?: string }).code = 'cdp_not_attached'
-				throw error
+	// Proxy session follows the currently selected page/frame target inside the attached tab.
+	const proxySession = createDelegatingSession({
+		getTargetContext: () => getCurrentTargetContext() ?? { kind: 'page' },
+		mapParams: (method, params) => {
+			const targetContext = getCurrentTargetContext()
+			if (method !== 'Runtime.evaluate' || targetContext?.kind !== 'frame' || params?.contextId != null) {
+				return params
 			}
-			return session.handle.sendAndWait(method, params, options)
-		},
-
-		onEvent: (method, handler) => {
-			// For proxy session, we need to track all handlers and replay them
-			// when a new session is attached. For now, just use the current session.
-			if (!currentSession) {
-				// Return a no-op unsubscribe function
-				return () => {}
+			if (targetContext.executionContextId == null) {
+				throw new Error(`Selected frame is not ready yet: ${targetContext.frameId}`)
 			}
-			return currentSession.handle.onEvent(method, handler)
+			return {
+				...(params ?? {}),
+				contextId: targetContext.executionContextId,
+			}
 		},
-	}
+	})
 
-	// Start Native Messaging
+	// Page session always stays at the top-level tab context so page-level features
+	// (indicator, inject-on-attach, similar lifecycle hooks) don't accidentally run inside an iframe.
+	const pageSession = createDelegatingSession({
+		getTargetContext: () => ({ kind: 'page' }),
+	})
+
 	messaging.start()
 	messaging.onDisconnect(() => {
 		console.error('[ExtensionSource] Extension disconnected')
 		if (!stopping) {
-			events.onStatus({
-				attached: false,
-				target: null,
-				reason: 'extension_disconnected',
-			})
+			emitStatus(null, 'extension_disconnected')
 			events.onDetach?.('extension_disconnected')
 		}
 	})
@@ -139,23 +130,258 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 	const listTargets = async (): Promise<CdpSourceTarget[]> => {
 		const tabs = await sessionManager.listTabs()
-		return tabs.map(tabToTarget)
+		return tabs.flatMap((tab) => {
+			const session = currentSession?.tabId === tab.tabId ? currentSession : null
+			const state = frameStateByTabId.get(tab.tabId)
+			if (!session || !state || state.frames.size === 0) {
+				return [tabToTarget(tab)]
+			}
+
+			const selectedFrameId = state.selectedFrameId
+			const targets: CdpSourceTarget[] = [buildPageTarget(session, { attached: selectedFrameId == null })]
+			for (const frame of buildFrameTargets(state, tab.tabId, selectedFrameId, tab.faviconUrl)) {
+				targets.push(frame)
+			}
+			return targets
+		})
 	}
 
-	const attachTarget = (targetId: number): void => {
-		sessionManager.attachTab(targetId)
+	const attachTarget = (targetId: string): void => {
+		const target = parseExtensionTargetId(targetId)
+		const session = currentSession
+		if (!session || session.tabId !== target.tabId) {
+			pendingSelectionByTabId.set(target.tabId, target.frameId)
+			sessionManager.attachTab(target.tabId)
+			return
+		}
+
+		selectTarget(session, target.frameId)
 	}
 
-	const detachTarget = (targetId: number): void => {
-		sessionManager.detachTab(targetId)
+	const detachTarget = (targetId: string): void => {
+		sessionManager.detachTab(parseExtensionTargetId(targetId).tabId)
 	}
 
 	return {
 		session: proxySession,
+		pageSession,
 		stop,
 		listTargets,
 		attachTarget,
 		detachTarget,
+	}
+
+	function registerSessionEventHandlers(session: ExtensionSession): void {
+		session.handle.onEvent('Runtime.executionContextCreated', (params) => {
+			const context = parseExecutionContext(params)
+			if (!context?.isDefault || !context.frameId) {
+				return
+			}
+			getOrCreateFrameState(session.tabId).executionContexts.set(context.frameId, context.id)
+			emitTargetChanged(session)
+		})
+
+		session.handle.onEvent('Runtime.executionContextsCleared', () => {
+			getOrCreateFrameState(session.tabId).executionContexts.clear()
+		})
+
+		session.handle.onEvent('Runtime.executionContextDestroyed', (params) => {
+			const record = params as { executionContextId?: number }
+			if (record.executionContextId == null) {
+				return
+			}
+
+			const state = getOrCreateFrameState(session.tabId)
+			for (const [frameId, contextId] of state.executionContexts.entries()) {
+				if (contextId === record.executionContextId) {
+					state.executionContexts.delete(frameId)
+				}
+			}
+		})
+
+		session.handle.onEvent('Page.frameNavigated', (params) => {
+			const frame = parseFrame(params)
+			if (!frame) {
+				return
+			}
+
+			const state = getOrCreateFrameState(session.tabId)
+			state.frames.set(frame.frameId, frame)
+			if (!frame.parentFrameId) {
+				state.topFrameId = frame.frameId
+				session.url = frame.url
+			}
+			currentSession = session
+
+			if (!frame.parentFrameId) {
+				events.onPageNavigation?.({ url: frame.url, title: session.title ?? null })
+			}
+
+			if ((!frame.parentFrameId && state.selectedFrameId == null) || state.selectedFrameId === frame.frameId) {
+				emitTargetChanged(session)
+			}
+		})
+
+		session.handle.onEvent('Page.frameAttached', (params) => {
+			const record = params as { frameId?: string; parentFrameId?: string }
+			if (!record.frameId) {
+				return
+			}
+			const state = getOrCreateFrameState(session.tabId)
+			state.frames.set(record.frameId, {
+				frameId: record.frameId,
+				parentFrameId: record.parentFrameId ?? state.topFrameId ?? null,
+				url: '',
+				title: null,
+			})
+		})
+
+		session.handle.onEvent('Page.frameDetached', (params) => {
+			const record = params as { frameId?: string }
+			if (!record.frameId) {
+				return
+			}
+			removeFrame(session.tabId, record.frameId)
+			const state = getOrCreateFrameState(session.tabId)
+			if (state.selectedFrameId === record.frameId) {
+				state.selectedFrameId = null
+				emitTargetChanged(session)
+			}
+		})
+
+		session.handle.onEvent('Page.domContentEventFired', () => {
+			events.onPageLoad?.()
+		})
+
+		session.handle.onEvent('Runtime.consoleAPICalled', (params) => {
+			events.onLog(toConsoleEvent(params, session, { ignoreMatcher, stripUrlPrefixes }))
+		})
+
+		session.handle.onEvent('Runtime.exceptionThrown', (params) => {
+			events.onLog(toExceptionEvent(params, session, { ignoreMatcher, stripUrlPrefixes }))
+		})
+	}
+
+	function getCurrentTargetContext(): CdpTargetContext | null {
+		const session = currentSession
+		if (!session) {
+			return null
+		}
+
+		const state = frameStateByTabId.get(session.tabId)
+		if (!state?.selectedFrameId) {
+			return { kind: 'page' }
+		}
+
+		return {
+			kind: 'frame',
+			frameId: state.selectedFrameId,
+			executionContextId: state.executionContexts.get(state.selectedFrameId) ?? null,
+		}
+	}
+
+	function getOrCreateFrameState(tabId: number): ExtensionFrameState {
+		const existing = frameStateByTabId.get(tabId)
+		if (existing) {
+			return existing
+		}
+
+		const created = createEmptyFrameState()
+		frameStateByTabId.set(tabId, created)
+		return created
+	}
+
+	function emitStatus(target: CdpSourceTarget | null, reason: string | null): void {
+		events.onStatus({
+			attached: Boolean(target),
+			target: target
+				? {
+						title: target.title,
+						url: target.url,
+						type: target.type ?? 'page',
+						parentId: target.parentId ?? null,
+					}
+				: null,
+			reason,
+		})
+	}
+
+	function emitTargetChanged(session: ExtensionSession): void {
+		const target = getSelectedTarget(session)
+		if (!target) {
+			return
+		}
+		emitStatus(target, null)
+		events.onTargetChanged?.(session.handle, target)
+	}
+
+	function getSelectedTarget(session: ExtensionSession): CdpSourceTarget | null {
+		const state = frameStateByTabId.get(session.tabId)
+		if (!state?.selectedFrameId) {
+			return buildPageTarget(session, { attached: true })
+		}
+
+		const frame = state.frames.get(state.selectedFrameId)
+		if (!frame) {
+			return buildPageTarget(session, { attached: true })
+		}
+
+		return frameToTarget(session.tabId, frame, { attached: true, faviconUrl: session.faviconUrl, topFrameId: state.topFrameId })
+	}
+
+	function selectTarget(session: ExtensionSession, frameId: string | null): void {
+		const state = getOrCreateFrameState(session.tabId)
+		if (frameId && !state.frames.has(frameId)) {
+			throw new Error(`Frame not found: ${frameId}`)
+		}
+		state.selectedFrameId = frameId
+		emitTargetChanged(session)
+	}
+
+	function selectTargetSafely(session: ExtensionSession, frameId: string | null, label: string): void {
+		try {
+			selectTarget(session, frameId)
+		} catch (error) {
+			console.warn(`[ExtensionSource] Failed to select ${label}: ${error instanceof Error ? error.message : String(error)}`)
+		}
+	}
+
+	async function refreshFrameTree(session: ExtensionSession): Promise<void> {
+		const state = getOrCreateFrameState(session.tabId)
+		const frameTree = (await session.handle.sendAndWait('Page.getFrameTree')) as { frameTree?: CdpFrameTreeNode }
+		state.frames.clear()
+		collectFrameTree(frameTree.frameTree, state)
+	}
+
+	function removeFrame(tabId: number, frameId: string): void {
+		const state = getOrCreateFrameState(tabId)
+		const childIds = [...state.frames.values()].filter((frame) => frame.parentFrameId === frameId).map((frame) => frame.frameId)
+		for (const childId of childIds) {
+			removeFrame(tabId, childId)
+		}
+		state.frames.delete(frameId)
+		state.executionContexts.delete(frameId)
+	}
+
+	function createDelegatingSession(config: {
+		getTargetContext: () => CdpTargetContext
+		mapParams?: (method: string, params?: Record<string, unknown>) => Record<string, unknown> | undefined
+	}): CdpSessionHandle {
+		return {
+			isAttached: () => currentSession?.handle.isAttached() ?? false,
+			sendAndWait: async (method, params, options) => {
+				const session = getCurrentExtensionSession()
+				const nextParams = config.mapParams ? config.mapParams(method, params) : params
+				return session.handle.sendAndWait(method, nextParams, options)
+			},
+			onEvent: (method, handler) => {
+				if (!currentSession) {
+					return () => {}
+				}
+				return currentSession.handle.onEvent(method, handler)
+			},
+			getTargetContext: config.getTargetContext,
+		}
 	}
 }
 
@@ -163,13 +389,165 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
  * Convert TabInfo to CdpSourceTarget.
  */
 const tabToTarget = (tab: TabInfo): CdpSourceTarget => ({
-	id: String(tab.tabId),
+	id: formatPageTargetId(tab.tabId),
 	title: tab.title,
 	url: tab.url,
 	type: 'page',
 	faviconUrl: tab.faviconUrl,
 	attached: tab.attached,
 })
+
+type ExtensionFrameState = {
+	topFrameId: string | null
+	selectedFrameId: string | null
+	frames: Map<string, ExtensionFrame>
+	executionContexts: Map<string, number>
+}
+
+const createEmptyFrameState = (): ExtensionFrameState => ({
+	topFrameId: null,
+	selectedFrameId: null,
+	frames: new Map(),
+	executionContexts: new Map(),
+})
+
+type ExtensionFrame = {
+	frameId: string
+	parentFrameId: string | null
+	url: string
+	title: string | null
+}
+
+type CdpFrameTreeNode = {
+	frame?: {
+		id?: string
+		parentId?: string
+		url?: string
+		name?: string
+	}
+	childFrames?: CdpFrameTreeNode[]
+}
+
+const createNotAttachedError = (): Error => {
+	const error = new Error('No tab attached via extension')
+	;(error as Error & { code?: string }).code = 'cdp_not_attached'
+	return error
+}
+
+const formatPageTargetId = (tabId: number): string => `tab:${tabId}`
+
+const formatFrameTargetId = (tabId: number, frameId: string): string => `frame:${tabId}:${frameId}`
+
+const parseExtensionTargetId = (targetId: string): { tabId: number; frameId: string | null } => {
+	if (targetId.startsWith('tab:')) {
+		const tabId = Number.parseInt(targetId.slice(4), 10)
+		if (Number.isFinite(tabId)) {
+			return { tabId, frameId: null }
+		}
+	}
+
+	if (targetId.startsWith('frame:')) {
+		const [, tabIdRaw, ...frameIdParts] = targetId.split(':')
+		const tabId = Number.parseInt(tabIdRaw ?? '', 10)
+		const frameId = frameIdParts.join(':')
+		if (Number.isFinite(tabId) && frameId) {
+			return { tabId, frameId }
+		}
+	}
+
+	const legacyTabId = Number.parseInt(targetId, 10)
+	if (Number.isFinite(legacyTabId)) {
+		return { tabId: legacyTabId, frameId: null }
+	}
+
+	throw new Error(`Invalid extension target id: ${targetId}`)
+}
+
+const buildPageTarget = (session: ExtensionSession, options: { attached: boolean }): CdpSourceTarget => ({
+	id: formatPageTargetId(session.tabId),
+	title: session.title,
+	url: session.url,
+	type: 'page',
+	parentId: null,
+	faviconUrl: session.faviconUrl,
+	attached: options.attached,
+})
+
+const frameToTarget = (
+	tabId: number,
+	frame: ExtensionFrame,
+	options: { attached: boolean; faviconUrl?: string; topFrameId: string | null },
+): CdpSourceTarget => ({
+	id: formatFrameTargetId(tabId, frame.frameId),
+	title: frame.title ?? frame.url ?? `iframe ${frame.frameId}`,
+	url: frame.url,
+	type: 'iframe',
+	parentId:
+		frame.parentFrameId && frame.parentFrameId !== options.topFrameId
+			? formatFrameTargetId(tabId, frame.parentFrameId)
+			: formatPageTargetId(tabId),
+	faviconUrl: options.faviconUrl,
+	attached: options.attached,
+})
+
+const buildFrameTargets = (state: ExtensionFrameState, tabId: number, selectedFrameId: string | null, faviconUrl?: string): CdpSourceTarget[] =>
+	[...state.frames.values()]
+		.filter((frame) => frame.frameId !== state.topFrameId)
+		.map((frame) => frameToTarget(tabId, frame, { attached: frame.frameId === selectedFrameId, faviconUrl, topFrameId: state.topFrameId }))
+
+const collectFrameTree = (node: CdpFrameTreeNode | undefined, state: ExtensionFrameState): void => {
+	if (!node?.frame?.id) {
+		return
+	}
+
+	const frameId = node.frame.id
+	state.frames.set(frameId, {
+		frameId,
+		parentFrameId: node.frame.parentId ?? null,
+		url: node.frame.url ?? '',
+		title: node.frame.name ?? null,
+	})
+	if (!node.frame.parentId) {
+		state.topFrameId = frameId
+	}
+
+	for (const child of node.childFrames ?? []) {
+		collectFrameTree(child, state)
+	}
+}
+
+const parseFrame = (params: unknown): ExtensionFrame | null => {
+	const record = params as { frame?: { id?: string; parentId?: string | null; url?: string; name?: string } }
+	const frameId = record.frame?.id
+	const url = record.frame?.url
+	if (!frameId || !url || typeof url !== 'string' || url.trim() === '') {
+		return null
+	}
+	return {
+		frameId,
+		parentFrameId: record.frame?.parentId ?? null,
+		url,
+		title: record.frame?.name ?? null,
+	}
+}
+
+const parseExecutionContext = (params: unknown): { id: number; frameId: string | null; isDefault: boolean } | null => {
+	const record = params as {
+		context?: {
+			id?: number
+			auxData?: { frameId?: string; isDefault?: boolean }
+		}
+	}
+	if (record.context?.id == null) {
+		return null
+	}
+
+	return {
+		id: record.context.id,
+		frameId: record.context.auxData?.frameId ?? null,
+		isDefault: record.context.auxData?.isDefault === true,
+	}
+}
 
 /**
  * Convert Runtime.consoleAPICalled event to LogEvent.
