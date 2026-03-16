@@ -4,7 +4,7 @@
  */
 
 import type { NativeMessagingHandler } from './messaging.js'
-import type { ExtensionToHost, HostToExtension, TabInfo, PendingRequest, CdpEventHandler } from './types.js'
+import type { ExtensionToHost, HostToExtension, TabInfo, PendingRequest, CdpEventHandler, CdpEventMeta } from './types.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 
 export type ExtensionSession = {
@@ -120,9 +120,10 @@ export class SessionManager {
 			return
 		}
 
+		const meta: CdpEventMeta = { sessionId: message.sessionId ?? null }
 		for (const handler of methodHandlers) {
 			try {
-				handler(message.params)
+				handler(message.params, meta)
 			} catch {
 				// Ignore handler errors
 			}
@@ -192,6 +193,7 @@ export class SessionManager {
 						tabId,
 						method,
 						params,
+						sessionId: options?.sessionId,
 					}
 
 					this.messaging.send(message)

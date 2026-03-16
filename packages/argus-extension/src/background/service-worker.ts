@@ -311,59 +311,31 @@ function formatFrameTargetId(tabId: number, frameId: string): string {
 }
 
 async function getPopupTargets(tabId: number): Promise<PopupTarget[]> {
-	const frameTree = (await debuggerManager.sendCommand(tabId, 'Page.getFrameTree')) as {
-		frameTree?: {
-			frame?: { id?: string; parentId?: string; name?: string; url?: string }
-			childFrames?: unknown[]
-		}
-	}
-
-	const tree = frameTree.frameTree
-	if (!tree?.frame?.id) {
+	const frames = debuggerManager.getFrames(tabId)
+	const topFrameId = debuggerManager.getTarget(tabId)?.topFrameId ?? null
+	const topFrame = frames.find((frame) => frame.frameId === topFrameId) ?? frames.find((frame) => frame.parentFrameId == null)
+	if (!topFrame) {
 		return []
 	}
 
-	const targets: PopupTarget[] = [
+	return [
 		{
 			type: 'page',
 			frameId: null,
 			parentFrameId: null,
-			title: tree.frame.name || 'Page',
-			url: tree.frame.url ?? '',
+			title: topFrame.title || 'Page',
+			url: topFrame.url,
 		},
+		...frames
+			.filter((frame) => frame.frameId !== topFrame.frameId)
+			.map((frame) => ({
+				type: 'iframe' as const,
+				frameId: frame.frameId,
+				parentFrameId: frame.parentFrameId === topFrame.frameId ? null : frame.parentFrameId,
+				title: frame.title || frame.url || `iframe ${frame.frameId.slice(0, 8)}`,
+				url: frame.url,
+			})),
 	]
-
-	collectPopupFrames(tree, targets, tree.frame.id)
-	return targets
-}
-
-function collectPopupFrames(
-	node: {
-		frame?: { id?: string; parentId?: string; name?: string; url?: string }
-		childFrames?: unknown[]
-	},
-	targets: PopupTarget[],
-	topFrameId: string,
-): void {
-	for (const child of node.childFrames ?? []) {
-		const frameNode = child as {
-			frame?: { id?: string; parentId?: string; name?: string; url?: string }
-			childFrames?: unknown[]
-		}
-		if (!frameNode.frame?.id) {
-			continue
-		}
-
-		targets.push({
-			type: 'iframe',
-			frameId: frameNode.frame.id,
-			parentFrameId: frameNode.frame.parentId === topFrameId ? null : (frameNode.frame.parentId ?? null),
-			title: frameNode.frame.name || frameNode.frame.url || `iframe ${frameNode.frame.id.slice(0, 8)}`,
-			url: frameNode.frame.url ?? '',
-		})
-
-		collectPopupFrames(frameNode, targets, topFrameId)
-	}
 }
 
 // Attempt to connect to bridge on startup

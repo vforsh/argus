@@ -223,13 +223,17 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	}
 
 	function registerSessionEventHandlers(session: ExtensionSession): void {
-		session.handle.onEvent('Runtime.executionContextCreated', (params) => {
+		session.handle.onEvent('Runtime.executionContextCreated', (params, meta) => {
 			const context = parseExecutionContext(params)
 			if (!context?.isDefault || !context.frameId) {
 				return
 			}
 			const state = getOrCreateFrameState(session.tabId)
 			state.executionContexts.set(context.frameId, context.id)
+			const frame = state.frames.get(context.frameId)
+			if (frame) {
+				frame.sessionId = meta.sessionId ?? null
+			}
 			void refreshFrameTitle(session, context.frameId, context.id)
 			emitTargetChanged(session)
 		})
@@ -255,7 +259,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			}
 		})
 
-		session.handle.onEvent('Page.frameNavigated', (params) => {
+		session.handle.onEvent('Page.frameNavigated', (params, meta) => {
 			const frame = parseFrame(params)
 			if (!frame) {
 				return
@@ -263,15 +267,20 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 			const state = getOrCreateFrameState(session.tabId)
 			state.frames.set(frame.frameId, frame)
+			frame.sessionId = meta.sessionId ?? null
 			if (!frame.parentFrameId) {
-				state.topFrameId = frame.frameId
-				session.url = frame.url
+				if (!meta.sessionId) {
+					state.topFrameId = frame.frameId
+					session.url = frame.url
+				} else if (state.topFrameId == null) {
+					state.topFrameId = frame.parentFrameId
+				}
 			} else if (state.executionContexts.has(frame.frameId)) {
 				void refreshFrameTitle(session, frame.frameId)
 			}
 			currentSession = session
 
-			if (!frame.parentFrameId) {
+			if (!frame.parentFrameId && !meta.sessionId) {
 				events.onPageNavigation?.({ url: frame.url, title: session.title ?? null })
 			}
 
@@ -280,7 +289,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			}
 		})
 
-		session.handle.onEvent('Page.frameAttached', (params) => {
+		session.handle.onEvent('Page.frameAttached', (params, meta) => {
 			const record = params as { frameId?: string; parentFrameId?: string }
 			if (!record.frameId) {
 				return
@@ -291,6 +300,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				parentFrameId: record.parentFrameId ?? state.topFrameId ?? null,
 				url: '',
 				title: null,
+				sessionId: meta.sessionId ?? null,
 			})
 		})
 
@@ -336,6 +346,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			kind: 'frame',
 			frameId: state.selectedFrameId,
 			executionContextId: state.executionContexts.get(state.selectedFrameId) ?? null,
+			sessionId: state.frames.get(state.selectedFrameId)?.sessionId ?? null,
 		}
 	}
 
@@ -458,12 +469,16 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 		state.pendingTitleLoads.add(frameId)
 		try {
-			const evaluated = (await session.handle.sendAndWait('Runtime.evaluate', {
-				expression: 'document.title',
-				contextId: executionContextId,
-				returnByValue: true,
-				silent: true,
-			})) as { result?: { value?: unknown } }
+			const evaluated = (await session.handle.sendAndWait(
+				'Runtime.evaluate',
+				{
+					expression: 'document.title',
+					contextId: executionContextId,
+					returnByValue: true,
+					silent: true,
+				},
+				frame.sessionId ? { sessionId: frame.sessionId } : undefined,
+			)) as { result?: { value?: unknown } }
 
 			const title = typeof evaluated.result?.value === 'string' ? evaluated.result.value.trim() : ''
 			const latestFrame = state.frames.get(frameId)
@@ -490,8 +505,11 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			isAttached: () => currentSession?.handle.isAttached() ?? false,
 			sendAndWait: async (method, params, options) => {
 				const session = getCurrentExtensionSession()
+				const targetContext = config.getTargetContext()
 				const nextParams = config.mapParams ? config.mapParams(method, params) : params
-				return session.handle.sendAndWait(method, nextParams, options)
+				const nextOptions =
+					targetContext.kind === 'frame' && targetContext.sessionId ? { ...(options ?? {}), sessionId: targetContext.sessionId } : options
+				return session.handle.sendAndWait(method, nextParams, nextOptions)
 			},
 			onEvent: (method, handler) => {
 				if (!currentSession) {
@@ -539,6 +557,7 @@ type ExtensionFrame = {
 	parentFrameId: string | null
 	url: string
 	title: string | null
+	sessionId: string | null
 }
 
 type CdpFrameTreeNode = {
@@ -629,6 +648,7 @@ const collectFrameTree = (node: CdpFrameTreeNode | undefined, state: ExtensionFr
 		parentFrameId: node.frame.parentId ?? null,
 		url: node.frame.url ?? '',
 		title: node.frame.name ?? null,
+		sessionId: state.frames.get(frameId)?.sessionId ?? null,
 	})
 	if (!node.frame.parentId) {
 		state.topFrameId = frameId
@@ -651,6 +671,7 @@ const parseFrame = (params: unknown): ExtensionFrame | null => {
 		parentFrameId: record.frame?.parentId ?? null,
 		url,
 		title: record.frame?.name ?? null,
+		sessionId: null,
 	}
 }
 

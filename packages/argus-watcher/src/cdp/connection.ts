@@ -1,8 +1,14 @@
-export type CdpEventHandler = (params: unknown) => void
+export type CdpEventMeta = {
+	sessionId?: string | null
+}
+
+export type CdpEventHandler = (params: unknown, meta: CdpEventMeta) => void
 
 export type CdpSendOptions = {
 	/** Optional timeout for this CDP command (ms). */
 	timeoutMs?: number
+	/** Optional child protocol session within the current root target. */
+	sessionId?: string
 }
 
 export type CdpTargetContext =
@@ -11,6 +17,7 @@ export type CdpTargetContext =
 			kind: 'frame'
 			frameId: string
 			executionContextId: number | null
+			sessionId?: string | null
 	  }
 
 export type CdpSessionHandle = {
@@ -130,7 +137,7 @@ export const createCdpSessionHandle = (): CdpSessionController => {
 				}
 				for (const handler of bucket) {
 					try {
-						handler(payload.params)
+						handler(payload.params, { sessionId: null })
 					} catch {
 						// Ignore handler errors to keep dispatch resilient.
 					}

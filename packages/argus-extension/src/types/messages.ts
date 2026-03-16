@@ -26,6 +26,7 @@ export type CdpEventMessage = {
 	tabId: number
 	method: string
 	params: unknown
+	sessionId?: string
 }
 
 export type CdpResponseMessage = {
@@ -98,6 +99,7 @@ export type CdpCommandMessage = {
 	tabId: number
 	method: string
 	params?: Record<string, unknown>
+	sessionId?: string
 }
 
 export type ListTabsMessage = {

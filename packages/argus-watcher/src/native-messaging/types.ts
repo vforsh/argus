@@ -26,6 +26,7 @@ export type CdpEventMessage = {
 	tabId: number
 	method: string
 	params: unknown
+	sessionId?: string
 }
 
 export type CdpResponseMessage = {
@@ -98,6 +99,7 @@ export type CdpCommandMessage = {
 	tabId: number
 	method: string
 	params?: Record<string, unknown>
+	sessionId?: string
 }
 
 export type ListTabsMessage = {
@@ -134,4 +136,8 @@ export type PendingRequest = {
 	timeout: ReturnType<typeof setTimeout>
 }
 
-export type CdpEventHandler = (params: unknown) => void
+export type CdpEventMeta = {
+	sessionId?: string | null
+}
+
+export type CdpEventHandler = (params: unknown, meta: CdpEventMeta) => void

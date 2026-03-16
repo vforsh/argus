@@ -23,12 +23,13 @@ export class CdpProxy {
 	 * Forward CDP events from debugger to bridge.
 	 */
 	private setupEventForwarding(): void {
-		this.debuggerManager.onEvent((tabId, method, params) => {
+		this.debuggerManager.onEvent((tabId, method, params, meta) => {
 			this.bridgeClient.send({
 				type: 'cdp_event',
 				tabId,
 				method,
 				params,
+				sessionId: meta?.sessionId ?? undefined,
 			})
 		})
 
@@ -120,7 +121,7 @@ export class CdpProxy {
 	 */
 	private async handleCdpCommand(message: CdpCommandMessage): Promise<void> {
 		try {
-			const result = await this.debuggerManager.sendCommand(message.tabId, message.method, message.params)
+			const result = await this.debuggerManager.sendCommand(message.tabId, message.method, message.params, message.sessionId)
 
 			this.bridgeClient.send({
 				type: 'cdp_response',
