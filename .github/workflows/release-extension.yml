@@ -1,0 +1,48 @@
+name: Release Extension Asset
+
+on:
+    release:
+        types: [published]
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: Release tag to upload the extension asset to
+                required: true
+                type: string
+
+permissions:
+    contents: write
+
+jobs:
+    upload-extension-zip:
+        runs-on: ubuntu-latest
+
+        env:
+            RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+            ASSET_NAME: argus-extension-${{ github.event.release.tag_name || inputs.tag }}.zip
+
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+                  cache-dependency-path: packages/argus-extension/package-lock.json
+
+            - name: Install extension dependencies
+              working-directory: packages/argus-extension
+              run: npm ci
+
+            - name: Build extension release zip
+              working-directory: packages/argus-extension
+              run: |
+                  npm run build
+                  npm run package:release -- "$RUNNER_TEMP/$ASSET_NAME"
+
+            - name: Upload extension zip to GitHub release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/$ASSET_NAME" --clobber
