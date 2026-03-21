@@ -3,6 +3,7 @@ import type { LogLevel, WatcherRecord } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
+import type { RuntimeEditor } from '../cdp/editor.js'
 import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
 import type { CdpSourceHandle } from '../sources/types.js'
@@ -22,6 +23,9 @@ export type HttpRequestEventMetadata = {
 		| 'trace/stop'
 		| 'screenshot'
 		| 'snapshot'
+		| 'code/list'
+		| 'code/read'
+		| 'code/grep'
 		| 'dom/tree'
 		| 'dom/info'
 		| 'dom/hover'
@@ -70,6 +74,7 @@ export type HttpServerOptions = {
 	cdpSession: CdpSessionHandle
 	traceRecorder: TraceRecorder
 	screenshotter: Screenshotter
+	runtimeEditor: RuntimeEditor
 	/** Emulation controller for GET/POST /emulation endpoints. */
 	emulationController: EmulationController
 	/** Throttle controller for GET/POST /throttle endpoints. */

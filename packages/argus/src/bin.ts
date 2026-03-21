@@ -19,6 +19,7 @@ import { registerSnapshot } from './cli/register/registerSnapshot.js'
 import { registerTrace } from './cli/register/registerTrace.js'
 import { registerConfig } from './cli/register/registerConfig.js'
 import { registerExtension } from './cli/register/registerExtension.js'
+import { registerCode } from './cli/register/registerCode.js'
 import { registerPlugins } from './cli/plugins/registerPlugins.js'
 
 const program = createProgram()
@@ -35,6 +36,7 @@ registerPage(program)
 registerLogs(program)
 registerNet(program)
 registerEval(program)
+registerCode(program)
 registerDom(program)
 registerClick(program)
 registerKeydown(program)

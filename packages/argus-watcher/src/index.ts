@@ -11,6 +11,7 @@ import { buildIgnoreMatcher } from './cdp/ignoreList.js'
 import { createNetworkCapture } from './cdp/networkCapture.js'
 import { createTraceRecorder } from './cdp/tracing.js'
 import { createScreenshotter } from './cdp/screenshot.js'
+import { createRuntimeEditor } from './cdp/editor.js'
 import { createCdpSessionHandle } from './cdp/connection.js'
 import {
 	createPageIndicatorController,
@@ -411,6 +412,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	let networkCapture: Awaited<ReturnType<typeof createNetworkCapture>> | null = null
 	let traceRecorder: ReturnType<typeof createTraceRecorder>
 	let screenshotter: ReturnType<typeof createScreenshotter>
+	let runtimeEditor: ReturnType<typeof createRuntimeEditor>
 
 	if (sourceMode === 'extension') {
 		// Extension mode
@@ -424,12 +426,14 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 				onPageNavigation: (info) => {
 					fileLogger?.rotate(info)
 					onIndicatorNavigation(getIndicatorSession(), info)
+					runtimeEditor?.reset()
 				},
 				onPageLoad: onIndicatorLoad,
 				onPageIntl: (info) => {
 					fileLogger?.setPageIntl(info)
 				},
 				onAttach: async (session, target) => {
+					runtimeEditor?.rebind()
 					await emulationController.onAttach(session)
 					await throttleController.onAttach(session)
 					onIndicatorAttach(session, target)
@@ -439,6 +443,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 					onIndicatorAttach(session, target)
 				},
 				onDetach: () => {
+					runtimeEditor?.rebind()
 					indicatorController?.onDetach()
 				},
 			},
@@ -452,11 +457,13 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		// Create trace/screenshot with proxy session
 		traceRecorder = createTraceRecorder({ session: sourceHandle.session, artifactsDir: artifactsBaseDir })
 		screenshotter = createScreenshotter({ session: sourceHandle.session, artifactsDir: artifactsBaseDir })
+		runtimeEditor = createRuntimeEditor(sourceHandle.session)
 	} else {
 		// CDP mode
 		networkCapture = netBuffer ? createNetworkCapture({ session: sessionHandle.session, buffer: netBuffer }) : null
 		traceRecorder = createTraceRecorder({ session: sessionHandle.session, artifactsDir: artifactsBaseDir })
 		screenshotter = createScreenshotter({ session: sessionHandle.session, artifactsDir: artifactsBaseDir })
+		runtimeEditor = createRuntimeEditor(sessionHandle.session)
 
 		sourceHandle = createCdpSource({
 			chrome,
@@ -471,12 +478,14 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 				onPageNavigation: (info) => {
 					fileLogger?.rotate(info)
 					onIndicatorNavigation(sessionHandle.session, info)
+					runtimeEditor?.reset()
 				},
 				onPageLoad: onIndicatorLoad,
 				onPageIntl: (info) => {
 					fileLogger?.setPageIntl(info)
 				},
 				onAttach: async (session, target) => {
+					runtimeEditor?.rebind()
 					await emulationController.onAttach(session)
 					await throttleController.onAttach(session)
 					await networkCapture?.onAttached()
@@ -484,6 +493,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 					await maybeInjectOnAttach(session, target)
 				},
 				onDetach: (reason) => {
+					runtimeEditor?.rebind()
 					networkCapture?.onDetached()
 					traceRecorder.onDetached(reason)
 					indicatorController?.onDetach()
@@ -505,6 +515,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		cdpSession: sourceHandle.session,
 		traceRecorder,
 		screenshotter,
+		runtimeEditor,
 		emulationController,
 		throttleController,
 		// Extension mode endpoints

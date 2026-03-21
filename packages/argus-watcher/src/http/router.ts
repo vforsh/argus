@@ -12,6 +12,9 @@ import { handle as postTraceStart } from './routes/postTraceStart.js'
 import { handle as postTraceStop } from './routes/postTraceStop.js'
 import { handle as postScreenshot } from './routes/postScreenshot.js'
 import { handle as postSnapshot } from './routes/postSnapshot.js'
+import { handle as postCodeList } from './routes/postCodeList.js'
+import { handle as postCodeRead } from './routes/postCodeRead.js'
+import { handle as postCodeGrep } from './routes/postCodeGrep.js'
 import { handle as postDomTree } from './routes/postDomTree.js'
 import { handle as postDomInfo } from './routes/postDomInfo.js'
 import { handle as postDomHover } from './routes/postDomHover.js'
@@ -49,6 +52,9 @@ const routes: Record<string, RouteEntry> = {
 	'POST /trace/stop': { handler: postTraceStop },
 	'POST /screenshot': { handler: postScreenshot },
 	'POST /snapshot': { handler: postSnapshot },
+	'POST /code/list': { handler: postCodeList },
+	'POST /code/read': { handler: postCodeRead },
+	'POST /code/grep': { handler: postCodeGrep },
 	'POST /dom/tree': { handler: postDomTree },
 	'POST /dom/info': { handler: postDomInfo },
 	'POST /dom/hover': { handler: postDomHover },
