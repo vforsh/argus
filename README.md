@@ -92,6 +92,54 @@ argus logs tail app
 
 Both `argus chrome start` and `argus watcher start` are also long-running commands.
 
+## Chrome Extension
+
+Use the extension when you want Argus against your normal Chrome session without launching Chrome with CDP flags.
+
+### One-time setup
+
+```bash
+# Build the extension
+cd packages/argus-extension
+npm run build
+
+# Load it in Chrome
+# chrome://extensions -> Developer mode -> Load unpacked -> packages/argus-extension
+# Copy the extension ID, then install the native host:
+argus extension setup <EXTENSION_ID>
+argus extension status
+```
+
+### Attach to a tab
+
+1. Click the Argus extension icon in Chrome.
+2. Click `Attach` on the tab you want to inspect.
+3. Leave that tab open while debugging. Chrome's orange debugging bar is expected.
+
+Then use the CLI as usual:
+
+```bash
+argus list
+argus logs extension
+argus eval extension "document.title"
+argus watcher start --id app --source extension
+argus page ls --id app
+```
+
+### What changes in extension mode
+
+- No special Chrome launch flags required
+- Manual tab selection through the extension popup
+- The popup can switch the active target between the top page and discovered iframes
+- `argus page ls --id <watcher>` shows those virtual iframe targets
+
+### Limitations
+
+- Chrome shows a debugging bar while attached; that cannot be hidden
+- Only one debugger can attach to a tab at a time
+- The target tab must stay open
+- Cross-origin iframe eval needs the iframe helper script
+
 ## Common Workflows
 
 ### Debug console errors
