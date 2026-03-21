@@ -12,6 +12,15 @@ npm run build
 
 This bundles the TypeScript source into `dist/`.
 
+To create the installable release archive:
+
+```bash
+npm run build
+npm run package:release
+```
+
+By default this writes `dist/release/argus-extension.zip`.
+
 ## Install Extension in Chrome
 
 1. Open Chrome and navigate to `chrome://extensions`
