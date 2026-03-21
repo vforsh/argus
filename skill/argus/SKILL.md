@@ -1,11 +1,11 @@
 ---
 name: argus
-description: Guides use of the Argus CLI to debug and inspect web apps via Chrome CDP or the Argus Chrome extension (start Chrome/watcher, select targets including iframes, tail logs, eval JavaScript, and capture screenshots).
+description: Guides use of the Argus CLI to debug and inspect web apps via Chrome CDP or the Argus Chrome extension (start Chrome/watcher, select targets including iframes, tail logs, eval JavaScript, inspect runtime code, and capture screenshots).
 ---
 
 ## Argus CLI
 
-Debug local web apps via Chrome CDP or extension. Logs, eval, screenshots, target management.
+Debug local web apps via Chrome CDP or extension. Logs, eval, runtime code inspection, screenshots, target management.
 
 Install/run:
 
@@ -118,6 +118,17 @@ argus eval app "await fetch('/ping').then(r => r.status)"
 argus eval app "document.title" --json
 argus eval app --file ./script.js
 ```
+
+### Runtime Code
+
+```bash
+argus code ls app
+argus code ls app --pattern inline
+argus code read inline://42 --id app
+argus code grep '/featureFlag/' --id app
+```
+
+`code ls` lists runtime JS/CSS resources discovered through CDP. `code read` returns line-numbered source. `code grep` searches sources with plain strings or `/regex/flags`. Full runtime-code docs: [RUNTIME_CODE.md](./reference/RUNTIME_CODE.md)
 
 ### Eval-Until
 
