@@ -43,7 +43,7 @@ type PopupTarget = {
 
 type PopupTabWithTargets = Awaited<ReturnType<typeof cdpProxy.getTabsForPopup>>[number] & {
 	targets: PopupTarget[]
-	selectedFrameId: string | null
+	selectedFrameId?: string | null
 }
 
 type CurrentTargetSummary = {
@@ -125,6 +125,7 @@ bridgeClient.onMessage((message: HostToExtension) => {
 				url: message.url,
 				attachedAt: message.attachedAt,
 			}
+			syncSelectedFrameFromWatcher(message.targetId)
 		}
 		return
 	}
@@ -188,14 +189,12 @@ async function handlePopupMessage(message: PopupActionMessage, sendResponse: (re
 				}
 
 				const frameId = message.frameId ?? null
-				const restoreSelection = updateSelectedFrame(tabId, frameId)
 				const sent = bridgeClient.send({
 					type: 'target_selected',
 					tabId,
 					frameId,
 				})
 				if (!sent) {
-					restoreSelection()
 					recordEvent('error', 'popup', `Failed to select target for tab ${tabId}: bridge disconnected`)
 					sendResponse({ success: false, error: 'Bridge is not connected' })
 					return
@@ -261,29 +260,30 @@ async function getTabsWithTargets(): Promise<PopupTabWithTargets[]> {
 		tabs.map(async (tab) => ({
 			...tab,
 			targets: tab.attached ? await getPopupTargets(tab.tabId) : [],
-			selectedFrameId: selectedFrameByTabId.get(tab.tabId) ?? null,
+			selectedFrameId: getSelectedFrameId(tab.tabId),
 		})),
 	)
 }
 
-function updateSelectedFrame(tabId: number, frameId: string | null): () => void {
-	const previousFrameId = selectedFrameByTabId.get(tabId) ?? null
-	selectedFrameByTabId.set(tabId, frameId)
-	return () => {
-		selectedFrameByTabId.set(tabId, previousFrameId)
+function syncSelectedFrameFromWatcher(targetId: string): void {
+	const target = parseWatcherTargetId(targetId)
+	if (!target) {
+		return
 	}
+
+	selectedFrameByTabId.clear()
+	selectedFrameByTabId.set(target.tabId, target.frameId)
 }
 
 function getCurrentTargetSummary(tabs: PopupTabWithTargets[]): CurrentTargetSummary | null {
 	const attachedTabs = tabs.filter((tab) => tab.attached)
-	const selectedTab = attachedTabs.find((tab) => (tab.selectedFrameId ?? null) !== null) ?? attachedTabs[0]
+	const watcherTarget = watcherTargetInfo ? parseWatcherTargetId(watcherTargetInfo.targetId) : null
+	const selectedTab = findSelectedTab(attachedTabs, watcherTarget)
 	if (!selectedTab) {
 		return null
 	}
 
-	const selectedTarget =
-		selectedTab.targets.find((target) => (target.frameId ?? null) === (selectedTab.selectedFrameId ?? null)) ?? selectedTab.targets[0]
-
+	const selectedTarget = findSelectedTarget(selectedTab, watcherTarget?.frameId ?? null)
 	if (!selectedTarget) {
 		return null
 	}
@@ -308,6 +308,46 @@ function formatPageTargetId(tabId: number): string {
 
 function formatFrameTargetId(tabId: number, frameId: string): string {
 	return `frame:${tabId}:${frameId}`
+}
+
+function getSelectedFrameId(tabId: number): string | null | undefined {
+	if (!selectedFrameByTabId.has(tabId)) {
+		return undefined
+	}
+
+	return selectedFrameByTabId.get(tabId) ?? null
+}
+
+function findSelectedTab(
+	attachedTabs: PopupTabWithTargets[],
+	watcherTarget: { tabId: number; frameId: string | null } | null,
+): PopupTabWithTargets | null {
+	if (!watcherTarget) {
+		return attachedTabs[0] ?? null
+	}
+
+	return attachedTabs.find((tab) => tab.tabId === watcherTarget.tabId) ?? null
+}
+
+function findSelectedTarget(tab: PopupTabWithTargets, frameId: string | null): PopupTarget | null {
+	const effectiveFrameId = frameId ?? tab.selectedFrameId ?? null
+	return tab.targets.find((target) => (target.frameId ?? null) === effectiveFrameId) ?? tab.targets[0] ?? null
+}
+
+function parseWatcherTargetId(targetId: string): { tabId: number; frameId: string | null } | null {
+	if (targetId.startsWith('tab:')) {
+		const tabId = Number.parseInt(targetId.slice(4), 10)
+		return Number.isFinite(tabId) ? { tabId, frameId: null } : null
+	}
+
+	if (targetId.startsWith('frame:')) {
+		const [, tabIdRaw, ...frameIdParts] = targetId.split(':')
+		const tabId = Number.parseInt(tabIdRaw ?? '', 10)
+		const frameId = frameIdParts.join(':')
+		return Number.isFinite(tabId) && frameId ? { tabId, frameId } : null
+	}
+
+	return null
 }
 
 async function getPopupTargets(tabId: number): Promise<PopupTarget[]> {

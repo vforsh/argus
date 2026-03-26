@@ -4,7 +4,16 @@
  */
 
 import type { NativeMessagingHandler } from './messaging.js'
-import type { ExtensionToHost, HostToExtension, TabInfo, PendingRequest, CdpEventHandler, CdpEventMeta } from './types.js'
+import type {
+	ExtensionToHost,
+	HostToExtension,
+	TabInfo,
+	PendingRequest,
+	CdpEventHandler,
+	CdpEventMeta,
+	FrameSnapshot,
+	TabAttachedMessage,
+} from './types.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 
 export type ExtensionSession = {
@@ -13,6 +22,8 @@ export type ExtensionSession = {
 	title: string
 	faviconUrl?: string
 	attachedAt: number
+	topFrameId: string | null
+	frames: FrameSnapshot[]
 	handle: CdpSessionHandle
 	enabledDomains: Set<string>
 }
@@ -89,8 +100,8 @@ export class SessionManager {
 	/**
 	 * Handle tab attachment notification.
 	 */
-	private handleTabAttached(message: ExtensionToHost & { type: 'tab_attached' }): void {
-		const session = this.createSession(message.tabId, message.url, message.title, message.faviconUrl)
+	private handleTabAttached(message: TabAttachedMessage): void {
+		const session = this.createSession(message)
 		this.events.onAttach(session)
 	}
 
@@ -163,7 +174,8 @@ export class SessionManager {
 	/**
 	 * Create a session for an attached tab.
 	 */
-	private createSession(tabId: number, url: string, title: string, faviconUrl?: string): ExtensionSession {
+	private createSession(message: TabAttachedMessage): ExtensionSession {
+		const { tabId, url, title, faviconUrl } = message
 		const enabledDomains = new Set<string>()
 		const tabHandlers = new Map<string, Set<CdpEventHandler>>()
 		this.eventHandlers.set(tabId, tabHandlers)
@@ -220,6 +232,8 @@ export class SessionManager {
 			title,
 			faviconUrl,
 			attachedAt: Date.now(),
+			topFrameId: message.topFrameId ?? null,
+			frames: message.frames ?? [],
 			handle,
 			enabledDomains,
 		}

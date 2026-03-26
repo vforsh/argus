@@ -251,7 +251,7 @@ function renderTargetList(tab: TabInfo): string {
     <div class="target-list">
       ${targets
 			.map((target) => {
-				const isSelected = (tab.selectedFrameId ?? null) === (target.frameId ?? null)
+				const isSelected = tab.selectedFrameId !== undefined && (tab.selectedFrameId ?? null) === (target.frameId ?? null)
 				const kindLabel = target.type === 'page' ? 'Page' : 'Iframe'
 				return `
             <button

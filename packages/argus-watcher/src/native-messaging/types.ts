@@ -13,6 +13,8 @@ export type TabAttachedMessage = {
 	url: string
 	title: string
 	faviconUrl?: string
+	topFrameId?: string | null
+	frames?: FrameSnapshot[]
 }
 
 export type TabDetachedMessage = {
@@ -69,6 +71,14 @@ export type TabInfo = {
 	title: string
 	faviconUrl?: string
 	attached: boolean
+}
+
+export type FrameSnapshot = {
+	frameId: string
+	parentFrameId: string | null
+	url: string
+	title: string | null
+	sessionId: string | null
 }
 
 export type ExtensionToHost =

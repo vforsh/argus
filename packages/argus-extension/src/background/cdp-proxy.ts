@@ -98,6 +98,8 @@ export class CdpProxy {
 				url: target.url,
 				title: target.title,
 				faviconUrl: target.faviconUrl,
+				topFrameId: target.topFrameId,
+				frames: this.debuggerManager.getFrames(target.tabId),
 			})
 		} catch (err) {
 			console.error('[CdpProxy] Failed to attach:', err)
