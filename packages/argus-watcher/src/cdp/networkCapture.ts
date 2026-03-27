@@ -1,12 +1,13 @@
 import type { NetworkRequestSummary } from '@vforsh/argus-core'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { CdpSessionHandle } from './connection.js'
-import { redactUrl } from './redaction.js'
+import { mergeCapturedAuthHeaders, pickCapturedAuthHeaders, redactUrl } from './redaction.js'
 
 type InflightRequest = {
 	requestId: string
 	url: string
 	method: string
+	requestHeaders?: Record<string, string>
 	resourceType: string | null
 	status: number | null
 	encodedDataLength: number | null
@@ -32,6 +33,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 			requestId,
 			url: '',
 			method: 'GET',
+			requestHeaders: undefined,
 			resourceType: null,
 			status: null,
 			encodedDataLength: null,
@@ -51,15 +53,14 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		inflight.delete(requestId)
 
 		const durationMs =
-			record.startTime != null && record.endTime != null
-				? Math.max(0, Math.round((record.endTime - record.startTime) * 1000))
-				: null
+			record.startTime != null && record.endTime != null ? Math.max(0, Math.round((record.endTime - record.startTime) * 1000)) : null
 
 		const summary: Omit<NetworkRequestSummary, 'id'> = {
 			ts: Date.now(),
 			requestId: record.requestId,
 			url: redactUrl(record.url),
 			method: record.method,
+			requestHeaders: record.requestHeaders,
 			resourceType: record.resourceType,
 			status: record.status,
 			encodedDataLength: record.encodedDataLength,
@@ -73,7 +74,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 	options.session.onEvent('Network.requestWillBeSent', (params) => {
 		const payload = params as {
 			requestId?: string
-			request?: { url?: string; method?: string }
+			request?: { url?: string; method?: string; headers?: Record<string, unknown> }
 			timestamp?: number
 			type?: string
 		}
@@ -84,14 +85,28 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		const entry = getOrCreate(requestId)
 		entry.url = payload.request?.url ?? entry.url
 		entry.method = payload.request?.method ?? entry.method
+		entry.requestHeaders = mergeCapturedAuthHeaders(entry.requestHeaders, pickCapturedAuthHeaders(payload.request?.headers))
 		entry.resourceType = payload.type ?? entry.resourceType
 		entry.startTime = typeof payload.timestamp === 'number' ? payload.timestamp : entry.startTime
+	})
+
+	options.session.onEvent('Network.requestWillBeSentExtraInfo', (params) => {
+		const payload = params as {
+			requestId?: string
+			headers?: Record<string, unknown>
+		}
+		const requestId = payload.requestId
+		if (!requestId) {
+			return
+		}
+		const entry = getOrCreate(requestId)
+		entry.requestHeaders = mergeCapturedAuthHeaders(entry.requestHeaders, pickCapturedAuthHeaders(payload.headers))
 	})
 
 	options.session.onEvent('Network.responseReceived', (params) => {
 		const payload = params as {
 			requestId?: string
-			response?: { status?: number }
+			response?: { status?: number; requestHeaders?: Record<string, unknown> }
 			type?: string
 		}
 		const requestId = payload.requestId
@@ -100,6 +115,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		}
 		const entry = getOrCreate(requestId)
 		entry.status = typeof payload.response?.status === 'number' ? payload.response.status : entry.status
+		entry.requestHeaders = mergeCapturedAuthHeaders(entry.requestHeaders, pickCapturedAuthHeaders(payload.response?.requestHeaders))
 		entry.resourceType = payload.type ?? entry.resourceType
 	})
 
@@ -110,8 +126,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 			return
 		}
 		const entry = getOrCreate(requestId)
-		entry.encodedDataLength =
-			typeof payload.encodedDataLength === 'number' ? payload.encodedDataLength : entry.encodedDataLength
+		entry.encodedDataLength = typeof payload.encodedDataLength === 'number' ? payload.encodedDataLength : entry.encodedDataLength
 		entry.endTime = typeof payload.timestamp === 'number' ? payload.timestamp : entry.endTime
 		finalize(requestId)
 	})

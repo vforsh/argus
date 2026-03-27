@@ -2,6 +2,7 @@
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
+		<meta name="csrf-token" content="playground-meta-csrf-token" />
 		<link
 			rel="icon"
 			href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 8V4H8'/><rect width='16' height='12' x='4' y='8' rx='2'/><path d='M2 14h2'/><path d='M20 14h2'/><path d='M15 13v2'/><path d='M9 13v2'/></svg>"
@@ -211,6 +212,20 @@
 			<pre data-testid="storage-output" id="storage-output">—</pre>
 		</section>
 
+		<!-- ── Auth ── -->
+		<section data-testid="auth-section">
+			<h2>Auth</h2>
+			<form onsubmit="return false">
+				<input type="hidden" name="csrfToken" value="playground-hidden-csrf-token" />
+			</form>
+			<div class="btn-row">
+				<button data-testid="btn-auth-seed" onclick="seedAuthState()">Seed auth state</button>
+				<button data-testid="btn-auth-fetch" onclick="sendAuthFetch()">Send auth fetch</button>
+				<button data-testid="btn-auth-clear" onclick="clearAuthState()">Clear auth state</button>
+			</div>
+			<pre data-testid="auth-output" id="auth-output">—</pre>
+		</section>
+
 		<!-- ── Eval ── -->
 		<section data-testid="eval-section">
 			<h2>Eval</h2>
@@ -344,6 +359,57 @@
 				output.textContent = JSON.stringify(entries, null, 2) || '(empty)'
 			}
 
+			// ── Auth helpers ──
+			function seedAuthState() {
+				document.cookie = 'playground_session=playground-cookie-secret; path=/; SameSite=Lax'
+				document.cookie = 'playground_csrf=playground-csrf-cookie; path=/; SameSite=Lax'
+				localStorage.setItem('accessToken', 'Bearer playground-storage-secret')
+				sessionStorage.setItem('csrfToken', 'playground-session-csrf-secret')
+				refreshAuthDisplay()
+			}
+
+			async function sendAuthFetch() {
+				const output = document.getElementById('auth-output')
+				output.textContent = 'Sending authenticated fetch...'
+				try {
+					const res = await fetch('/api/echo', {
+						headers: {
+							Authorization: 'Bearer playground-header-secret',
+							'X-CSRF-Token': 'playground-header-csrf-secret',
+						},
+					})
+					const body = await res.json()
+					output.textContent = JSON.stringify(body, null, 2)
+				} catch (err) {
+					output.textContent = `Error: ${err.message}`
+				}
+			}
+
+			function clearAuthState() {
+				document.cookie = 'playground_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+				document.cookie = 'playground_csrf=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+				localStorage.removeItem('accessToken')
+				sessionStorage.removeItem('csrfToken')
+				refreshAuthDisplay()
+			}
+
+			function refreshAuthDisplay() {
+				const output = document.getElementById('auth-output')
+				output.textContent = JSON.stringify(
+					{
+						cookies: document.cookie || '(empty)',
+						localStorage: {
+							accessToken: localStorage.getItem('accessToken'),
+						},
+						sessionStorage: {
+							csrfToken: sessionStorage.getItem('csrfToken'),
+						},
+					},
+					null,
+					2,
+				)
+			}
+
 			// ── DOM event tracking ──
 			document.querySelectorAll('[data-testid]').forEach((el) => {
 				const id = el.getAttribute('data-testid')
@@ -369,6 +435,7 @@
 
 			// ── Seed storage on load ──
 			seedStorage()
+			seedAuthState()
 		</script>
 	</body>
 </html>

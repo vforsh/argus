@@ -23,7 +23,7 @@ import { createEmulationController } from './emulation/EmulationController.js'
 import { createThrottleController } from './throttle/ThrottleController.js'
 import { createCdpSource } from './sources/cdp-source.js'
 import { createExtensionSource } from './sources/extension-source.js'
-import type { CdpSourceHandle, CdpSourceStatus } from './sources/types.js'
+import type { CdpSourceHandle, CdpSourceStatus, CdpSourceTarget } from './sources/types.js'
 import type { ArgusWatcherEventMap } from './events.js'
 import type { HttpRequestEvent } from './events.js'
 
@@ -208,8 +208,8 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 	const includeTimestamps = options.artifacts?.logs?.includeTimestamps ?? false
 	const maxFiles = resolveMaxFiles(options.artifacts?.logs?.maxFiles)
 
-	// Network capture is opt-in (disabled by default) and only in CDP mode
-	const netEnabled = sourceMode === 'cdp' && options.net?.enabled === true
+	// Network capture is opt-in (disabled by default) and supported in both direct CDP and extension mode.
+	const netEnabled = options.net?.enabled === true
 
 	// Page console logging (default: minimal)
 	const pageConsoleLogging = options.pageConsoleLogging ?? 'minimal'
@@ -407,6 +407,46 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		}
 	}
 
+	const handleSourceLog = (event: Omit<LogEvent, 'id'>): void => {
+		buffer.add(event)
+		fileLogger?.writeEvent(event)
+	}
+
+	const handlePageNavigation = (info: { url: string; title: string | null }): void => {
+		fileLogger?.rotate(info)
+		onIndicatorNavigation(getIndicatorSession(), info)
+		runtimeEditor?.reset()
+	}
+
+	const handlePageIntl = (info: { timezone: string | null; locale: string | null }): void => {
+		fileLogger?.setPageIntl(info)
+	}
+
+	const handleSourceAttach = async (session: CdpSourceHandle['session'], target: CdpSourceTarget): Promise<void> => {
+		runtimeEditor?.rebind()
+		await emulationController.onAttach(session)
+		await throttleController.onAttach(session)
+		await networkCapture?.onAttached()
+		onIndicatorAttach(session, target)
+		await maybeInjectOnAttach(session, target)
+	}
+
+	const handleTargetChanged = (
+		session: CdpSourceHandle['session'],
+		target: { id: string; title: string; url: string; type?: string | null; parentId?: string | null },
+	): void => {
+		onIndicatorAttach(session, target)
+	}
+
+	const handleSourceDetach = (reason?: string): void => {
+		runtimeEditor?.rebind()
+		networkCapture?.onDetached()
+		indicatorController?.onDetach()
+		if (reason != null) {
+			traceRecorder.onDetached(reason)
+		}
+	}
+
 	// Create the appropriate source based on mode
 	let sourceHandle: CdpSourceHandle
 	let networkCapture: Awaited<ReturnType<typeof createNetworkCapture>> | null = null
@@ -418,33 +458,15 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		// Extension mode
 		sourceHandle = createExtensionSource({
 			events: {
-				onLog: (event) => {
-					buffer.add(event)
-					fileLogger?.writeEvent(event)
-				},
+				onLog: handleSourceLog,
 				onStatus: updateCdpStatus,
-				onPageNavigation: (info) => {
-					fileLogger?.rotate(info)
-					onIndicatorNavigation(getIndicatorSession(), info)
-					runtimeEditor?.reset()
-				},
+				onPageNavigation: handlePageNavigation,
 				onPageLoad: onIndicatorLoad,
-				onPageIntl: (info) => {
-					fileLogger?.setPageIntl(info)
-				},
-				onAttach: async (session, target) => {
-					runtimeEditor?.rebind()
-					await emulationController.onAttach(session)
-					await throttleController.onAttach(session)
-					onIndicatorAttach(session, target)
-					await maybeInjectOnAttach(session, target)
-				},
-				onTargetChanged: (session, target) => {
-					onIndicatorAttach(session, target)
-				},
+				onPageIntl: handlePageIntl,
+				onAttach: handleSourceAttach,
+				onTargetChanged: handleTargetChanged,
 				onDetach: () => {
-					runtimeEditor?.rebind()
-					indicatorController?.onDetach()
+					handleSourceDetach()
 				},
 			},
 			watcherId,
@@ -453,6 +475,8 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 			ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
 			stripUrlPrefixes,
 		})
+
+		networkCapture = netBuffer ? createNetworkCapture({ session: sourceHandle.pageSession ?? sourceHandle.session, buffer: netBuffer }) : null
 
 		// Create trace/screenshot with proxy session
 		traceRecorder = createTraceRecorder({ session: sourceHandle.session, artifactsDir: artifactsBaseDir })
@@ -470,33 +494,14 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 			match: options.match,
 			sessionHandle,
 			events: {
-				onLog: (event) => {
-					buffer.add(event)
-					fileLogger?.writeEvent(event)
-				},
+				onLog: handleSourceLog,
 				onStatus: updateCdpStatus,
-				onPageNavigation: (info) => {
-					fileLogger?.rotate(info)
-					onIndicatorNavigation(sessionHandle.session, info)
-					runtimeEditor?.reset()
-				},
+				onPageNavigation: handlePageNavigation,
 				onPageLoad: onIndicatorLoad,
-				onPageIntl: (info) => {
-					fileLogger?.setPageIntl(info)
-				},
-				onAttach: async (session, target) => {
-					runtimeEditor?.rebind()
-					await emulationController.onAttach(session)
-					await throttleController.onAttach(session)
-					await networkCapture?.onAttached()
-					onIndicatorAttach(session, target)
-					await maybeInjectOnAttach(session, target)
-				},
+				onPageIntl: handlePageIntl,
+				onAttach: handleSourceAttach,
 				onDetach: (reason) => {
-					runtimeEditor?.rebind()
-					networkCapture?.onDetached()
-					traceRecorder.onDetached(reason)
-					indicatorController?.onDetach()
+					handleSourceDetach(reason)
 				},
 			},
 			watcherId,

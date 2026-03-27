@@ -25,9 +25,6 @@ import {
 } from './extension-frame-state.js'
 import { toConsoleEvent, toExceptionEvent } from './extension-log-events.js'
 
-/**
- * Options for creating an extension source.
- */
 export type ExtensionSourceOptions = CdpSourceBaseOptions
 
 /**
@@ -47,6 +44,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	let currentSession: ExtensionSession | null = null
 	let stopping = false
 	const frameStateByTabId = new Map<number, ExtensionFrameState>()
+	const delegatingSessions = new Set<DelegatingSessionController>()
 	const getCurrentExtensionSession = (): ExtensionSession => {
 		if (!currentSession) {
 			throw createNotAttachedError()
@@ -59,6 +57,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			console.error(`[ExtensionSource] Tab attached: ${session.tabId} - ${session.url}`)
 
 			currentSession = session
+			rebindDelegatingSessions()
 			seedFrameState(session)
 			void bootstrapAttachedSession(session)
 		},
@@ -69,6 +68,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			if (currentSession?.tabId === tabId) {
 				currentSession = null
 			}
+			rebindDelegatingSessions()
 			frameStateByTabId.delete(tabId)
 
 			emitStatus(null, reason)
@@ -126,6 +126,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 	const stop = async (): Promise<void> => {
 		stopping = true
+		disposeDelegatingSessions()
 		messaging.stop()
 	}
 
@@ -187,6 +188,18 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			watcherPort: hostInfo.watcherPort,
 			pid: hostInfo.watcherPid,
 		})
+	}
+
+	function rebindDelegatingSessions(): void {
+		for (const controller of delegatingSessions) {
+			controller.rebind()
+		}
+	}
+
+	function disposeDelegatingSessions(): void {
+		for (const controller of delegatingSessions) {
+			controller.dispose()
+		}
 	}
 
 	async function bootstrapAttachedSession(session: ExtensionSession): Promise<void> {
@@ -546,6 +559,37 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		getTargetContext: () => CdpTargetContext
 		mapParams?: (method: string, params?: Record<string, unknown>) => Record<string, unknown> | undefined
 	}): CdpSessionHandle {
+		const subscriptions = new Set<DelegatingEventSubscription>()
+		const rebindSubscriptions = (): void => {
+			// Delegating sessions are created before a tab may be attached, so event listeners
+			// must follow the active extension session instead of binding once and going stale.
+			for (const subscription of subscriptions) {
+				subscription.unbind()
+				if (!currentSession) {
+					continue
+				}
+				subscription.off = currentSession.handle.onEvent(subscription.method, subscription.handler)
+			}
+		}
+
+		const disposeSubscriptions = (): void => {
+			for (const subscription of subscriptions) {
+				subscription.unbind()
+			}
+			subscriptions.clear()
+		}
+
+		const controller: DelegatingSessionController = {
+			rebind: rebindSubscriptions,
+			dispose: () => {
+				disposeSubscriptions()
+				delegatingSessions.delete(controller)
+			},
+		}
+
+		delegatingSessions.add(controller)
+		controller.rebind()
+
 		return {
 			isAttached: () => currentSession?.handle.isAttached() ?? false,
 			sendAndWait: async (method, params, options) => {
@@ -557,10 +601,14 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				return session.handle.sendAndWait(method, nextParams, nextOptions)
 			},
 			onEvent: (method, handler) => {
-				if (!currentSession) {
-					return () => {}
+				const subscription = createDelegatingEventSubscription(method, handler)
+				subscriptions.add(subscription)
+				controller.rebind()
+
+				return () => {
+					subscription.unbind()
+					subscriptions.delete(subscription)
 				}
-				return currentSession.handle.onEvent(method, handler)
 			},
 			getTargetContext: config.getTargetContext,
 		}
@@ -577,4 +625,26 @@ const tabToTarget = (tab: TabInfo): CdpSourceTarget => ({
 	type: 'page',
 	faviconUrl: tab.faviconUrl,
 	attached: tab.attached,
+})
+
+type DelegatingEventSubscription = {
+	method: string
+	handler: Parameters<CdpSessionHandle['onEvent']>[1]
+	off: (() => void) | null
+	unbind: () => void
+}
+
+type DelegatingSessionController = {
+	rebind: () => void
+	dispose: () => void
+}
+
+const createDelegatingEventSubscription = (method: string, handler: Parameters<CdpSessionHandle['onEvent']>[1]): DelegatingEventSubscription => ({
+	method,
+	handler,
+	off: null,
+	unbind() {
+		this.off?.()
+		this.off = null
+	},
 })

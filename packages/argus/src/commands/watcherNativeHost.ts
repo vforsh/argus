@@ -23,6 +23,7 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 			source: 'extension',
 			host: '127.0.0.1',
 			port: 0,
+			net: { enabled: true },
 			pageIndicator: { enabled: true },
 		})
 	} catch (error) {

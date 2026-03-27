@@ -5,6 +5,8 @@ export type NetworkRequestSummary = {
 	requestId: string
 	url: string
 	method: string
+	/** Captured auth-related request headers with sensitive values redacted. */
+	requestHeaders?: Record<string, string>
 	resourceType: string | null
 	status: number | null
 	encodedDataLength: number | null

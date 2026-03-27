@@ -243,11 +243,17 @@ export class DebuggerManager {
 
 		try {
 			await this.configureAutoAttach(tabId, record.sessionId)
-			await this.enableDomain(tabId, 'Runtime', record.sessionId)
-			await this.enableDomain(tabId, 'Page', record.sessionId)
+			await this.enableChildSessionDomains(tabId, record.sessionId)
 			await this.refreshFrameTree(tabId, record.sessionId)
 		} catch (error) {
 			console.warn('[DebuggerManager] Failed to bootstrap child target:', error)
+		}
+	}
+
+	private async enableChildSessionDomains(tabId: number, sessionId: string): Promise<void> {
+		// Keep child sessions aligned with the root tab so watcher features can observe iframe traffic too.
+		for (const domain of ['Runtime', 'Page', 'Network'] as const) {
+			await this.enableDomain(tabId, domain, sessionId)
 		}
 	}
 

@@ -146,6 +146,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 			chrome: { host: chrome.cdpHost, port: chrome.cdpPort },
 			host: '127.0.0.1',
 			port: 0,
+			net: { enabled: true },
 			pageIndicator: options.pageIndicator === false ? { enabled: false } : { enabled: true },
 			artifacts: artifactsBaseDir ? { base: artifactsBaseDir } : undefined,
 			pageConsoleLogging: options.pageConsoleLogging,

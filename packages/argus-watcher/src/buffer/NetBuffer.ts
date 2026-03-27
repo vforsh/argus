@@ -39,6 +39,12 @@ export class NetBuffer {
 		return filtered.slice(0, limit)
 	}
 
+	/** List buffered events without an `after` cursor. */
+	list(filters: NetFilters, limit = this.maxSize): NetworkRequestSummary[] {
+		const filtered = this.events.filter((event) => matchesFilters(event, filters))
+		return filtered.slice(0, limit)
+	}
+
 	/** Wait for events after an id or timeout. */
 	waitForAfter(after: number, filters: NetFilters, limit: number, timeoutMs: number): Promise<NetworkRequestSummary[]> {
 		const immediate = this.listAfter(after, filters, limit)
