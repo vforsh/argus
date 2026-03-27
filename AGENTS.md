@@ -30,6 +30,8 @@
 
 - **Public API must be documented (JSDoc)**: Any public API in `packages/*` (anything exported for consumption by other packages/apps) must have JSDoc. Document parameters, return values, and important invariants/edge cases so changes are safe to make later.
 
+- **Release hygiene**: Before `npm publish`, check the live registry versions with `npm view <pkg> version`. If the repo version already exists on npm, bump the affected package version(s) first, commit that bump, then publish. Do not discover this mid-publish.
+
 ---
 
 ## Critical Thinking
