@@ -7,6 +7,7 @@ import { handle as getLogs } from './routes/getLogs.js'
 import { handle as getTail } from './routes/getTail.js'
 import { handle as getNet } from './routes/getNet.js'
 import { handle as getNetTail } from './routes/getNetTail.js'
+import { handle as getAuthCookies } from './routes/getAuthCookies.js'
 import { handle as postEval } from './routes/postEval.js'
 import { handle as postTraceStart } from './routes/postTraceStart.js'
 import { handle as postTraceStop } from './routes/postTraceStop.js'
@@ -47,6 +48,7 @@ const routes: Record<string, RouteEntry> = {
 	'GET /tail': { handler: getTail },
 	'GET /net': { handler: getNet },
 	'GET /net/tail': { handler: getNetTail },
+	'GET /auth/cookies': { handler: getAuthCookies },
 	'POST /eval': { handler: postEval },
 	'POST /trace/start': { handler: postTraceStart },
 	'POST /trace/stop': { handler: postTraceStop },

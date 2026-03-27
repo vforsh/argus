@@ -63,6 +63,9 @@ export type NetRequestQuery = {
 	sinceTs?: number
 	timeoutMs?: number
 	grep?: string
+	origin?: string
+	domain?: string
+	includeValues?: boolean
 }
 
 /**
@@ -79,6 +82,7 @@ export type HttpRequestEvent = {
 		| 'tail'
 		| 'net'
 		| 'net/tail'
+		| 'auth/cookies'
 		| 'eval'
 		| 'trace/start'
 		| 'trace/stop'

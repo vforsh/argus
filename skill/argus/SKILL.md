@@ -176,6 +176,18 @@ argus storage local ls app
 argus storage local clear app
 ```
 
+### Auth
+
+```bash
+argus auth cookies app
+argus auth cookies app --show-values --json
+argus auth cookies app --for-origin --exclude-tracking
+argus auth export-cookies app --format netscape
+argus auth export-cookies app --for-origin --exclude-tracking
+```
+
+`auth cookies` lists browser cookies for the attached page, with optional domain/flag filters. `--for-origin` keeps first-party cookies for the current page origin, and `--exclude-tracking` hides common analytics cookies such as `_ga` / `_ym`. `auth export-cookies` emits cookie jars for companion CLIs (`netscape`, `json`, or `header`) and supports the same filters.
+
 ### Trace
 
 ```bash

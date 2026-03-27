@@ -6,6 +6,7 @@ import { registerWatcher } from './cli/register/registerWatcher.js'
 import { registerPage } from './cli/register/registerPage.js'
 import { registerLogs } from './cli/register/registerLogs.js'
 import { registerNet } from './cli/register/registerNet.js'
+import { registerAuth } from './cli/register/registerAuth.js'
 import { registerEval } from './cli/register/registerEval.js'
 import { registerDom } from './cli/register/registerDom.js'
 import { registerClick } from './cli/register/registerClick.js'
@@ -35,6 +36,7 @@ registerPage(program)
 // Inspect & debug
 registerLogs(program)
 registerNet(program)
+registerAuth(program)
 registerEval(program)
 registerCode(program)
 registerDom(program)

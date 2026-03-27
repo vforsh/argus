@@ -18,6 +18,7 @@ export type HttpRequestEventMetadata = {
 		| 'tail'
 		| 'net'
 		| 'net/tail'
+		| 'auth/cookies'
 		| 'eval'
 		| 'trace/start'
 		| 'trace/stop'
@@ -58,6 +59,9 @@ export type HttpRequestEventMetadata = {
 		sinceTs?: number
 		timeoutMs?: number
 		grep?: string
+		origin?: string
+		domain?: string
+		includeValues?: boolean
 	}
 	ts: number
 }
