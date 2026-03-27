@@ -25,7 +25,8 @@
 		"@vforsh/argus-core": "workspace:*"
 	},
 	"scripts": {
-		"build": "tsc -b",
+		"clean": "node ../../scripts/clean-dist.mjs",
+		"build": "npm run clean && tsc -b",
 		"typecheck": "tsc -b --pretty false --noEmit"
 	}
 }

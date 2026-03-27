@@ -34,7 +34,8 @@
 		"prettier": "3.7.4"
 	},
 	"scripts": {
-		"build": "tsc -b && bun run bundle",
+		"clean": "node ../../scripts/clean-dist.mjs",
+		"build": "npm run clean && tsc -b && bun run bundle",
 		"bundle": "bun build dist/bin.js --outfile dist/argus.js --target node",
 		"typecheck": "tsc -b --pretty false",
 		"chrome:start": "bun src/bin.ts chrome start"
