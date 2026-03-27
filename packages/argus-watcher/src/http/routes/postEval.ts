@@ -20,6 +20,7 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		const response: EvalResponse = await evaluateExpression(ctx.cdpSession, {
 			expression: payload.expression,
 			awaitPromise: normalizeBoolean(payload.awaitPromise, true),
+			replMode: normalizeBoolean(payload.replMode, true),
 			returnByValue: normalizeBoolean(payload.returnByValue, true),
 			timeoutMs: normalizeTimeout(payload.timeoutMs),
 		})

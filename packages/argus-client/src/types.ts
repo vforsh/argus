@@ -83,6 +83,11 @@ export type EvalOptions = {
 	expression: string
 	/** Await promises before returning. Defaults to true. */
 	awaitPromise?: boolean
+	/**
+	 * Enable Chrome's REPL mode for console-style evaluation.
+	 * Defaults to true and allows native top-level `await`.
+	 */
+	replMode?: boolean
 	/** Command timeout in milliseconds. */
 	timeoutMs?: number
 	/** Return by value when possible. Defaults to true. */

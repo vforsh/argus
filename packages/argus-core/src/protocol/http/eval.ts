@@ -2,6 +2,11 @@
 export type EvalRequest = {
 	expression: string
 	awaitPromise?: boolean
+	/**
+	 * Enable Chrome's REPL evaluation mode.
+	 * This allows native top-level `await` and console-like repeated declarations.
+	 */
+	replMode?: boolean
 	timeoutMs?: number
 	returnByValue?: boolean
 }

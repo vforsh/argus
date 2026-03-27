@@ -115,6 +115,38 @@ describe('playground smoke tests', () => {
 		expect(response.result).toBe(true)
 	})
 
+	test('eval supports native top-level await', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'eval', 'playground', 'await Promise.resolve(42)', '--json'], { env })
+		const response = JSON.parse(stdout) as EvalResponse
+		expect(response.ok).toBe(true)
+		expect(response.result).toBe(42)
+	})
+
+	test('eval supports top-level await from --file', async () => {
+		const scriptPath = path.join(tempDir, 'top-level-await.js')
+		await fs.writeFile(scriptPath, 'const value = await Promise.resolve(41)\nvalue + 1\n', 'utf8')
+
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'eval', 'playground', '--file', scriptPath, '--json'], { env })
+		const response = JSON.parse(stdout) as EvalResponse
+		expect(response.ok).toBe(true)
+		expect(response.result).toBe(42)
+	})
+
+	test('eval preserves promise-resolved object values', async () => {
+		const { stdout } = await runCommand(
+			'bun',
+			[BIN_PATH, 'eval', 'playground', 'Promise.resolve({ answer: 42, nested: { ok: true }, list: [1, 2] })', '--json'],
+			{ env },
+		)
+		const response = JSON.parse(stdout) as EvalResponse
+		expect(response.ok).toBe(true)
+		expect(response.result).toEqual({
+			answer: 42,
+			nested: { ok: true },
+			list: [1, 2],
+		})
+	})
+
 	// ─────────────────────────────────────────────────────────────────────────
 	// dom tree
 	// ─────────────────────────────────────────────────────────────────────────

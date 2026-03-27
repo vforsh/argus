@@ -5,6 +5,7 @@ export type EvalOnceInput = {
 	watcher: Pick<WatcherRecord, 'id' | 'host' | 'port'>
 	expression: string
 	awaitPromise: boolean
+	replMode?: boolean
 	returnByValue: boolean
 	timeoutMs?: number
 	failOnException: boolean
@@ -27,6 +28,7 @@ export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 	const body = {
 		expression: input.expression,
 		awaitPromise: input.awaitPromise,
+		replMode: input.replMode,
 		returnByValue: input.returnByValue,
 		timeoutMs: input.timeoutMs,
 	}
@@ -66,6 +68,7 @@ export const evalWithRetries = async (input: EvalWithRetriesInput): Promise<Eval
 			watcher: input.watcher,
 			expression: input.expression,
 			awaitPromise: input.awaitPromise,
+			replMode: input.replMode,
 			returnByValue: input.returnByValue,
 			timeoutMs: input.timeoutMs,
 			failOnException: input.failOnException,

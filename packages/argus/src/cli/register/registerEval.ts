@@ -111,6 +111,7 @@ Examples:
 			`
 Examples:
   $ argus eval-until app "document.querySelector('#loaded')"
+  $ argus eval-until app "await window.appReadyPromise"
   $ argus eval-until app "window.APP_READY" --interval 500
   $ argus eval-until app "document.title === 'Ready'" --total-timeout 30s
   $ argus eval-until app "window.data" --verbose

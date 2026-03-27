@@ -176,6 +176,7 @@ argus dom scroll app --by 0,300
 
 ```bash
 argus eval app "document.title"
+argus eval app "await fetch('/ping').then(r => r.status)"
 argus eval app "window.__APP_STATE__" --json
 argus eval-until app "document.querySelector('[data-ready]')"
 ```
