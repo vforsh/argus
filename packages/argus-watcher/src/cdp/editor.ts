@@ -1,6 +1,14 @@
-import type { CodeGrepMatch, CodeGrepResponse, CodeListResponse, CodeReadResponse, CodeResource, CodeResourceType } from '@vforsh/argus-core'
+import {
+	matchesTextPattern,
+	parseTextPattern,
+	type CodeGrepMatch,
+	type CodeGrepResponse,
+	type CodeListResponse,
+	type CodeReadResponse,
+	type CodeResource,
+	type CodeResourceType,
+} from '@vforsh/argus-core'
 import type { CdpEventMeta, CdpSessionHandle } from './connection.js'
-import { parseTextPattern } from './text-filter.js'
 
 type RuntimeResource = {
 	type: CodeResourceType
@@ -85,6 +93,7 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 			return {
 				ok: true,
 				resource: toCodeResource(resource),
+				source: lines.slice(startLineIndex, endLineIndex).join('\n'),
 				content,
 				totalLines,
 				startLine: startLineIndex + 1,
@@ -342,15 +351,7 @@ const normalizeSearchPattern = (pattern: string | undefined): string | null => {
 
 const matchesUrlPattern = (resource: RuntimeResource, pattern: string | null): boolean => !pattern || resource.url.toLowerCase().includes(pattern)
 
-const matchesLine = (line: string, pattern: ReturnType<typeof parseTextPattern>): boolean => {
-	if (pattern.type === 'exact') {
-		return line.includes(pattern.value)
-	}
-
-	const matched = pattern.regex.test(line)
-	pattern.regex.lastIndex = 0
-	return matched
-}
+const matchesLine = (line: string, pattern: ReturnType<typeof parseTextPattern>): boolean => matchesTextPattern(line, pattern)
 
 const getSessionOptions = (resource: RuntimeResource): { sessionId?: string } | undefined =>
 	resource.sessionId ? { sessionId: resource.sessionId } : undefined

@@ -126,9 +126,13 @@ argus code ls app
 argus code ls app --pattern inline
 argus code read inline://42 --id app
 argus code grep '/featureFlag/' --id app
+argus code grep showLogsByHost --id app --pretty
+argus code deminify http://127.0.0.1:3333/app.js --id app
+argus code strings app --url app.js
+argus code strings app --url app.js --kind url,identifier --match '/admin\\/api/'
 ```
 
-`code ls` lists runtime JS/CSS resources discovered through CDP. `code read` returns line-numbered source. `code grep` searches sources with plain strings or `/regex/flags`. Full runtime-code docs: [RUNTIME_CODE.md](./reference/RUNTIME_CODE.md)
+`code ls` lists runtime JS/CSS resources discovered through CDP. `code read` returns line-numbered source. `code grep` searches sources with plain strings or `/regex/flags`, and `--pretty` renders clipped context for humans. `code deminify` pretty-prints a runtime resource. `code strings` extracts high-signal string literals such as URLs, keys, and camelCase identifiers, ranks the most reverse-engineering-friendly values first, and supports `--kind` / `--match` for narrower scans. Full runtime-code docs: [RUNTIME_CODE.md](./reference/RUNTIME_CODE.md)
 
 ### Eval-Until
 

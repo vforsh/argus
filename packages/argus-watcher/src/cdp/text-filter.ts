@@ -1,27 +1,5 @@
+import { matchesTextPattern, parseTextPattern, type TextPattern } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
-
-type TextPattern = { type: 'exact'; value: string } | { type: 'regex'; regex: RegExp }
-
-const REGEX_PATTERN = /^\/(.+)\/([imsu]*)$/
-
-/**
- * Parse a text filter string into either an exact match or a regex pattern.
- * `/pattern/flags` syntax is treated as regex; everything else is exact match.
- */
-export const parseTextPattern = (text: string): TextPattern => {
-	const match = REGEX_PATTERN.exec(text)
-	if (!match) {
-		return { type: 'exact', value: text }
-	}
-
-	const [, pattern, flags] = match
-	try {
-		return { type: 'regex', regex: new RegExp(pattern!, flags) }
-	} catch (error) {
-		const msg = error instanceof Error ? error.message : String(error)
-		throw new Error(`Invalid regex in --text "${text}": ${msg}`)
-	}
-}
 
 /**
  * Filter CDP node IDs by textContent, supporting exact match and /regex/flags.
@@ -49,7 +27,7 @@ export const filterNodesByText = async (session: CdpSessionHandle, nodeIds: numb
 				filtered.push(nodeId)
 			}
 		} else {
-			if (pattern.regex.test(trimmedText)) {
+			if (matchesTextPattern(trimmedText, pattern)) {
 				filtered.push(nodeId)
 			}
 		}

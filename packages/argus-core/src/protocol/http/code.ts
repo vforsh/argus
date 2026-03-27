@@ -35,6 +35,8 @@ export type CodeReadRequest = {
 export type CodeReadResponse = {
 	ok: true
 	resource: CodeResource
+	/** Raw source text for the requested line slice. */
+	source: string
 	content: string
 	totalLines: number
 	startLine: number

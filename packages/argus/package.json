@@ -30,7 +30,8 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"commander": "14.0.2"
+		"commander": "14.0.2",
+		"prettier": "3.7.4"
 	},
 	"scripts": {
 		"build": "tsc -b && bun run bundle",

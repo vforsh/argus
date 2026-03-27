@@ -189,6 +189,16 @@ argus eval app "document.location.href" --iframe "#payment-frame"
 
 Cross-origin iframe eval works via postMessage helpers.
 
+### Reverse-engineer runtime bundles
+
+```bash
+argus code ls app
+argus code grep showLogsByHost --id app --pretty
+argus code deminify http://127.0.0.1:3000/app.js --id app
+argus code strings app --url app.js
+argus code strings app --url app.js --kind url,identifier --match '/admin\\/api/'
+```
+
 ### Capture evidence
 
 ```bash
@@ -263,7 +273,7 @@ Four packages:
 | `net` / `net tail`                                   | Fetch or stream network requests       |
 | `eval`                                               | Evaluate JS expression                 |
 | `eval-until` / `wait`                                | Poll JS expression until truthy        |
-| `code ls\|read\|grep`                                | Inspect runtime code                   |
+| `code ls\|read\|grep\|deminify\|strings`             | Inspect and analyze runtime code       |
 | `dom tree` / `dom info`                              | Inspect DOM                            |
 | `dom click\|hover\|scroll\|scroll-to\|fill\|keydown` | Interact with elements                 |
 | `dom add\|add-script\|remove\|set-file`              | Modify DOM                             |

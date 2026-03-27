@@ -6,7 +6,14 @@ import { chromium, type Browser } from 'playwright'
 import { getFreePort } from './helpers/ports.js'
 import { runCommand, spawnAndWait } from './helpers/process.js'
 import type { ChildProcess } from 'node:child_process'
-import type { EvalResponse, DomTreeResponse, DomInfoResponse, StorageLocalListResponse, ScreenshotResponse } from '@vforsh/argus-core'
+import type {
+	CodeListResponse,
+	DomInfoResponse,
+	DomTreeResponse,
+	EvalResponse,
+	ScreenshotResponse,
+	StorageLocalListResponse,
+} from '@vforsh/argus-core'
 import type * as http from 'node:http'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
@@ -19,6 +26,14 @@ describe('playground smoke tests', () => {
 	let watcherProc: ChildProcess
 	let mainServer: http.Server
 	let crossOriginServer: http.Server
+
+	const findResourceUrl = async (needle: string): Promise<string> => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'code', 'ls', 'playground', '--json'], { env })
+		const response = JSON.parse(stdout) as CodeListResponse
+		const resource = response.resources.find((entry) => entry.url.includes(needle))
+		expect(resource).toBeTruthy()
+		return resource!.url
+	}
 
 	beforeAll(async () => {
 		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-playground-smoke-'))
@@ -189,6 +204,62 @@ describe('playground smoke tests', () => {
 		expect(response.keys).toContain('playground:name')
 		expect(response.keys).toContain('playground:version')
 		expect(response.keys).toContain('playground:config')
+	})
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// runtime code
+	// ─────────────────────────────────────────────────────────────────────────
+
+	test('code deminify formats minified runtime resources', async () => {
+		const resourceUrl = await findResourceUrl('/minified-app.js')
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'code', 'deminify', resourceUrl, '--id', 'playground', '--json'], { env })
+		const response = JSON.parse(stdout) as { ok: boolean; changed: boolean; source: string; formatError: string | null }
+		expect(response.ok).toBe(true)
+		expect(response.changed).toBe(true)
+		expect(response.formatError).toBeNull()
+		expect(response.source).toContain('window.minifiedFixture = {')
+		expect(response.source).toContain('showLogsByHost: "/admin/api/showLogsByHost"')
+	})
+
+	test('code strings extracts high-signal runtime strings', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'code', 'strings', 'playground', '--url', 'minified-app.js', '--json'], { env })
+		const response = JSON.parse(stdout) as {
+			ok: boolean
+			matches: Array<{ value: string; kind: string }>
+		}
+		expect(response.ok).toBe(true)
+		expect(response.matches.some((match) => match.value === '/admin/api/showLogsByHost' && match.kind === 'url')).toBe(true)
+		expect(response.matches.some((match) => match.value === 'playground:feature.flag' && match.kind === 'key')).toBe(true)
+		expect(response.matches.some((match) => match.value === 'showLogsByHost' && match.kind === 'identifier')).toBe(true)
+		expect(response.matches[0]?.kind).toBe('url')
+		expect(response.matches[0]?.value.startsWith('/admin/api/')).toBe(true)
+	})
+
+	test('code strings supports kind and match filters', async () => {
+		const { stdout } = await runCommand(
+			'bun',
+			[BIN_PATH, 'code', 'strings', 'playground', '--url', 'minified-app.js', '--kind', 'identifier', '--match', 'showLogs', '--json'],
+			{ env },
+		)
+		const response = JSON.parse(stdout) as {
+			ok: boolean
+			matches: Array<{ value: string; kind: string }>
+		}
+		expect(response.ok).toBe(true)
+		expect(response.matches.length).toBeGreaterThan(0)
+		expect(response.matches.every((match) => match.kind === 'identifier')).toBe(true)
+		expect(response.matches.every((match) => match.value.includes('showLogs'))).toBe(true)
+	})
+
+	test('code grep pretty shows clipped context around matches', async () => {
+		const { stdout } = await runCommand(
+			'bun',
+			[BIN_PATH, 'code', 'grep', 'showLogsByHost', '--id', 'playground', '--url', 'minified-app.js', '--pretty'],
+			{ env },
+		)
+		expect(stdout).toContain('minified-app.js')
+		expect(stdout).toContain('[[showLogsByHost]]')
+		expect(stdout).toContain('/admin/api/showLogsByHost')
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────
