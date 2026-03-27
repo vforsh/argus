@@ -221,10 +221,10 @@ test('watcher + CLI e2e', async () => {
 				.filter(Boolean)
 			expect(untilLines.length).toBe(2)
 
-			// 8. Assert `argus tail`
+			// 8. Assert `argus logs tail`
 			const tailMsg = `tail message ${Date.now()}`
 
-			const tailProcPromise = spawnAndWait('bun', [BIN_PATH, 'tail', watcherId, '--json'], { env }, new RegExp(tailMsg))
+			const tailProcPromise = spawnAndWait('bun', [BIN_PATH, 'logs', 'tail', watcherId, '--json'], { env }, new RegExp(tailMsg))
 
 			// Give tail a moment to start long-polling
 			await new Promise((r) => setTimeout(r, 1000))
@@ -253,7 +253,7 @@ test('watcher + CLI e2e', async () => {
 			// 8d. `argus browser status` should work like `argus chrome status`
 			const { stdout: browserStatusOut } = await runCommand(
 				'bun',
-				[BIN_PATH, 'browser', 'status', '--host', '127.0.0.1', '--port', String(debugPort), '--json'],
+				[BIN_PATH, 'browser', 'status', '--cdp', `127.0.0.1:${debugPort}`, '--json'],
 				{ env },
 			)
 			const browserStatus = JSON.parse(browserStatusOut) as { Browser?: string }
