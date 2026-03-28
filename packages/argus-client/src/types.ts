@@ -69,6 +69,10 @@ export type NetOptions = {
 	since?: string | number
 	/** Substring match over redacted URLs. */
 	grep?: string
+	/** Ignore requests by host name (exact host or subdomain match). */
+	ignoreHost?: string[]
+	/** Ignore requests whose URL contains one of these substrings. */
+	ignorePattern?: string[]
 }
 
 /** Network request summary results with pagination cursor. */

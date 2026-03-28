@@ -3,6 +3,8 @@ import type { NetworkRequestSummary } from '@vforsh/argus-core'
 export type NetFilters = {
 	grep?: string
 	sinceTs?: number
+	ignoreHosts?: string[]
+	ignorePatterns?: string[]
 }
 
 type Waiter = {
@@ -76,6 +78,13 @@ export class NetBuffer {
 		}
 	}
 
+	/** Clear buffered network events and return the number removed. */
+	clear(): number {
+		const cleared = this.events.length
+		this.events = []
+		return cleared
+	}
+
 	private trim(): void {
 		if (this.events.length <= this.maxSize) {
 			return
@@ -107,13 +116,52 @@ const matchesFilters = (event: NetworkRequestSummary, filters: NetFilters): bool
 		return false
 	}
 
+	const haystack = event.url.toLowerCase()
+
 	if (filters.grep) {
-		const haystack = event.url.toLowerCase()
 		const needle = filters.grep.toLowerCase()
 		if (!haystack.includes(needle)) {
 			return false
 		}
 	}
 
+	if (filters.ignorePatterns && filters.ignorePatterns.length > 0) {
+		for (const pattern of filters.ignorePatterns) {
+			if (haystack.includes(pattern.toLowerCase())) {
+				return false
+			}
+		}
+	}
+
+	if (filters.ignoreHosts && filters.ignoreHosts.length > 0 && shouldIgnoreHost(event.url, filters.ignoreHosts)) {
+		return false
+	}
+
 	return true
+}
+
+const shouldIgnoreHost = (url: string, ignoreHosts: string[]): boolean => {
+	let parsed: URL | null = null
+	try {
+		parsed = new URL(url)
+	} catch {
+		parsed = null
+	}
+
+	const hostname = parsed?.hostname?.toLowerCase()
+	const host = parsed?.host?.toLowerCase()
+	for (const candidate of ignoreHosts) {
+		const normalized = candidate.toLowerCase()
+		if (!normalized) {
+			continue
+		}
+		if (hostname && (hostname === normalized || hostname.endsWith(`.${normalized}`))) {
+			return true
+		}
+		if (host && host === normalized) {
+			return true
+		}
+	}
+
+	return false
 }

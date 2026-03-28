@@ -29,3 +29,10 @@ export type NetTailResponse = {
 	nextAfter: number
 	timedOut: boolean
 }
+
+/** Response payload for POST /net/clear. */
+export type NetClearResponse = {
+	ok: true
+	/** Number of buffered requests removed. */
+	cleared: number
+}

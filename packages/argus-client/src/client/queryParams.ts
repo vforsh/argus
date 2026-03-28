@@ -65,6 +65,9 @@ export const buildNetParams = (options: NetOptions): URLSearchParams => {
 		params.set('grep', grep)
 	}
 
+	appendRepeatedQueryValues(params, 'ignoreHost', options.ignoreHost)
+	appendRepeatedQueryValues(params, 'ignorePattern', options.ignorePattern)
+
 	return params
 }
 
@@ -131,6 +134,20 @@ const normalizeQueryValue = (value?: string): string | undefined => {
 
 	const trimmed = value.trim()
 	return trimmed ? trimmed : undefined
+}
+
+const appendRepeatedQueryValues = (params: URLSearchParams, key: string, values?: string[]): void => {
+	if (!values || values.length === 0) {
+		return
+	}
+
+	for (const value of values) {
+		const normalized = normalizeQueryValue(value)
+		if (!normalized) {
+			throw new Error(`Invalid ${key} value: ${value}`)
+		}
+		params.append(key, normalized)
+	}
 }
 
 const parseDurationOrThrow = (value: string): number => {

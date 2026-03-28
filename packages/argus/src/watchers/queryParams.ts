@@ -86,6 +86,26 @@ export const appendNetFilterParams = (params: URLSearchParams, options: { grep?:
 	}
 }
 
+export const appendNetIgnoreParams = (params: URLSearchParams, options: { ignoreHost?: string[]; ignorePattern?: string[] }): { error?: string } => {
+	const hosts = normalizeRepeatedValues(options.ignoreHost)
+	if (hosts.error) {
+		return hosts
+	}
+	for (const value of hosts.values) {
+		params.append('ignoreHost', value)
+	}
+
+	const patterns = normalizeRepeatedValues(options.ignorePattern)
+	if (patterns.error) {
+		return patterns
+	}
+	for (const value of patterns.values) {
+		params.append('ignorePattern', value)
+	}
+
+	return {}
+}
+
 export const normalizeMatchPatterns = (match?: string[]): { patterns: string[]; error?: string } => {
 	if (!match || match.length === 0) {
 		return { patterns: [] }
@@ -107,4 +127,17 @@ export const resolveMatchCase = (options: MatchCaseOptions): 'sensitive' | 'inse
 		return 'insensitive'
 	}
 	return undefined
+}
+
+const normalizeRepeatedValues = (values?: string[]): { values: string[]; error?: string } => {
+	if (!values || values.length === 0) {
+		return { values: [] }
+	}
+
+	const normalized = values.map((value) => value.trim())
+	if (normalized.some((value) => value.length === 0)) {
+		return { values: [], error: 'Invalid empty filter value.' }
+	}
+
+	return { values: normalized }
 }

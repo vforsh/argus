@@ -1,16 +1,13 @@
 import type { NetResponse } from '@vforsh/argus-core'
+import type { NetCliListOptions } from './netShared.js'
+import { appendNetCommandParams } from './netShared.js'
 import { formatNetworkRequest } from '../output/format.js'
 import { createOutput } from '../output/io.js'
 import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
-import { appendAfterLimitParams, appendNetFilterParams, appendSinceParam } from '../watchers/queryParams.js'
 
 /** Options for the net command. */
-export type NetOptions = {
+export type NetOptions = NetCliListOptions & {
 	json?: boolean
-	after?: string
-	limit?: string
-	since?: string
-	grep?: string
 }
 
 /** Execute the net command for a watcher id. */
@@ -18,11 +15,9 @@ export const runNet = async (id: string | undefined, options: NetOptions): Promi
 	const output = createOutput(options)
 
 	const params = new URLSearchParams()
-	appendAfterLimitParams(params, options)
-	appendNetFilterParams(params, options)
-	const since = appendSinceParam(params, options.since)
-	if (since.error) {
-		output.writeWarn(since.error)
+	const query = appendNetCommandParams(params, options)
+	if (query.error) {
+		output.writeWarn(query.error)
 		process.exitCode = 2
 		return
 	}

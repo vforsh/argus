@@ -161,10 +161,16 @@ argus screenshot app --selector "canvas" --out canvas.png
 ```bash
 argus net app --since 5m
 argus net app --grep api
+argus net clear app
+argus net watch app --reload --settle 3s
+argus net watch app --reload --settle 3s --ignore-pattern /poll
+argus net summary app
 argus net app --json
 argus net tail app
 argus net tail app --grep api --json
 ```
+
+`net clear` resets the watcher’s buffered requests so the next inspection starts clean. `net watch` is the tight loop command: optionally clear, optionally reload, wait for the settle window, then report the captured requests. `net summary` rolls the current buffer into status counts, failures, slowest requests, largest transfers, top hosts, and navigation timing when available.
 
 ### Storage
 

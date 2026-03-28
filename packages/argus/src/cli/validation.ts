@@ -1,5 +1,6 @@
 export const collectMatch = (value: string, previous: string[]): string[] => [...previous, value]
 export const collectParam = (value: string, previous: string[]): string[] => [...previous, value]
+export const collectValues = (value: string, previous: string[]): string[] => [...previous, value]
 
 export const validateCaseFlags = (options: { ignoreCase?: boolean; caseSensitive?: boolean }): boolean => {
 	if (options.ignoreCase && options.caseSensitive) {
