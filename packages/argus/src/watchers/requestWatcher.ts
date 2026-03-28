@@ -1,4 +1,4 @@
-import type { WatcherRecord } from '@vforsh/argus-core'
+import type { ErrorResponse, WatcherRecord } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
 import type { HttpOptions } from '../httpClient.js'
 import { fetchJson } from '../httpClient.js'
@@ -114,6 +114,45 @@ export function writeRequestError(result: WatcherRequestError, output: Output): 
 		output.writeWarn('Hint: run `argus list` to see all watchers.')
 	}
 	process.exitCode = result.exitCode
+}
+
+/** Write an ErrorResponse using JSON/stdout vs human/stderr conventions. */
+export function writeErrorResponse(response: ErrorResponse, output: Output): void {
+	if (output.json) {
+		output.writeJson(response)
+	} else {
+		output.writeWarn(`Error: ${response.error.message}`)
+	}
+	process.exitCode = 1
+}
+
+/**
+ * Resolve a watcher, perform a request, and normalize transport/API errors for command handlers.
+ * Returns the success payload or `null` once output/exitCode has already been handled.
+ */
+export async function requestWatcherAction<T extends { ok: true }>(
+	input: WatcherRequestInput,
+	output: Output,
+): Promise<{ watcher: WatcherRecord; data: T } | null> {
+	const result = await requestWatcherJson<T | ErrorResponse>({
+		...input,
+		returnErrorResponse: true,
+	})
+
+	if (!result.ok) {
+		writeRequestError(result, output)
+		return null
+	}
+
+	if (!result.data.ok) {
+		writeErrorResponse(result.data as ErrorResponse, output)
+		return null
+	}
+
+	return {
+		watcher: result.watcher,
+		data: result.data as T,
+	}
 }
 
 /** Write resolve-watcher error output. */

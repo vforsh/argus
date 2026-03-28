@@ -1,5 +1,5 @@
 import type { CdpSessionHandle } from './connection.js'
-import type { CdpTarget } from './watcher.js'
+import type { CdpTarget } from './watcherTargets.js'
 
 export type PageIndicatorPosition =
 	| 'top-left'

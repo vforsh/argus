@@ -1,6 +1,7 @@
-import type { DomModifyResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DomModifyResponse } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { requireSelector, writeNoElementFound } from './dom/shared.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared utilities
@@ -27,42 +28,29 @@ const executeModify = async (
 	successMessage: (resp: DomModifyResponse) => string,
 ): Promise<void> => {
 	const output = createOutput(options)
-
-	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector or --testid is required')
-		process.exitCode = 2
+	const selector = requireSelector(options, output)
+	if (!selector) {
 		return
 	}
 
-	const body = options.text != null ? { ...payload, text: options.text } : payload
-
-	const result = await requestWatcherJson<DomModifyResponse | ErrorResponse>({
-		id,
-		path: '/dom/modify',
-		method: 'POST',
-		body,
-		timeoutMs: 30_000,
-		returnErrorResponse: true,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
+	const result = await requestWatcherAction<DomModifyResponse>(
+		{
+			id,
+			path: '/dom/modify',
+			method: 'POST',
+			body: {
+				...payload,
+				selector,
+				...(options.text != null ? { text: options.text } : {}),
+			},
+			timeoutMs: 30_000,
+		},
+		output,
+	)
+	if (!result) {
 		return
 	}
-
-	const response = result.data
-	if (!response.ok) {
-		const errorResp = response as ErrorResponse
-		if (options.json) {
-			output.writeJson(response)
-		} else {
-			output.writeWarn(`Error: ${errorResp.error.message}`)
-		}
-		process.exitCode = 1
-		return
-	}
-
-	const successResp = response as DomModifyResponse
+	const successResp = result.data
 
 	if (options.json) {
 		output.writeJson(successResp)
@@ -70,8 +58,7 @@ const executeModify = async (
 	}
 
 	if (successResp.matches === 0) {
-		output.writeWarn(`No element found for selector: ${options.selector}`)
-		process.exitCode = 1
+		writeNoElementFound(selector, output)
 		return
 	}
 

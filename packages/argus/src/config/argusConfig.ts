@@ -68,6 +68,12 @@ const invalidConfigPath = (configPath: string, message: string): null => {
 	return null
 }
 
+const assignDefined = <T extends object, K extends keyof T>(target: T, key: K, value: T[K] | undefined): void => {
+	if (value !== undefined) {
+		target[key] = value
+	}
+}
+
 const validateOptionalString = (value: unknown, label: string): { ok: true; value?: string } | { ok: false; error: string } => {
 	if (value === undefined) {
 		return { ok: true }
@@ -116,6 +122,38 @@ const validateOptionalPageConsoleLogging = (
 	return { ok: true, value: value as PageConsoleLogging }
 }
 
+const validateOptionalStringArray = (value: unknown, label: string): { ok: true; value?: string[] } | { ok: false; error: string } => {
+	if (value === undefined) {
+		return { ok: true }
+	}
+	if (!Array.isArray(value)) {
+		return { ok: false, error: `${label} must be an array of strings.` }
+	}
+	for (const [index, item] of value.entries()) {
+		if (typeof item !== 'string') {
+			return { ok: false, error: `${label}[${index}] must be a string.` }
+		}
+		if (item.trim() === '') {
+			return { ok: false, error: `${label}[${index}] must be a non-empty string.` }
+		}
+	}
+	return { ok: true, value }
+}
+
+const validateOptionalSection = <T>(
+	value: unknown,
+	label: string,
+	validate: (section: Record<string, unknown>) => { ok: true; value: T } | { ok: false; error: string },
+): { ok: true; value?: T } | { ok: false; error: string } => {
+	if (value === undefined) {
+		return { ok: true }
+	}
+	if (!isRecord(value)) {
+		return { ok: false, error: `${label} must be an object.` }
+	}
+	return validate(value)
+}
+
 const validateChromeStartConfig = (value: unknown): { ok: true; value: ChromeStartConfig } | { ok: false; error: string } => {
 	if (!isRecord(value)) {
 		return { ok: false, error: '"chrome.start" must be an object.' }
@@ -150,21 +188,11 @@ const validateChromeStartConfig = (value: unknown): { ok: true; value: ChromeSta
 	}
 
 	const config: ChromeStartConfig = {}
-	if (urlResult.value !== undefined) {
-		config.url = urlResult.value
-	}
-	if (watcherIdResult.value !== undefined) {
-		config.watcherId = watcherIdResult.value
-	}
-	if (profileResult.value !== undefined) {
-		config.profile = profileResult.value as ChromeStartConfig['profile']
-	}
-	if (devToolsResult.value !== undefined) {
-		config.devTools = devToolsResult.value
-	}
-	if (headlessResult.value !== undefined) {
-		config.headless = headlessResult.value
-	}
+	assignDefined(config, 'url', urlResult.value)
+	assignDefined(config, 'watcherId', watcherIdResult.value)
+	assignDefined(config, 'profile', profileResult.value as ChromeStartConfig['profile'] | undefined)
+	assignDefined(config, 'devTools', devToolsResult.value)
+	assignDefined(config, 'headless', headlessResult.value)
 
 	return { ok: true, value: config }
 }
@@ -239,30 +267,14 @@ const validateWatcherStartConfig = (value: unknown): { ok: true; value: WatcherS
 	}
 
 	const config: WatcherStartConfig = {}
-	if (idResult.value !== undefined) {
-		config.id = idResult.value
-	}
-	if (urlResult.value !== undefined) {
-		config.url = urlResult.value
-	}
-	if (chromeHostResult.value !== undefined) {
-		config.chromeHost = chromeHostResult.value
-	}
-	if (chromePortResult.value !== undefined) {
-		config.chromePort = chromePortResult.value
-	}
-	if (artifactsResult.value !== undefined) {
-		config.artifacts = artifactsResult.value
-	}
-	if (pageIndicatorResult.value !== undefined) {
-		config.pageIndicator = pageIndicatorResult.value
-	}
-	if (pageConsoleLoggingResult.value !== undefined) {
-		config.pageConsoleLogging = pageConsoleLoggingResult.value
-	}
-	if (injectResult.value !== undefined) {
-		config.inject = injectResult.value
-	}
+	assignDefined(config, 'id', idResult.value)
+	assignDefined(config, 'url', urlResult.value)
+	assignDefined(config, 'chromeHost', chromeHostResult.value)
+	assignDefined(config, 'chromePort', chromePortResult.value)
+	assignDefined(config, 'artifacts', artifactsResult.value)
+	assignDefined(config, 'pageIndicator', pageIndicatorResult.value)
+	assignDefined(config, 'pageConsoleLogging', pageConsoleLoggingResult.value)
+	assignDefined(config, 'inject', injectResult.value)
 
 	return { ok: true, value: config }
 }
@@ -272,55 +284,40 @@ const validateArgusConfig = (value: unknown): { ok: true; value: ArgusConfig } |
 		return { ok: false, error: 'Config root must be an object.' }
 	}
 
-	let plugins: ArgusConfig['plugins']
-	if (value.plugins !== undefined) {
-		if (!Array.isArray(value.plugins)) {
-			return { ok: false, error: '"plugins" must be an array of strings.' }
-		}
-		for (const [index, item] of value.plugins.entries()) {
-			if (typeof item !== 'string') {
-				return { ok: false, error: `"plugins[${index}]" must be a string.` }
-			}
-			if (item.trim() === '') {
-				return { ok: false, error: `"plugins[${index}]" must be a non-empty string.` }
-			}
-		}
-		plugins = value.plugins
+	const pluginsResult = validateOptionalStringArray(value.plugins, '"plugins"')
+	if (!pluginsResult.ok) {
+		return pluginsResult
 	}
 
-	let chromeConfig: ArgusConfig['chrome']
-	if (value.chrome !== undefined) {
-		if (!isRecord(value.chrome)) {
-			return { ok: false, error: '"chrome" must be an object.' }
+	const chromeResult = validateOptionalSection<ArgusConfig['chrome']>(value.chrome, '"chrome"', (section) => {
+		if (section.start === undefined) {
+			return { ok: true, value: {} }
 		}
-		if (value.chrome.start !== undefined) {
-			const chromeStartResult = validateChromeStartConfig(value.chrome.start)
-			if (!chromeStartResult.ok) {
-				return chromeStartResult
-			}
-			chromeConfig = { start: chromeStartResult.value }
-		} else {
-			chromeConfig = {}
+		const startResult = validateChromeStartConfig(section.start)
+		if (!startResult.ok) {
+			return startResult
 		}
+		return { ok: true, value: { start: startResult.value } }
+	})
+	if (!chromeResult.ok) {
+		return chromeResult
 	}
 
-	let watcherConfig: ArgusConfig['watcher']
-	if (value.watcher !== undefined) {
-		if (!isRecord(value.watcher)) {
-			return { ok: false, error: '"watcher" must be an object.' }
+	const watcherResult = validateOptionalSection<ArgusConfig['watcher']>(value.watcher, '"watcher"', (section) => {
+		if (section.start === undefined) {
+			return { ok: true, value: {} }
 		}
-		if (value.watcher.start !== undefined) {
-			const watcherStartResult = validateWatcherStartConfig(value.watcher.start)
-			if (!watcherStartResult.ok) {
-				return watcherStartResult
-			}
-			watcherConfig = { start: watcherStartResult.value }
-		} else {
-			watcherConfig = {}
+		const startResult = validateWatcherStartConfig(section.start)
+		if (!startResult.ok) {
+			return startResult
 		}
+		return { ok: true, value: { start: startResult.value } }
+	})
+	if (!watcherResult.ok) {
+		return watcherResult
 	}
 
-	return { ok: true, value: { chrome: chromeConfig, watcher: watcherConfig, plugins } }
+	return { ok: true, value: { chrome: chromeResult.value, watcher: watcherResult.value, plugins: pluginsResult.value } }
 }
 
 export const resolveArgusConfigPath = ({ cliPath, cwd }: { cliPath?: string; cwd: string }): string | null => {

@@ -1,11 +1,11 @@
 import { readFile } from 'node:fs/promises'
-import type { DomFillResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DomFillResponse } from '@vforsh/argus-core'
 import { createOutput, type Output } from '../output/io.js'
 import { formatError } from '../cli/parse.js'
 import { readStdin } from './evalShared.js'
-import { parseDurationMs } from '../time.js'
 import { resolvePath } from '../utils/paths.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { parseWaitDuration, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom fill command. */
 export type DomFillOptions = {
@@ -93,15 +93,9 @@ export const runDomFill = async (id: string | undefined, value: string | undefin
 		return
 	}
 
-	let waitMs = 0
-	if (options.wait != null) {
-		const parsed = parseDurationMs(options.wait)
-		if (parsed == null || parsed < 0) {
-			output.writeWarn('Invalid --wait value: expected a duration like 5s, 500ms, 2m.')
-			process.exitCode = 2
-			return
-		}
-		waitMs = parsed
+	const waitMs = parseWaitDuration(options.wait, output)
+	if (waitMs == null) {
+		return
 	}
 
 	const body: Record<string, unknown> = {
@@ -114,33 +108,20 @@ export const runDomFill = async (id: string | undefined, value: string | undefin
 		body.wait = waitMs
 	}
 
-	const result = await requestWatcherJson<DomFillResponse | ErrorResponse>({
-		id,
-		path: '/dom/fill',
-		method: 'POST',
-		body,
-		timeoutMs: Math.max(30_000, waitMs + 5_000),
-		returnErrorResponse: true,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
+	const result = await requestWatcherAction<DomFillResponse>(
+		{
+			id,
+			path: '/dom/fill',
+			method: 'POST',
+			body,
+			timeoutMs: Math.max(30_000, waitMs + 5_000),
+		},
+		output,
+	)
+	if (!result) {
 		return
 	}
-
-	const response = result.data
-	if (!response.ok) {
-		const errorResp = response as ErrorResponse
-		if (options.json) {
-			output.writeJson(response)
-		} else {
-			output.writeWarn(`Error: ${errorResp.error.message}`)
-		}
-		process.exitCode = 1
-		return
-	}
-
-	const successResp = response as DomFillResponse
+	const successResp = result.data
 
 	if (options.json) {
 		output.writeJson(successResp)
@@ -148,8 +129,7 @@ export const runDomFill = async (id: string | undefined, value: string | undefin
 	}
 
 	if (successResp.matches === 0) {
-		output.writeWarn(`No element found for selector: ${options.selector}`)
-		process.exitCode = 1
+		writeNoElementFound(options.selector, output)
 		return
 	}
 

@@ -1,6 +1,7 @@
-import type { DomScrollResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DomScrollResponse } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { parseXY, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom scroll command. */
 export type DomScrollOptions = {
@@ -64,33 +65,20 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 		body.y = y
 	}
 
-	const result = await requestWatcherJson<DomScrollResponse | ErrorResponse>({
-		id,
-		path: '/dom/scroll',
-		method: 'POST',
-		body,
-		timeoutMs: 30_000,
-		returnErrorResponse: true,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
+	const result = await requestWatcherAction<DomScrollResponse>(
+		{
+			id,
+			path: '/dom/scroll',
+			method: 'POST',
+			body,
+			timeoutMs: 30_000,
+		},
+		output,
+	)
+	if (!result) {
 		return
 	}
-
-	const response = result.data
-	if (!response.ok) {
-		const errorResp = response as ErrorResponse
-		if (options.json) {
-			output.writeJson(response)
-		} else {
-			output.writeWarn(`Error: ${errorResp.error.message}`)
-		}
-		process.exitCode = 1
-		return
-	}
-
-	const successResp = response as DomScrollResponse
+	const successResp = result.data
 
 	if (options.json) {
 		output.writeJson(successResp)
@@ -99,8 +87,7 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 
 	if (hasSelector) {
 		if (successResp.matches === 0) {
-			output.writeWarn(`No element found for selector: ${options.selector}`)
-			process.exitCode = 1
+			writeNoElementFound(options.selector!, output)
 			return
 		}
 		const label = successResp.scrolled === 1 ? 'element' : 'elements'
@@ -110,17 +97,4 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 	} else {
 		output.writeHuman(`Emulated scroll at viewport center by (${delta.x}, ${delta.y})`)
 	}
-}
-
-const parseXY = (value: string): { x: number; y: number } | null => {
-	const parts = value.split(',')
-	if (parts.length !== 2) {
-		return null
-	}
-	const x = Number(parts[0])
-	const y = Number(parts[1])
-	if (!Number.isFinite(x) || !Number.isFinite(y)) {
-		return null
-	}
-	return { x, y }
 }

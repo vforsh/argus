@@ -1,8 +1,9 @@
 import type { DomFillRequest, DomFillResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
+import { respondMultipleMatches } from './domSelectorRoute.js'
 import { emitRequest } from './types.js'
 import { fillResolvedNodes } from '../../cdp/dom.js'
-import { getDomRootId, resolveSelectorMatches, waitForSelectorMatches } from '../../cdp/dom/selector.js'
+import { resolveSelectorTargets } from '../../cdp/dom/selector.js'
 import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
 
 export const handle: RouteHandler = async (req, res, _url, ctx) => {
@@ -32,34 +33,15 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 	emitRequest(ctx, res, 'dom/fill')
 
 	try {
-		let allNodeIds: number[]
-		let nodeIds: number[]
-
-		if (waitMs > 0) {
-			await ctx.cdpSession.sendAndWait('DOM.enable')
-			const result = await waitForSelectorMatches(ctx.cdpSession, payload.selector, all, payload.text, waitMs)
-			allNodeIds = result.allNodeIds
-			nodeIds = result.nodeIds
-		} else {
-			await ctx.cdpSession.sendAndWait('DOM.enable')
-			const rootId = await getDomRootId(ctx.cdpSession)
-			const result = await resolveSelectorMatches(ctx.cdpSession, rootId, payload.selector, all, payload.text)
-			allNodeIds = result.allNodeIds
-			nodeIds = result.nodeIds
-		}
+		const { allNodeIds, nodeIds } = await resolveSelectorTargets(ctx.cdpSession, {
+			selector: payload.selector,
+			all,
+			text: payload.text,
+			waitMs,
+		})
 
 		if (!all && allNodeIds.length > 1) {
-			return respondJson(
-				res,
-				{
-					ok: false,
-					error: {
-						message: `Selector matched ${allNodeIds.length} elements; pass all=true to fill all matches`,
-						code: 'multiple_matches',
-					},
-				},
-				400,
-			)
+			return respondMultipleMatches(res, allNodeIds.length, 'fill')
 		}
 
 		const filledCount = await fillResolvedNodes(ctx.cdpSession, nodeIds, payload.value)

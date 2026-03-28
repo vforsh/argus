@@ -15,6 +15,7 @@ import type {
 	StorageLocalListResponse,
 } from '@vforsh/argus-core'
 import type * as http from 'node:http'
+import { startPlaygroundServers, waitForWatcherReady } from '../playground/harness.ts'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -44,12 +45,10 @@ describe('playground smoke tests', () => {
 		const crossOriginPort = await getFreePort()
 
 		// 1. Start playground servers
-		const { startServer } = await import('../playground/serve.js')
-
-		mainServer = startServer({ port: mainPort, crossOriginPort })
+		const servers = startPlaygroundServers({ port: mainPort, crossOriginPort })
+		mainServer = servers.mainServer
+		crossOriginServer = servers.crossOriginServer
 		await new Promise<void>((resolve) => mainServer.on('listening', resolve))
-
-		crossOriginServer = startServer({ port: crossOriginPort })
 		await new Promise<void>((resolve) => crossOriginServer.on('listening', resolve))
 
 		// 2. Launch browser
@@ -84,20 +83,7 @@ describe('playground smoke tests', () => {
 		const watcherInfo = JSON.parse(watcherStdout)
 
 		// 4. Wait for attachment
-		let attached = false
-		for (let i = 0; i < 50; i++) {
-			try {
-				const res = await fetch(`http://127.0.0.1:${watcherInfo.port}/status`)
-				const status = (await res.json()) as { attached: boolean }
-				if (status.attached) {
-					attached = true
-					break
-				}
-			} catch {
-				// ignore connection errors during startup
-			}
-			await new Promise((r) => setTimeout(r, 200))
-		}
+		const attached = await waitForWatcherReady(watcherInfo.port)
 		expect(attached).toBe(true)
 	})
 

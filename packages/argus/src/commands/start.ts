@@ -1,10 +1,10 @@
 import { rmSync } from 'node:fs'
-import { startWatcher, type WatcherHandle, type PageConsoleLogging } from '@vforsh/argus-watcher'
+import type { PageConsoleLogging } from '@vforsh/argus-watcher'
 import { launchChrome, type LaunchChromeResult } from './chromeStart.js'
 import { createOutput } from '../output/io.js'
 import type { WatcherInjectConfig } from '../config/argusConfig.js'
-import { resolvePath } from '../utils/paths.js'
-import { buildWatcherMatch, normalizeHttpUrl, registerTerminationHandlers, resolveInjectScript, waitForever } from './startShared.js'
+import { buildWatcherMatch, normalizeHttpUrl, registerTerminationHandlers, waitForever } from './startShared.js'
+import { startManagedWatcher } from './watcherSession.js'
 
 export type StartOptions = {
 	id: string
@@ -85,41 +85,22 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 
 	const match = buildWatcherMatch(options)
 
-	let artifactsBaseDir: string | undefined
-	if (options.artifacts != null) {
-		const trimmed = options.artifacts.trim()
-		if (trimmed === '') {
-			output.writeWarn('--artifacts must be a non-empty path when provided.')
-			chrome.cleanup()
-			process.exitCode = 2
-			return
-		}
-		artifactsBaseDir = resolvePath(trimmed)
-	}
-
-	const inject = await resolveInjectScript(options.inject, output)
-
-	let handle: WatcherHandle
-	try {
-		handle = await startWatcher({
-			id: watcherId,
-			source: 'cdp',
-			match,
-			chrome: { host: chrome.cdpHost, port: chrome.cdpPort },
-			host: '127.0.0.1',
-			port: 0,
-			net: { enabled: true },
-			pageIndicator: options.pageIndicator === false ? { enabled: false } : { enabled: true },
-			artifacts: artifactsBaseDir ? { base: artifactsBaseDir } : undefined,
-			pageConsoleLogging: options.pageConsoleLogging,
-			inject: inject ?? undefined,
-		})
-	} catch (error) {
-		output.writeWarn(`Failed to start watcher: ${error instanceof Error ? error.message : error}`)
+	const startedWatcher = await startManagedWatcher({
+		output,
+		watcherId,
+		source: 'cdp',
+		match,
+		chrome: { host: chrome.cdpHost, port: chrome.cdpPort },
+		pageIndicator: options.pageIndicator,
+		artifacts: options.artifacts,
+		pageConsoleLogging: options.pageConsoleLogging,
+		inject: options.inject,
+	})
+	if (!startedWatcher) {
 		chrome.cleanup()
-		process.exitCode = 1
 		return
 	}
+	const { handle } = startedWatcher
 
 	// --- Cleanup on exit ---
 	const shutdown = async () => {
@@ -138,16 +119,6 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 			} catch {}
 		}
 		void handle.close().then(() => process.exit(0))
-	})
-
-	// --- CDP events ---
-	handle.events.on('cdpAttached', ({ target }) => {
-		const typeInfo = target?.type ? ` (type: ${target.type})` : ''
-		output.writeHuman(`[${watcherId}] CDP attached: ${target?.title} (${target?.url})${typeInfo}`)
-	})
-
-	handle.events.on('cdpDetached', ({ reason, target }) => {
-		output.writeHuman(`[${watcherId}] CDP detached: ${reason} (last target: ${target?.title})`)
 	})
 
 	// --- Output ---

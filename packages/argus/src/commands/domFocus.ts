@@ -1,6 +1,7 @@
-import type { DomFocusResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DomFocusResponse } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { requireSelector, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom focus command. */
 export type DomFocusOptions = {
@@ -13,43 +14,29 @@ export type DomFocusOptions = {
 /** Execute the dom focus command for a watcher id. */
 export const runDomFocus = async (id: string | undefined, options: DomFocusOptions): Promise<void> => {
 	const output = createOutput(options)
-	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector or --testid is required')
-		process.exitCode = 2
+	const selector = requireSelector(options, output)
+	if (!selector) {
 		return
 	}
 
-	const result = await requestWatcherJson<DomFocusResponse | ErrorResponse>({
-		id,
-		path: '/dom/focus',
-		method: 'POST',
-		body: {
-			selector: options.selector,
-			all: options.all ?? false,
-			text: options.text,
+	const result = await requestWatcherAction<DomFocusResponse>(
+		{
+			id,
+			path: '/dom/focus',
+			method: 'POST',
+			body: {
+				selector,
+				all: options.all ?? false,
+				text: options.text,
+			},
+			timeoutMs: 30_000,
 		},
-		timeoutMs: 30_000,
-		returnErrorResponse: true,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
+		output,
+	)
+	if (!result) {
 		return
 	}
-
-	const response = result.data
-	if (!response.ok) {
-		const errorResp = response as ErrorResponse
-		if (options.json) {
-			output.writeJson(response)
-		} else {
-			output.writeWarn(`Error: ${errorResp.error.message}`)
-		}
-		process.exitCode = 1
-		return
-	}
-
-	const successResp = response as DomFocusResponse
+	const successResp = result.data
 
 	if (options.json) {
 		output.writeJson(successResp)
@@ -57,11 +44,10 @@ export const runDomFocus = async (id: string | undefined, options: DomFocusOptio
 	}
 
 	if (successResp.matches === 0) {
-		output.writeWarn(`No element found for selector: ${options.selector}`)
-		process.exitCode = 1
+		writeNoElementFound(selector, output)
 		return
 	}
 
 	const label = successResp.focused === 1 ? 'element' : 'elements'
-	output.writeHuman(`Focused ${successResp.focused} ${label} for selector: ${options.selector}`)
+	output.writeHuman(`Focused ${successResp.focused} ${label} for selector: ${selector}`)
 }

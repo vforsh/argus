@@ -1,4 +1,5 @@
 import { Command } from 'commander'
+import packageJson from '../../package.json' with { type: 'json' }
 
 export function createProgram(): Command {
 	const program = new Command()
@@ -6,7 +7,7 @@ export function createProgram(): Command {
 	program
 		.name('argus')
 		.description('Argus CLI for local watcher servers')
-		.version('0.1.11')
+		.version(packageJson.version)
 		.configureOutput({
 			outputError: (str, write) => write(str),
 		})

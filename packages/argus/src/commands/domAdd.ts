@@ -1,9 +1,10 @@
-import type { DomAddResponse, DomInsertPosition, ErrorResponse } from '@vforsh/argus-core'
+import type { DomAddResponse, DomInsertPosition } from '@vforsh/argus-core'
 import { readFile } from 'node:fs/promises'
 import { createOutput } from '../output/io.js'
 import { formatError } from '../cli/parse.js'
 import { resolvePath } from '../utils/paths.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { requireSelector, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom add command. */
 export type DomAddOptions = {
@@ -23,10 +24,8 @@ export type DomAddOptions = {
 /** Execute the dom add command for a watcher id. */
 export const runDomAdd = async (id: string | undefined, options: DomAddOptions): Promise<void> => {
 	const output = createOutput(options)
-
-	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector or --testid is required')
-		process.exitCode = 2
+	const selector = requireSelector(options, output)
+	if (!selector) {
 		return
 	}
 
@@ -73,41 +72,28 @@ export const runDomAdd = async (id: string | undefined, options: DomAddOptions):
 		return
 	}
 
-	const result = await requestWatcherJson<DomAddResponse | ErrorResponse>({
-		id,
-		path: '/dom/add',
-		method: 'POST',
-		body: {
-			selector: options.selector,
-			html,
-			position,
-			all: options.all ?? false,
-			nth,
-			expect,
-			text: options.text ?? false,
+	const result = await requestWatcherAction<DomAddResponse>(
+		{
+			id,
+			path: '/dom/add',
+			method: 'POST',
+			body: {
+				selector,
+				html,
+				position,
+				all: options.all ?? false,
+				nth,
+				expect,
+				text: options.text ?? false,
+			},
+			timeoutMs: 30_000,
 		},
-		timeoutMs: 30_000,
-		returnErrorResponse: true,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
+		output,
+	)
+	if (!result) {
 		return
 	}
-
-	const response = result.data
-	if (!response.ok) {
-		const errorResp = response as ErrorResponse
-		if (options.json) {
-			output.writeJson(response)
-		} else {
-			output.writeWarn(`Error: ${errorResp.error.message}`)
-		}
-		process.exitCode = 1
-		return
-	}
-
-	const successResp = response as DomAddResponse
+	const successResp = result.data
 
 	if (options.json) {
 		output.writeJson(successResp)
@@ -115,15 +101,13 @@ export const runDomAdd = async (id: string | undefined, options: DomAddOptions):
 	}
 
 	if (successResp.matches === 0) {
-		output.writeWarn(`No element found for selector: ${options.selector}`)
-		output.writeWarn(`Hint: run \`argus dom tree${id ? ` ${id}` : ''} --selector "${options.selector}" --all\``)
-		process.exitCode = 1
+		writeNoElementFound(selector, output, `Hint: run \`argus dom tree${id ? ` ${id}` : ''} --selector "${selector}" --all\``)
 		return
 	}
 
 	const label = successResp.inserted === 1 ? 'element' : 'elements'
 	const prefix = result.watcher.id ? `${result.watcher.id}: ` : ''
-	output.writeHuman(`${prefix}Inserted at ${successResp.inserted}/${successResp.matches} ${label} (${position}) for selector: ${options.selector}`)
+	output.writeHuman(`${prefix}Inserted at ${successResp.inserted}/${successResp.matches} ${label} (${position}) for selector: ${selector}`)
 }
 
 const normalizePosition = (value?: string): DomInsertPosition | null => {

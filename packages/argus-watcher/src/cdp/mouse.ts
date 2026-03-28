@@ -1,6 +1,5 @@
 import type { CdpSessionHandle } from './connection.js'
-import { filterNodesByText } from './text-filter.js'
-import { getDomRootId } from './dom/selector.js'
+import { resolveSelectorTargets } from './dom/selector.js'
 
 type SelectorMatchResult = {
 	allNodeIds: number[]
@@ -18,19 +17,7 @@ export const resolveDomSelectorMatches = async (
 	all: boolean,
 	text?: string,
 ): Promise<SelectorMatchResult> => {
-	await session.sendAndWait('DOM.enable')
-
-	const rootId = await getDomRootId(session)
-	const result = (await session.sendAndWait('DOM.querySelectorAll', { nodeId: rootId, selector })) as { nodeIds?: number[] }
-	let allNodeIds = result.nodeIds ?? []
-
-	if (text != null) {
-		allNodeIds = await filterNodesByText(session, allNodeIds, text)
-	}
-
-	const nodeIds = all ? allNodeIds : allNodeIds.slice(0, 1)
-
-	return { allNodeIds, nodeIds }
+	return resolveSelectorTargets(session, { selector, all, text })
 }
 
 export const hoverDomNodes = async (session: CdpSessionHandle, nodeIds: number[]): Promise<void> => {

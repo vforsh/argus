@@ -1,6 +1,7 @@
-import type { DomScrollToResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DomScrollToResponse } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { parseXY, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom scroll-to command. */
 export type DomScrollToOptions = {
@@ -70,33 +71,20 @@ export const runDomScrollTo = async (id: string | undefined, options: DomScrollT
 		body.by = by
 	}
 
-	const result = await requestWatcherJson<DomScrollToResponse | ErrorResponse>({
-		id,
-		path: '/dom/scroll-to',
-		method: 'POST',
-		body,
-		timeoutMs: 30_000,
-		returnErrorResponse: true,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
+	const result = await requestWatcherAction<DomScrollToResponse>(
+		{
+			id,
+			path: '/dom/scroll-to',
+			method: 'POST',
+			body,
+			timeoutMs: 30_000,
+		},
+		output,
+	)
+	if (!result) {
 		return
 	}
-
-	const response = result.data
-	if (!response.ok) {
-		const errorResp = response as ErrorResponse
-		if (options.json) {
-			output.writeJson(response)
-		} else {
-			output.writeWarn(`Error: ${errorResp.error.message}`)
-		}
-		process.exitCode = 1
-		return
-	}
-
-	const successResp = response as DomScrollToResponse
+	const successResp = result.data
 
 	if (options.json) {
 		output.writeJson(successResp)
@@ -104,8 +92,7 @@ export const runDomScrollTo = async (id: string | undefined, options: DomScrollT
 	}
 
 	if (hasSelector && successResp.matches === 0) {
-		output.writeWarn(`No element found for selector: ${options.selector}`)
-		process.exitCode = 1
+		writeNoElementFound(options.selector!, output)
 		return
 	}
 
@@ -115,17 +102,4 @@ export const runDomScrollTo = async (id: string | undefined, options: DomScrollT
 	} else {
 		output.writeHuman(`Scrolled viewport (scrollX=${successResp.scrollX}, scrollY=${successResp.scrollY})`)
 	}
-}
-
-const parseXY = (value: string): { x: number; y: number } | null => {
-	const parts = value.split(',')
-	if (parts.length !== 2) {
-		return null
-	}
-	const x = Number(parts[0])
-	const y = Number(parts[1])
-	if (!Number.isFinite(x) || !Number.isFinite(y)) {
-		return null
-	}
-	return { x, y }
 }

@@ -6,19 +6,23 @@ import type { CdpTargetContext } from '../cdp/connection.js'
 import {
 	buildFrameTargets,
 	buildPageTarget,
-	collectFrameTree,
-	createRequestedFrameHint,
 	createEmptyFrameState,
 	createNotAttachedError,
-	frameToTarget,
 	formatPageTargetId,
 	parseExtensionTargetId,
-	resolveRequestedTarget,
-	type CdpFrameTreeNode,
 	type ExtensionFrameState,
 } from './extension-frame-state.js'
 import { createDelegatingSession, type DelegatingSessionController } from './extension-delegating-session.js'
 import { registerExtensionSessionEventHandlers } from './extension-session-events.js'
+import {
+	getSelectedExtensionTarget,
+	reconcileExtensionTargetSelection,
+	refreshExtensionFrameTitle,
+	refreshExtensionFrameTree,
+	removeExtensionFrame,
+	seedExtensionFrameState,
+	setRequestedTargetSelection,
+} from './extension-frame-runtime.js'
 
 export type ExtensionSourceOptions = CdpSourceBaseOptions
 
@@ -277,21 +281,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 	function seedFrameState(session: ExtensionSession): ExtensionFrameState {
 		const state = getOrCreateFrameState(session.tabId)
-		if (state.frames.size > 0 || session.frames.length === 0) {
-			return state
-		}
-
-		state.topFrameId = session.topFrameId
-		for (const frame of session.frames) {
-			state.frames.set(frame.frameId, {
-				frameId: frame.frameId,
-				parentFrameId: frame.parentFrameId,
-				url: frame.url,
-				title: frame.title,
-				sessionId: frame.sessionId,
-			})
-		}
-		return state
+		return seedExtensionFrameState(session, state)
 	}
 
 	function emitStatus(target: CdpSourceTarget | null, reason: string | null): void {
@@ -330,30 +320,13 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	}
 
 	function getSelectedTarget(session: ExtensionSession): CdpSourceTarget | null {
-		const state = frameStateByTabId.get(session.tabId)
-		if (!state?.activeFrameId) {
-			return buildPageTarget(session, { attached: true })
-		}
-
-		const frame = state.frames.get(state.activeFrameId)
-		if (!frame) {
-			return buildPageTarget(session, { attached: true })
-		}
-
-		return frameToTarget(session.tabId, frame, { attached: true, faviconUrl: session.faviconUrl, topFrameId: state.topFrameId })
+		return getSelectedExtensionTarget(session, frameStateByTabId.get(session.tabId))
 	}
 
 	function requestTargetSelection(session: ExtensionSession, frameId: string | null): void {
 		const state = getOrCreateFrameState(session.tabId)
 		setRequestedTargetSelection(state, frameId)
 		reconcileTargetSelection(session)
-	}
-
-	function setRequestedTargetSelection(state: ExtensionFrameState, frameId: string | null): void {
-		const frame = frameId ? state.frames.get(frameId) : null
-		state.requestedFrameId = frameId
-		state.requestedFrameHint = createRequestedFrameHint(frame)
-		state.requestedFrameDetached = false
 	}
 
 	/**
@@ -363,75 +336,19 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	 */
 	function reconcileTargetSelection(session: ExtensionSession): boolean {
 		const state = getOrCreateFrameState(session.tabId)
-		const resolution = resolveRequestedTarget(state)
-
-		if (resolution.kind === 'page') {
-			state.requestedFrameDetached = false
-			return activatePageTarget(session, state)
-		}
-
-		if (resolution.kind === 'pending') {
-			return false
-		}
-
-		state.requestedFrameDetached = false
-		if (state.activeFrameId === resolution.frameId) {
-			return false
-		}
-
-		return activateFrameTarget(session, state, resolution.frameId)
-	}
-
-	function activatePageTarget(session: ExtensionSession, state: ExtensionFrameState): boolean {
-		if (state.activeFrameId == null) {
-			if (state.activeAttachedAt == null) {
-				state.activeAttachedAt = Date.now()
-				emitTargetChanged(session)
-				return true
-			}
-			return false
-		}
-
-		state.activeFrameId = null
-		state.activeAttachedAt = Date.now()
-		emitTargetChanged(session)
-		return true
-	}
-
-	function activateFrameTarget(session: ExtensionSession, state: ExtensionFrameState, frameId: string): boolean {
-		state.activeFrameId = frameId
-		state.activeAttachedAt = Date.now()
-		emitTargetChanged(session)
-		return true
+		return reconcileExtensionTargetSelection(session, state, () => {
+			emitTargetChanged(session)
+		})
 	}
 
 	async function refreshFrameTree(session: ExtensionSession): Promise<void> {
 		const state = getOrCreateFrameState(session.tabId)
-		const frameTree = (await session.handle.sendAndWait('Page.getFrameTree')) as { frameTree?: CdpFrameTreeNode }
-		collectFrameTree(frameTree.frameTree, state)
-		await Promise.all([...state.executionContexts.keys()].map((frameId) => refreshFrameTitle(session, frameId)))
+		await refreshExtensionFrameTree(session, state, (frameId) => refreshFrameTitle(session, frameId))
 	}
 
 	function removeFrame(tabId: number, frameId: string): void {
 		const state = getOrCreateFrameState(tabId)
-		const childIds = [...state.frames.values()].filter((frame) => frame.parentFrameId === frameId).map((frame) => frame.frameId)
-		for (const childId of childIds) {
-			removeFrame(tabId, childId)
-		}
-
-		/**
-		 * Keep the user's requested iframe selection across reload/navigation detaches.
-		 * Frame ids are ephemeral, so the stored frame hint lets selection survive a fresh id after reload.
-		 */
-		if (state.activeFrameId === frameId) {
-			state.requestedFrameDetached = state.requestedFrameId === frameId
-			state.activeFrameId = null
-			state.activeAttachedAt = null
-		}
-
-		state.frames.delete(frameId)
-		state.executionContexts.delete(frameId)
-		state.pendingTitleLoads.delete(frameId)
+		removeExtensionFrame(state, frameId)
 	}
 
 	/**
@@ -440,48 +357,15 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	 */
 	async function refreshFrameTitle(session: ExtensionSession, frameId: string, contextId?: number): Promise<void> {
 		const state = getOrCreateFrameState(session.tabId)
-		if (frameId === state.topFrameId || state.pendingTitleLoads.has(frameId)) {
-			return
-		}
-
-		const executionContextId = contextId ?? state.executionContexts.get(frameId)
-		if (executionContextId == null) {
-			return
-		}
-
-		const frame = state.frames.get(frameId)
-		if (!frame) {
-			return
-		}
-
-		state.pendingTitleLoads.add(frameId)
-		try {
-			const evaluated = (await session.handle.sendAndWait(
-				'Runtime.evaluate',
-				{
-					expression: 'document.title',
-					contextId: executionContextId,
-					returnByValue: true,
-					silent: true,
-				},
-				frame.sessionId ? { sessionId: frame.sessionId } : undefined,
-			)) as { result?: { value?: unknown } }
-
-			const title = typeof evaluated.result?.value === 'string' ? evaluated.result.value.trim() : ''
-			const latestFrame = state.frames.get(frameId)
-			if (!latestFrame) {
-				return
-			}
-
-			latestFrame.title = title || null
-			if (state.activeFrameId === frameId) {
+		await refreshExtensionFrameTitle(
+			session,
+			state,
+			frameId,
+			() => {
 				emitTargetChanged(session)
-			}
-		} catch {
-			// Ignore transient frame-title lookup failures during navigation/bootstrap.
-		} finally {
-			state.pendingTitleLoads.delete(frameId)
-		}
+			},
+			contextId,
+		)
 	}
 }
 

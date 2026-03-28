@@ -1,73 +1,20 @@
-import type { WatcherChrome, WatcherRecord, LogEvent } from '@vforsh/argus-core'
-import os from 'node:os'
-import path from 'node:path'
-import Emittery from 'emittery'
-import { LogBuffer } from './buffer/LogBuffer.js'
-import { NetBuffer } from './buffer/NetBuffer.js'
+import type { LogEvent } from '@vforsh/argus-core'
 import { startHttpServer } from './http/server.js'
 import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
-import { WatcherFileLogger } from './fileLogs/WatcherFileLogger.js'
-import { buildIgnoreMatcher } from './cdp/ignoreList.js'
-import { createNetworkCapture } from './cdp/networkCapture.js'
-import { createTraceRecorder } from './cdp/tracing.js'
-import { createScreenshotter } from './cdp/screenshot.js'
-import { createRuntimeEditor } from './cdp/editor.js'
-import { createCdpSessionHandle } from './cdp/connection.js'
 import { createPageIndicatorController, validatePageIndicatorOptions, type PageIndicatorController } from './cdp/pageIndicator.js'
-import { createEmulationController } from './emulation/EmulationController.js'
-import { createThrottleController } from './throttle/ThrottleController.js'
-import { createCdpSource } from './sources/cdp-source.js'
-import { createExtensionSource } from './sources/extension-source.js'
 import type { CdpSourceHandle, CdpSourceStatus, CdpSourceTarget } from './sources/types.js'
-import type { ArgusWatcherEventMap } from './events.js'
 import type { StartWatcherOptions, WatcherHandle } from './index.js'
-
-type NormalizedWatcherSetup = {
-	sourceMode: NonNullable<StartWatcherOptions['source']>
-	host: string
-	port: number
-	chrome: WatcherChrome
-	watcherId: string
-	startedAt: number
-	artifactsBaseDir: string
-	includeTimestamps: boolean
-	netEnabled: boolean
-	pageConsoleLogging: NonNullable<StartWatcherOptions['pageConsoleLogging']>
-	ignoreMatcher: ReturnType<typeof buildIgnoreMatcher>
-	stripUrlPrefixes: string[] | undefined
-	events: Emittery<ArgusWatcherEventMap>
-	buffer: LogBuffer
-	netBuffer: NetBuffer | null
-	record: WatcherRecord
-	fileLogger: WatcherFileLogger | null
-	sessionHandle: ReturnType<typeof createCdpSessionHandle>
-	emulationController: ReturnType<typeof createEmulationController>
-	throttleController: ReturnType<typeof createThrottleController>
-}
+import { buildInjectExpression, formatWatcherError } from './runtime/watcherInject.js'
+import { normalizeWatcherSetup } from './runtime/watcherSetup.js'
+import { createWatcherRuntimeServices } from './runtime/watcherServices.js'
 
 /**
  * Build the watcher runtime and keep the public entrypoint focused on API shape and input validation.
  */
 export const createWatcherHandle = async (options: StartWatcherOptions, watcherId: string): Promise<WatcherHandle> => {
 	const setup = normalizeWatcherSetup(options, watcherId)
-	const {
-		sourceMode,
-		host,
-		port,
-		chrome,
-		artifactsBaseDir,
-		pageConsoleLogging,
-		ignoreMatcher,
-		stripUrlPrefixes,
-		events,
-		buffer,
-		netBuffer,
-		record,
-		fileLogger,
-		sessionHandle,
-		emulationController,
-		throttleController,
-	} = setup
+	const { sourceMode, host, port, pageConsoleLogging, events, buffer, netBuffer, record, fileLogger, emulationController, throttleController } =
+		setup
 	let closing = false
 	let readyForShutdown = false
 	let shutdownRequested = false
@@ -213,13 +160,13 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		try {
 			await session.sendAndWait('Page.addScriptToEvaluateOnNewDocument', { source: expression })
 		} catch (error) {
-			console.warn(`[Watcher] Failed to register inject script for watcher ${record.id}: ${formatError(error)}`)
+			console.warn(`[Watcher] Failed to register inject script for watcher ${record.id}: ${formatWatcherError(error)}`)
 		}
 
 		try {
 			await session.sendAndWait('Runtime.evaluate', { expression, silent: true })
 		} catch (error) {
-			console.warn(`[Watcher] Failed to run inject script for watcher ${record.id}: ${formatError(error)}`)
+			console.warn(`[Watcher] Failed to run inject script for watcher ${record.id}: ${formatWatcherError(error)}`)
 		}
 	}
 
@@ -263,63 +210,16 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		}
 	}
 
-	let sourceHandle: CdpSourceHandle
-	let networkCapture: Awaited<ReturnType<typeof createNetworkCapture>> | null = null
-	let traceRecorder: ReturnType<typeof createTraceRecorder>
-	let screenshotter: ReturnType<typeof createScreenshotter>
-	let runtimeEditor: ReturnType<typeof createRuntimeEditor>
-
-	if (sourceMode === 'extension') {
-		sourceHandle = createExtensionSource({
-			events: {
-				onLog: handleSourceLog,
-				onStatus: updateCdpStatus,
-				onPageNavigation: handlePageNavigation,
-				onPageLoad: onIndicatorLoad,
-				onPageIntl: handlePageIntl,
-				onAttach: handleSourceAttach,
-				onTargetChanged: handleTargetChanged,
-				onDetach: () => {
-					handleSourceDetach()
-				},
-			},
-			watcherId,
-			watcherHost: host,
-			watcherPort: record.port,
-			ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
-			stripUrlPrefixes,
-		})
-
-		networkCapture = netBuffer ? createNetworkCapture({ session: sourceHandle.pageSession ?? sourceHandle.session, buffer: netBuffer }) : null
-		traceRecorder = createTraceRecorder({ session: sourceHandle.session, artifactsDir: artifactsBaseDir })
-		screenshotter = createScreenshotter({ session: sourceHandle.session, artifactsDir: artifactsBaseDir })
-		runtimeEditor = createRuntimeEditor(sourceHandle.session)
-	} else {
-		networkCapture = netBuffer ? createNetworkCapture({ session: sessionHandle.session, buffer: netBuffer }) : null
-		traceRecorder = createTraceRecorder({ session: sessionHandle.session, artifactsDir: artifactsBaseDir })
-		screenshotter = createScreenshotter({ session: sessionHandle.session, artifactsDir: artifactsBaseDir })
-		runtimeEditor = createRuntimeEditor(sessionHandle.session)
-
-		sourceHandle = createCdpSource({
-			chrome,
-			match: options.match,
-			sessionHandle,
-			events: {
-				onLog: handleSourceLog,
-				onStatus: updateCdpStatus,
-				onPageNavigation: handlePageNavigation,
-				onPageLoad: onIndicatorLoad,
-				onPageIntl: handlePageIntl,
-				onAttach: handleSourceAttach,
-				onDetach: (reason) => {
-					handleSourceDetach(reason)
-				},
-			},
-			watcherId,
-			ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
-			stripUrlPrefixes,
-		})
-	}
+	const { sourceHandle, networkCapture, traceRecorder, screenshotter, runtimeEditor } = createWatcherRuntimeServices(options, setup, {
+		onLog: handleSourceLog,
+		onStatus: updateCdpStatus,
+		onPageNavigation: handlePageNavigation,
+		onPageLoad: onIndicatorLoad,
+		onPageIntl: handlePageIntl,
+		onAttach: handleSourceAttach,
+		onTargetChanged: handleTargetChanged,
+		onDetach: handleSourceDetach,
+	})
 
 	const server = await startHttpServer({
 		host,
@@ -393,125 +293,4 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 			await closeOnce?.()
 		},
 	}
-}
-
-const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: string): NormalizedWatcherSetup => {
-	const sourceMode = options.source ?? 'cdp'
-	const host = options.host ?? '127.0.0.1'
-	const port = options.port ?? 0
-	const chrome = options.chrome ?? { host: '127.0.0.1', port: 9222 }
-	const bufferSize = options.bufferSize ?? 50_000
-	const startedAt = Date.now()
-	const ignoreMatcher = buildIgnoreMatcher(options.ignoreList)
-	const stripUrlPrefixes = options.location?.stripUrlPrefixes
-	const artifactsBaseDir = resolveArtifactsBaseDir(options.artifacts?.base, watcherId)
-	const logsEnabled = options.artifacts?.logs?.enabled === true
-	const logsDir = path.join(artifactsBaseDir, 'logs')
-	const includeTimestamps = options.artifacts?.logs?.includeTimestamps ?? false
-	const maxFiles = resolveMaxFiles(options.artifacts?.logs?.maxFiles)
-	const netEnabled = options.net?.enabled === true
-	const pageConsoleLogging = options.pageConsoleLogging ?? 'minimal'
-	const events = new Emittery<ArgusWatcherEventMap>()
-	const buffer = new LogBuffer(bufferSize)
-	const netBuffer = netEnabled ? new NetBuffer(bufferSize) : null
-	const fileLogger = logsEnabled
-		? new WatcherFileLogger({
-				watcherId,
-				startedAt,
-				logsDir,
-				chrome: sourceMode === 'cdp' ? chrome : undefined,
-				match: options.match,
-				maxFiles,
-				includeTimestamps,
-				buildFilename: options.artifacts?.logs?.buildFilename,
-			})
-		: null
-	const record: WatcherRecord = {
-		id: watcherId,
-		host,
-		port,
-		pid: process.pid,
-		cwd: process.cwd(),
-		startedAt,
-		updatedAt: Date.now(),
-		match: sourceMode === 'cdp' ? options.match : undefined,
-		chrome: sourceMode === 'cdp' ? chrome : undefined,
-		includeTimestamps,
-		source: sourceMode,
-	}
-
-	return {
-		sourceMode,
-		host,
-		port,
-		chrome,
-		watcherId,
-		startedAt,
-		artifactsBaseDir,
-		includeTimestamps,
-		netEnabled,
-		pageConsoleLogging,
-		ignoreMatcher,
-		stripUrlPrefixes,
-		events,
-		buffer,
-		netBuffer,
-		record,
-		fileLogger,
-		sessionHandle: createCdpSessionHandle(),
-		emulationController: createEmulationController(),
-		throttleController: createThrottleController(),
-	}
-}
-
-const resolveArtifactsBaseDir = (base: string | undefined, watcherId: string): string => {
-	if (base !== undefined && base !== null) {
-		if (typeof base !== 'string' || base.trim() === '') {
-			throw new Error('artifacts.base must be a non-empty string when provided')
-		}
-		return path.resolve(base)
-	}
-	return path.join(os.tmpdir(), 'argus', watcherId)
-}
-
-const resolveMaxFiles = (maxFiles?: number): number => {
-	if (maxFiles === undefined) {
-		return 5
-	}
-	if (!Number.isInteger(maxFiles) || maxFiles < 1) {
-		throw new Error('artifacts.logs.maxFiles must be an integer >= 1')
-	}
-	return maxFiles
-}
-
-const buildInjectExpression = (
-	script: string,
-	argusPayload: {
-		watcherId: string
-		watcherHost: string
-		watcherPort: number
-		watcherPid: number
-		attachedAt: number
-		target: { title: string | null; url: string | null; type: string; parentId: string | null }
-	} | null,
-): string => {
-	const lines = ['(() => {']
-	if (argusPayload) {
-		lines.push(`window.__ARGUS__ = ${JSON.stringify(argusPayload)};`)
-	}
-	lines.push(`const __argusScript = ${JSON.stringify(script)};`)
-	lines.push('const __argusFn = new Function(__argusScript);')
-	lines.push('__argusFn();')
-	lines.push('})();')
-	return lines.join('\n')
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'Unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

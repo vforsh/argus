@@ -1,77 +1,29 @@
-import * as path from 'node:path'
-import { spawn, type ChildProcess } from 'node:child_process'
-import { startServer } from './serve.ts'
+import { spawnArgusJson, startPlaygroundServers } from './harness.ts'
 
 const PORT = Number(process.env['PLAYGROUND_PORT']) || 3333
 const CROSS_ORIGIN_PORT = Number(process.env['PLAYGROUND_CROSS_ORIGIN_PORT']) || 3334
-const BIN = path.resolve(import.meta.dirname!, '..', 'packages', 'argus', 'src', 'bin.ts')
-
-/**
- * Spawn a long-running command, read the first line of stdout as JSON,
- * and resolve with both the live child process and the parsed result.
- */
-const spawnAndReadJson = (args: string[], label: string): Promise<{ proc: ChildProcess; result: unknown }> =>
-	new Promise((resolve, reject) => {
-		const proc = spawn('bun', [BIN, ...args], {
-			stdio: ['ignore', 'pipe', 'inherit'],
-		})
-
-		let buf = ''
-		let resolved = false
-
-		const onData = (chunk: Buffer): void => {
-			buf += chunk.toString()
-			const newlineIdx = buf.indexOf('\n')
-			if (newlineIdx === -1) return
-
-			// Got first complete line — parse it and stop listening
-			resolved = true
-			proc.stdout!.off('data', onData)
-			const line = buf.slice(0, newlineIdx).trim()
-			try {
-				resolve({ proc, result: JSON.parse(line) })
-			} catch {
-				reject(new Error(`${label} produced invalid JSON:\n${line}`))
-			}
-		}
-
-		proc.stdout!.on('data', onData)
-
-		proc.on('close', (code) => {
-			if (!resolved) {
-				reject(new Error(`${label} exited with code ${code} before producing JSON\nstdout: ${buf}`))
-			}
-		})
-
-		proc.on('error', (err) => {
-			if (!resolved) {
-				reject(new Error(`${label} spawn error: ${err.message}`))
-			}
-		})
-	})
 
 type ChromeResult = { chromePid: number; cdpPort: number }
 type WatcherResult = { id: string; host: string; port: number; pid: number }
 
 const main = async (): Promise<void> => {
 	// 1. Start HTTP servers (main + cross-origin for iframe testing)
-	const server = startServer({ port: PORT, crossOriginPort: CROSS_ORIGIN_PORT })
-	const crossOriginServer = startServer({ port: CROSS_ORIGIN_PORT })
-	const serverUrl = `http://127.0.0.1:${PORT}`
+	const servers = startPlaygroundServers({ port: PORT, crossOriginPort: CROSS_ORIGIN_PORT })
+	const serverUrl = servers.mainUrl
 
 	// 2. Launch Chrome
 	console.log('\nLaunching Chrome...')
-	const chrome = await spawnAndReadJson(['chrome', 'start', '--url', serverUrl, '--profile', 'temp', '--json'], 'chrome start')
-	const chromeResult = chrome.result as ChromeResult
+	const chrome = await spawnArgusJson<ChromeResult>(['chrome', 'start', '--url', serverUrl, '--profile', 'temp', '--json'], 'chrome start')
+	const chromeResult = chrome.result
 	console.log(`Chrome started (pid=${chromeResult.chromePid}, cdpPort=${chromeResult.cdpPort})`)
 
 	// 3. Attach watcher
 	console.log('Attaching watcher...')
-	const watcher = await spawnAndReadJson(
+	const watcher = await spawnArgusJson<WatcherResult>(
 		['watcher', 'start', '--id', 'playground', '--url', `127.0.0.1:${PORT}`, '--chrome-port', String(chromeResult.cdpPort), '--json'],
 		'watcher start',
 	)
-	const watcherResult = watcher.result as WatcherResult
+	const watcherResult = watcher.result
 	console.log(`Watcher attached (id=${watcherResult.id}, port=${watcherResult.port}, pid=${watcherResult.pid})`)
 
 	// 4. Print ready banner
@@ -80,7 +32,7 @@ const main = async (): Promise<void> => {
   Playground is ready!
 
   Server:         ${serverUrl}
-  Cross-origin:   http://127.0.0.1:${CROSS_ORIGIN_PORT}
+  Cross-origin:   ${servers.crossOriginUrl}
   Watcher:        ${watcherResult.id} (port ${watcherResult.port})
   Chrome:         pid ${chromeResult.chromePid}, CDP port ${chromeResult.cdpPort}
 
@@ -120,8 +72,7 @@ const main = async (): Promise<void> => {
 		}
 
 		// Close HTTP servers
-		server.close()
-		crossOriginServer.close()
+		void servers.close()
 		console.log('Servers closed.')
 
 		setTimeout(() => process.exit(0), 1500)

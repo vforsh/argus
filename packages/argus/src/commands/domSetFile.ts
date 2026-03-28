@@ -1,9 +1,9 @@
 import fs from 'node:fs'
-import type { DomSetFileResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DomSetFileResponse } from '@vforsh/argus-core'
 import { resolvePath } from '../utils/paths.js'
 import { createOutput } from '../output/io.js'
-import { parseDurationMs } from '../time.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { parseWaitDuration, requireSelector, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom set-file command. */
 export type DomSetFileOptions = {
@@ -18,10 +18,8 @@ export type DomSetFileOptions = {
 /** Execute the dom set-file command for a watcher id. */
 export const runDomSetFile = async (id: string | undefined, options: DomSetFileOptions): Promise<void> => {
 	const output = createOutput(options)
-
-	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector or --testid is required')
-		process.exitCode = 2
+	const selector = requireSelector(options, output)
+	if (!selector) {
 		return
 	}
 
@@ -43,19 +41,13 @@ export const runDomSetFile = async (id: string | undefined, options: DomSetFileO
 		files.push(absolute)
 	}
 
-	let waitMs = 0
-	if (options.wait != null) {
-		const parsed = parseDurationMs(options.wait)
-		if (parsed == null || parsed < 0) {
-			output.writeWarn('Invalid --wait value: expected a duration like 5s, 500ms, 2m.')
-			process.exitCode = 2
-			return
-		}
-		waitMs = parsed
+	const waitMs = parseWaitDuration(options.wait, output)
+	if (waitMs == null) {
+		return
 	}
 
 	const body: Record<string, unknown> = {
-		selector: options.selector,
+		selector,
 		files,
 		all: options.all ?? false,
 		text: options.text,
@@ -64,33 +56,20 @@ export const runDomSetFile = async (id: string | undefined, options: DomSetFileO
 		body.wait = waitMs
 	}
 
-	const result = await requestWatcherJson<DomSetFileResponse | ErrorResponse>({
-		id,
-		path: '/dom/set-file',
-		method: 'POST',
-		body,
-		timeoutMs: Math.max(30_000, waitMs + 5_000),
-		returnErrorResponse: true,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
+	const result = await requestWatcherAction<DomSetFileResponse>(
+		{
+			id,
+			path: '/dom/set-file',
+			method: 'POST',
+			body,
+			timeoutMs: Math.max(30_000, waitMs + 5_000),
+		},
+		output,
+	)
+	if (!result) {
 		return
 	}
-
-	const response = result.data
-	if (!response.ok) {
-		const errorResp = response as ErrorResponse
-		if (options.json) {
-			output.writeJson(response)
-		} else {
-			output.writeWarn(`Error: ${errorResp.error.message}`)
-		}
-		process.exitCode = 1
-		return
-	}
-
-	const successResp = response as DomSetFileResponse
+	const successResp = result.data
 
 	if (options.json) {
 		output.writeJson(successResp)
@@ -98,12 +77,11 @@ export const runDomSetFile = async (id: string | undefined, options: DomSetFileO
 	}
 
 	if (successResp.matches === 0) {
-		output.writeWarn(`No element found for selector: ${options.selector}`)
-		process.exitCode = 1
+		writeNoElementFound(selector, output)
 		return
 	}
 
 	const fileLabel = files.length === 1 ? '1 file' : `${files.length} files`
 	const elLabel = successResp.updated === 1 ? '1 element' : `${successResp.updated} elements`
-	output.writeHuman(`Set ${fileLabel} on ${elLabel} for selector: ${options.selector}`)
+	output.writeHuman(`Set ${fileLabel} on ${elLabel} for selector: ${selector}`)
 }

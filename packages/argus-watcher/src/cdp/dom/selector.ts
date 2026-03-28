@@ -25,6 +25,13 @@ export type SelectorMatchResult = {
 	nodeIds: number[]
 }
 
+export type ResolveSelectorTargetOptions = {
+	selector: string
+	all: boolean
+	text?: string
+	waitMs?: number
+}
+
 export const getDomRootId = async (session: CdpSessionHandle): Promise<number> => {
 	const targetContext = session.getTargetContext?.()
 	if (targetContext?.kind === 'frame') {
@@ -103,6 +110,21 @@ export const waitForSelectorMatches = async (
 		if (remaining <= 0) return result
 		await new Promise((r) => setTimeout(r, Math.min(intervalMs, remaining)))
 	}
+}
+
+/**
+ * Enable the DOM domain, then resolve selector matches immediately or by polling for a bounded wait.
+ */
+export const resolveSelectorTargets = async (session: CdpSessionHandle, options: ResolveSelectorTargetOptions): Promise<SelectorMatchResult> => {
+	await session.sendAndWait('DOM.enable')
+
+	const waitMs = options.waitMs ?? 0
+	if (waitMs > 0) {
+		return waitForSelectorMatches(session, options.selector, options.all, options.text, waitMs)
+	}
+
+	const rootId = await getDomRootId(session)
+	return resolveSelectorMatches(session, rootId, options.selector, options.all, options.text)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

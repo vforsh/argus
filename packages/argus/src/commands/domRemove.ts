@@ -1,6 +1,7 @@
-import type { DomRemoveResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DomRemoveResponse } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { requireSelector, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom remove command. */
 export type DomRemoveOptions = {
@@ -13,44 +14,29 @@ export type DomRemoveOptions = {
 /** Execute the dom remove command for a watcher id. */
 export const runDomRemove = async (id: string | undefined, options: DomRemoveOptions): Promise<void> => {
 	const output = createOutput(options)
-
-	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector or --testid is required')
-		process.exitCode = 2
+	const selector = requireSelector(options, output)
+	if (!selector) {
 		return
 	}
 
-	const result = await requestWatcherJson<DomRemoveResponse | ErrorResponse>({
-		id,
-		path: '/dom/remove',
-		method: 'POST',
-		body: {
-			selector: options.selector,
-			all: options.all ?? false,
-			text: options.text,
+	const result = await requestWatcherAction<DomRemoveResponse>(
+		{
+			id,
+			path: '/dom/remove',
+			method: 'POST',
+			body: {
+				selector,
+				all: options.all ?? false,
+				text: options.text,
+			},
+			timeoutMs: 30_000,
 		},
-		timeoutMs: 30_000,
-		returnErrorResponse: true,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
+		output,
+	)
+	if (!result) {
 		return
 	}
-
-	const response = result.data
-	if (!response.ok) {
-		const errorResp = response as ErrorResponse
-		if (options.json) {
-			output.writeJson(response)
-		} else {
-			output.writeWarn(`Error: ${errorResp.error.message}`)
-		}
-		process.exitCode = 1
-		return
-	}
-
-	const successResp = response as DomRemoveResponse
+	const successResp = result.data
 
 	if (options.json) {
 		output.writeJson(successResp)
@@ -58,8 +44,7 @@ export const runDomRemove = async (id: string | undefined, options: DomRemoveOpt
 	}
 
 	if (successResp.matches === 0) {
-		output.writeWarn(`No element found for selector: ${options.selector}`)
-		process.exitCode = 1
+		writeNoElementFound(selector, output)
 		return
 	}
 

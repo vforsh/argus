@@ -1,5 +1,6 @@
 import type { DomScrollRequest, DomScrollResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
+import { respondMultipleMatches } from './domSelectorRoute.js'
 import { emitRequest } from './types.js'
 import { resolveDomSelectorMatches, emulateScroll, emulateScrollOnNodes } from '../../cdp/mouse.js'
 import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
@@ -58,17 +59,7 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(ctx.cdpSession, payload.selector!, all, payload.text)
 
 		if (!all && allNodeIds.length > 1) {
-			return respondJson(
-				res,
-				{
-					ok: false,
-					error: {
-						message: `Selector matched ${allNodeIds.length} elements; pass all=true to scroll all matches`,
-						code: 'multiple_matches',
-					},
-				},
-				400,
-			)
+			return respondMultipleMatches(res, allNodeIds.length, 'scroll')
 		}
 
 		if (allNodeIds.length === 0) {

@@ -1,8 +1,9 @@
-import type { DomInfoResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DomInfoResponse } from '@vforsh/argus-core'
 import { formatDomInfo } from '../output/dom.js'
 import { createOutput } from '../output/io.js'
 import { parsePositiveInt } from '../cli/parse.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { requireSelector, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom info command. */
 export type DomInfoOptions = {
@@ -16,9 +17,8 @@ export type DomInfoOptions = {
 /** Execute the dom info command for a watcher id. */
 export const runDomInfo = async (id: string | undefined, options: DomInfoOptions): Promise<void> => {
 	const output = createOutput(options)
-	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector or --testid is required')
-		process.exitCode = 2
+	const selector = requireSelector(options, output)
+	if (!selector) {
 		return
 	}
 
@@ -29,38 +29,25 @@ export const runDomInfo = async (id: string | undefined, options: DomInfoOptions
 		return
 	}
 
-	const result = await requestWatcherJson<DomInfoResponse | ErrorResponse>({
-		id,
-		path: '/dom/info',
-		method: 'POST',
-		body: {
-			selector: options.selector,
-			all: options.all ?? false,
-			outerHtmlMaxChars,
-			text: options.text,
+	const result = await requestWatcherAction<DomInfoResponse>(
+		{
+			id,
+			path: '/dom/info',
+			method: 'POST',
+			body: {
+				selector,
+				all: options.all ?? false,
+				outerHtmlMaxChars,
+				text: options.text,
+			},
+			timeoutMs: 30_000,
 		},
-		timeoutMs: 30_000,
-		returnErrorResponse: true,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
+		output,
+	)
+	if (!result) {
 		return
 	}
-
-	const response = result.data
-	if (!response.ok) {
-		const errorResp = response as ErrorResponse
-		if (options.json) {
-			output.writeJson(response)
-		} else {
-			output.writeWarn(`Error: ${errorResp.error.message}`)
-		}
-		process.exitCode = 1
-		return
-	}
-
-	const successResp = response as DomInfoResponse
+	const successResp = result.data
 
 	if (options.json) {
 		output.writeJson(successResp)
@@ -68,8 +55,7 @@ export const runDomInfo = async (id: string | undefined, options: DomInfoOptions
 	}
 
 	if (successResp.matches === 0) {
-		output.writeWarn(`No element found for selector: ${options.selector}`)
-		process.exitCode = 1
+		writeNoElementFound(selector, output)
 		return
 	}
 

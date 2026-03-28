@@ -10,91 +10,93 @@ import { runDomScroll } from '../../commands/domScroll.js'
 import { runDomScrollTo } from '../../commands/domScrollTo.js'
 import { runDomModifyAttr, runDomModifyClass, runDomModifyStyle, runDomModifyText, runDomModifyHtml } from '../../commands/domModify.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
+import { registerDomSelectorCommand } from './domCommandBuilder.js'
 
 export function registerDom(program: Command): void {
 	const dom = program.command('dom').alias('html').description('Inspect DOM elements in the connected page')
 
-	dom.command('tree')
-		.argument('[id]', 'Watcher id to query')
-		.description('Fetch a DOM subtree rooted at element(s) matching a CSS selector')
-		.option('--selector <css>', 'CSS selector to match element(s)')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--depth <n>', 'Max depth to traverse (default: 2)')
-		.option('--max-nodes <n>', 'Max total nodes to return (default: 5000)')
-		.option('--all', 'Allow multiple matches (default: error if >1 match)')
-		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom tree app --selector "body"\n  $ argus dom tree app --testid "main-content"\n  $ argus dom tree app --selector "div" --all --depth 3\n  $ argus dom tree app --selector "#root" --json\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomTree(id, options)
-		})
+	registerDomSelectorCommand(dom, {
+		name: 'tree',
+		description: 'Fetch a DOM subtree rooted at element(s) matching a CSS selector',
+		examples: [
+			'argus dom tree app --selector "body"',
+			'argus dom tree app --testid "main-content"',
+			'argus dom tree app --selector "div" --all --depth 3',
+			'argus dom tree app --selector "#root" --json',
+		],
+		textOption: {
+			flags: '--text <string>',
+			description: 'Filter by textContent (trimmed). Supports /regex/flags syntax',
+		},
+		configure: (command) => {
+			command.option('--depth <n>', 'Max depth to traverse (default: 2)')
+			command.option('--max-nodes <n>', 'Max total nodes to return (default: 5000)')
+		},
+		action: runDomTree,
+	})
 
-	dom.command('info')
-		.argument('[id]', 'Watcher id to query')
-		.description('Fetch detailed info for element(s) matching a CSS selector')
-		.option('--selector <css>', 'CSS selector to match element(s)')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--all', 'Allow multiple matches (default: error if >1 match)')
-		.option('--outer-html-max <n>', 'Max characters for outerHTML (default: 50000)')
-		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom info app --selector "body"\n  $ argus dom info app --selector "div" --all\n  $ argus dom info app --selector "#root" --json\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomInfo(id, options)
-		})
+	registerDomSelectorCommand(dom, {
+		name: 'info',
+		description: 'Fetch detailed info for element(s) matching a CSS selector',
+		examples: [
+			'argus dom info app --selector "body"',
+			'argus dom info app --selector "div" --all',
+			'argus dom info app --selector "#root" --json',
+		],
+		textOption: {
+			flags: '--text <string>',
+			description: 'Filter by textContent (trimmed). Supports /regex/flags syntax',
+		},
+		configure: (command) => {
+			command.option('--outer-html-max <n>', 'Max characters for outerHTML (default: 50000)')
+		},
+		action: runDomInfo,
+	})
 
-	dom.command('focus')
-		.argument('[id]', 'Watcher id to query')
-		.description('Focus element(s) matching a CSS selector')
-		.option('--selector <css>', 'CSS selector to match element(s)')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--all', 'Allow multiple matches (default: error if >1 match)')
-		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom focus app --selector "#input"\n  $ argus dom focus app --testid "search-box"\n  $ argus dom focus app --selector ".item" --all\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomFocus(id, options)
-		})
+	registerDomSelectorCommand(dom, {
+		name: 'focus',
+		description: 'Focus element(s) matching a CSS selector',
+		examples: [
+			'argus dom focus app --selector "#input"',
+			'argus dom focus app --testid "search-box"',
+			'argus dom focus app --selector ".item" --all',
+		],
+		textOption: {
+			flags: '--text <string>',
+			description: 'Filter by textContent (trimmed). Supports /regex/flags syntax',
+		},
+		action: runDomFocus,
+	})
 
-	dom.command('add')
-		.argument('[id]', 'Watcher id to query')
-		.description('Insert HTML into the page relative to matched element(s)')
-		.option('--selector <css>', 'CSS selector for target element(s)')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--html <string>', 'HTML to insert (use "-" for stdin)')
-		.option('--html-file <path>', 'Read HTML to insert from a file')
-		.option('--html-stdin', 'Read HTML to insert from stdin (same as --html -)')
-		.option(
-			'--position <pos>',
-			'Insert position: beforebegin, afterbegin, beforeend, afterend (aliases: before, after, prepend, append)',
-			'beforeend',
-		)
-		.option('--nth <index>', 'Insert at the zero-based match index')
-		.option('--first', 'Insert at the first match (same as --nth 0)')
-		.option('--expect <n>', 'Expect N matches before inserting')
-		.option('--text', 'Insert text content (uses insertAdjacentText)')
-		.option('--all', 'Insert at all matches (default: error if >1 match)')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom add app --selector "#container" --html "<div>Hello</div>"\n  $ argus dom add app --selector "body" --position append --html "<script src=\'debug.js\'></script>"\n  $ argus dom add app --selector ".item" --all --position afterend --html "<hr>"\n  $ argus dom add app --selector "#root" --html-file ./snippet.html\n  $ cat snippet.html | argus dom add app --selector "#root" --html -\n  $ argus dom add app --selector ".item" --nth 2 --html "<hr>"\n  $ argus dom add app --selector "#banner" --text --html "Preview mode"\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomAdd(id, options)
-		})
+	registerDomSelectorCommand(dom, {
+		name: 'add',
+		description: 'Insert HTML into the page relative to matched element(s)',
+		examples: [
+			'argus dom add app --selector "#container" --html "<div>Hello</div>"',
+			'argus dom add app --selector "body" --position append --html "<script src=\'debug.js\'></script>"',
+			'argus dom add app --selector ".item" --all --position afterend --html "<hr>"',
+			'argus dom add app --selector "#root" --html-file ./snippet.html',
+			'cat snippet.html | argus dom add app --selector "#root" --html -',
+			'argus dom add app --selector ".item" --nth 2 --html "<hr>"',
+			'argus dom add app --selector "#banner" --text --html "Preview mode"',
+		],
+		textOption: undefined,
+		configure: (command) => {
+			command.option('--html <string>', 'HTML to insert (use "-" for stdin)')
+			command.option('--html-file <path>', 'Read HTML to insert from a file')
+			command.option('--html-stdin', 'Read HTML to insert from stdin (same as --html -)')
+			command.option(
+				'--position <pos>',
+				'Insert position: beforebegin, afterbegin, beforeend, afterend (aliases: before, after, prepend, append)',
+				'beforeend',
+			)
+			command.option('--nth <index>', 'Insert at the zero-based match index')
+			command.option('--first', 'Insert at the first match (same as --nth 0)')
+			command.option('--expect <n>', 'Expect N matches before inserting')
+			command.option('--text', 'Insert text content (uses insertAdjacentText)')
+		},
+		action: runDomAdd,
+	})
 
 	dom.command('add-script')
 		.argument('[id]', 'Watcher id to query')
@@ -133,82 +135,80 @@ Examples:
 			})
 		})
 
-	dom.command('remove')
-		.argument('[id]', 'Watcher id to query')
-		.description('Remove elements from the page')
-		.option('--selector <css>', 'CSS selector for elements to remove')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--all', 'Remove all matches (default: error if >1 match)')
-		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom remove app --selector ".debug-overlay"\n  $ argus dom remove app --selector "[data-testid=\'temp\']" --all\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomRemove(id, options)
-		})
+	registerDomSelectorCommand(dom, {
+		name: 'remove',
+		description: 'Remove elements from the page',
+		examples: ['argus dom remove app --selector ".debug-overlay"', 'argus dom remove app --selector "[data-testid=\'temp\']" --all'],
+		textOption: {
+			flags: '--text <string>',
+			description: 'Filter by textContent (trimmed). Supports /regex/flags syntax',
+		},
+		action: runDomRemove,
+	})
 
 	registerDomModify(dom)
 
-	dom.command('set-file')
-		.alias('upload')
-		.argument('[id]', 'Watcher id to query')
-		.description('Set file(s) on a <input type="file"> element via CDP')
-		.option('--selector <css>', 'CSS selector for file input element(s)')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.requiredOption('--file <path...>', 'File path(s) to set on the input (repeatable)')
-		.option('--all', 'Allow multiple matches (default: error if >1 match)')
-		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
-		.option('--wait <duration>', 'Wait for selector to appear (e.g. 5s, 500ms)')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom set-file app --selector "input[type=file]" --file ./build.zip\n  $ argus dom set-file app --selector "#upload" --file a.png --file b.png\n  $ argus dom set-file app --selector "input[type=file]" --file ./build.zip --wait 5s\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomSetFile(id, options)
-		})
+	registerDomSelectorCommand(dom, {
+		name: 'set-file',
+		alias: 'upload',
+		description: 'Set file(s) on a <input type="file"> element via CDP',
+		examples: [
+			'argus dom set-file app --selector "input[type=file]" --file ./build.zip',
+			'argus dom set-file app --selector "#upload" --file a.png --file b.png',
+			'argus dom set-file app --selector "input[type=file]" --file ./build.zip --wait 5s',
+		],
+		textOption: {
+			flags: '--text <string>',
+			description: 'Filter by textContent (trimmed). Supports /regex/flags syntax',
+		},
+		waitOption: true,
+		configure: (command) => {
+			command.requiredOption('--file <path...>', 'File path(s) to set on the input (repeatable)')
+		},
+		action: runDomSetFile,
+	})
 
-	dom.command('scroll')
-		.argument('[id]', 'Watcher id to query')
-		.description('Emulate a touch scroll gesture (fires real scroll/wheel events)')
-		.option('--selector <css>', 'CSS selector — scroll at element center')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--pos <x,y>', 'Viewport coordinates to scroll at (mutually exclusive with selector)')
-		.requiredOption('--by <dx,dy>', 'Scroll delta (positive y = scroll down)')
-		.option('--all', 'Allow multiple matches (default: error if >1 match)')
-		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom scroll app --by 0,300\n  $ argus dom scroll app --selector ".panel" --by 0,200\n  $ argus dom scroll app --testid "feed" --by 0,500\n  $ argus dom scroll app --pos 400,300 --by 0,200\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomScroll(id, options)
-		})
+	registerDomSelectorCommand(dom, {
+		name: 'scroll',
+		description: 'Emulate a touch scroll gesture (fires real scroll/wheel events)',
+		examples: [
+			'argus dom scroll app --by 0,300',
+			'argus dom scroll app --selector ".panel" --by 0,200',
+			'argus dom scroll app --testid "feed" --by 0,500',
+			'argus dom scroll app --pos 400,300 --by 0,200',
+		],
+		textOption: {
+			flags: '--text <string>',
+			description: 'Filter by textContent (trimmed). Supports /regex/flags syntax',
+		},
+		configure: (command) => {
+			command.option('--pos <x,y>', 'Viewport coordinates to scroll at (mutually exclusive with selector)')
+			command.requiredOption('--by <dx,dy>', 'Scroll delta (positive y = scroll down)')
+		},
+		action: runDomScroll,
+	})
 
-	dom.command('scroll-to')
-		.argument('[id]', 'Watcher id to query')
-		.description('Scroll the viewport or elements into view / to a position')
-		.option('--selector <css>', 'CSS selector to match element(s)')
-		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
-		.option('--to <x,y>', 'Scroll to absolute position (viewport or element)')
-		.option('--by <x,y>', 'Scroll by delta (viewport or element)')
-		.option('--all', 'Allow multiple matches (default: error if >1 match)')
-		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
-		.option('--json', 'Output JSON for automation')
-		.addHelpText(
-			'after',
-			'\nExamples:\n  $ argus dom scroll-to app --selector "#footer"\n  $ argus dom scroll-to app --testid "footer"\n  $ argus dom scroll-to app --to 0,1000\n  $ argus dom scroll-to app --by 0,500\n  $ argus dom scroll-to app --selector ".panel" --to 0,1000\n  $ argus dom scroll-to app --selector ".panel" --by 0,500\n',
-		)
-		.action(async (id, options) => {
-			if (!resolveTestId(options)) return
-			await runDomScrollTo(id, options)
-		})
+	registerDomSelectorCommand(dom, {
+		name: 'scroll-to',
+		description: 'Scroll the viewport or elements into view / to a position',
+		examples: [
+			'argus dom scroll-to app --selector "#footer"',
+			'argus dom scroll-to app --testid "footer"',
+			'argus dom scroll-to app --to 0,1000',
+			'argus dom scroll-to app --by 0,500',
+			'argus dom scroll-to app --selector ".panel" --to 0,1000',
+			'argus dom scroll-to app --selector ".panel" --by 0,500',
+		],
+		textOption: {
+			flags: '--text <string>',
+			description: 'Filter by textContent (trimmed). Supports /regex/flags syntax',
+		},
+		configure: (command) => {
+			command.option('--to <x,y>', 'Scroll to absolute position (viewport or element)')
+			command.option('--by <x,y>', 'Scroll by delta (viewport or element)')
+		},
+		action: runDomScrollTo,
+	})
 }
 
 function registerDomModify(dom: Command): void {
@@ -218,6 +218,7 @@ function registerDomModify(dom: Command): void {
 		.command('attr')
 		.argument('[id]', 'Watcher id to query')
 		.argument('[attrs...]', 'Attributes: name (boolean) or name=value')
+		.description('Modify element attributes')
 		.option('--selector <css>', 'CSS selector for target element(s)')
 		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
 		.option('--remove <attrs...>', 'Attributes to remove')

@@ -3,7 +3,7 @@ import type { RouteHandler } from './types.js'
 import { respondMultipleMatches } from './domSelectorRoute.js'
 import { emitRequest } from './types.js'
 import { resolveDomSelectorMatches, clickDomNodes, clickAtPoint, resolveNodeTopLeft } from '../../cdp/mouse.js'
-import { waitForSelectorMatches } from '../../cdp/dom/selector.js'
+import { resolveSelectorTargets } from '../../cdp/dom/selector.js'
 import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
 
 export const handle: RouteHandler = async (req, res, _url, ctx) => {
@@ -51,19 +51,15 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 			return respondJson(res, response)
 		}
 
-		let allNodeIds: number[]
-		let nodeIds: number[]
-
-		if (waitMs > 0) {
-			await ctx.cdpSession.sendAndWait('DOM.enable')
-			const result = await waitForSelectorMatches(ctx.cdpSession, payload.selector!, all, payload.text, waitMs)
-			allNodeIds = result.allNodeIds
-			nodeIds = result.nodeIds
-		} else {
-			const result = await resolveDomSelectorMatches(ctx.cdpSession, payload.selector!, all, payload.text)
-			allNodeIds = result.allNodeIds
-			nodeIds = result.nodeIds
-		}
+		const { allNodeIds, nodeIds } =
+			waitMs > 0
+				? await resolveSelectorTargets(ctx.cdpSession, {
+						selector: payload.selector!,
+						all,
+						text: payload.text,
+						waitMs,
+					})
+				: await resolveDomSelectorMatches(ctx.cdpSession, payload.selector!, all, payload.text)
 
 		if (!all && allNodeIds.length > 1) {
 			return respondMultipleMatches(res, allNodeIds.length, 'click')
