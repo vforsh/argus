@@ -35,44 +35,47 @@ The extension communicates with `argus-watcher` via Chrome's Native Messaging pr
 
 ```bash
 # From the argus root directory
-cd packages/argus-watcher
 npm run build
-node dist/scripts/install-host.js install <EXTENSION_ID>
+argus extension setup <EXTENSION_ID>
 ```
 
 Replace `<EXTENSION_ID>` with the ID from step 5 above.
 
 This creates:
 
-- **macOS**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.vforsh.argus.watcher.json`
-- **Linux**: `~/.config/google-chrome/NativeMessagingHosts/com.vforsh.argus.watcher.json`
+- **macOS**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json`
+- **Linux**: `~/.config/google-chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json`
 - **Windows**: Manifest in AppData + registry key (see console output)
 
 ## Usage
 
-1. **Start the watcher in extension mode**:
+1. **Install the native host and reload the extension**:
 
 ```bash
-  argus watcher start --id app --source extension
+argus extension setup <EXTENSION_ID>
 ```
 
-2. **Attach to tabs**: Click the Argus extension icon in Chrome toolbar, then click "Attach" on the tabs you want to monitor.
-3. **Connect to a specific iframe (optional)**: Once a tab is attached, the popup shows the top page plus discovered iframe targets. Selecting an iframe keeps the debugger attached to the tab but switches Argus commands (`eval`, `dom `\*, selector-based screenshots, etc.) to that frame.
-4. **Use with Argus CLI**:
+2. **Open Chrome with the extension loaded**. The extension service worker connects to the native host automatically, and that native host starts an extension-backed watcher process.
+3. **Attach to tabs**: Click the Argus extension icon in Chrome toolbar, then click "Attach" on the tabs you want to monitor.
+4. **Connect to a specific iframe (optional)**: Once a tab is attached, the popup shows the top page plus discovered iframe targets. Selecting an iframe keeps the debugger attached to the tab but switches Argus commands (`eval`, `dom *`, selector-based screenshots, etc.) to that frame.
+5. **Use with Argus CLI**:
 
 ```bash
   # List watchers
   argus list
 
-  # View logs from attached tab
-  argus logs app
+  # View logs from the extension-backed watcher
+  # The default watcher id is usually "extension"
+  argus logs extension
 
   # Evaluate JavaScript
-  argus eval app "document.title"
+  argus eval extension "document.title"
 
   # List extension-backed page/iframe targets
-  argus page ls --id app --tree
+  argus page ls --id extension --tree
 ```
+
+If `extension` is already taken or stale, run `argus list` and use the watcher id shown there.
 
 ## How It Works
 
@@ -89,10 +92,12 @@ This creates:
 └─────────────────────┘                          └──────────────────────┘
 ```
 
-1. Extension uses `chrome.debugger.attach()` to connect to tabs
-2. CDP commands/events flow through Native Messaging to `argus-watcher`
-3. Watcher exposes standard Argus HTTP API (`/logs`, `/eval`, `/dom/*`, etc.)
-4. Argus CLI connects to watcher just like CDP mode
+1. The extension service worker connects to the Native Messaging host on startup.
+2. Chrome launches `argus watcher native-host`, which starts `argus-watcher` in `source: 'extension'` mode and announces it in the local watcher registry.
+3. When you click "Attach" in the popup, the extension uses `chrome.debugger.attach()` to connect to the selected tab.
+4. CDP commands/events flow between the extension and watcher over Native Messaging.
+5. The watcher exposes the standard Argus HTTP API (`/logs`, `/eval`, `/dom/*`, `/targets`, `/attach`, `/detach`, etc.).
+6. Argus CLI connects to that watcher just like CDP mode.
 
 ## Limitations
 
@@ -106,5 +111,5 @@ This creates:
 2. Remove Native Messaging host:
 
 ```bash
-  node packages/argus-watcher/dist/scripts/install-host.js uninstall
+  argus extension remove
 ```

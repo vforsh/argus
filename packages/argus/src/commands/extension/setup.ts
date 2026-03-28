@@ -99,7 +99,7 @@ export const runExtensionSetup = async (options: ExtensionSetupOptions): Promise
 		output.writeHuman('')
 		output.writeHuman('Next steps:')
 		output.writeHuman('  1. Reload the extension in chrome://extensions')
-		output.writeHuman('  2. Start watcher: argus watcher start --id app --source extension')
+		output.writeHuman('  2. Open the extension popup and attach a tab')
 		output.writeHuman('')
 	}
 }
