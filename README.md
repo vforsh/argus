@@ -260,30 +260,30 @@ Four packages:
 
 ## Command Surface
 
-| Command                                              | Description                            |
-| ---------------------------------------------------- | -------------------------------------- |
-| `start`                                              | Launch Chrome + watcher in one command |
-| `list`                                               | List watchers and Chrome instances     |
-| `doctor`                                             | Run environment diagnostics            |
-| `reload`                                             | Reload the attached page               |
-| `chrome start\|ls\|version\|status\|stop`            | Chrome lifecycle management            |
-| `watcher start\|stop\|status\|ls\|prune`             | Watcher lifecycle management           |
-| `page ls\|open\|activate\|close\|reload`             | Tab and target management              |
-| `logs` / `logs tail`                                 | Fetch or stream console logs           |
-| `net` / `net tail`                                   | Fetch or stream network requests       |
-| `eval`                                               | Evaluate JS expression                 |
-| `eval-until` / `wait`                                | Poll JS expression until truthy        |
-| `code ls\|read\|grep\|deminify\|strings`             | Inspect and analyze runtime code       |
-| `dom tree` / `dom info`                              | Inspect DOM                            |
-| `dom click\|hover\|scroll\|scroll-to\|fill\|keydown` | Interact with elements                 |
-| `dom add\|add-script\|remove\|set-file`              | Modify DOM                             |
-| `dom modify attr\|class\|style\|text\|html`          | Modify element properties              |
-| `snapshot` / `ax`                                    | Accessibility tree snapshot            |
-| `screenshot`                                         | Capture screenshot                     |
-| `trace` / `trace start\|stop`                        | Chrome performance tracing             |
-| `storage local get\|set\|remove\|list\|clear`        | Manage `localStorage`                  |
-| `config init`                                        | Create config file                     |
-| `extension setup\|remove\|status\|info`              | Chrome extension native messaging      |
+| Command                                                | Description                            |
+| ------------------------------------------------------ | -------------------------------------- |
+| `start`                                                | Launch Chrome + watcher in one command |
+| `list`                                                 | List watchers and Chrome instances     |
+| `doctor`                                               | Run environment diagnostics            |
+| `reload`                                               | Reload the attached page               |
+| `chrome start\|ls\|version\|status\|stop`              | Chrome lifecycle management            |
+| `watcher start\|stop\|status\|ls\|prune`               | Watcher lifecycle management           |
+| `page ls\|open\|activate\|close\|reload`               | Tab and target management              |
+| `logs` / `logs tail`                                   | Fetch or stream console logs           |
+| `net` / `net tail`                                     | Fetch or stream network requests       |
+| `eval`                                                 | Evaluate JS expression                 |
+| `eval-until` / `wait`                                  | Poll JS expression until truthy        |
+| `code ls\|read\|grep\|deminify\|strings`               | Inspect and analyze runtime code       |
+| `dom tree` / `dom info`                                | Inspect DOM                            |
+| `click\|hover\|fill\|keydown\|scroll-to`               | Interact with elements                 |
+| `dom focus\|scroll\|add\|add-script\|remove\|set-file` | DOM-focused actions and modifications  |
+| `dom modify attr\|class\|style\|text\|html`            | Modify element properties              |
+| `snapshot` / `ax`                                      | Accessibility tree snapshot            |
+| `screenshot`                                           | Capture screenshot                     |
+| `trace` / `trace start\|stop`                          | Chrome performance tracing             |
+| `storage local get\|set\|remove\|list\|clear`          | Manage `localStorage`                  |
+| `config init`                                          | Create config file                     |
+| `extension setup\|remove\|status\|info`                | Chrome extension native messaging      |
 
 ## Common Flags
 
