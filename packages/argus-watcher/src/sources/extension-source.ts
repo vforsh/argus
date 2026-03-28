@@ -1,13 +1,8 @@
-/**
- * Extension source for CDP access via Chrome extension Native Messaging.
- * Wraps SessionManager and provides a unified source interface.
- */
-
 import { createNativeMessaging } from '../native-messaging/messaging.js'
 import { SessionManager, type ExtensionSession } from '../native-messaging/session-manager.js'
 import type { TabInfo } from '../native-messaging/types.js'
 import type { CdpSourceHandle, CdpSourceTarget, CdpSourceBaseOptions } from './types.js'
-import type { CdpSessionHandle, CdpTargetContext } from '../cdp/connection.js'
+import type { CdpTargetContext } from '../cdp/connection.js'
 import {
 	buildFrameTargets,
 	buildPageTarget,
@@ -17,14 +12,13 @@ import {
 	createNotAttachedError,
 	frameToTarget,
 	formatPageTargetId,
-	parseExecutionContext,
 	parseExtensionTargetId,
-	parseFrame,
 	resolveRequestedTarget,
 	type CdpFrameTreeNode,
 	type ExtensionFrameState,
 } from './extension-frame-state.js'
-import { toConsoleEvent, toExceptionEvent } from './extension-log-events.js'
+import { createDelegatingSession, type DelegatingSessionController } from './extension-delegating-session.js'
+import { registerExtensionSessionEventHandlers } from './extension-session-events.js'
 
 export type ExtensionSourceOptions = CdpSourceBaseOptions
 
@@ -56,7 +50,6 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	const sessionManager = new SessionManager(messaging, {
 		onAttach: (session: ExtensionSession) => {
 			console.error(`[ExtensionSource] Tab attached: ${session.tabId} - ${session.url}`)
-
 			currentSession = session
 			rebindDelegatingSessions()
 			seedFrameState(session)
@@ -65,21 +58,16 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 		onDetach: (tabId: number, reason: string) => {
 			console.error(`[ExtensionSource] Tab detached: ${tabId} - ${reason}`)
-
 			if (currentSession?.tabId === tabId) {
 				currentSession = null
 			}
 			rebindDelegatingSessions()
 			frameStateByTabId.delete(tabId)
-
 			emitStatus(null, reason)
-
 			events.onDetach?.(reason)
 		},
 
-		onTabsUpdated: () => {
-			// Tabs list updated - no action needed
-		},
+		onTabsUpdated: () => {},
 
 		onTargetSelected: (tabId, frameId) => {
 			const session = currentSession
@@ -93,7 +81,9 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	})
 
 	// Proxy session follows the currently selected page/frame target inside the attached tab.
-	const proxySession = createDelegatingSession({
+	const { session: proxySession, controller: proxyController } = createDelegatingSession({
+		getCurrentSession: () => currentSession,
+		requireCurrentSession: getCurrentExtensionSession,
 		getTargetContext: () => getCurrentTargetContext() ?? { kind: 'page' },
 		mapParams: (method, params) => {
 			const targetContext = getCurrentTargetContext()
@@ -109,12 +99,15 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			}
 		},
 	})
+	delegatingSessions.add(proxyController)
 
-	// Page session always stays at the top-level tab context so page-level features
-	// (indicator, inject-on-attach, similar lifecycle hooks) don't accidentally run inside an iframe.
-	const pageSession = createDelegatingSession({
+	// Page session stays pinned to the top-level tab for page-scoped features like the indicator and inject-on-attach.
+	const { session: pageSession, controller: pageController } = createDelegatingSession({
+		getCurrentSession: () => currentSession,
+		requireCurrentSession: getCurrentExtensionSession,
 		getTargetContext: () => ({ kind: 'page' }),
 	})
+	delegatingSessions.add(pageController)
 
 	messaging.start()
 	sendHostInfo()
@@ -159,7 +152,6 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			sessionManager.attachTab(target.tabId)
 			return
 		}
-
 		requestTargetSelection(session, target.frameId)
 	}
 
@@ -203,11 +195,25 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		for (const controller of delegatingSessions) {
 			controller.dispose()
 		}
+		delegatingSessions.clear()
 	}
 
 	async function bootstrapAttachedSession(session: ExtensionSession): Promise<void> {
 		try {
-			registerSessionEventHandlers(session)
+			registerExtensionSessionEventHandlers({
+				session,
+				events,
+				ignoreMatcher,
+				stripUrlPrefixes,
+				getOrCreateFrameState,
+				reconcileTargetSelection,
+				removeFrame,
+				refreshFrameTitle,
+				emitTargetChanged,
+				setCurrentSession: (nextSession) => {
+					currentSession = nextSession
+				},
+			})
 			await enableBootstrapDomains(session)
 			await refreshFrameTree(session)
 
@@ -237,115 +243,6 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	async function enableBootstrapDomains(session: ExtensionSession): Promise<void> {
 		await session.handle.sendAndWait('Runtime.enable')
 		await session.handle.sendAndWait('Page.enable')
-	}
-
-	function registerSessionEventHandlers(session: ExtensionSession): void {
-		session.handle.onEvent('Runtime.executionContextCreated', (params, meta) => {
-			const context = parseExecutionContext(params)
-			if (!context?.isDefault || !context.frameId) {
-				return
-			}
-			const state = getOrCreateFrameState(session.tabId)
-			state.executionContexts.set(context.frameId, context.id)
-			const frame = state.frames.get(context.frameId)
-			if (frame) {
-				frame.sessionId = meta.sessionId ?? null
-			}
-			void refreshFrameTitle(session, context.frameId, context.id)
-			reconcileTargetSelection(session)
-		})
-
-		session.handle.onEvent('Runtime.executionContextsCleared', () => {
-			const state = getOrCreateFrameState(session.tabId)
-			state.executionContexts.clear()
-			state.pendingTitleLoads.clear()
-		})
-
-		session.handle.onEvent('Runtime.executionContextDestroyed', (params) => {
-			const record = params as { executionContextId?: number }
-			if (record.executionContextId == null) {
-				return
-			}
-
-			const state = getOrCreateFrameState(session.tabId)
-			for (const [frameId, contextId] of state.executionContexts.entries()) {
-				if (contextId === record.executionContextId) {
-					state.executionContexts.delete(frameId)
-					state.pendingTitleLoads.delete(frameId)
-				}
-			}
-		})
-
-		session.handle.onEvent('Page.frameNavigated', (params, meta) => {
-			const frame = parseFrame(params)
-			if (!frame) {
-				return
-			}
-
-			const state = getOrCreateFrameState(session.tabId)
-			state.frames.set(frame.frameId, frame)
-			frame.sessionId = meta.sessionId ?? null
-			if (!frame.parentFrameId) {
-				if (!meta.sessionId) {
-					state.topFrameId = frame.frameId
-					session.url = frame.url
-				} else if (state.topFrameId == null) {
-					state.topFrameId = frame.parentFrameId
-				}
-			} else if (state.executionContexts.has(frame.frameId)) {
-				void refreshFrameTitle(session, frame.frameId)
-			}
-			currentSession = session
-
-			if (!frame.parentFrameId && !meta.sessionId) {
-				events.onPageNavigation?.({ url: frame.url, title: session.title ?? null })
-			}
-
-			if (reconcileTargetSelection(session)) {
-				return
-			}
-
-			if ((!frame.parentFrameId && state.activeFrameId == null) || state.activeFrameId === frame.frameId) {
-				emitTargetChanged(session)
-			}
-		})
-
-		session.handle.onEvent('Page.frameAttached', (params, meta) => {
-			const record = params as { frameId?: string; parentFrameId?: string }
-			if (!record.frameId) {
-				return
-			}
-			const state = getOrCreateFrameState(session.tabId)
-			state.frames.set(record.frameId, {
-				frameId: record.frameId,
-				parentFrameId: record.parentFrameId ?? state.topFrameId ?? null,
-				url: '',
-				title: null,
-				sessionId: meta.sessionId ?? null,
-			})
-			reconcileTargetSelection(session)
-		})
-
-		session.handle.onEvent('Page.frameDetached', (params) => {
-			const record = params as { frameId?: string }
-			if (!record.frameId) {
-				return
-			}
-			removeFrame(session.tabId, record.frameId)
-			reconcileTargetSelection(session)
-		})
-
-		session.handle.onEvent('Page.domContentEventFired', () => {
-			events.onPageLoad?.()
-		})
-
-		session.handle.onEvent('Runtime.consoleAPICalled', (params) => {
-			events.onLog(toConsoleEvent(params, session, { ignoreMatcher, stripUrlPrefixes }))
-		})
-
-		session.handle.onEvent('Runtime.exceptionThrown', (params) => {
-			events.onLog(toExceptionEvent(params, session, { ignoreMatcher, stripUrlPrefixes }))
-		})
 	}
 
 	function getCurrentTargetContext(): CdpTargetContext | null {
@@ -586,65 +483,6 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			state.pendingTitleLoads.delete(frameId)
 		}
 	}
-
-	function createDelegatingSession(config: {
-		getTargetContext: () => CdpTargetContext
-		mapParams?: (method: string, params?: Record<string, unknown>) => Record<string, unknown> | undefined
-	}): CdpSessionHandle {
-		const subscriptions = new Set<DelegatingEventSubscription>()
-		const rebindSubscriptions = (): void => {
-			// Delegating sessions are created before a tab may be attached, so event listeners
-			// must follow the active extension session instead of binding once and going stale.
-			for (const subscription of subscriptions) {
-				subscription.unbind()
-				if (!currentSession) {
-					continue
-				}
-				subscription.off = currentSession.handle.onEvent(subscription.method, subscription.handler)
-			}
-		}
-
-		const disposeSubscriptions = (): void => {
-			for (const subscription of subscriptions) {
-				subscription.unbind()
-			}
-			subscriptions.clear()
-		}
-
-		const controller: DelegatingSessionController = {
-			rebind: rebindSubscriptions,
-			dispose: () => {
-				disposeSubscriptions()
-				delegatingSessions.delete(controller)
-			},
-		}
-
-		delegatingSessions.add(controller)
-		controller.rebind()
-
-		return {
-			isAttached: () => currentSession?.handle.isAttached() ?? false,
-			sendAndWait: async (method, params, options) => {
-				const session = getCurrentExtensionSession()
-				const targetContext = config.getTargetContext()
-				const nextParams = config.mapParams ? config.mapParams(method, params) : params
-				const nextOptions =
-					targetContext.kind === 'frame' && targetContext.sessionId ? { ...(options ?? {}), sessionId: targetContext.sessionId } : options
-				return session.handle.sendAndWait(method, nextParams, nextOptions)
-			},
-			onEvent: (method, handler) => {
-				const subscription = createDelegatingEventSubscription(method, handler)
-				subscriptions.add(subscription)
-				controller.rebind()
-
-				return () => {
-					subscription.unbind()
-					subscriptions.delete(subscription)
-				}
-			},
-			getTargetContext: config.getTargetContext,
-		}
-	}
 }
 
 /**
@@ -657,26 +495,4 @@ const tabToTarget = (tab: TabInfo): CdpSourceTarget => ({
 	type: 'page',
 	faviconUrl: tab.faviconUrl,
 	attached: tab.attached,
-})
-
-type DelegatingEventSubscription = {
-	method: string
-	handler: Parameters<CdpSessionHandle['onEvent']>[1]
-	off: (() => void) | null
-	unbind: () => void
-}
-
-type DelegatingSessionController = {
-	rebind: () => void
-	dispose: () => void
-}
-
-const createDelegatingEventSubscription = (method: string, handler: Parameters<CdpSessionHandle['onEvent']>[1]): DelegatingEventSubscription => ({
-	method,
-	handler,
-	off: null,
-	unbind() {
-		this.off?.()
-		this.off = null
-	},
 })
