@@ -517,6 +517,7 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		netBuffer,
 		getWatcher: () => record,
 		getCdpStatus: () => cdpStatus,
+		pageCdpSession: sourceHandle.pageSession ?? sourceHandle.session,
 		cdpSession: sourceHandle.session,
 		traceRecorder,
 		screenshotter,

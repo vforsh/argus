@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'bun:test'
-import { collectFrameTree, createEmptyFrameState, parseExtensionTargetId, resolveRequestedFrameId } from '../src/sources/extension-frame-state.js'
+import {
+	collectFrameTree,
+	createEmptyFrameState,
+	createRequestedFrameHint,
+	parseExtensionTargetId,
+	resolveRequestedFrameId,
+	resolveRequestedTarget,
+} from '../src/sources/extension-frame-state.js'
 
 describe('extension-frame-state', () => {
 	it('keeps iframe selection pending until the frame is discovered', () => {
 		const state = createEmptyFrameState()
-		expect(resolveRequestedFrameId(state, 'frame-pending')).toBeNull()
+		expect(resolveRequestedFrameId(state, 'frame-pending', null)).toBeNull()
 
 		state.frames.set('frame-pending', {
 			frameId: 'frame-pending',
@@ -14,7 +21,67 @@ describe('extension-frame-state', () => {
 			sessionId: null,
 		})
 
-		expect(resolveRequestedFrameId(state, 'frame-pending')).toBe('frame-pending')
+		expect(resolveRequestedFrameId(state, 'frame-pending', null)).toBe('frame-pending')
+	})
+
+	it('rematches a reloaded iframe only when the exact stored url returns', () => {
+		const state = createEmptyFrameState()
+		const selectedFrame = {
+			frameId: 'frame-a',
+			parentFrameId: 'root',
+			url: 'https://example.com/embed?id=1',
+			title: 'Embed',
+			sessionId: null,
+		}
+		const requestedFrameHint = createRequestedFrameHint(selectedFrame)
+
+		state.frames.set('frame-b', {
+			frameId: 'frame-b',
+			parentFrameId: 'root',
+			url: 'https://example.com/embed?id=2',
+			title: 'Embed',
+			sessionId: null,
+		})
+
+		expect(resolveRequestedFrameId(state, selectedFrame.frameId, requestedFrameHint)).toBeNull()
+
+		state.frames.set('frame-c', {
+			frameId: 'frame-c',
+			parentFrameId: 'root',
+			url: selectedFrame.url,
+			title: 'Embed',
+			sessionId: null,
+		})
+
+		expect(resolveRequestedFrameId(state, selectedFrame.frameId, requestedFrameHint)).toBe('frame-c')
+	})
+
+	it('falls back to title matching only when the selected iframe had no url', () => {
+		const state = createEmptyFrameState()
+		const requestedFrameHint = {
+			url: null,
+			title: 'Untitled Preview',
+		}
+
+		state.frames.set('frame-preview', {
+			frameId: 'frame-preview',
+			parentFrameId: 'root',
+			url: '',
+			title: 'Untitled Preview',
+			sessionId: null,
+		})
+
+		expect(resolveRequestedFrameId(state, 'missing-frame', requestedFrameHint)).toBe('frame-preview')
+	})
+
+	it('falls back to the page only after an active iframe detaches', () => {
+		const state = createEmptyFrameState()
+		state.requestedFrameId = 'frame-selected'
+
+		expect(resolveRequestedTarget(state)).toEqual({ kind: 'pending' })
+
+		state.requestedFrameDetached = true
+		expect(resolveRequestedTarget(state)).toEqual({ kind: 'page' })
 	})
 
 	it('parses virtual extension target ids', () => {

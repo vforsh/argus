@@ -12,6 +12,7 @@ import {
 	buildFrameTargets,
 	buildPageTarget,
 	collectFrameTree,
+	createRequestedFrameHint,
 	createEmptyFrameState,
 	createNotAttachedError,
 	frameToTarget,
@@ -19,7 +20,7 @@ import {
 	parseExecutionContext,
 	parseExtensionTargetId,
 	parseFrame,
-	resolveRequestedFrameId,
+	resolveRequestedTarget,
 	type CdpFrameTreeNode,
 	type ExtensionFrameState,
 } from './extension-frame-state.js'
@@ -83,7 +84,8 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		onTargetSelected: (tabId, frameId) => {
 			const session = currentSession
 			if (!session || session.tabId !== tabId) {
-				getOrCreateFrameState(tabId).requestedFrameId = frameId
+				const state = getOrCreateFrameState(tabId)
+				setRequestedTargetSelection(state, frameId)
 				return
 			}
 			requestTargetSelection(session, frameId)
@@ -152,7 +154,8 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		const target = parseExtensionTargetId(targetId)
 		const session = currentSession
 		if (!session || session.tabId !== target.tabId) {
-			getOrCreateFrameState(target.tabId).requestedFrameId = target.frameId
+			const state = getOrCreateFrameState(target.tabId)
+			setRequestedTargetSelection(state, target.frameId)
 			sessionManager.attachTab(target.tabId)
 			return
 		}
@@ -445,8 +448,15 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 	function requestTargetSelection(session: ExtensionSession, frameId: string | null): void {
 		const state = getOrCreateFrameState(session.tabId)
-		state.requestedFrameId = frameId
+		setRequestedTargetSelection(state, frameId)
 		reconcileTargetSelection(session)
+	}
+
+	function setRequestedTargetSelection(state: ExtensionFrameState, frameId: string | null): void {
+		const frame = frameId ? state.frames.get(frameId) : null
+		state.requestedFrameId = frameId
+		state.requestedFrameHint = createRequestedFrameHint(frame)
+		state.requestedFrameDetached = false
 	}
 
 	/**
@@ -456,29 +466,43 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	 */
 	function reconcileTargetSelection(session: ExtensionSession): boolean {
 		const state = getOrCreateFrameState(session.tabId)
-		const nextActiveFrameId = resolveRequestedFrameId(state, state.requestedFrameId)
+		const resolution = resolveRequestedTarget(state)
 
-		if (state.requestedFrameId == null) {
-			if (state.activeFrameId == null) {
-				if (state.activeAttachedAt == null) {
-					state.activeAttachedAt = Date.now()
-					emitTargetChanged(session)
-					return true
-				}
-				return false
-			}
-
-			state.activeFrameId = null
-			state.activeAttachedAt = Date.now()
-			emitTargetChanged(session)
-			return true
+		if (resolution.kind === 'page') {
+			state.requestedFrameDetached = false
+			return activatePageTarget(session, state)
 		}
 
-		if (nextActiveFrameId == null || state.activeFrameId === nextActiveFrameId) {
+		if (resolution.kind === 'pending') {
 			return false
 		}
 
-		state.activeFrameId = nextActiveFrameId
+		state.requestedFrameDetached = false
+		if (state.activeFrameId === resolution.frameId) {
+			return false
+		}
+
+		return activateFrameTarget(session, state, resolution.frameId)
+	}
+
+	function activatePageTarget(session: ExtensionSession, state: ExtensionFrameState): boolean {
+		if (state.activeFrameId == null) {
+			if (state.activeAttachedAt == null) {
+				state.activeAttachedAt = Date.now()
+				emitTargetChanged(session)
+				return true
+			}
+			return false
+		}
+
+		state.activeFrameId = null
+		state.activeAttachedAt = Date.now()
+		emitTargetChanged(session)
+		return true
+	}
+
+	function activateFrameTarget(session: ExtensionSession, state: ExtensionFrameState, frameId: string): boolean {
+		state.activeFrameId = frameId
 		state.activeAttachedAt = Date.now()
 		emitTargetChanged(session)
 		return true
@@ -497,9 +521,17 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		for (const childId of childIds) {
 			removeFrame(tabId, childId)
 		}
-		if (state.requestedFrameId === frameId) {
-			state.requestedFrameId = null
+
+		/**
+		 * Keep the user's requested iframe selection across reload/navigation detaches.
+		 * Frame ids are ephemeral, so the stored frame hint lets selection survive a fresh id after reload.
+		 */
+		if (state.activeFrameId === frameId) {
+			state.requestedFrameDetached = state.requestedFrameId === frameId
+			state.activeFrameId = null
+			state.activeAttachedAt = null
 		}
+
 		state.frames.delete(frameId)
 		state.executionContexts.delete(frameId)
 		state.pendingTitleLoads.delete(frameId)

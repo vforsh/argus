@@ -75,6 +75,8 @@ export type HttpServerOptions = {
 	netBuffer: NetBuffer | null
 	getWatcher: () => WatcherRecord
 	getCdpStatus: () => { attached: boolean; target: { title: string | null; url: string | null } | null }
+	/** Session for page-scoped commands that must always target the top-level page. */
+	pageCdpSession: CdpSessionHandle
 	cdpSession: CdpSessionHandle
 	traceRecorder: TraceRecorder
 	screenshotter: Screenshotter

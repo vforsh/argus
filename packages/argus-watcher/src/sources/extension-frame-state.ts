@@ -10,6 +10,9 @@ type SessionSummary = {
 export type ExtensionFrameState = {
 	topFrameId: string | null
 	requestedFrameId: string | null
+	requestedFrameHint: RequestedFrameHint | null
+	/** True once an active iframe disappears and we should report the page while waiting to rematch it safely. */
+	requestedFrameDetached: boolean
 	activeFrameId: string | null
 	activeAttachedAt: number | null
 	frames: Map<string, ExtensionFrame>
@@ -25,6 +28,18 @@ export type ExtensionFrame = {
 	sessionId: string | null
 }
 
+export type RequestedFrameHint = {
+	/**
+	 * Exact iframe URL at the moment the user selected it.
+	 * We intentionally fail closed if the next frame does not report the same URL,
+	 * because rematching the wrong sibling iframe is worse than requiring a reselect.
+	 */
+	url: string | null
+	title: string | null
+}
+
+export type RequestedTargetResolution = { kind: 'page' } | { kind: 'pending' } | { kind: 'frame'; frameId: string }
+
 export type CdpFrameTreeNode = {
 	frame?: {
 		id?: string
@@ -38,6 +53,8 @@ export type CdpFrameTreeNode = {
 export const createEmptyFrameState = (): ExtensionFrameState => ({
 	topFrameId: null,
 	requestedFrameId: null,
+	requestedFrameHint: null,
+	requestedFrameDetached: false,
 	activeFrameId: null,
 	activeAttachedAt: null,
 	frames: new Map(),
@@ -168,15 +185,79 @@ export const parseExecutionContext = (params: unknown): { id: number; frameId: s
 	}
 }
 
+export const createRequestedFrameHint = (frame: ExtensionFrame | null | undefined): RequestedFrameHint | null => {
+	if (!frame) {
+		return null
+	}
+
+	return {
+		url: frame.url || null,
+		title: frame.title?.trim() || null,
+	}
+}
+
 /**
  * Selection is about the user's intended target, not whether every frame-scoped command is ready.
  * Once the watcher knows the frame exists we can switch the active target; commands that require
  * an execution context still guard that separately at execution time.
  */
-export const resolveRequestedFrameId = (state: ExtensionFrameState, requestedFrameId: string | null): string | null => {
+export const resolveRequestedFrameId = (
+	state: ExtensionFrameState,
+	requestedFrameId: string | null,
+	requestedFrameHint: RequestedFrameHint | null,
+): string | null => {
 	if (!requestedFrameId) {
 		return null
 	}
 
-	return state.frames.has(requestedFrameId) ? requestedFrameId : null
+	if (state.frames.has(requestedFrameId)) {
+		return requestedFrameId
+	}
+
+	if (!requestedFrameHint) {
+		return null
+	}
+
+	const urlMatch = requestedFrameHint.url == null ? null : findSingleMatchingFrameId(state, (frame) => frame.url === requestedFrameHint.url)
+	if (urlMatch) {
+		return urlMatch
+	}
+
+	if (requestedFrameHint.url != null || !requestedFrameHint.title) {
+		return null
+	}
+
+	return findSingleMatchingFrameId(state, (frame) => frame.title?.trim() === requestedFrameHint.title)
+}
+
+/**
+ * Pending iframe selections have two valid states:
+ * - `pending`: the iframe has never become active in this attachment yet, so keep waiting silently.
+ * - `page`: the iframe was active and then disappeared, so report the page while we wait for a safe rematch.
+ */
+export const resolveRequestedTarget = (state: ExtensionFrameState): RequestedTargetResolution => {
+	if (state.requestedFrameId == null) {
+		return { kind: 'page' }
+	}
+
+	const nextFrameId = resolveRequestedFrameId(state, state.requestedFrameId, state.requestedFrameHint)
+	if (nextFrameId) {
+		return { kind: 'frame', frameId: nextFrameId }
+	}
+
+	return state.requestedFrameDetached ? { kind: 'page' } : { kind: 'pending' }
+}
+
+const findSingleMatchingFrameId = (state: ExtensionFrameState, predicate: (frame: ExtensionFrame) => boolean): string | null => {
+	let matchId: string | null = null
+	for (const frame of state.frames.values()) {
+		if (!predicate(frame)) {
+			continue
+		}
+		if (matchId) {
+			return null
+		}
+		matchId = frame.frameId
+	}
+	return matchId
 }

@@ -12,7 +12,8 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 	emitRequest(ctx, res, 'reload')
 
 	try {
-		await ctx.cdpSession.sendAndWait('Page.reload', {
+		// Reload is page-scoped in CDP, even when the active Argus target is an iframe.
+		await ctx.pageCdpSession.sendAndWait('Page.reload', {
 			ignoreCache: payload.ignoreCache ?? false,
 		})
 		const response: ReloadResponse = { ok: true }
