@@ -1,4 +1,4 @@
-import { matchesTextPattern, parseTextPattern, type TextPattern } from '@vforsh/argus-core'
+import { matchesTextPattern, parseTextPattern } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 
 /**

@@ -1,9 +1,9 @@
 import { startWatcher, type WatcherHandle, type PageConsoleLogging, type WatcherSourceMode } from '@vforsh/argus-watcher'
 import crypto from 'node:crypto'
-import fs from 'node:fs/promises'
 import { createOutput } from '../output/io.js'
 import type { WatcherInjectConfig } from '../config/argusConfig.js'
 import { resolvePath } from '../utils/paths.js'
+import { buildWatcherMatch, registerTerminationHandlers, resolveInjectScript, waitForever } from './startShared.js'
 
 export type WatcherStartOptions = {
 	id?: string
@@ -49,33 +49,6 @@ const isValidPort = (port: number): boolean => Number.isFinite(port) && port >= 
 const parsePort = (value: string | number): number | null => {
 	const port = typeof value === 'string' ? parseInt(value, 10) : value
 	return isValidPort(port) ? port : null
-}
-
-const resolveInjectScript = async (
-	inject: WatcherInjectConfig | undefined,
-	output: { writeWarn: (message: string) => void },
-): Promise<{ script: string; exposeArgus?: boolean } | null> => {
-	if (!inject) {
-		return null
-	}
-
-	const resolvedPath = resolvePath(inject.file)
-	let script: string
-	try {
-		script = await fs.readFile(resolvedPath, 'utf8')
-	} catch (error) {
-		output.writeWarn(
-			`Failed to read inject script at ${resolvedPath}: ${error instanceof Error ? error.message : String(error)}. Skipping injection.`,
-		)
-		return null
-	}
-
-	if (script.trim() === '') {
-		output.writeWarn(`Inject script at ${resolvedPath} is empty. Skipping injection.`)
-		return null
-	}
-
-	return { script, exposeArgus: inject.exposeArgus }
 }
 
 export const runWatcherStart = async (options: WatcherStartOptions): Promise<void> => {
@@ -133,7 +106,6 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 	}
 
 	const watcherId = options.id?.trim() || generateWatcherId()
-	const matchUrl = options.url?.trim()
 	let artifactsBaseDir: string | undefined
 	if (options.artifacts != null) {
 		const trimmed = options.artifacts.trim()
@@ -146,38 +118,14 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 	}
 
 	const inject = await resolveInjectScript(options.inject, output)
-
-	// Build the match object from various filter options
-	const match: {
-		url?: string
-		type?: string
-		origin?: string
-		targetId?: string
-		parent?: string
-	} = {}
-
-	if (matchUrl) {
-		match.url = matchUrl
-	}
-	if (options.type?.trim()) {
-		match.type = options.type.trim()
-	}
-	if (options.origin?.trim()) {
-		match.origin = options.origin.trim()
-	}
-	if (options.target?.trim()) {
-		match.targetId = options.target.trim()
-	}
-	if (options.parent?.trim()) {
-		match.parent = options.parent.trim()
-	}
+	const match = sourceMode === 'cdp' ? buildWatcherMatch(options) : undefined
 
 	let handle: WatcherHandle
 	try {
 		handle = await startWatcher({
 			id: watcherId,
 			source: sourceMode,
-			match: sourceMode === 'cdp' && Object.keys(match).length > 0 ? match : undefined,
+			match,
 			chrome: sourceMode === 'cdp' ? { host: chromeHost!, port: chromePort! } : undefined,
 			host: '127.0.0.1',
 			port: 0,
@@ -199,11 +147,11 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		port: handle.watcher.port,
 		pid: handle.watcher.pid,
 		source: sourceMode,
-		matchUrl: match.url,
-		matchType: match.type,
-		matchOrigin: match.origin,
-		matchTarget: match.targetId,
-		matchParent: match.parent,
+		matchUrl: match?.url,
+		matchType: match?.type,
+		matchOrigin: match?.origin,
+		matchTarget: match?.targetId,
+		matchParent: match?.parent,
 		chromeHost,
 		chromePort,
 		artifactsBaseDir,
@@ -215,12 +163,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		} catch {}
 	}
 
-	process.on('SIGINT', () => {
-		void cleanup().then(() => process.exit(0))
-	})
-	process.on('SIGTERM', () => {
-		void cleanup().then(() => process.exit(0))
-	})
+	registerTerminationHandlers(cleanup)
 
 	handle.events.on('cdpAttached', ({ target }) => {
 		const typeInfo = target?.type ? ` (type: ${target.type})` : ''
@@ -262,7 +205,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		}
 	}
 
-	await new Promise(() => {})
+	await waitForever()
 }
 
 /** Generate a short random watcher ID (e.g. "a3f1b2"). */

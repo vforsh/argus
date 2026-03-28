@@ -1,23 +1,16 @@
 import type { DomRemoveRequest, DomRemoveResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
+import { readDomSelectorPayload, respondMultipleMatches } from './domSelectorRoute.js'
 import { emitRequest } from './types.js'
 import { removeElements } from '../../cdp/dom.js'
-import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
+import { respondJson, respondError } from '../httpUtils.js'
 
 export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const payload = await readJsonBody<DomRemoveRequest>(req, res)
-	if (!payload) {
+	const parsed = await readDomSelectorPayload<DomRemoveRequest>(req, res)
+	if (!parsed) {
 		return
 	}
-
-	if (!payload.selector || typeof payload.selector !== 'string') {
-		return respondInvalidBody(res, 'selector is required')
-	}
-
-	const all = payload.all ?? false
-	if (typeof all !== 'boolean') {
-		return respondInvalidBody(res, 'all must be a boolean')
-	}
+	const { payload, all } = parsed
 
 	emitRequest(ctx, res, 'dom/remove')
 
@@ -29,17 +22,7 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		})
 
 		if (!all && allNodeIds.length > 1) {
-			return respondJson(
-				res,
-				{
-					ok: false,
-					error: {
-						message: `Selector matched ${allNodeIds.length} elements; pass all=true to remove all matches`,
-						code: 'multiple_matches',
-					},
-				},
-				400,
-			)
+			return respondMultipleMatches(res, allNodeIds.length, 'remove')
 		}
 
 		const response: DomRemoveResponse = { ok: true, matches: allNodeIds.length, removed: removedCount }

@@ -1,4 +1,4 @@
-import type { CodeGrepResponse, CodeListResponse, CodeReadResponse, CodeResource, ErrorResponse } from '@vforsh/argus-core'
+import type { CodeGrepResponse, CodeListResponse, CodeReadResponse, ErrorResponse } from '@vforsh/argus-core'
 import { parseTextPattern } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
 import { formatCodeMatches, formatCodeResources, formatCodeStrings, formatPrettyCodeMatches } from '../output/code.js'

@@ -2,12 +2,14 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
+import { sendCdpCommand } from '../cdp/sendCdpCommand.js'
 import { fetchJson } from '../httpClient.js'
 import { pruneRegistry } from '../registry.js'
 import { createOutput } from '../output/io.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
 import { getCdpPort } from '../utils/ports.js'
 import type { ChromeVersionResponse } from './chrome.js'
+import { normalizeHttpUrl, registerTerminationHandlers, waitForever } from './startShared.js'
 
 export type ChromeStartOptions = {
 	url?: string
@@ -203,40 +205,13 @@ const waitForCdpReady = async (host: string, port: number, chrome: ChildProcess)
 	return { ready: false, error: lastError ?? 'Timed out waiting for CDP.' }
 }
 
-const sendBrowserClose = (wsUrl: string, timeoutMs = 3_000): Promise<void> =>
-	new Promise((resolve) => {
-		const ws = new WebSocket(wsUrl)
-		const timer = setTimeout(() => {
-			try {
-				ws.close()
-			} catch {}
-			resolve()
-		}, timeoutMs)
-
-		ws.addEventListener('open', () => {
-			try {
-				ws.send(JSON.stringify({ id: 1, method: 'Browser.close' }))
-			} catch {}
-		})
-
-		ws.addEventListener('message', () => {
-			clearTimeout(timer)
-			try {
-				ws.close()
-			} catch {}
-			resolve()
-		})
-
-		ws.addEventListener('error', () => {
-			clearTimeout(timer)
-			resolve()
-		})
-
-		ws.addEventListener('close', () => {
-			clearTimeout(timer)
-			resolve()
-		})
-	})
+const sendBrowserClose = async (wsUrl: string, timeoutMs = 3_000): Promise<void> => {
+	try {
+		await sendCdpCommand(wsUrl, { id: 1, method: 'Browser.close' }, timeoutMs)
+	} catch {
+		// Closing is best-effort here. The caller already falls back to kill.
+	}
+}
 
 const normalizeProfile = (profile?: string): ChromeStartOptions['profile'] | null => {
 	if (!profile) {
@@ -404,12 +379,9 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 			process.exitCode = 2
 			return
 		}
-		startupUrl = watcher.match.url
-		if (!startupUrl.startsWith('http://') && !startupUrl.startsWith('https://')) {
-			startupUrl = `http://${startupUrl}`
-		}
+		startupUrl = normalizeHttpUrl(watcher.match.url)
 	} else if (options.url) {
-		startupUrl = options.url
+		startupUrl = normalizeHttpUrl(options.url)
 	}
 
 	let result: LaunchChromeResult
@@ -426,12 +398,7 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		return
 	}
 
-	process.on('SIGINT', () => {
-		void result.closeGracefully().then(() => process.exit(0))
-	})
-	process.on('SIGTERM', () => {
-		void result.closeGracefully().then(() => process.exit(0))
-	})
+	registerTerminationHandlers(() => result.closeGracefully())
 
 	result.chrome.on('exit', () => {
 		if (result.userDataDir) {
@@ -462,5 +429,5 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		}
 	}
 
-	await new Promise(() => {})
+	await waitForever()
 }

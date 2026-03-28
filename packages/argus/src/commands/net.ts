@@ -1,9 +1,8 @@
 import type { NetResponse } from '@vforsh/argus-core'
 import { formatNetworkRequest } from '../output/format.js'
 import { createOutput } from '../output/io.js'
-import { parseNumber, normalizeQueryValue } from '../cli/parse.js'
-import { parseDurationMs } from '../time.js'
 import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { appendAfterLimitParams, appendNetFilterParams, appendSinceParam } from '../watchers/queryParams.js'
 
 /** Options for the net command. */
 export type NetOptions = {
@@ -19,26 +18,13 @@ export const runNet = async (id: string | undefined, options: NetOptions): Promi
 	const output = createOutput(options)
 
 	const params = new URLSearchParams()
-	const after = parseNumber(options.after)
-	if (after != null) {
-		params.set('after', String(after))
-	}
-	const limit = parseNumber(options.limit)
-	if (limit != null) {
-		params.set('limit', String(limit))
-	}
-	if (options.since) {
-		const duration = parseDurationMs(options.since)
-		if (!duration) {
-			output.writeWarn(`Invalid --since value: ${options.since}`)
-			process.exitCode = 2
-			return
-		}
-		params.set('sinceTs', String(Date.now() - duration))
-	}
-	const grep = normalizeQueryValue(options.grep)
-	if (grep) {
-		params.set('grep', grep)
+	appendAfterLimitParams(params, options)
+	appendNetFilterParams(params, options)
+	const since = appendSinceParam(params, options.since)
+	if (since.error) {
+		output.writeWarn(since.error)
+		process.exitCode = 2
+		return
 	}
 
 	const result = await requestWatcherJson<NetResponse>({

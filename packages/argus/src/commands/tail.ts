@@ -3,8 +3,9 @@ import { fetchJson } from '../httpClient.js'
 import { formatLogEvent } from '../output/format.js'
 import { createOutput } from '../output/io.js'
 import { previewLogEvent } from '../output/preview.js'
-import { formatError, parseNumber, normalizeQueryValue } from '../cli/parse.js'
-import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { parseNumber } from '../cli/parse.js'
+import { buildWatcherUrl, formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { appendLogFilterParams } from '../watchers/queryParams.js'
 
 /** Options for the tail command. */
 export type TailOptions = {
@@ -47,35 +48,19 @@ export const runTail = async (id: string | undefined, options: TailOptions): Pro
 		if (limit != null) {
 			params.set('limit', String(limit))
 		}
-		if (options.levels) {
-			params.set('levels', options.levels)
-		}
-		const normalizedMatch = normalizeMatch(options.match)
-		if (normalizedMatch.error) {
-			output.writeWarn(normalizedMatch.error)
+		const filters = appendLogFilterParams(params, options)
+		if (filters.error) {
+			output.writeWarn(filters.error)
 			process.exitCode = 2
 			return
 		}
-		if (normalizedMatch.match) {
-			for (const pattern of normalizedMatch.match) {
-				params.append('match', pattern)
-			}
-		}
-		const matchCase = resolveMatchCase(options)
-		if (matchCase) {
-			params.set('matchCase', matchCase)
-		}
-		const source = normalizeQueryValue(options.source)
-		if (source) {
-			params.set('source', source)
-		}
 
-		const url = `http://${watcher.host}:${watcher.port}/tail?${params.toString()}`
+		const url = buildWatcherUrl(watcher, '/tail', params)
 		let response: TailResponse
 		try {
 			response = await fetchJson<TailResponse>(url, { timeoutMs: timeoutMs + 5_000 })
 		} catch (error) {
-			output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			output.writeWarn(formatWatcherTransportError(watcher, error))
 			process.exitCode = 1
 			return
 		}
@@ -101,28 +86,4 @@ export const runTail = async (id: string | undefined, options: TailOptions): Pro
 
 		after = response.nextAfter
 	}
-}
-
-const normalizeMatch = (match?: string[]): { match?: string[]; error?: string } => {
-	if (!match || match.length === 0) {
-		return {}
-	}
-
-	const normalized = match.map((value) => value.trim())
-	const invalid = normalized.find((value) => value.length === 0)
-	if (invalid != null) {
-		return { error: 'Invalid --match value: empty pattern.' }
-	}
-
-	return { match: normalized }
-}
-
-const resolveMatchCase = (options: { ignoreCase?: boolean; caseSensitive?: boolean }): 'sensitive' | 'insensitive' | undefined => {
-	if (options.caseSensitive) {
-		return 'sensitive'
-	}
-	if (options.ignoreCase) {
-		return 'insensitive'
-	}
-	return undefined
 }

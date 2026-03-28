@@ -1,9 +1,7 @@
 import type { TraceStartResponse, TraceStopResponse, WatcherRecord } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
-import { formatError } from '../cli/parse.js'
 import { parseDurationMs } from '../time.js'
-import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { fetchWatcherJson, formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 
 /** Options for the trace command (start + stop). */
 export type TraceOptions = {
@@ -115,9 +113,9 @@ const runTraceStartInternal = async (
 	options: { out?: string; categories?: string; options?: string },
 	output: ReturnType<typeof createOutput>,
 ): Promise<TraceStartResponse | null> => {
-	const url = `http://${watcher.host}:${watcher.port}/trace/start`
 	try {
-		const response = await fetchJson<TraceStartResponse>(url, {
+		const response = await fetchWatcherJson<TraceStartResponse>(watcher, {
+			path: '/trace/start',
 			method: 'POST',
 			body: {
 				outFile: options.out,
@@ -128,7 +126,7 @@ const runTraceStartInternal = async (
 		})
 		return response
 	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+		output.writeWarn(formatWatcherTransportError(watcher, error))
 		process.exitCode = 1
 		return null
 	}
@@ -139,16 +137,16 @@ const runTraceStopInternal = async (
 	options: { traceId?: string; outFile?: string },
 	output: ReturnType<typeof createOutput>,
 ): Promise<TraceStopResponse | null> => {
-	const url = `http://${watcher.host}:${watcher.port}/trace/stop`
 	try {
-		const response = await fetchJson<TraceStopResponse>(url, {
+		const response = await fetchWatcherJson<TraceStopResponse>(watcher, {
+			path: '/trace/stop',
 			method: 'POST',
 			body: { traceId: options.traceId, outFile: options.outFile },
 			timeoutMs: 20_000,
 		})
 		return response
 	} catch (error) {
-		output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+		output.writeWarn(formatWatcherTransportError(watcher, error))
 		process.exitCode = 1
 		return null
 	}

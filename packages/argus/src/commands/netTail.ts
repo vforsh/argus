@@ -2,9 +2,9 @@ import type { NetTailResponse } from '@vforsh/argus-core'
 import { fetchJson } from '../httpClient.js'
 import { formatNetworkRequest } from '../output/format.js'
 import { createOutput } from '../output/io.js'
-import { formatError, parseNumber, normalizeQueryValue } from '../cli/parse.js'
-import { parseDurationMs } from '../time.js'
-import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { parseNumber } from '../cli/parse.js'
+import { buildWatcherUrl, formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { appendNetFilterParams, resolveSinceTimestamp } from '../watchers/queryParams.js'
 
 /** Options for the net tail command. */
 export type NetTailOptions = {
@@ -27,14 +27,12 @@ export const runNetTail = async (id: string | undefined, options: NetTailOptions
 	let after = parseNumber(options.after) ?? 0
 	const timeoutMs = parseNumber(options.timeout) ?? 25_000
 	const limit = parseNumber(options.limit)
-	const sinceTsResult = resolveSinceTs(options.since)
-	if (sinceTsResult.error) {
-		output.writeWarn(sinceTsResult.error)
+	const since = resolveSinceTimestamp(options.since)
+	if (since.error) {
+		output.writeWarn(since.error)
 		process.exitCode = 2
 		return
 	}
-	const sinceTs = sinceTsResult.value
-	const grep = normalizeQueryValue(options.grep)
 
 	let running = true
 	const stop = (): void => {
@@ -51,19 +49,17 @@ export const runNetTail = async (id: string | undefined, options: NetTailOptions
 		if (limit != null) {
 			params.set('limit', String(limit))
 		}
-		if (sinceTs != null) {
-			params.set('sinceTs', String(sinceTs))
+		if (since.sinceTs != null) {
+			params.set('sinceTs', String(since.sinceTs))
 		}
-		if (grep) {
-			params.set('grep', grep)
-		}
+		appendNetFilterParams(params, options)
 
-		const url = `http://${watcher.host}:${watcher.port}/net/tail?${params.toString()}`
+		const url = buildWatcherUrl(watcher, '/net/tail', params)
 		let response: NetTailResponse
 		try {
 			response = await fetchJson<NetTailResponse>(url, { timeoutMs: timeoutMs + 5_000 })
 		} catch (error) {
-			output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			output.writeWarn(formatWatcherTransportError(watcher, error))
 			process.exitCode = 1
 			return
 		}
@@ -80,15 +76,4 @@ export const runNetTail = async (id: string | undefined, options: NetTailOptions
 
 		after = response.nextAfter
 	}
-}
-
-const resolveSinceTs = (value?: string): { value: number | null; error?: string } => {
-	if (!value) {
-		return { value: null }
-	}
-	const duration = parseDurationMs(value)
-	if (!duration) {
-		return { value: null, error: `Invalid --since value: ${value}` }
-	}
-	return { value: Date.now() - duration }
 }

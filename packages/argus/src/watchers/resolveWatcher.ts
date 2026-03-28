@@ -1,7 +1,7 @@
 import type { RegistryV1, WatcherRecord } from '@vforsh/argus-core'
 import type { StatusResponse } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
 import { pruneRegistry } from '../registry.js'
+import { fetchWatcherJson } from './requestWatcher.js'
 
 export type ResolveWatcherInput = {
 	id?: string
@@ -58,9 +58,8 @@ export const resolveWatcher = async (input: ResolveWatcherInput): Promise<Resolv
 }
 
 const checkWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; status: StatusResponse } | { ok: false; error: string }> => {
-	const url = `http://${watcher.host}:${watcher.port}/status`
 	try {
-		const status = await fetchJson<StatusResponse>(url, { timeoutMs: 1_500 })
+		const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 1_500 })
 		return { ok: true, status }
 	} catch (error) {
 		return { ok: false, error: error instanceof Error ? error.message : String(error) }

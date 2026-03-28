@@ -184,7 +184,7 @@ const readQuotedLiteral = (
 }
 
 const classifyCodeString = (value: string, includeAll: boolean): CodeStringKind | null => {
-	if (/[\u0000-\u001f]/.test(value)) {
+	if (hasControlChars(value)) {
 		return null
 	}
 
@@ -214,6 +214,15 @@ const detectInterestingKind = (value: string): CodeStringKind | null => {
 	}
 
 	return null
+}
+
+const hasControlChars = (value: string): boolean => {
+	for (let index = 0; index < value.length; index += 1) {
+		if (value.charCodeAt(index) < 32) {
+			return true
+		}
+	}
+	return false
 }
 
 type ScoredCodeStringMatch = CodeStringMatch & {

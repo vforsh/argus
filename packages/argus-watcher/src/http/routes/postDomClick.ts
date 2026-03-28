@@ -1,5 +1,6 @@
 import type { DomClickRequest, DomClickResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
+import { respondMultipleMatches } from './domSelectorRoute.js'
 import { emitRequest } from './types.js'
 import { resolveDomSelectorMatches, clickDomNodes, clickAtPoint, resolveNodeTopLeft } from '../../cdp/mouse.js'
 import { waitForSelectorMatches } from '../../cdp/dom/selector.js'
@@ -65,17 +66,7 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		}
 
 		if (!all && allNodeIds.length > 1) {
-			return respondJson(
-				res,
-				{
-					ok: false,
-					error: {
-						message: `Selector matched ${allNodeIds.length} elements; pass all=true to click all matches`,
-						code: 'multiple_matches',
-					},
-				},
-				400,
-			)
+			return respondMultipleMatches(res, allNodeIds.length, 'click')
 		}
 
 		if (allNodeIds.length === 0) {

@@ -1,23 +1,16 @@
 import type { DomHoverRequest, DomHoverResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
+import { readDomSelectorPayload, respondMultipleMatches } from './domSelectorRoute.js'
 import { emitRequest } from './types.js'
 import { resolveDomSelectorMatches, hoverDomNodes } from '../../cdp/mouse.js'
-import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
+import { respondJson, respondError } from '../httpUtils.js'
 
 export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const payload = await readJsonBody<DomHoverRequest>(req, res)
-	if (!payload) {
+	const parsed = await readDomSelectorPayload<DomHoverRequest>(req, res)
+	if (!parsed) {
 		return
 	}
-
-	if (!payload.selector || typeof payload.selector !== 'string') {
-		return respondInvalidBody(res, 'selector is required')
-	}
-
-	const all = payload.all ?? false
-	if (typeof all !== 'boolean') {
-		return respondInvalidBody(res, 'all must be a boolean')
-	}
+	const { payload, all } = parsed
 
 	emitRequest(ctx, res, 'dom/hover')
 
@@ -25,17 +18,7 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		const { allNodeIds, nodeIds } = await resolveDomSelectorMatches(ctx.cdpSession, payload.selector, all, payload.text)
 
 		if (!all && allNodeIds.length > 1) {
-			return respondJson(
-				res,
-				{
-					ok: false,
-					error: {
-						message: `Selector matched ${allNodeIds.length} elements; pass all=true to hover all matches`,
-						code: 'multiple_matches',
-					},
-				},
-				400,
-			)
+			return respondMultipleMatches(res, allNodeIds.length, 'hover')
 		}
 
 		if (allNodeIds.length === 0) {

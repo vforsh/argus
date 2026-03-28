@@ -1,5 +1,5 @@
 import type { EvalResponse, WatcherRecord } from '@vforsh/argus-core'
-import { fetchJson } from '../httpClient.js'
+import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/requestWatcher.js'
 
 export type EvalOnceInput = {
 	watcher: Pick<WatcherRecord, 'id' | 'host' | 'port'>
@@ -24,7 +24,6 @@ export type EvalAttemptResult =
 	| { ok: false; kind: 'transport' | 'exception'; error: string; response?: EvalResponse; attempt: number }
 
 export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
-	const url = `http://${input.watcher.host}:${input.watcher.port}/eval`
 	const body = {
 		expression: input.expression,
 		awaitPromise: input.awaitPromise,
@@ -35,7 +34,8 @@ export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 
 	let response: EvalResponse
 	try {
-		response = await fetchJson<EvalResponse>(url, {
+		response = await fetchWatcherJson<EvalResponse>(input.watcher, {
+			path: '/eval',
 			method: 'POST',
 			body,
 			timeoutMs: input.timeoutMs ? input.timeoutMs + 5_000 : 10_000,
@@ -44,7 +44,7 @@ export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 		return {
 			ok: false,
 			kind: 'transport',
-			error: `${input.watcher.id}: failed to reach watcher (${formatError(error)})`,
+			error: formatWatcherTransportError(input.watcher, error),
 		}
 	}
 
@@ -87,17 +87,7 @@ export const evalWithRetries = async (input: EvalWithRetriesInput): Promise<Eval
 	return {
 		ok: false,
 		kind: 'transport',
-		error: `${input.watcher.id}: failed to reach watcher (unknown error)`,
+		error: formatWatcherTransportError(input.watcher, 'unknown error'),
 		attempt,
 	}
-}
-
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
 }

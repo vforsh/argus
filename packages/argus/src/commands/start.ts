@@ -1,10 +1,10 @@
 import { rmSync } from 'node:fs'
-import fs from 'node:fs/promises'
 import { startWatcher, type WatcherHandle, type PageConsoleLogging } from '@vforsh/argus-watcher'
 import { launchChrome, type LaunchChromeResult } from './chromeStart.js'
 import { createOutput } from '../output/io.js'
 import type { WatcherInjectConfig } from '../config/argusConfig.js'
 import { resolvePath } from '../utils/paths.js'
+import { buildWatcherMatch, normalizeHttpUrl, registerTerminationHandlers, resolveInjectScript, waitForever } from './startShared.js'
 
 export type StartOptions = {
 	id: string
@@ -33,33 +33,6 @@ type StartResult = {
 	watcherPid: number
 }
 
-const resolveInjectScript = async (
-	inject: WatcherInjectConfig | undefined,
-	output: { writeWarn: (message: string) => void },
-): Promise<{ script: string; exposeArgus?: boolean } | null> => {
-	if (!inject) {
-		return null
-	}
-
-	const resolvedPath = resolvePath(inject.file)
-	let script: string
-	try {
-		script = await fs.readFile(resolvedPath, 'utf8')
-	} catch (error) {
-		output.writeWarn(
-			`Failed to read inject script at ${resolvedPath}: ${error instanceof Error ? error.message : String(error)}. Skipping injection.`,
-		)
-		return null
-	}
-
-	if (script.trim() === '') {
-		output.writeWarn(`Inject script at ${resolvedPath} is empty. Skipping injection.`)
-		return null
-	}
-
-	return { script, exposeArgus: inject.exposeArgus }
-}
-
 export const runStart = async (options: StartOptions): Promise<void> => {
 	const output = createOutput(options)
 
@@ -72,13 +45,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 	const watcherId = options.id.trim()
 
 	// Resolve startup URL for Chrome (prepend http:// if needed)
-	let chromeUrl: string | null = null
-	if (options.url) {
-		chromeUrl = options.url
-		if (!chromeUrl.startsWith('http://') && !chromeUrl.startsWith('https://')) {
-			chromeUrl = `http://${chromeUrl}`
-		}
-	}
+	const chromeUrl = normalizeHttpUrl(options.url)
 
 	// At least one targeting option is required for the watcher
 	const hasTargeting = options.url?.trim() || options.target?.trim() || options.origin?.trim() || options.type?.trim()
@@ -116,12 +83,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		output.writeHuman('Attaching watcher...')
 	}
 
-	const match: { url?: string; type?: string; origin?: string; targetId?: string; parent?: string } = {}
-	if (options.url?.trim()) match.url = options.url.trim()
-	if (options.type?.trim()) match.type = options.type.trim()
-	if (options.origin?.trim()) match.origin = options.origin.trim()
-	if (options.target?.trim()) match.targetId = options.target.trim()
-	if (options.parent?.trim()) match.parent = options.parent.trim()
+	const match = buildWatcherMatch(options)
 
 	let artifactsBaseDir: string | undefined
 	if (options.artifacts != null) {
@@ -142,7 +104,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		handle = await startWatcher({
 			id: watcherId,
 			source: 'cdp',
-			match: Object.keys(match).length > 0 ? match : undefined,
+			match,
 			chrome: { host: chrome.cdpHost, port: chrome.cdpPort },
 			host: '127.0.0.1',
 			port: 0,
@@ -167,12 +129,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		await chrome.closeGracefully()
 	}
 
-	process.on('SIGINT', () => {
-		void shutdown().then(() => process.exit(0))
-	})
-	process.on('SIGTERM', () => {
-		void shutdown().then(() => process.exit(0))
-	})
+	registerTerminationHandlers(shutdown)
 
 	chrome.chrome.on('exit', () => {
 		if (chrome.userDataDir) {
@@ -235,5 +192,5 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		})
 	}
 
-	await new Promise(() => {})
+	await waitForever()
 }

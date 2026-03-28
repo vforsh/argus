@@ -1,23 +1,16 @@
 import type { DomInfoRequest, DomInfoResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
+import { readDomSelectorPayload, respondMultipleMatches } from './domSelectorRoute.js'
 import { emitRequest } from './types.js'
 import { fetchDomInfoBySelector } from '../../cdp/dom.js'
-import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
+import { respondJson, respondError } from '../httpUtils.js'
 
 export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const payload = await readJsonBody<DomInfoRequest>(req, res)
-	if (!payload) {
+	const parsed = await readDomSelectorPayload<DomInfoRequest>(req, res)
+	if (!parsed) {
 		return
 	}
-
-	if (!payload.selector || typeof payload.selector !== 'string') {
-		return respondInvalidBody(res, 'selector is required')
-	}
-
-	const all = payload.all ?? false
-	if (typeof all !== 'boolean') {
-		return respondInvalidBody(res, 'all must be a boolean')
-	}
+	const { payload, all } = parsed
 
 	emitRequest(ctx, res, 'dom/info')
 
@@ -29,19 +22,8 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 			text: payload.text,
 		})
 
-		// Enforce "single match" policy server-side when all=false
 		if (!all && response.matches > 1) {
-			return respondJson(
-				res,
-				{
-					ok: false,
-					error: {
-						message: `Selector matched ${response.matches} elements; pass all=true to return all matches`,
-						code: 'multiple_matches',
-					},
-				},
-				400,
-			)
+			return respondMultipleMatches(res, response.matches, 'return')
 		}
 
 		respondJson(res, response)

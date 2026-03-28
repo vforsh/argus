@@ -1,9 +1,8 @@
 import type { StatusResponse, WatcherRecord } from '@vforsh/argus-core'
 import { pruneRegistry } from '../registry.js'
-import { fetchJson } from '../httpClient.js'
-import { formatError } from '../cli/parse.js'
 import { formatWatcherLine } from '../output/format.js'
 import { createOutput } from '../output/io.js'
+import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/requestWatcher.js'
 import { discoverChromeInstances, formatChromeInstanceLine } from './chrome.js'
 
 /** Options for the list command. */
@@ -64,12 +63,11 @@ const listWatchers = async (
 	const results: Array<{ watcher: WatcherRecord; status?: StatusResponse }> = []
 
 	for (const watcher of watchers) {
-		const url = `http://${watcher.host}:${watcher.port}/status`
 		try {
-			const status = await fetchJson<StatusResponse>(url, { timeoutMs: 2_000 })
+			const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 2_000 })
 			results.push({ watcher, status })
 		} catch (error) {
-			output.writeWarn(`${watcher.id}: failed to reach watcher (${formatError(error)})`)
+			output.writeWarn(formatWatcherTransportError(watcher, error))
 			results.push({ watcher })
 		}
 	}

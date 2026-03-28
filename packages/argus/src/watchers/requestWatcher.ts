@@ -39,6 +39,23 @@ export type WatcherRequestError = {
 
 export type WatcherRequestResult<T> = WatcherRequestSuccess<T> | WatcherRequestError
 
+export const buildWatcherUrl = (watcher: Pick<WatcherRecord, 'host' | 'port'>, path: string, query?: URLSearchParams): string => {
+	const qs = query?.toString()
+	return `http://${watcher.host}:${watcher.port}${path}${qs ? `?${qs}` : ''}`
+}
+
+export const formatWatcherTransportError = (watcher: Pick<WatcherRecord, 'id'>, error: unknown): string =>
+	`${watcher.id}: failed to reach watcher (${formatError(error)})`
+
+export async function fetchWatcherJson<T>(watcher: Pick<WatcherRecord, 'host' | 'port'>, input: Omit<WatcherRequestInput, 'id'>): Promise<T> {
+	return fetchJson<T>(buildWatcherUrl(watcher, input.path, input.query), {
+		method: input.method,
+		body: input.body,
+		timeoutMs: input.timeoutMs,
+		returnErrorResponse: input.returnErrorResponse,
+	})
+}
+
 /**
  * Resolve a watcher, build a URL, and fetch JSON in one call.
  * Handles resolve failures and transport errors uniformly.
@@ -55,23 +72,16 @@ export async function requestWatcherJson<T>(input: WatcherRequestInput): Promise
 	}
 
 	const { watcher } = resolved
-	const qs = input.query?.toString()
-	const url = `http://${watcher.host}:${watcher.port}${input.path}${qs ? `?${qs}` : ''}`
 
 	try {
-		const data = await fetchJson<T>(url, {
-			method: input.method,
-			body: input.body,
-			timeoutMs: input.timeoutMs,
-			returnErrorResponse: input.returnErrorResponse,
-		})
+		const data = await fetchWatcherJson<T>(watcher, input)
 		return { ok: true, watcher, data }
 	} catch (error) {
 		return {
 			ok: false,
 			watcher,
 			exitCode: 1,
-			message: `${watcher.id}: failed to reach watcher (${formatError(error)})`,
+			message: formatWatcherTransportError(watcher, error),
 		}
 	}
 }
