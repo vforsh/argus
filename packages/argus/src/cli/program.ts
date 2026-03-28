@@ -6,7 +6,7 @@ export function createProgram(): Command {
 	program
 		.name('argus')
 		.description('Argus CLI for local watcher servers')
-		.version('0.1.0')
+		.version('0.1.11')
 		.configureOutput({
 			outputError: (str, write) => write(str),
 		})
