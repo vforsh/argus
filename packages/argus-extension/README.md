@@ -1,6 +1,6 @@
 # Argus CDP Bridge Extension
 
-**Repository**: https://github.com/vforsh/argus
+**Repository**: [https://github.com/vforsh/argus](https://github.com/vforsh/argus)
 
 Chrome extension that provides CDP (Chrome DevTools Protocol) access to tabs without requiring Chrome to be launched with `--remote-debugging-port`. Uses the `chrome.debugger` API to attach to tabs and communicates with `argus-watcher` (in extension mode) via Native Messaging.
 
@@ -52,28 +52,27 @@ This creates:
 
 1. **Start the watcher in extension mode**:
 
-    ```bash
-    argus watcher start --id app --source extension
-    ```
+```bash
+  argus watcher start --id app --source extension
+```
 
 2. **Attach to tabs**: Click the Argus extension icon in Chrome toolbar, then click "Attach" on the tabs you want to monitor.
-3. **Connect to a specific iframe (optional)**: Once a tab is attached, the popup shows the top page plus discovered iframe targets. Selecting an iframe keeps the debugger attached to the tab but switches Argus commands (`eval`, `dom *`, selector-based screenshots, etc.) to that frame.
-
+3. **Connect to a specific iframe (optional)**: Once a tab is attached, the popup shows the top page plus discovered iframe targets. Selecting an iframe keeps the debugger attached to the tab but switches Argus commands (`eval`, `dom `\*, selector-based screenshots, etc.) to that frame.
 4. **Use with Argus CLI**:
 
-    ```bash
-    # List watchers
-    argus list
+```bash
+  # List watchers
+  argus list
 
-    # View logs from attached tab
-    argus logs app
+  # View logs from attached tab
+  argus logs app
 
-    # Evaluate JavaScript
-    argus eval app "document.title"
+  # Evaluate JavaScript
+  argus eval app "document.title"
 
-    # List extension-backed page/iframe targets
-    argus page ls --id app --tree
-    ```
+  # List extension-backed page/iframe targets
+  argus page ls --id app --tree
+```
 
 ## How It Works
 
@@ -83,8 +82,8 @@ This creates:
 │  (chrome.debugger)  │      (stdin/stdout)      │  (extension mode)    │
 └─────────────────────┘                          └──────────────────────┘
          │                                                │
-         │ Attach to tabs                                │ Watcher API
-         ▼                                               ▼
+         │ Attach to tabs                                 │ Watcher API
+         ▼                                                ▼
 ┌─────────────────────┐                          ┌──────────────────────┐
 │   Browser Tabs      │                          │  Argus CLI / Client  │
 └─────────────────────┘                          └──────────────────────┘
@@ -97,7 +96,7 @@ This creates:
 
 ## Limitations
 
-- **Orange debugging bar**: Chrome shows "Argus is debugging this browser" bar when attached. This cannot be disabled (security feature).
+- **Debugging bar**: Chrome shows "Argus started debugging this browser" bar when attached. This cannot be disabled (security feature).
 - **Tab must stay open**: Closing a tab detaches the debugger.
 - **One debugger per tab**: Only one extension/DevTools can debug a tab at a time.
 
@@ -105,6 +104,7 @@ This creates:
 
 1. Remove extension from `chrome://extensions`
 2. Remove Native Messaging host:
-    ```bash
-    node packages/argus-watcher/dist/scripts/install-host.js uninstall
-    ```
+
+```bash
+  node packages/argus-watcher/dist/scripts/install-host.js uninstall
+```
