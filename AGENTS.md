@@ -12,7 +12,7 @@
 
 - **Plans (implementation/refactor)**: When the user asks for an implementation or refactor plan, always end the plan with a short “final checklist”. It must explicitly say to run `npm run typecheck` and `npm run lint` after implementation, and to fix any errors found (use `npm run lint:fix` when appropriate). Keep this checklist to 1–2 short sentences.
 
-- **Typechecking**: Use `npm run typecheck` for one-shot typechecking. Don't use `typecheck-dev` for "quick checks" (watch mode).
+- **Typechecking**: Use `npm run typecheck` for the full one-shot pass (CLI app + shared packages + extension). Use `npm run typecheck:app`, `npm run typecheck:packages`, or `npm run typecheck:extension` only for focused checks. Don't use `typecheck-dev` for "quick checks" (watch mode).
 
 - **Runtime & deps**: Bun is the runtime and package manager (`bun install`, `bun run`). Prefer Bun/Node built-ins over new deps. Add deps to the specific package that needs them, not root. Keep `argus-core` dependency-free.
 
@@ -24,7 +24,7 @@
 
 ## Workspace packages
 
-- **Workspace packages (`packages/*`)**: `packages/` are npm workspaces. Root `npm run typecheck` only checks the app (`tsconfig.app.json`) and does **not** typecheck packages.
+- **Workspace packages (`packages/*`)**: `packages/` are npm workspaces. `packages/argus` is the CLI app, `tsconfig.packages.json` covers the shared packages, and the extension has its own TS config + script.
 
 - **Rebuild + package typecheck**: If you change anything under `packages/`, rebuild and typecheck the affected package(s) before testing. Prefer the package-specific scripts (e.g. `npm run build:<PACKAGE_1>`, `npm run build:<PACKAGE_2>`, etc.`); use `npm run build:packages` only when multiple packages changed.
 
@@ -107,7 +107,7 @@
 
 ## Tests / Gate (exact commands)
 
-- **Quick**: `npm run lint` + `npm run typecheck` + `npm run typecheck:packages`.
+- **Quick**: `npm run lint` + `npm run typecheck`.
 - **Focused**: `npm run test:playground`.
 - **Full**: `npm run test:e2e`.
 

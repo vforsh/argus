@@ -12,8 +12,10 @@
 	"scripts": {
 		"lint": "oxlint .",
 		"lint:fix": "oxlint . --fix",
-		"typecheck": "tsc -b --pretty false",
-		"typecheck:packages": "tsc -b tsconfig.json --pretty false",
+		"typecheck": "npm run typecheck:app && npm run typecheck:packages && npm run typecheck:extension",
+		"typecheck:app": "tsc -b packages/argus/tsconfig.json --pretty false",
+		"typecheck:packages": "tsc -b tsconfig.packages.json --pretty false",
+		"typecheck:extension": "bun run --cwd packages/argus-extension typecheck",
 		"build": "tsc -b",
 		"clean:packages": "node scripts/clean-dist.mjs packages/argus-core packages/argus-client packages/argus-plugin-api packages/argus-watcher packages/argus",
 		"build:packages": "npm run clean:packages && tsc -b tsconfig.json && bun run --filter @vforsh/argus bundle",

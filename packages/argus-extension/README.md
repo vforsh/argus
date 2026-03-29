@@ -7,7 +7,7 @@ Chrome extension that provides CDP (Chrome DevTools Protocol) access to tabs wit
 ## Build
 
 ```bash
-npm run build
+bun run build
 ```
 
 This bundles the TypeScript source into `dist/`.
@@ -15,8 +15,8 @@ This bundles the TypeScript source into `dist/`.
 To create the installable release archive:
 
 ```bash
-npm run build
-npm run package:release
+bun run build
+bun run package:release
 ```
 
 By default this writes `dist/release/argus-extension.zip`.
@@ -35,7 +35,7 @@ The extension communicates with `argus-watcher` via Chrome's Native Messaging pr
 
 ```bash
 # From the argus root directory
-npm run build
+bun run build
 argus extension setup <EXTENSION_ID>
 ```
 

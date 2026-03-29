@@ -6,7 +6,7 @@ Debug normal Chrome session without CDP flags.
 
 ```bash
 # 1) Build extension
-cd packages/argus-extension && npm run build
+cd packages/argus-extension && bun run build
 
 # 2) Load in Chrome
 #    chrome://extensions → Developer mode → Load unpacked → select packages/argus-extension

@@ -101,7 +101,7 @@ Use the extension when you want Argus against your normal Chrome session without
 ```bash
 # Build the extension
 cd packages/argus-extension
-npm run build
+bun run build
 
 # Load it in Chrome
 # chrome://extensions -> Developer mode -> Load unpacked -> packages/argus-extension

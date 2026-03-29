@@ -12,7 +12,7 @@ const requiredPaths = ['manifest.json', 'icons', 'dist', 'src/popup/popup.html']
 for (const relativePath of requiredPaths) {
 	const absolutePath = path.join(packageDir, relativePath)
 	if (!existsSync(absolutePath)) {
-		throw new Error(`Missing required extension artifact: ${relativePath}. Run npm run build first.`)
+		throw new Error(`Missing required extension artifact: ${relativePath}. Run bun run build first.`)
 	}
 }
 
