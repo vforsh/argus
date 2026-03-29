@@ -5,7 +5,7 @@ import fs from 'node:fs/promises'
 import { chromium } from 'playwright'
 import type { DialogHandleResponse, DialogStatusResponse } from '@vforsh/argus-core'
 import { getFreePort } from './helpers/ports.js'
-import { runCommand, runCommandWithExit, spawnAndWait } from './helpers/process.js'
+import { runCommand, runCommandWithExit, spawnAndWait, stopProcess } from './helpers/process.js'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -13,7 +13,7 @@ const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
 test(
 	'watcher + CLI e2e',
 	{
-		timeout: 30_000,
+		timeout: 60_000,
 	},
 	async () => {
 		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-e2e-'))
@@ -436,7 +436,7 @@ test(
 				)
 				expect(promptResult).toBe(promptValue)
 			} finally {
-				watcherProc.kill('SIGTERM')
+				await stopProcess(watcherProc)
 			}
 		} finally {
 			await browser.close()

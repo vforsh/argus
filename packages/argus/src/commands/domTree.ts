@@ -23,9 +23,9 @@ export const runDomTree = async (id: string | undefined, options: DomTreeOptions
 		return
 	}
 
-	const depth = parsePositiveInt(options.depth)
+	const depth = parsePositiveInt(options.depth, { allowZero: true })
 	if (options.depth !== undefined && depth === undefined) {
-		output.writeWarn('--depth must be a positive integer')
+		output.writeWarn('--depth must be a non-negative integer')
 		process.exitCode = 2
 		return
 	}

@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { chromium, type Browser } from 'playwright'
 import { getFreePort } from './helpers/ports.js'
-import { runCommand, spawnAndWait } from './helpers/process.js'
+import { runCommand, spawnAndWait, stopProcess } from './helpers/process.js'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -131,7 +131,7 @@ describe('network workflow e2e', () => {
 	})
 
 	afterAll(async () => {
-		watcherProc?.kill('SIGTERM')
+		await stopProcess(watcherProc)
 		await browser?.close()
 		await new Promise<void>((resolve) => appServer?.close(() => resolve()))
 		await new Promise<void>((resolve) => analyticsServer?.close(() => resolve()))

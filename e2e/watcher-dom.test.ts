@@ -4,7 +4,7 @@ import os from 'node:os'
 import fs from 'node:fs/promises'
 import { chromium, type Browser, type Page } from 'playwright'
 import { getFreePort } from './helpers/ports.js'
-import { runCommand, spawnAndWait } from './helpers/process.js'
+import { runCommand, spawnAndWait, stopProcess } from './helpers/process.js'
 import type { ChildProcess } from 'node:child_process'
 import type { DomTreeResponse, DomInfoResponse, DomHoverResponse, DomClickResponse, DomKeydownResponse, ErrorResponse } from '@vforsh/argus-core'
 
@@ -69,6 +69,8 @@ describe('dom tree and dom info e2e', () => {
 	let watcherProc: ChildProcess
 	let watcherId: string
 
+	const runArgus = (args: string[]) => runCommand('node', [BIN_PATH, ...args], { env })
+
 	beforeAll(async () => {
 		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-dom-e2e-'))
 		env = { ...process.env, ARGUS_HOME: tempDir }
@@ -126,7 +128,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	afterAll(async () => {
-		watcherProc?.kill('SIGTERM')
+		await stopProcess(watcherProc)
 		await browser?.close()
 		await fs.rm(tempDir, { recursive: true, force: true })
 	})
@@ -136,9 +138,7 @@ describe('dom tree and dom info e2e', () => {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('dom tree --selector returns tree for unique selector', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--json'], {
-			env,
-		})
+		const { stdout } = await runArgus(['dom', 'tree', watcherId, '--selector', '#root', '--json'])
 		const response = JSON.parse(stdout) as DomTreeResponse
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
@@ -149,7 +149,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom tree human output format', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#header'], { env })
+		const { stdout } = await runArgus(['dom', 'tree', watcherId, '--selector', '#header'])
 		expect(stdout).toMatch(/<header#header\.header-style>/)
 		expect(stdout).toMatch(/<h1#title>/)
 		expect(stdout).toMatch(/<nav\.nav>/)
@@ -157,18 +157,14 @@ describe('dom tree and dom info e2e', () => {
 
 	test('dom tree --depth controls traversal depth', async () => {
 		// depth=0 should return only the root node without children details
-		const { stdout: depth0 } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--depth', '0', '--json'], {
-			env,
-		})
+		const { stdout: depth0 } = await runArgus(['dom', 'tree', watcherId, '--selector', '#root', '--depth', '0', '--json'])
 		const resp0 = JSON.parse(depth0) as DomTreeResponse
 		expect(resp0.roots[0].tag).toBe('div')
 		// With depth=0, children should be truncated
 		expect(resp0.roots[0].truncated).toBe(true)
 
 		// depth=1 should include immediate children
-		const { stdout: depth1 } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#root', '--depth', '1', '--json'], {
-			env,
-		})
+		const { stdout: depth1 } = await runArgus(['dom', 'tree', watcherId, '--selector', '#root', '--depth', '1', '--json'])
 		const resp1 = JSON.parse(depth1) as DomTreeResponse
 		expect(resp1.roots[0].children && resp1.roots[0].children.length > 0).toBe(true)
 		const headerChild = resp1.roots[0].children?.find((c) => c.tag === 'header')
@@ -178,9 +174,7 @@ describe('dom tree and dom info e2e', () => {
 
 	test('dom tree errors on multiple matches without --all', async () => {
 		// .paragraph matches multiple elements
-		const result = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '.paragraph', '--json'], {
-			env,
-		}).catch((e) => e)
+		const result = await runArgus(['dom', 'tree', watcherId, '--selector', '.paragraph', '--json']).catch((e) => e)
 
 		// The command exits with error code 1
 		expect(result).toBeInstanceOf(Error)
@@ -193,7 +187,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom tree --all returns all matches', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '.paragraph', '--all', '--json'], { env })
+		const { stdout } = await runArgus(['dom', 'tree', watcherId, '--selector', '.paragraph', '--all', '--json'])
 		const response = JSON.parse(stdout) as DomTreeResponse
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(3)
@@ -205,7 +199,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom tree errors on no matches', async () => {
-		const result = await runCommand('bun', [BIN_PATH, 'dom', 'tree', watcherId, '--selector', '#nonexistent'], { env }).catch((e) => e)
+		const result = await runArgus(['dom', 'tree', watcherId, '--selector', '#nonexistent']).catch((e) => e)
 		expect(result).toBeInstanceOf(Error)
 		expect(result.message).toMatch(/No element found/)
 	})
@@ -215,9 +209,7 @@ describe('dom tree and dom info e2e', () => {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('dom info --selector returns element info', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '#title', '--json'], {
-			env,
-		})
+		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '#title', '--json'])
 		const response = JSON.parse(stdout) as DomInfoResponse
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
@@ -231,7 +223,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom info human output format', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '#header'], { env })
+		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '#header'])
 		expect(stdout).toMatch(/<header#header\.header-style>/)
 		expect(stdout).toMatch(/Attributes:/)
 		expect(stdout).toMatch(/id="header"/)
@@ -241,9 +233,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom info --outer-html-max truncates outerHTML', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '#root', '--outer-html-max', '50', '--json'], {
-			env,
-		})
+		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '#root', '--outer-html-max', '50', '--json'])
 		const response = JSON.parse(stdout) as DomInfoResponse
 		expect(response.ok).toBe(true)
 		const el = response.elements[0]
@@ -253,9 +243,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom info errors on multiple matches without --all', async () => {
-		const result = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '.article', '--json'], {
-			env,
-		}).catch((e) => e)
+		const result = await runArgus(['dom', 'info', watcherId, '--selector', '.article', '--json']).catch((e) => e)
 		expect(result).toBeInstanceOf(Error)
 		// Extract JSON from stdout in error message
 		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
@@ -266,7 +254,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom info --all returns all matches', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '.nav-link', '--all', '--json'], { env })
+		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '.nav-link', '--all', '--json'])
 		const response = JSON.parse(stdout) as DomInfoResponse
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(2)
@@ -278,26 +266,18 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom info includes data attributes', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'], {
-			env,
-		})
+		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'])
 		const response = JSON.parse(stdout) as DomInfoResponse
 		expect(response.ok).toBe(true)
 		expect(response.elements[0].attributes['data-testid']).toBe('article-1')
 	})
 
 	test('dom info reports correct childElementCount', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'], {
-			env,
-		})
+		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'])
 		const response = JSON.parse(stdout) as DomInfoResponse
 		expect(response.elements[0].childElementCount).toBe(2)
 
-		const { stdout: stdout2 } = await runCommand(
-			'bun',
-			[BIN_PATH, 'dom', 'info', watcherId, '--selector', '[data-testid="article-2"]', '--json'],
-			{ env },
-		)
+		const { stdout: stdout2 } = await runArgus(['dom', 'info', watcherId, '--selector', '[data-testid="article-2"]', '--json'])
 		const response2 = JSON.parse(stdout2) as DomInfoResponse
 		expect(response2.elements[0].childElementCount).toBe(1)
 	})
@@ -311,7 +291,7 @@ describe('dom tree and dom info e2e', () => {
 			;(globalThis as { __events?: string[] }).__events = []
 		})
 
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'hover', watcherId, '--selector', '#btn', '--json'], { env })
+		const { stdout } = await runArgus(['hover', watcherId, '--selector', '#btn', '--json'])
 		const response = JSON.parse(stdout) as DomHoverResponse
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
@@ -326,7 +306,7 @@ describe('dom tree and dom info e2e', () => {
 			;(globalThis as { __events?: string[] }).__events = []
 		})
 
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '#btn', '--json'], { env })
+		const { stdout } = await runArgus(['click', watcherId, '--selector', '#btn', '--json'])
 		const response = JSON.parse(stdout) as DomClickResponse
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
@@ -337,9 +317,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom click errors on multiple matches without --all', async () => {
-		const result = await runCommand('bun', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '.multi', '--json'], {
-			env,
-		}).catch((e) => e)
+		const result = await runArgus(['click', watcherId, '--selector', '.multi', '--json']).catch((e) => e)
 
 		expect(result).toBeInstanceOf(Error)
 		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
@@ -354,7 +332,7 @@ describe('dom tree and dom info e2e', () => {
 			;(globalThis as { __events?: string[] }).__events = []
 		})
 
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'click', watcherId, '--selector', '.multi', '--all', '--json'], { env })
+		const { stdout } = await runArgus(['click', watcherId, '--selector', '.multi', '--all', '--json'])
 		const response = JSON.parse(stdout) as DomClickResponse
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(2)
@@ -374,7 +352,7 @@ describe('dom tree and dom info e2e', () => {
 			;(globalThis as { __events?: string[] }).__events = []
 		})
 
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'Enter', '--json'], { env })
+		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'Enter', '--json'])
 		const response = JSON.parse(stdout) as DomKeydownResponse
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('Enter')
@@ -390,7 +368,7 @@ describe('dom tree and dom info e2e', () => {
 			;(globalThis as { __events?: string[] }).__events = []
 		})
 
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'], { env })
+		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'])
 		const response = JSON.parse(stdout) as DomKeydownResponse
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('a')
@@ -401,16 +379,14 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom keydown with --modifiers sets bitmask', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'a', '--modifiers', 'shift', '--json'], { env })
+		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'a', '--modifiers', 'shift', '--json'])
 		const response = JSON.parse(stdout) as DomKeydownResponse
 		expect(response.ok).toBe(true)
 		expect(response.modifiers).toBe(8)
 	})
 
 	test('dom keydown unknown key returns error', async () => {
-		const result = await runCommand('bun', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'NoSuchKey', '--json'], {
-			env,
-		}).catch((e) => e)
+		const result = await runArgus(['keydown', watcherId, '--key', 'NoSuchKey', '--json']).catch((e) => e)
 
 		expect(result).toBeInstanceOf(Error)
 		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
@@ -421,7 +397,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom keydown human output format', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'keydown', watcherId, '--key', 'Enter'], { env })
+		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'Enter'])
 		expect(stdout).toMatch(/Dispatched keydown: Enter/)
 	})
 
@@ -430,9 +406,7 @@ describe('dom tree and dom info e2e', () => {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('html tree alias works like dom tree', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'html', 'tree', watcherId, '--selector', '#root', '--json'], {
-			env,
-		})
+		const { stdout } = await runArgus(['html', 'tree', watcherId, '--selector', '#root', '--json'])
 		const response = JSON.parse(stdout) as DomTreeResponse
 		expect(response.ok).toBe(true)
 		expect(response.roots[0].tag).toBe('div')
@@ -440,9 +414,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('html info alias works like dom info', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'html', 'info', watcherId, '--selector', '#title', '--json'], {
-			env,
-		})
+		const { stdout } = await runArgus(['html', 'info', watcherId, '--selector', '#title', '--json'])
 		const response = JSON.parse(stdout) as DomInfoResponse
 		expect(response.ok).toBe(true)
 		expect(response.elements[0].tag).toBe('h1')

@@ -13,13 +13,12 @@ describe('page command e2e', () => {
 	let tempDir: string
 	let env: Record<string, string | undefined>
 	let browser: Browser
-	let debugPort: number
 	let cdpArgs: string[]
 
 	beforeAll(async () => {
 		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-page-e2e-'))
 		env = { ...process.env, ARGUS_HOME: tempDir }
-		debugPort = await getFreePort()
+		const debugPort = await getFreePort()
 
 		browser = await chromium.launch({
 			args: [`--remote-debugging-address=127.0.0.1`, `--remote-debugging-port=${debugPort}`],
@@ -29,7 +28,7 @@ describe('page command e2e', () => {
 		const page = await context.newPage()
 		await page.setContent('<html><head><title>page-e2e</title></head><body><h1>Page E2E</h1></body></html>')
 
-		cdpArgs = ['--host', '127.0.0.1', '--port', String(debugPort)]
+		cdpArgs = ['--cdp', `127.0.0.1:${debugPort}`]
 	})
 
 	afterAll(async () => {

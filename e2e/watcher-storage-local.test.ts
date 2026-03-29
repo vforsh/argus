@@ -5,7 +5,7 @@ import fs from 'node:fs/promises'
 import http from 'node:http'
 import { chromium, type Browser, type Page } from 'playwright'
 import { getFreePort } from './helpers/ports.js'
-import { runCommand, spawnAndWait } from './helpers/process.js'
+import { runCommand, spawnAndWait, stopProcess } from './helpers/process.js'
 import type { ChildProcess } from 'node:child_process'
 import type {
 	StorageLocalGetResponse,
@@ -99,7 +99,7 @@ describe('storage local e2e', () => {
 	})
 
 	afterAll(async () => {
-		watcherProc?.kill('SIGTERM')
+		await stopProcess(watcherProc)
 		await browser?.close()
 		await new Promise<void>((resolve) => httpServer?.close(() => resolve()))
 		await fs.rm(tempDir, { recursive: true, force: true })

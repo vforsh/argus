@@ -7,7 +7,7 @@ import path from 'node:path'
 import { chromium, type Browser } from 'playwright'
 import type { AuthCookiesResponse } from '@vforsh/argus-core'
 import { getFreePort } from './helpers/ports.js'
-import { runCommand, spawnAndWait } from './helpers/process.js'
+import { runCommand, spawnAndWait, stopProcess } from './helpers/process.js'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -90,7 +90,7 @@ describe('auth e2e', () => {
 	})
 
 	afterAll(async () => {
-		watcherProc?.kill('SIGTERM')
+		await stopProcess(watcherProc)
 		await browser?.close()
 		await new Promise<void>((resolve) => httpServer?.close(() => resolve()))
 		await fs.rm(tempDir, { recursive: true, force: true })

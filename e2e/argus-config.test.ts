@@ -2,12 +2,15 @@ import { test, expect } from 'bun:test'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
+import { runCommandWithExit } from './helpers/process.js'
 import {
 	loadArgusConfig,
 	mergeChromeStartOptionsWithConfig,
 	mergeWatcherStartOptionsWithConfig,
 	resolveArgusConfigPath,
 } from '../packages/argus/src/config/argusConfig.js'
+
+const CONFIG_MODULE_PATH = path.resolve('packages/argus/dist/config/argusConfig.js')
 
 const resetExitCode = () => {
 	process.exitCode = undefined
@@ -16,6 +19,25 @@ const resetExitCode = () => {
 const createCommand = (sources: Record<string, string>) => ({
 	getOptionValueSource: (key: string) => sources[key] ?? 'default',
 })
+
+const runConfigSubprocess = async (body: string) =>
+	runCommandWithExit('node', [
+		'--input-type=module',
+		'--eval',
+		`
+import {
+	loadArgusConfig,
+	mergeChromeStartOptionsWithConfig,
+	resolveArgusConfigPath,
+} from ${JSON.stringify(CONFIG_MODULE_PATH)}
+
+const createCommand = (sources) => ({
+	getOptionValueSource: (key) => sources[key] ?? 'default',
+})
+
+${body}
+`,
+	])
 
 test('resolveArgusConfigPath returns null when auto-discovery misses', async () => {
 	resetExitCode()
@@ -53,9 +75,14 @@ test('resolveArgusConfigPath errors on explicit missing path', async () => {
 	resetExitCode()
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-config-'))
 	try {
-		const resolved = resolveArgusConfigPath({ cwd: tempDir, cliPath: 'missing.json' })
-		expect(resolved).toBeNull()
-		expect(process.exitCode).toBe(2)
+		const { stdout, code } = await runConfigSubprocess(`
+const result = resolveArgusConfigPath({ cwd: ${JSON.stringify(tempDir)}, cliPath: 'missing.json' })
+process.stdout.write(JSON.stringify({ result, exitCode: process.exitCode ?? null }))
+`)
+		const response = JSON.parse(stdout) as { result: string | null; exitCode: number | null }
+		expect(response.result).toBeNull()
+		expect(response.exitCode).toBe(2)
+		expect(code).toBe(2)
 	} finally {
 		await fs.rm(tempDir, { recursive: true, force: true })
 	}
@@ -124,9 +151,14 @@ test('config rejects chrome url and watcherId together', async () => {
 		const configPath = path.join(tempDir, 'argus.config.json')
 		await fs.writeFile(configPath, JSON.stringify({ chrome: { start: { url: 'http://localhost', watcherId: 'app' } } }))
 
-		const configResult = loadArgusConfig(configPath)
-		expect(configResult).toBeNull()
-		expect(process.exitCode).toBe(2)
+		const { stdout, code } = await runConfigSubprocess(`
+const result = loadArgusConfig(${JSON.stringify(configPath)})
+process.stdout.write(JSON.stringify({ result, exitCode: process.exitCode ?? null }))
+`)
+		const response = JSON.parse(stdout) as { result: unknown; exitCode: number | null }
+		expect(response.result).toBeNull()
+		expect(response.exitCode).toBe(2)
+		expect(code).toBe(2)
 	} finally {
 		await fs.rm(tempDir, { recursive: true, force: true })
 	}
@@ -142,9 +174,15 @@ test('merge rejects chrome url from CLI with watcherId from config', async () =>
 		const configResult = loadArgusConfig(configPath)
 		expect(configResult).toBeTruthy()
 
-		const merged = mergeChromeStartOptionsWithConfig({ url: 'http://localhost' }, createCommand({ url: 'cli' }), configResult!)
-		expect(merged).toBeNull()
-		expect(process.exitCode).toBe(2)
+		const { stdout, code } = await runConfigSubprocess(`
+const configResult = loadArgusConfig(${JSON.stringify(configPath)})
+const result = mergeChromeStartOptionsWithConfig({ url: 'http://localhost' }, createCommand({ url: 'cli' }), configResult)
+process.stdout.write(JSON.stringify({ result, exitCode: process.exitCode ?? null }))
+`)
+		const response = JSON.parse(stdout) as { result: unknown; exitCode: number | null }
+		expect(response.result).toBeNull()
+		expect(response.exitCode).toBe(2)
+		expect(code).toBe(2)
 	} finally {
 		await fs.rm(tempDir, { recursive: true, force: true })
 	}
@@ -175,9 +213,14 @@ test('config rejects invalid pageConsoleLogging value', async () => {
 		const configPath = path.join(tempDir, 'argus.config.json')
 		await fs.writeFile(configPath, JSON.stringify({ watcher: { start: { pageConsoleLogging: 'invalid' } } }))
 
-		const configResult = loadArgusConfig(configPath)
-		expect(configResult).toBeNull()
-		expect(process.exitCode).toBe(2)
+		const { stdout, code } = await runConfigSubprocess(`
+const result = loadArgusConfig(${JSON.stringify(configPath)})
+process.stdout.write(JSON.stringify({ result, exitCode: process.exitCode ?? null }))
+`)
+		const response = JSON.parse(stdout) as { result: unknown; exitCode: number | null }
+		expect(response.result).toBeNull()
+		expect(response.exitCode).toBe(2)
+		expect(code).toBe(2)
 	} finally {
 		await fs.rm(tempDir, { recursive: true, force: true })
 	}

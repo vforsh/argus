@@ -4,7 +4,7 @@ import os from 'node:os'
 import fs from 'node:fs/promises'
 import { chromium, type Browser } from 'playwright'
 import { getFreePort } from './helpers/ports.js'
-import { runCommand, spawnAndWait } from './helpers/process.js'
+import { runCommand, spawnAndWait, stopProcess } from './helpers/process.js'
 import type { ChildProcess } from 'node:child_process'
 import type {
 	CodeListResponse,
@@ -92,7 +92,7 @@ describe('playground smoke tests', () => {
 	})
 
 	afterAll(async () => {
-		watcherProc?.kill('SIGTERM')
+		await stopProcess(watcherProc)
 		await browser?.close()
 		await new Promise<void>((resolve) => {
 			if (!mainServer) return resolve()
