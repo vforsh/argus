@@ -22,13 +22,6 @@ type TabInfo = {
 	watcher: PopupWatcherStatus | null
 }
 
-type PopupEvent = {
-	ts: number
-	level: 'info' | 'error'
-	source: 'bridge' | 'debugger' | 'popup'
-	message: string
-}
-
 type CurrentTargetSummary = {
 	tabId: number
 	type: 'page' | 'iframe'
@@ -43,7 +36,6 @@ type StatusPayload = {
 	bridgeConnected: boolean
 	attachedTabs: Array<{ tabId: number; url: string; title: string }>
 	watchers: PopupWatcherStatus[]
-	recentEvents: PopupEvent[]
 }
 
 type PopupWatcherStatus = {
@@ -75,32 +67,53 @@ type ActionResponse = {
 }
 
 type PopupAction = 'attach' | 'detach' | 'selectTarget'
+type TabButtonAction = 'attach' | 'detach' | 'copy-info'
+
+const COPY_ICON = `
+	<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+		<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+	</svg>
+`
+
+const DETACH_ICON = `
+	<svg viewBox="0 0 16 16" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M5.4 1.75h5.2l3.65 3.65v5.2l-3.65 3.65H5.4l-3.65-3.65V5.4z"></path>
+		<path d="M6 6l4 4"></path>
+		<path d="M10 6l-4 4"></path>
+	</svg>
+`
 
 // DOM elements
 const statusIndicator = document.getElementById('statusIndicator') as HTMLDivElement
 const statusText = document.getElementById('statusText') as HTMLSpanElement
-const content = document.getElementById('content') as HTMLDivElement
+const attachedSection = document.getElementById('attachedSection') as HTMLDivElement
+const attachedContent = document.getElementById('attachedContent') as HTMLDivElement
+const availableSection = document.getElementById('availableSection') as HTMLDivElement
+const availableContent = document.getElementById('availableContent') as HTMLDivElement
 const attachedCount = document.getElementById('attachedCount') as HTMLSpanElement
 const errorBanner = document.getElementById('errorBanner') as HTMLDivElement
-const currentTargetPill = document.getElementById('currentTargetPill') as HTMLDivElement
-const currentTargetKind = document.getElementById('currentTargetKind') as HTMLSpanElement
-const currentTargetTitle = document.getElementById('currentTargetTitle') as HTMLDivElement
-const currentTargetUrl = document.getElementById('currentTargetUrl') as HTMLDivElement
-const copyInfoButton = document.getElementById('copyInfoButton') as HTMLButtonElement
 const healthBridge = document.getElementById('healthBridge') as HTMLDivElement
 const healthWatcherId = document.getElementById('healthWatcherId') as HTMLDivElement
 const healthAttachedCount = document.getElementById('healthAttachedCount') as HTMLDivElement
 const healthSelectedTarget = document.getElementById('healthSelectedTarget') as HTMLDivElement
 const healthLastMessage = document.getElementById('healthLastMessage') as HTMLDivElement
 const healthPid = document.getElementById('healthPid') as HTMLDivElement
-const eventList = document.getElementById('eventList') as HTMLDivElement
+const copyAllButton = document.getElementById('copyAllButton') as HTMLButtonElement
+const detachAllButton = document.getElementById('detachAllButton') as HTMLButtonElement
 
 let prevStateHash = ''
 let currentError: string | null = null
 let latestCurrentWatcher: PopupWatcherStatus | null = null
+// Copy actions run per attached row, so keep the latest watcher list alongside the focused watcher.
+let latestWatchers: PopupWatcherStatus[] = []
 
-copyInfoButton.addEventListener('click', () => {
-	void copyWatcherInfo()
+copyAllButton.addEventListener('click', () => {
+	void copyAllWatchersInfo()
+})
+
+detachAllButton.addEventListener('click', () => {
+	void detachAllWatchers()
 })
 
 async function sendMessage<T>(message: { action: string; tabId?: number; frameId?: string | null }): Promise<T> {
@@ -110,7 +123,9 @@ async function sendMessage<T>(message: { action: string; tabId?: number; frameId
 }
 
 function setEmptyState(icon: string, message: string): void {
-	content.innerHTML = `
+	availableSection.classList.remove('hidden')
+	attachedSection.classList.add('hidden')
+	availableContent.innerHTML = `
       <div class="empty-state">
         <div class="icon">${escapeHtml(icon)}</div>
         <div>${escapeHtml(message)}</div>
@@ -130,17 +145,6 @@ function showError(message: string | null): void {
 	errorBanner.classList.toggle('hidden', !message)
 }
 
-function updateCurrentTarget(watcher: PopupWatcherStatus | null): void {
-	const target = watcher?.currentTarget ?? null
-	const hasTarget = Boolean(target)
-
-	currentTargetPill.classList.toggle('empty', !hasTarget)
-	currentTargetKind.textContent = target ? (target.type === 'page' ? 'Page' : 'Iframe') : 'Target'
-	currentTargetTitle.textContent = target ? target.title || shortenUrl(target.url ?? '') : 'No target selected'
-	currentTargetUrl.textContent = target?.url ? shortenUrl(target.url) : 'Attach a tab to get started'
-	copyInfoButton.disabled = !canCopyWatcherInfo(watcher)
-}
-
 function updateHealth(status: StatusPayload | undefined, watcher: PopupWatcherStatus | null): void {
 	const connected = watcher?.bridgeConnected ?? status?.bridgeConnected ?? false
 	const target = watcher?.currentTarget ?? null
@@ -153,28 +157,9 @@ function updateHealth(status: StatusPayload | undefined, watcher: PopupWatcherSt
 	healthSelectedTarget.textContent = target ? `${target.type === 'page' ? 'Page' : 'Iframe'} ${target.targetId}` : '-'
 	healthLastMessage.textContent = formatTimestamp(watcher?.lastMessageAt ?? null)
 	healthPid.textContent = watcher?.nativeHostPid ? String(watcher.nativeHostPid) : '-'
-}
-
-function renderEvents(events: PopupEvent[]): void {
-	if (events.length === 0) {
-		eventList.innerHTML = '<div class="loading">No events yet</div>'
-		return
-	}
-
-	eventList.innerHTML = events
-		.map(
-			(event) => `
-      <div class="event-item ${event.level}">
-        <div class="event-meta">
-          <span class="event-level">${escapeHtml(event.level)}</span>
-          <span>${escapeHtml(event.source)}</span>
-          <span>${escapeHtml(formatTimestamp(event.ts))}</span>
-        </div>
-        <div class="event-message">${escapeHtml(event.message)}</div>
-      </div>
-    `,
-		)
-		.join('')
+	const hasWatchers = latestWatchers.length > 0
+	copyAllButton.disabled = !hasWatchers
+	detachAllButton.disabled = !hasWatchers
 }
 
 function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
@@ -194,47 +179,16 @@ function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
 		}
 	}
 
-	let html = ''
-	if (attachedTabs.length > 0) {
-		html += renderTabSection('Attached Tabs', attachedTabs, true)
-	}
-
-	if (availableTabs.length > 0) {
-		if (attachedTabs.length > 0) {
-			html += '<div style="height: 16px"></div>'
-		}
-		html += renderTabSection('Available Tabs', availableTabs, false)
-	}
-
-	content.innerHTML = html
-	content.querySelectorAll('.tab-action').forEach((button) => {
-		button.addEventListener('click', handleTabAction)
-	})
-	content.querySelectorAll('[data-action="select-target"]').forEach((button) => {
-		button.addEventListener('click', handleTargetSelection)
-	})
-	content.querySelectorAll('.tab-item').forEach((item) => {
-		item.addEventListener('click', handleTabItemClick)
-	})
-}
-
-function renderTabSection(title: string, tabs: TabInfo[], showTargets: boolean): string {
-	return `
-    <div class="section-title">${title}</div>
-    <div class="tab-list">
-      ${tabs.map((tab) => renderTabItem(tab, showTargets)).join('')}
-    </div>
-  `
+	renderTabGroup(attachedSection, attachedContent, attachedTabs, true)
+	renderTabGroup(availableSection, availableContent, availableTabs, false)
 }
 
 function renderTabItem(tab: TabInfo, showTargets: boolean): string {
 	const favicon = tab.faviconUrl
 		? `<img class="tab-favicon" src="${escapeHtml(tab.faviconUrl)}" alt="">`
 		: `<div class="tab-favicon" style="background: #e0e0e0"></div>`
-	const actionButton = tab.attached
-		? `<button class="tab-action detach" data-tab-id="${tab.tabId}" data-action="detach">Detach</button>`
-		: `<button class="tab-action attach" data-tab-id="${tab.tabId}" data-action="attach">Attach</button>`
 	const watcherSuffix = tab.attached && tab.watcher?.watcherId ? ` (${escapeHtml(tab.watcher.watcherId)})` : ''
+	const actions = tab.attached ? renderAttachedTabActions(tab.tabId) : renderAttachButton(tab.tabId)
 
 	return `
     <div class="tab-item ${tab.attached ? 'attached' : ''}" data-tab-id="${tab.tabId}">
@@ -243,10 +197,62 @@ function renderTabItem(tab: TabInfo, showTargets: boolean): string {
         <div class="tab-title">${escapeHtml(tab.title || 'Untitled')}${watcherSuffix}</div>
         <div class="tab-url">${escapeHtml(tab.url)}</div>
       </div>
-      ${actionButton}
+      ${actions}
     </div>
     ${showTargets ? renderTargetList(tab) : ''}
   `
+}
+
+function renderTabGroup(section: HTMLDivElement, content: HTMLDivElement, tabs: TabInfo[], showTargets: boolean): void {
+	if (tabs.length === 0) {
+		section.classList.add('hidden')
+		content.innerHTML = ''
+		return
+	}
+
+	section.classList.remove('hidden')
+	content.innerHTML = `<div class="tab-list">${tabs.map((tab) => renderTabItem(tab, showTargets)).join('')}</div>`
+	bindTabInteractions(content)
+}
+
+function bindTabInteractions(root: ParentNode): void {
+	root.querySelectorAll('.tab-action').forEach((button) => {
+		button.addEventListener('click', handleTabAction)
+	})
+	root.querySelectorAll('[data-action="select-target"]').forEach((button) => {
+		button.addEventListener('click', handleTargetSelection)
+	})
+	root.querySelectorAll('.tab-item').forEach((item) => {
+		item.addEventListener('click', handleTabItemClick)
+	})
+}
+
+function renderAttachedTabActions(tabId: number): string {
+	return `
+		<div class="tab-actions">
+			${renderIconActionButton(tabId, 'copy-info', 'copy', 'Copy watcher info', COPY_ICON)}
+			${renderIconActionButton(tabId, 'detach', 'detach', 'Detach', DETACH_ICON)}
+		</div>
+	`
+}
+
+function renderAttachButton(tabId: number): string {
+	return `<button class="tab-action attach" data-tab-id="${tabId}" data-action="attach" type="button">Attach</button>`
+}
+
+function renderIconActionButton(tabId: number, action: Exclude<TabButtonAction, 'attach'>, variant: string, label: string, icon: string): string {
+	return `
+		<button
+			class="tab-action icon-only ${variant}"
+			data-tab-id="${tabId}"
+			data-action="${action}"
+			type="button"
+			title="${label}"
+			aria-label="${label}"
+		>
+			${icon}
+		</button>
+	`
 }
 
 function renderTargetList(tab: TabInfo): string {
@@ -259,7 +265,7 @@ function renderTargetList(tab: TabInfo): string {
     <div class="target-list">
       ${targets
 			.map((target) => {
-				const isSelected = tab.selectedFrameId !== undefined && (tab.selectedFrameId ?? null) === (target.frameId ?? null)
+				const isSelected = isTargetSelected(tab.selectedFrameId, target.frameId)
 				const kindLabel = target.type === 'page' ? 'Page' : 'Iframe'
 				return `
             <button
@@ -282,6 +288,10 @@ function renderTargetList(tab: TabInfo): string {
   `
 }
 
+function isTargetSelected(selectedFrameId: string | null | undefined, targetFrameId: string | null): boolean {
+	return selectedFrameId !== undefined && (selectedFrameId ?? null) === (targetFrameId ?? null)
+}
+
 async function handleTabItemClick(event: Event): Promise<void> {
 	const target = event.target as HTMLElement
 	if (target.closest('.tab-action')) {
@@ -293,43 +303,49 @@ async function handleTabItemClick(event: Event): Promise<void> {
 		return
 	}
 
-	const tabId = parseInt(tabItem.dataset.tabId ?? '0', 10)
-	const action: PopupAction = 'attach'
+	const tabId = getTabId(tabItem)
 
 	tabItem.style.opacity = '0.6'
 	tabItem.style.pointerEvents = 'none'
 
 	try {
-		await runPopupAction(action, { tabId })
+		await runPopupAction('attach', { tabId })
 		await refreshTabs(true)
 	} catch (error) {
-		showError(error instanceof Error ? error.message : `${capitalize(action)} failed`)
+		showError(error instanceof Error ? error.message : 'Attach failed')
 		tabItem.style.opacity = '1'
 		tabItem.style.pointerEvents = 'auto'
 	}
 }
 
 async function handleTabAction(event: Event): Promise<void> {
-	const button = event.target as HTMLButtonElement
-	const tabId = parseInt(button.dataset.tabId ?? '0', 10)
-	const action = button.dataset.action as 'attach' | 'detach'
+	const button = (event.target as HTMLElement).closest('.tab-action') as HTMLButtonElement | null
+	if (!button) {
+		return
+	}
 
-	button.disabled = true
-	button.textContent = action === 'attach' ? 'Attaching...' : 'Detaching...'
+	const tabId = getTabId(button)
+	const action = button.dataset.action as TabButtonAction
+
+	if (action === 'copy-info') {
+		await copyWatcherInfo(tabId, button)
+		return
+	}
+
+	const restoreButton = setBusyButtonState(button, action)
 
 	try {
 		await runPopupAction(action, { tabId })
 		await refreshTabs(true)
 	} catch (error) {
 		showError(error instanceof Error ? error.message : `${capitalize(action)} failed`)
-		button.disabled = false
-		button.textContent = action === 'attach' ? 'Attach' : 'Detach'
+		restoreButton()
 	}
 }
 
 async function handleTargetSelection(event: Event): Promise<void> {
 	const button = event.currentTarget as HTMLButtonElement
-	const tabId = parseInt(button.dataset.tabId ?? '0', 10)
+	const tabId = getTabId(button)
 	const frameId = button.dataset.frameId || null
 
 	button.disabled = true
@@ -365,6 +381,7 @@ async function refreshTabs(forceRender = false): Promise<void> {
 		}
 
 		const status = statusResponse.status
+		latestWatchers = status?.watchers ?? []
 		latestCurrentWatcher = selectCurrentWatcher(status ?? null, tabsResponse.tabs ?? [], activeTab?.id)
 
 		const stateHash = JSON.stringify({
@@ -380,9 +397,7 @@ async function refreshTabs(forceRender = false): Promise<void> {
 		prevStateHash = stateHash
 
 		updateStatus(status?.bridgeConnected ?? false, status?.attachedTabs.length ?? 0)
-		updateCurrentTarget(latestCurrentWatcher)
 		updateHealth(status, latestCurrentWatcher)
-		renderEvents(status?.recentEvents ?? [])
 
 		if (tabsResponse.success && tabsResponse.tabs) {
 			renderTabs(tabsResponse.tabs, activeTab?.id)
@@ -396,10 +411,9 @@ async function refreshTabs(forceRender = false): Promise<void> {
 		const message = error instanceof Error ? error.message : 'Failed to refresh popup'
 		showError(message)
 		updateStatus(false, 0)
+		latestWatchers = []
 		latestCurrentWatcher = null
-		updateCurrentTarget(null)
 		updateHealth(undefined, null)
-		renderEvents([])
 		setEmptyState('⚠️', message)
 	}
 }
@@ -416,48 +430,133 @@ function formatTimestamp(timestamp: number | null): string {
 	})
 }
 
-function shortenUrl(input: string): string {
-	try {
-		const url = new URL(input)
-		const path = `${url.pathname}${url.hash}` || '/'
-		return `${url.host}${path.length > 28 ? `${path.slice(0, 27)}…` : path}`
-	} catch {
-		return input.length > 44 ? `${input.slice(0, 43)}…` : input
-	}
-}
-
-async function copyWatcherInfo(): Promise<void> {
-	const text = buildWatcherInfoText()
+async function copyWatcherInfo(tabId: number, button: HTMLButtonElement): Promise<void> {
+	const watcher = findWatcherByTabId(latestWatchers, tabId)
+	const text = buildWatcherInfoText(watcher)
 	if (!text) {
 		return
 	}
 
 	await navigator.clipboard.writeText(text)
-	const previousText = copyInfoButton.textContent
-	copyInfoButton.textContent = 'Copied!'
-	setTimeout(() => {
-		copyInfoButton.textContent = previousText
-	}, 1500)
+	restoreButtonFeedback(button, 'Copied!')
 }
 
-function buildWatcherInfoText(): string | null {
-	if (!canCopyWatcherInfo(latestCurrentWatcher)) {
+async function copyAllWatchersInfo(): Promise<void> {
+	const text = buildAllWatchersInfoText(latestWatchers)
+	if (!text) {
+		return
+	}
+
+	await navigator.clipboard.writeText(text)
+	restoreButtonFeedback(copyAllButton, 'Copied!')
+}
+
+async function detachAllWatchers(): Promise<void> {
+	if (latestWatchers.length === 0) {
+		return
+	}
+
+	const restoreBusyState = setButtonFeedback(detachAllButton, 'Detaching...')
+	const failures = await detachWatchers(latestWatchers.map((watcher) => watcher.tabId))
+	restoreBusyState()
+	await refreshTabs(true)
+
+	if (failures.length > 0) {
+		showError(buildDetachAllError(failures.length))
+		return
+	}
+
+	showError(null)
+	restoreButtonFeedback(detachAllButton, 'Detached!')
+}
+
+/**
+ * Detach watchers one by one so a single failure does not block the rest of the cleanup.
+ */
+async function detachWatchers(tabIds: number[]): Promise<number[]> {
+	const failures: number[] = []
+
+	for (const tabId of tabIds) {
+		try {
+			await runPopupAction('detach', { tabId })
+		} catch {
+			failures.push(tabId)
+		}
+	}
+
+	return failures
+}
+
+function setBusyButtonState(button: HTMLButtonElement, action: Extract<TabButtonAction, 'attach' | 'detach'>): () => void {
+	const previousMarkup = button.innerHTML
+	const restoreFeedback = setButtonFeedback(button, action === 'attach' ? 'Attaching...' : 'Detaching...')
+	if (action === 'attach') {
+		button.textContent = 'Attaching...'
+	}
+
+	return () => {
+		button.innerHTML = previousMarkup
+		restoreFeedback()
+	}
+}
+
+function restoreButtonFeedback(button: HTMLButtonElement, label: string, timeoutMs = 1500): void {
+	const restore = setButtonFeedback(button, label)
+	setTimeout(() => {
+		restore()
+	}, timeoutMs)
+}
+
+function setButtonFeedback(button: HTMLButtonElement, label: string): () => void {
+	const previousTitle = button.title
+	const previousLabel = button.getAttribute('aria-label')
+	const previousText = getButtonLabel(button)
+	const previousDisabled = button.disabled
+
+	button.disabled = true
+	button.title = label
+	button.setAttribute('aria-label', label)
+	setButtonLabel(button, label)
+
+	return () => {
+		button.disabled = previousDisabled
+		button.title = previousTitle
+		button.setAttribute('aria-label', previousLabel ?? previousTitle)
+		setButtonLabel(button, previousText)
+	}
+}
+
+function buildWatcherInfoText(watcher: PopupWatcherStatus | null): string | null {
+	if (!canCopyWatcherInfo(watcher)) {
 		return null
 	}
 
-	const watcher = latestCurrentWatcher!
-	const target = watcher.currentTarget!
+	const readyWatcher = watcher!
+	const target = readyWatcher.currentTarget!
 	const attached = target.attachedAt ? new Date(target.attachedAt).toISOString() : new Date().toISOString()
 	const fields = [
-		['ID', watcher.watcherId!],
-		['Host', `${watcher.watcherHost!}:${watcher.watcherPort!}`],
-		['PID', String(watcher.nativeHostPid!)],
+		['ID', readyWatcher.watcherId!],
+		['Host', `${readyWatcher.watcherHost!}:${readyWatcher.watcherPort!}`],
+		['PID', String(readyWatcher.nativeHostPid!)],
 		['Target', target.title || '(no title)'],
 		['URL', target.url || '(no url)'],
 		['Attached', attached],
 	]
 
 	return `Argus Watcher Info\n${fields.map(([label, value]) => `${label}: ${value}`).join('\n')}`
+}
+
+function buildAllWatchersInfoText(watchers: PopupWatcherStatus[]): string | null {
+	const watcherInfo = watchers.map((watcher) => buildWatcherInfoText(watcher)).filter((text): text is string => Boolean(text))
+	if (watcherInfo.length === 0) {
+		return null
+	}
+
+	return watcherInfo.join('\n\n')
+}
+
+function buildDetachAllError(failureCount: number): string {
+	return failureCount === 1 ? 'Failed to detach 1 watcher' : `Failed to detach ${failureCount} watchers`
 }
 
 function capitalize(text: string): string {
@@ -496,6 +595,21 @@ function canCopyWatcherInfo(watcher: PopupWatcherStatus | null | undefined): boo
 
 function findWatcherByTabId(watchers: PopupWatcherStatus[], tabId: number): PopupWatcherStatus | null {
 	return watchers.find((watcher) => watcher.tabId === tabId) ?? null
+}
+
+function getTabId(element: HTMLElement): number {
+	return parseInt(element.dataset.tabId ?? '0', 10)
+}
+
+function getButtonLabel(button: HTMLButtonElement): string {
+	return button.querySelector<HTMLElement>('[data-button-label]')?.textContent ?? ''
+}
+
+function setButtonLabel(button: HTMLButtonElement, label: string): void {
+	const labelNode = button.querySelector<HTMLElement>('[data-button-label]')
+	if (labelNode) {
+		labelNode.textContent = label
+	}
 }
 
 function escapeHtml(text: string): string {

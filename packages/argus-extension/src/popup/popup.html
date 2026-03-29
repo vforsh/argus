@@ -27,9 +27,6 @@
 				padding: 12px 16px 14px;
 				background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
 				border-bottom: 1px solid #e0e0e0;
-				display: flex;
-				flex-direction: column;
-				gap: 12px;
 			}
 
 			.header-top {
@@ -61,96 +58,43 @@
 				margin-left: auto;
 			}
 
-			.target-bar {
+			.tab-actions {
 				display: flex;
-				flex-direction: column;
-				gap: 8px;
-			}
-
-			.target-pill {
-				display: grid;
-				grid-template-columns: auto minmax(0, 1fr);
-				align-items: center;
-				gap: 10px;
-				min-width: 0;
-				padding: 10px 12px;
-				border-radius: 10px;
-				background: #edf4fb;
-				border: 1px solid #d6e5f5;
-			}
-
-			.target-pill.empty {
-				background: #f7f9fb;
-				border-color: #e1e7ed;
-			}
-
-			.target-pill-kind {
-				flex-shrink: 0;
-				padding: 3px 7px;
-				border-radius: 999px;
-				background: #d8e9fb;
-				color: #235b8d;
-				font-size: 10px;
-				font-weight: 700;
-				text-transform: uppercase;
-				letter-spacing: 0.4px;
-			}
-
-			.target-pill.empty .target-pill-kind {
-				background: #e8edf2;
-				color: #667482;
-			}
-
-			.target-pill-meta {
-				display: flex;
-				flex-direction: column;
-				gap: 2px;
-				min-width: 0;
-			}
-
-			.target-pill-title,
-			.target-pill-url {
-				white-space: nowrap;
-				overflow: hidden;
-				text-overflow: ellipsis;
-			}
-
-			.target-pill-title {
-				font-size: 12px;
-				font-weight: 600;
-				color: #223140;
-			}
-
-			.target-pill-url {
-				font-size: 11px;
-				color: #607080;
-			}
-
-			.copy-actions {
-				display: flex;
-				flex-wrap: wrap;
-				justify-content: flex-start;
 				gap: 6px;
+				flex-shrink: 0;
 			}
 
-			.copy-button {
-				padding: 6px 8px;
-				border: 1px solid #d3dbe4;
-				border-radius: 7px;
-				background: #fff;
-				color: #425364;
-				font-size: 11px;
+			.tab-action {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				flex-shrink: 0;
+				border: none;
 				cursor: pointer;
 			}
 
-			.copy-button:hover:not(:disabled) {
-				border-color: #9fc2e6;
-				color: #1b5e92;
+			.tab-action.icon-only {
+				width: 28px;
+				height: 28px;
+				padding: 0;
+				border-radius: 8px;
 			}
 
-			.copy-button:disabled {
-				cursor: default;
-				opacity: 0.45;
+			.tab-action svg {
+				width: 14px;
+				height: 14px;
+				stroke: currentColor;
+			}
+
+			.tab-action.copy {
+				background: #fff;
+				color: #425364;
+				border: 1px solid #d3dbe4;
+			}
+
+			.tab-action.copy:hover:not(:disabled) {
+				border-color: #9fc2e6;
+				color: #1b5e92;
 			}
 
 			.page {
@@ -162,10 +106,6 @@
 				gap: 12px;
 				scrollbar-width: none;
 				-ms-overflow-style: none;
-			}
-
-			.content {
-				overflow: visible;
 			}
 
 			/* Hide scrollbars while keeping scroll behavior */
@@ -241,6 +181,54 @@
 				margin-bottom: 10px;
 			}
 
+			.panel-button {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				padding: 6px 9px;
+				border: 1px solid #d3dbe4;
+				border-radius: 8px;
+				background: #fff;
+				color: #425364;
+				font-size: 11px;
+				font-weight: 500;
+				cursor: pointer;
+				flex-shrink: 0;
+			}
+
+			.panel-actions {
+				display: flex;
+				justify-content: flex-end;
+				gap: 8px;
+				margin-top: 12px;
+			}
+
+			.panel-button svg {
+				width: 14px;
+				height: 14px;
+				stroke: currentColor;
+			}
+
+			.panel-button:hover:not(:disabled) {
+				border-color: #9fc2e6;
+				color: #1b5e92;
+			}
+
+			.panel-button.danger {
+				border-color: #f0c6c6;
+				color: #c0392b;
+			}
+
+			.panel-button.danger:hover:not(:disabled) {
+				border-color: #e59b9b;
+				color: #a62c20;
+			}
+
+			.panel-button:disabled {
+				cursor: default;
+				opacity: 0.45;
+			}
+
 			.tab-list {
 				display: flex;
 				flex-direction: column;
@@ -297,22 +285,21 @@
 				text-overflow: ellipsis;
 			}
 
-			.tab-action {
-				padding: 4px 10px;
-				font-size: 11px;
-				border: none;
-				border-radius: 4px;
-				cursor: pointer;
-				flex-shrink: 0;
-			}
-
 			.tab-action.attach {
 				background: #e3f2fd;
 				color: #1976d2;
+				padding: 4px 10px;
+				font-size: 11px;
+				border-radius: 4px;
 			}
 
 			.tab-action.attach:hover {
 				background: #bbdefb;
+			}
+
+			.tab-action:disabled {
+				cursor: default;
+				opacity: 0.45;
 			}
 
 			.tab-action.detach {
@@ -407,45 +394,6 @@
 				color: #888;
 			}
 
-			.event-list {
-				display: flex;
-				flex-direction: column;
-				gap: 8px;
-			}
-
-			.event-item {
-				padding: 8px 10px;
-				border-radius: 8px;
-				background: #f6f8fa;
-				border: 1px solid #e3e8ed;
-			}
-
-			.event-item.error {
-				background: #fff4f4;
-				border-color: #f0c6c6;
-			}
-
-			.event-meta {
-				display: flex;
-				align-items: center;
-				gap: 6px;
-				margin-bottom: 4px;
-				font-size: 10px;
-				text-transform: uppercase;
-				letter-spacing: 0.4px;
-				color: #7a8794;
-			}
-
-			.event-level {
-				font-weight: 700;
-			}
-
-			.event-message {
-				font-size: 12px;
-				line-height: 1.35;
-				color: #293847;
-			}
-
 			.footer {
 				padding: 10px 16px;
 				background: #fff;
@@ -472,18 +420,6 @@
 				<div class="status-indicator" id="statusIndicator"></div>
 				<h1>Argus CDP Bridge</h1>
 				<span class="status-text" id="statusText">Connecting...</span>
-			</div>
-			<div class="target-bar">
-				<div class="target-pill empty" id="currentTargetPill">
-					<span class="target-pill-kind" id="currentTargetKind">Target</span>
-					<div class="target-pill-meta">
-						<div class="target-pill-title" id="currentTargetTitle">No target selected</div>
-						<div class="target-pill-url" id="currentTargetUrl">Attach a tab to get started</div>
-					</div>
-				</div>
-				<div class="copy-actions">
-					<button class="copy-button" id="copyInfoButton" type="button">Copy info</button>
-				</div>
 			</div>
 		</div>
 
@@ -518,19 +454,50 @@
 						<div class="health-value" id="healthPid">-</div>
 					</div>
 				</div>
+				<div class="panel-actions">
+					<button
+						class="panel-button"
+						id="copyAllButton"
+						type="button"
+						title="Copy all watcher info"
+						aria-label="Copy all watcher info"
+						disabled
+					>
+						<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+							<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+						</svg>
+						<span data-button-label>Copy All</span>
+					</button>
+					<button
+						class="panel-button danger"
+						id="detachAllButton"
+						type="button"
+						title="Detach all watchers"
+						aria-label="Detach all watchers"
+						disabled
+					>
+						<svg viewBox="0 0 16 16" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M5.4 1.75h5.2l3.65 3.65v5.2l-3.65 3.65H5.4l-3.65-3.65V5.4z"></path>
+							<path d="M6 6l4 4"></path>
+							<path d="M10 6l-4 4"></path>
+						</svg>
+						<span data-button-label>Detach All</span>
+					</button>
+				</div>
 			</div>
 
-			<div class="panel">
-				<div class="section-title">Tabs</div>
-				<div class="content" id="content">
+			<div class="panel" id="attachedSection">
+				<div class="section-title">Attached Tabs</div>
+				<div id="attachedContent">
 					<div class="loading">Loading tabs...</div>
 				</div>
 			</div>
 
-			<div class="panel">
-				<div class="section-title">Recent Events</div>
-				<div class="event-list" id="eventList">
-					<div class="loading">Waiting for events...</div>
+			<div class="panel" id="availableSection">
+				<div class="section-title">Available Tabs</div>
+				<div id="availableContent">
+					<div class="loading">Loading tabs...</div>
 				</div>
 			</div>
 		</div>
