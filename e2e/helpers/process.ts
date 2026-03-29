@@ -7,18 +7,10 @@ export interface CommandResult {
 
 export async function runCommand(cmd: string, args: string[], options: SpawnOptions = {}): Promise<CommandResult> {
 	return new Promise((resolve, reject) => {
-		const proc = spawn(cmd, args, { stdio: 'pipe', ...options })
-		let stdout = ''
-		let stderr = ''
-		proc.stdout?.on('data', (data) => {
-			stdout += data
-		})
-		proc.stderr?.on('data', (data) => {
-			stderr += data
-		})
+		const { proc, output } = spawnWithOutput(cmd, args, options)
 		proc.on('close', (code) => {
-			if (code === 0) resolve({ stdout, stderr })
-			else reject(new Error(`Command ${cmd} ${args.join(' ')} failed with code ${code}\nStdout: ${stdout}\nStderr: ${stderr}`))
+			if (code === 0) resolve(output)
+			else reject(new Error(formatCommandFailure(cmd, args, code, output)))
 		})
 		proc.on('error', reject)
 	})
@@ -30,17 +22,9 @@ export interface CommandResultWithExit extends CommandResult {
 
 export async function runCommandWithExit(cmd: string, args: string[], options: SpawnOptions = {}): Promise<CommandResultWithExit> {
 	return new Promise((resolve, reject) => {
-		const proc = spawn(cmd, args, { stdio: 'pipe', ...options })
-		let stdout = ''
-		let stderr = ''
-		proc.stdout?.on('data', (data) => {
-			stdout += data
-		})
-		proc.stderr?.on('data', (data) => {
-			stderr += data
-		})
+		const { proc, output } = spawnWithOutput(cmd, args, options)
 		proc.on('close', (code) => {
-			resolve({ stdout, stderr, code })
+			resolve({ ...output, code })
 		})
 		proc.on('error', reject)
 	})
@@ -58,23 +42,14 @@ export interface ExtendedSpawnOptions extends SpawnOptions {
 
 export async function spawnAndWait(cmd: string, args: string[], options: ExtendedSpawnOptions = {}, readyRegex: RegExp): Promise<SpawnedProcess> {
 	return new Promise((resolve, reject) => {
-		const proc = spawn(cmd, args, { stdio: 'pipe', ...options })
-		let stdout = ''
-		let stderr = ''
+		const { proc, output } = spawnWithOutput(cmd, args, options)
 		let resolved = false
 
-		proc.stdout?.on('data', (data) => {
-			const str = data.toString()
-			stdout += str
-			if (!resolved && readyRegex.test(stdout)) {
+		proc.stdout?.on('data', () => {
+			if (!resolved && readyRegex.test(output.stdout)) {
 				resolved = true
-				resolve({ proc, stdout, stderr })
+				resolve({ proc, ...output })
 			}
-		})
-
-		proc.stderr?.on('data', (data) => {
-			const str = data.toString()
-			stderr += str
 		})
 
 		proc.on('error', (err) => {
@@ -87,7 +62,11 @@ export async function spawnAndWait(cmd: string, args: string[], options: Extende
 		proc.on('close', (code) => {
 			if (!resolved) {
 				resolved = true
-				reject(new Error(`Process ${cmd} exited with code ${code} before matching ready regex.\nStdout: ${stdout}\nStderr: ${stderr}`))
+				reject(
+					new Error(
+						`Process ${cmd} exited with code ${code} before matching ready regex.\nStdout: ${output.stdout}\nStderr: ${output.stderr}`,
+					),
+				)
 			}
 		})
 	})
@@ -163,3 +142,25 @@ export async function stopProcess(proc: ChildProcess | undefined, options: StopP
 		}, timeoutMs)
 	})
 }
+
+type BufferedOutput = {
+	stdout: string
+	stderr: string
+}
+
+const spawnWithOutput = (cmd: string, args: string[], options: SpawnOptions): { proc: ChildProcess; output: BufferedOutput } => {
+	const proc = spawn(cmd, args, { stdio: 'pipe', ...options })
+	const output: BufferedOutput = { stdout: '', stderr: '' }
+
+	proc.stdout?.on('data', (data) => {
+		output.stdout += data.toString()
+	})
+	proc.stderr?.on('data', (data) => {
+		output.stderr += data.toString()
+	})
+
+	return { proc, output }
+}
+
+const formatCommandFailure = (cmd: string, args: string[], code: number | null, output: BufferedOutput): string =>
+	`Command ${cmd} ${args.join(' ')} failed with code ${code}\nStdout: ${output.stdout}\nStderr: ${output.stderr}`
