@@ -206,8 +206,8 @@
 		<section data-testid="storage-section">
 			<h2>Storage</h2>
 			<div class="btn-row">
-				<button data-testid="btn-storage-set" onclick="seedStorage()">Seed localStorage</button>
-				<button data-testid="btn-storage-clear" onclick="clearStorage()">Clear localStorage</button>
+				<button data-testid="btn-storage-set" onclick="seedStorage()">Seed storage</button>
+				<button data-testid="btn-storage-clear" onclick="clearStorage()">Clear storage</button>
 			</div>
 			<pre data-testid="storage-output" id="storage-output">—</pre>
 		</section>
@@ -389,22 +389,37 @@
 				localStorage.setItem('playground:name', 'Argus')
 				localStorage.setItem('playground:version', '0.1.0')
 				localStorage.setItem('playground:config', JSON.stringify({ debug: true, theme: 'dark' }))
+				sessionStorage.setItem('playground:session-token', 'session-secret')
+				sessionStorage.setItem('playground:session-flags', JSON.stringify({ onboarding: true }))
 				refreshStorageDisplay()
 			}
 
 			function clearStorage() {
 				localStorage.clear()
+				sessionStorage.clear()
 				refreshStorageDisplay()
 			}
 
 			function refreshStorageDisplay() {
 				const output = document.getElementById('storage-output')
-				const entries = {}
-				for (let i = 0; i < localStorage.length; i++) {
-					const key = localStorage.key(i)
-					entries[key] = localStorage.getItem(key)
+				const collectEntries = (storage) => {
+					const entries = {}
+					for (let i = 0; i < storage.length; i++) {
+						const key = storage.key(i)
+						entries[key] = storage.getItem(key)
+					}
+					return entries
 				}
-				output.textContent = JSON.stringify(entries, null, 2) || '(empty)'
+
+				output.textContent =
+					JSON.stringify(
+						{
+							localStorage: collectEntries(localStorage),
+							sessionStorage: collectEntries(sessionStorage),
+						},
+						null,
+						2,
+					) || '(empty)'
 			}
 
 			// ── Auth helpers ──

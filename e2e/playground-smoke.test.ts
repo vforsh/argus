@@ -14,7 +14,7 @@ import type {
 	DomTreeResponse,
 	EvalResponse,
 	ScreenshotResponse,
-	StorageLocalListResponse,
+	StorageListResponse,
 } from '@vforsh/argus-core'
 import type { Page } from 'playwright'
 import type * as http from 'node:http'
@@ -189,11 +189,19 @@ describe('playground smoke tests', () => {
 
 	test('storage local list returns seeded keys', async () => {
 		const { stdout } = await runCommand('bun', [BIN_PATH, 'storage', 'local', 'list', 'playground', '--json'], { env })
-		const response = JSON.parse(stdout) as StorageLocalListResponse
+		const response = JSON.parse(stdout) as StorageListResponse
 		expect(response.ok).toBe(true)
 		expect(response.keys).toContain('playground:name')
 		expect(response.keys).toContain('playground:version')
 		expect(response.keys).toContain('playground:config')
+	})
+
+	test('storage session list returns seeded keys', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'storage', 'session', 'list', 'playground', '--json'], { env })
+		const response = JSON.parse(stdout) as StorageListResponse
+		expect(response.ok).toBe(true)
+		expect(response.keys).toContain('playground:session-token')
+		expect(response.keys).toContain('playground:session-flags')
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────

@@ -1,71 +1,73 @@
 import type { Command } from 'commander'
-import {
-	runStorageLocalGet,
-	runStorageLocalSet,
-	runStorageLocalRemove,
-	runStorageLocalList,
-	runStorageLocalClear,
-} from '../../commands/storageLocal.js'
+import type { StorageArea } from '@vforsh/argus-core'
+import { runStorageClear, runStorageGet, runStorageList, runStorageRemove, runStorageSet } from '../../commands/storage.js'
 
 export function registerStorage(program: Command): void {
 	const storage = program.command('storage').description('Interact with browser storage APIs')
-	const storageLocal = storage.command('local').description('Manage localStorage for the attached page')
 
-	storageLocal
+	registerStorageArea(storage, 'local')
+	registerStorageArea(storage, 'session')
+}
+
+const registerStorageArea = (storage: Command, area: StorageArea): void => {
+	const storageName = `${area}Storage`
+	const storageArea = storage.command(area).description(`Manage ${storageName} for the attached page`)
+
+	storageArea
 		.command('get')
 		.argument('[id]', 'Watcher id')
-		.argument('<key>', 'localStorage key to retrieve')
+		.argument('<key>', `${storageName} key to retrieve`)
 		.option('--origin <origin>', 'Validate page origin matches this value')
 		.option('--json', 'Output JSON for automation')
-		.addHelpText('after', '\nExamples:\n  $ argus storage local get app myKey\n  $ argus storage local get app myKey --json\n')
+		.addHelpText('after', `\nExamples:\n  $ argus storage ${area} get app myKey\n  $ argus storage ${area} get app myKey --json\n`)
 		.action(async (id, key, options) => {
-			await runStorageLocalGet(id, key, options)
+			await runStorageGet(area, id, key, options)
 		})
 
-	storageLocal
+	storageArea
 		.command('set')
 		.argument('[id]', 'Watcher id')
-		.argument('<key>', 'localStorage key to set')
+		.argument('<key>', `${storageName} key to set`)
 		.argument('<value>', 'Value to store')
 		.option('--origin <origin>', 'Validate page origin matches this value')
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus storage local set app myKey "myValue"\n  $ argus storage local set app config \'{"debug":true}\'\n',
+			`\nExamples:\n  $ argus storage ${area} set app myKey "myValue"\n  $ argus storage ${area} set app config '{"debug":true}'\n`,
 		)
 		.action(async (id, key, value, options) => {
-			await runStorageLocalSet(id, key, value, options)
+			await runStorageSet(area, id, key, value, options)
 		})
 
-	storageLocal
+	storageArea
 		.command('remove')
 		.argument('[id]', 'Watcher id')
-		.argument('<key>', 'localStorage key to remove')
+		.argument('<key>', `${storageName} key to remove`)
 		.option('--origin <origin>', 'Validate page origin matches this value')
 		.option('--json', 'Output JSON for automation')
-		.addHelpText('after', '\nExamples:\n  $ argus storage local remove app myKey\n')
+		.addHelpText('after', `\nExamples:\n  $ argus storage ${area} remove app myKey\n`)
 		.action(async (id, key, options) => {
-			await runStorageLocalRemove(id, key, options)
+			await runStorageRemove(area, id, key, options)
 		})
 
-	storageLocal
+	storageArea
 		.command('ls')
 		.alias('list')
 		.argument('[id]', 'Watcher id')
 		.option('--origin <origin>', 'Validate page origin matches this value')
 		.option('--json', 'Output JSON for automation')
-		.addHelpText('after', '\nExamples:\n  $ argus storage local ls app\n  $ argus storage local ls app --json\n')
+		.addHelpText('after', `\nExamples:\n  $ argus storage ${area} ls app\n  $ argus storage ${area} ls app --json\n`)
 		.action(async (id, options) => {
-			await runStorageLocalList(id, options)
+			await runStorageList(area, id, options)
 		})
 
-	storageLocal
+	storageArea
 		.command('clear')
 		.argument('[id]', 'Watcher id')
 		.option('--origin <origin>', 'Validate page origin matches this value')
 		.option('--json', 'Output JSON for automation')
-		.addHelpText('after', '\nExamples:\n  $ argus storage local clear app\n')
+		.addHelpText('after', `\nExamples:\n  $ argus storage ${area} clear app\n`)
 		.action(async (id, options) => {
-			await runStorageLocalClear(id, options)
+			await runStorageClear(area, id, options)
 		})
 }

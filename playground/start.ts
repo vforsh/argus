@@ -44,6 +44,7 @@ const main = async (): Promise<void> => {
     argus dom tree playground --selector "body" --depth 3
     argus dom info playground --selector '[data-testid="article-1"]'
     argus storage local list playground
+    argus storage session list playground
     argus eval playground "window.iframeState" --iframe "#playground-iframe"
     argus eval playground "window.iframeState" --iframe "#cross-origin-iframe"
     argus screenshot playground

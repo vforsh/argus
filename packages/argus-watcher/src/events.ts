@@ -112,6 +112,7 @@ export type HttpRequestEvent = {
 		| 'dialog/status'
 		| 'dialog/handle'
 		| 'storage/local'
+		| 'storage/session'
 		| 'reload'
 		| 'shutdown'
 		| 'targets'

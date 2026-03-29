@@ -182,6 +182,11 @@ argus storage local set app theme dark
 argus storage local remove app theme
 argus storage local ls app
 argus storage local clear app
+argus storage session get app draftId
+argus storage session set app draftId abc123
+argus storage session remove app draftId
+argus storage session ls app
+argus storage session clear app
 ```
 
 ### Auth
