@@ -354,7 +354,9 @@ describe('playground smoke tests', () => {
 					})
 				})
 
-				await page.getByTestId(buttonTestId).click()
+				await page.getByTestId(buttonTestId).evaluate((element: HTMLElement) => {
+					element.click()
+				})
 
 				return {
 					dialog: await browserDialog,
