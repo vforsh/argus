@@ -169,6 +169,27 @@ argus start --id app --auth-from extension
 
 Add `--url <url>` to override the final navigation target after hydration. By default Argus reopens the exported page URL. `--auth-state` always uses a fresh temp profile; combining it with copied Chrome profiles is intentionally rejected.
 
+### Manage cookies
+
+```bash
+# Inspect exact cookie identity
+argus auth cookies get app session --domain .example.com --path /
+
+# Upsert a cookie via CDP
+argus auth cookies set app session token123 --domain .example.com --path / --secure --http-only
+
+# Delete one cookie by identity
+argus auth cookies delete app session --domain .example.com --path /
+
+# Clear scoped slices of the cookie jar
+argus auth cookies clear app --for-origin
+argus auth cookies clear app --site --auth-only
+argus auth cookies clear app --domain example.com --session-only
+argus auth cookies clear app --browser-context
+```
+
+`auth cookies get` matches by `name + domain + path` so agents never have to guess across duplicate cookie names. `auth cookies clear` requires an explicit scope: the attached page host, the current site domain, an explicit domain suffix, or the whole browser context. `--session-only` and `--auth-only` narrow the deletion set before Argus calls Chrome's cookie-delete APIs.
+
 ## Common Workflows
 
 ### Debug console errors

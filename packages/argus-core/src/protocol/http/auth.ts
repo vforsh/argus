@@ -12,11 +12,30 @@ export type AuthCookie = {
 	sameSite: string | null
 }
 
+/** Exact cookie identity used for lookup/delete responses. */
+export type AuthCookieIdentity = {
+	name: string
+	domain: string
+	path: string
+}
+
 /** Response payload for GET /auth/cookies. */
 export type AuthCookiesResponse = {
 	ok: true
 	origin: string
 	cookies: AuthCookie[]
+}
+
+/** Request payload for exact cookie lookup. */
+export type AuthCookieGetRequest = AuthCookieIdentity & {
+	includeValue?: boolean
+}
+
+/** Response payload for exact cookie lookup. */
+export type AuthCookieGetResponse = {
+	ok: true
+	origin: string
+	cookie: AuthCookie | null
 }
 
 /** Cookie payload used by auth-state export and import. */
@@ -30,6 +49,52 @@ export type AuthStateCookie = {
 	session: boolean
 	expires: number | null
 	sameSite: string | null
+}
+
+/** Request payload for exact cookie upserts. */
+export type AuthCookieSetRequest = {
+	cookie: AuthStateCookie
+}
+
+/** Response payload for cookie upserts. */
+export type AuthCookieSetResponse = {
+	ok: true
+	origin: string
+	cookie: AuthCookie
+}
+
+/** Request payload for exact cookie deletion. */
+export type AuthCookieDeleteRequest = AuthCookieIdentity
+
+/** Response payload for exact cookie deletion. */
+export type AuthCookieDeleteResponse = {
+	ok: true
+	origin: string
+	deleted: boolean
+	cookie: AuthCookieIdentity
+}
+
+/** Scope used by bulk cookie clearing. */
+export type AuthCookieClearScope = 'origin' | 'site' | 'domain' | 'browserContext'
+
+/** Request payload for scoped cookie clearing. */
+export type AuthCookieClearRequest = {
+	scope: AuthCookieClearScope
+	domain?: string
+	sessionOnly?: boolean
+	authOnly?: boolean
+}
+
+/** Response payload for scoped cookie clearing. */
+export type AuthCookieClearResponse = {
+	ok: true
+	origin: string
+	scope: AuthCookieClearScope
+	scopeValue: string | null
+	sessionOnly: boolean
+	authOnly: boolean
+	cleared: number
+	cookies: AuthCookieIdentity[]
 }
 
 /** A single storage entry for localStorage/sessionStorage snapshots. */

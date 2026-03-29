@@ -194,9 +194,18 @@ argus storage session clear app
 ### Auth
 
 ```bash
-argus auth cookies app
-argus auth cookies app --show-values --json
-argus auth cookies app --for-origin --exclude-tracking
+argus auth cookies list app
+argus auth cookies list app --show-values --json
+argus auth cookies ls app --for-origin --exclude-tracking
+argus auth cookies get app session --domain .example.com --path /
+argus auth cookies get app session --domain .example.com --path / --show-value --json
+argus auth cookies set app session token123 --domain .example.com --path / --secure --http-only
+argus auth cookies set app preview 1 --domain app.example.com --path / --session --json
+argus auth cookies delete app session --domain .example.com --path /
+argus auth cookies clear app --for-origin
+argus auth cookies clear app --site --auth-only
+argus auth cookies clear app --domain example.com --session-only --json
+argus auth cookies clear app --browser-context
 argus auth export-cookies app --format netscape
 argus auth export-cookies app --for-origin --exclude-tracking
 argus auth export-state app --out auth.json
@@ -209,7 +218,7 @@ argus chrome start --auth-state auth.json
 argus start --id app --auth-from extension-2
 ```
 
-`auth cookies` lists browser cookies for the attached page, with optional domain/flag filters. `--for-origin` keeps first-party cookies for the current page origin, and `--exclude-tracking` hides common analytics cookies such as `_ga` / `_ym`. `auth export-cookies` emits cookie jars for companion CLIs (`netscape`, `json`, or `header`) and supports the same filters. `auth export-state`/`auth export` writes a portable JSON snapshot with cookies, `localStorage`, `sessionStorage`, and a metadata block (`exportedAt`, watcher provenance, page title/site domain, cookie count, auth-looking cookie names, recommended startup URL); stdout is pipe-friendly by default. `auth load-state`/`auth load` rehydrates that snapshot into the currently attached watcher tab, including `--in -` for stdin. `auth clone` skips the intermediate file and copies auth state directly between watchers. `chrome start --auth-state` loads a snapshot into a fresh temp Chrome profile, while `start --auth-from` does the same and immediately attaches a watcher.
+`auth cookies list`/`ls` lists browser cookies for the attached page, with optional domain/flag filters. `auth cookies get` resolves one cookie by exact `name + domain + path` identity. `auth cookies set` / `delete` mutate cookies through CDP instead of `document.cookie`, so HttpOnly/session metadata stays intact. `auth cookies clear` requires an explicit scope: current origin host, current site domain, an explicit domain suffix, or the whole browser context; add `--session-only` or `--auth-only` to narrow the deletion slice. `--for-origin` keeps first-party cookies for the current page origin, and `--exclude-tracking` hides common analytics cookies such as `_ga` / `_ym`. `auth export-cookies` emits cookie jars for companion CLIs (`netscape`, `json`, or `header`) and supports the same filters. `auth export-state`/`auth export` writes a portable JSON snapshot with cookies, `localStorage`, `sessionStorage`, and a metadata block (`exportedAt`, watcher provenance, page title/site domain, cookie count, auth-looking cookie names, recommended startup URL); stdout is pipe-friendly by default. `auth load-state`/`auth load` rehydrates that snapshot into the currently attached watcher tab, including `--in -` for stdin. `auth clone` skips the intermediate file and copies auth state directly between watchers. `chrome start --auth-state` loads a snapshot into a fresh temp Chrome profile, while `start --auth-from` does the same and immediately attaches a watcher.
 
 ### Trace
 

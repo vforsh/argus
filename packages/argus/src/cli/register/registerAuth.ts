@@ -1,10 +1,20 @@
 import type { Command } from 'commander'
-import { runAuthClone, runAuthCookies, runAuthExportCookies, runAuthExportState, runAuthLoadState } from '../../commands/auth.js'
+import { runAuthClone, runAuthExportState, runAuthLoadState } from '../../commands/auth.js'
+import {
+	runAuthCookieClear,
+	runAuthCookieDelete,
+	runAuthCookieGet,
+	runAuthCookies,
+	runAuthCookieSet,
+	runAuthExportCookies,
+} from '../../commands/authCookies.js'
 
 export function registerAuth(program: Command): void {
 	const auth = program.command('auth').description('Inspect, export, and load browser auth state')
 
-	addCookieScopeOptions(auth.command('cookies'), 'Only include first-party cookies for the attached page origin')
+	const cookies = auth.command('cookies').description('Inspect and mutate browser cookies')
+
+	addCookieScopeOptions(cookies.command('list').alias('ls'), 'Only include first-party cookies for the attached page origin')
 		.argument('[id]', 'Watcher id')
 		.description('List cookies for the attached page')
 		.option('--domain <domain>', 'Filter cookies by domain suffix')
@@ -15,10 +25,84 @@ export function registerAuth(program: Command): void {
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus auth cookies app\n  $ argus auth cookies app --for-origin --exclude-tracking\n  $ argus auth cookies app --domain example.com\n  $ argus auth cookies app --session-only --show-values\n',
+			'\nExamples:\n  $ argus auth cookies list app\n  $ argus auth cookies ls app --for-origin --exclude-tracking\n  $ argus auth cookies list app --domain example.com\n  $ argus auth cookies list app --session-only --show-values\n',
 		)
 		.action(async (id, options) => {
 			await runAuthCookies(id, options)
+		})
+
+	cookies
+		.command('get')
+		.argument('[id]', 'Watcher id')
+		.argument('<name>', 'Cookie name')
+		.description('Fetch one cookie by exact identity')
+		.requiredOption('--domain <domain>', 'Exact cookie domain')
+		.requiredOption('--path <path>', 'Exact cookie path')
+		.option('--show-value', 'Reveal the raw cookie value')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus auth cookies get app session --domain .example.com --path /\n  $ argus auth cookies get app session --domain example.com --path / --show-value --json\n',
+		)
+		.action(async (id, name, options) => {
+			await runAuthCookieGet(id, name, options)
+		})
+
+	cookies
+		.command('set')
+		.argument('[id]', 'Watcher id')
+		.argument('<name>', 'Cookie name')
+		.argument('<value>', 'Cookie value')
+		.description('Create or update one cookie by exact identity')
+		.requiredOption('--domain <domain>', 'Cookie domain')
+		.requiredOption('--path <path>', 'Cookie path')
+		.option('--secure', 'Mark the cookie as Secure')
+		.option('--http-only', 'Mark the cookie as HttpOnly')
+		.option('--same-site <mode>', 'Cookie SameSite mode: Strict, Lax, or None')
+		.option('--expires <value>', 'Expiry as Unix seconds or ISO timestamp')
+		.option('--session', 'Create a session cookie (cannot be combined with --expires)')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus auth cookies set app session token123 --domain .example.com --path / --secure --http-only\n  $ argus auth cookies set app preview 1 --domain app.example.com --path / --session --json\n',
+		)
+		.action(async (id, name, value, options) => {
+			await runAuthCookieSet(id, name, value, options)
+		})
+
+	cookies
+		.command('delete')
+		.argument('[id]', 'Watcher id')
+		.argument('<name>', 'Cookie name')
+		.description('Delete one cookie by exact identity')
+		.requiredOption('--domain <domain>', 'Exact cookie domain')
+		.requiredOption('--path <path>', 'Exact cookie path')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus auth cookies delete app session --domain .example.com --path /\n  $ argus auth cookies delete app session --domain example.com --path / --json\n',
+		)
+		.action(async (id, name, options) => {
+			await runAuthCookieDelete(id, name, options)
+		})
+
+	cookies
+		.command('clear')
+		.argument('[id]', 'Watcher id')
+		.description('Delete cookies in a scoped slice of the current browser context')
+		.option('--for-origin', 'Clear cookies that apply to the attached page host')
+		.option('--site', 'Clear cookies in the current site domain')
+		.option('--domain <domain>', 'Clear cookies matching an explicit domain suffix')
+		.option('--browser-context', 'Clear all cookies visible to the current browser context')
+		.option('--session-only', 'Only clear session cookies')
+		.option('--auth-only', 'Only clear auth-looking cookies')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus auth cookies clear app --for-origin\n  $ argus auth cookies clear app --site --auth-only\n  $ argus auth cookies clear app --domain example.com --session-only --json\n  $ argus auth cookies clear app --browser-context\n',
+		)
+		.action(async (id, options) => {
+			await runAuthCookieClear(id, options)
 		})
 
 	addCookieScopeOptions(auth.command('export-cookies'), 'Only include first-party cookies for the attached page origin')

@@ -1,11 +1,25 @@
 import {
 	AUTH_STATE_METADATA_SCHEMA_VERSION,
+	compareCookieIdentity,
+	cookieMatchesHost,
 	getLikelySiteDomain,
+	getOriginHost,
 	isLikelyAuthCookieName,
 	matchesCookieDomain,
+	matchesCookieIdentity,
+	normalizeCookieSameSite,
 	normalizeCookieDomainFilter,
 	type AuthCookie,
+	type AuthCookieClearRequest,
+	type AuthCookieClearResponse,
+	type AuthCookieDeleteRequest,
+	type AuthCookieDeleteResponse,
+	type AuthCookieGetRequest,
+	type AuthCookieGetResponse,
+	type AuthCookieIdentity,
 	type AuthCookiesResponse,
+	type AuthCookieSetRequest,
+	type AuthCookieSetResponse,
 	type AuthStateCookie,
 	type AuthStateOrigin,
 	type AuthStateSnapshot,
@@ -54,6 +68,8 @@ type SnapshotMetadataInput = {
 	watcherSource: 'cdp' | 'extension' | null
 }
 
+type CookieIdentityRequest = Pick<AuthCookieIdentity, 'name' | 'domain' | 'path'>
+
 /** Read cookies for the attached page and return a normalized auth response. */
 export const inspectAuthCookies = async (
 	session: CdpSessionHandle,
@@ -67,6 +83,126 @@ export const inspectAuthCookies = async (
 		ok: true,
 		origin,
 		cookies: cookies.filter((cookie) => matchesCookieDomain(cookie.domain, normalizedDomain)),
+	}
+}
+
+/** Read a single cookie by exact identity from the current browser context. */
+export const inspectAuthCookie = async (
+	session: CdpSessionHandle,
+	options: AuthCookieGetRequest & { readBrowserCookies?: BrowserCookieReader },
+): Promise<AuthCookieGetResponse> => {
+	const pageState = await inspectPageState(session)
+	const cookie = await findContextCookie(session, pageState, options, options.readBrowserCookies)
+
+	return {
+		ok: true,
+		origin: pageState.origin,
+		cookie: cookie ? normalizeStateCookieForRead(cookie, options.includeValue === true) : null,
+	}
+}
+
+/** Upsert a cookie via CDP and return the stored metadata back to the caller. */
+export const setAuthCookie = async (
+	session: CdpSessionHandle,
+	options: AuthCookieSetRequest & { readBrowserCookies?: BrowserCookieReader },
+): Promise<AuthCookieSetResponse> => {
+	const pageState = await inspectPageState(session)
+	const cookie = normalizeSetCookieInput(options.cookie)
+
+	const payload = (await session.sendAndWait(
+		'Network.setCookie',
+		{
+			name: cookie.name,
+			value: cookie.value,
+			domain: cookie.domain,
+			path: cookie.path,
+			secure: cookie.secure,
+			httpOnly: cookie.httpOnly,
+			sameSite: cookie.sameSite ?? undefined,
+			expires: cookie.session ? undefined : (cookie.expires ?? undefined),
+		},
+		{ timeoutMs: 5_000 },
+	)) as { success?: boolean }
+
+	if (payload.success === false) {
+		throw new Error(`Chrome rejected cookie ${cookie.name}`)
+	}
+
+	const stored = await findContextCookie(session, pageState, cookie, options.readBrowserCookies)
+
+	return {
+		ok: true,
+		origin: pageState.origin,
+		cookie: stored ? normalizeStateCookieForRead(stored, false) : normalizeStateCookieForRead(cookie, false),
+	}
+}
+
+/** Delete a cookie by exact identity from the current browser context. */
+export const deleteAuthCookie = async (
+	session: CdpSessionHandle,
+	options: AuthCookieDeleteRequest & { readBrowserCookies?: BrowserCookieReader },
+): Promise<AuthCookieDeleteResponse> => {
+	const pageState = await inspectPageState(session)
+	const existing = await findContextCookie(session, pageState, options, options.readBrowserCookies)
+
+	if (!existing) {
+		return {
+			ok: true,
+			origin: pageState.origin,
+			deleted: false,
+			cookie: toCookieIdentity(options),
+		}
+	}
+
+	await session.sendAndWait(
+		'Network.deleteCookies',
+		{
+			name: existing.name,
+			domain: existing.domain,
+			path: existing.path,
+		},
+		{ timeoutMs: 5_000 },
+	)
+
+	return {
+		ok: true,
+		origin: pageState.origin,
+		deleted: true,
+		cookie: toCookieIdentity(existing),
+	}
+}
+
+/** Delete cookies from the current browser context using an explicit scope + filter set. */
+export const clearAuthCookies = async (
+	session: CdpSessionHandle,
+	options: AuthCookieClearRequest & { readBrowserCookies?: BrowserCookieReader },
+): Promise<AuthCookieClearResponse> => {
+	const pageState = await inspectPageState(session)
+	const cookies = await readStateCookies(session, options.readBrowserCookies, { url: pageState.url })
+	const matcher = createClearCookieMatcher(pageState, options)
+	const targets = cookies.filter((cookie) => matcher(cookie) && matchesCookieClearFilters(cookie, options))
+
+	for (const cookie of targets) {
+		await session.sendAndWait(
+			'Network.deleteCookies',
+			{
+				name: cookie.name,
+				domain: cookie.domain,
+				path: cookie.path,
+			},
+			{ timeoutMs: 5_000 },
+		)
+	}
+
+	return {
+		ok: true,
+		origin: pageState.origin,
+		scope: options.scope,
+		scopeValue: resolveClearScopeValue(pageState, options),
+		sessionOnly: options.sessionOnly === true,
+		authOnly: options.authOnly === true,
+		cleared: targets.length,
+		cookies: targets.map((cookie) => toCookieIdentity(cookie)).sort(compareCookieIdentity),
 	}
 }
 
@@ -119,6 +255,16 @@ const readStateCookies = async (
 		.sort(compareCookieIdentity)
 }
 
+const findContextCookie = async (
+	session: CdpSessionHandle,
+	pageState: Pick<PageState, 'url'>,
+	identity: CookieIdentityRequest,
+	readBrowserCookiesFromSource?: BrowserCookieReader,
+): Promise<AuthStateCookie | null> => {
+	const cookies = await readStateCookies(session, readBrowserCookiesFromSource, { url: pageState.url })
+	return cookies.find((cookie) => matchesCookieIdentity(cookie, identity)) ?? null
+}
+
 const readRawCookies = async (session: CdpSessionHandle): Promise<RawCookie[]> => {
 	const payload = (await session.sendAndWait('Network.getCookies', {}, { timeoutMs: 5000 })) as { cookies?: RawCookie[] }
 	return payload.cookies ?? []
@@ -138,7 +284,7 @@ const mergeStateCookies = (...groups: AuthStateCookie[][]): AuthStateCookie[] =>
 	const merged = new Map<string, AuthStateCookie>()
 	for (const group of groups) {
 		for (const cookie of group) {
-			merged.set(cookieIdentity(cookie), cookie)
+			merged.set(serializeCookieIdentity(cookie), cookie)
 		}
 	}
 	return Array.from(merged.values())
@@ -161,6 +307,19 @@ const normalizeCookie = (cookie: RawCookie, includeValues: boolean): AuthCookie 
 	}
 }
 
+const normalizeStateCookieForRead = (cookie: AuthStateCookie, includeValues: boolean): AuthCookie => ({
+	name: cookie.name,
+	domain: cookie.domain,
+	path: cookie.path,
+	value: includeValues ? cookie.value : undefined,
+	valuePreview: previewSecret(cookie.value),
+	secure: cookie.secure,
+	httpOnly: cookie.httpOnly,
+	session: cookie.session,
+	expires: cookie.expires,
+	sameSite: normalizeCookieSameSite(cookie.sameSite),
+})
+
 const normalizeStateCookie = (cookie: RawCookie): AuthStateCookie => ({
 	name: cookie.name ?? '',
 	value: cookie.value ?? '',
@@ -170,7 +329,19 @@ const normalizeStateCookie = (cookie: RawCookie): AuthStateCookie => ({
 	httpOnly: cookie.httpOnly === true,
 	session: cookie.session === true,
 	expires: normalizeCookieExpires(cookie.expires),
-	sameSite: cookie.sameSite ?? null,
+	sameSite: normalizeCookieSameSite(cookie.sameSite),
+})
+
+const normalizeSetCookieInput = (cookie: AuthStateCookie): AuthStateCookie => ({
+	name: cookie.name,
+	value: cookie.value,
+	domain: cookie.domain,
+	path: cookie.path,
+	secure: cookie.secure,
+	httpOnly: cookie.httpOnly,
+	session: cookie.session,
+	expires: cookie.session ? null : cookie.expires,
+	sameSite: normalizeCookieSameSite(cookie.sameSite),
 })
 
 const normalizeCookieExpires = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
@@ -237,11 +408,65 @@ const previewSecret = (value: string): string => {
 
 const compareCookies = (a: AuthCookie, b: AuthCookie): number => compareCookieIdentity(a, b)
 
-const compareCookieIdentity = (a: { domain: string; path: string; name: string }, b: { domain: string; path: string; name: string }): number =>
-	a.domain.localeCompare(b.domain) || a.path.localeCompare(b.path) || a.name.localeCompare(b.name)
+const toCookieIdentity = (cookie: { domain?: string; path?: string; name?: string }): AuthCookieIdentity => ({
+	name: cookie.name ?? '',
+	domain: cookie.domain ?? '',
+	path: cookie.path ?? '/',
+})
 
-const cookieIdentity = (cookie: { domain?: string; path?: string; name?: string }): string =>
-	`${cookie.domain ?? ''}\t${cookie.path ?? '/'}\t${cookie.name ?? ''}`
+const serializeCookieIdentity = (cookie: { domain?: string; path?: string; name?: string }): string =>
+	`${normalizeCookieDomainFilter(cookie.domain ?? '') ?? ''}\t${cookie.path ?? '/'}\t${cookie.name ?? ''}`
+
+const createClearCookieMatcher = (
+	pageState: Pick<PageState, 'origin'>,
+	options: Pick<AuthCookieClearRequest, 'scope' | 'domain'>,
+): ((cookie: AuthStateCookie) => boolean) => {
+	switch (options.scope) {
+		case 'browserContext':
+			return () => true
+		case 'domain': {
+			const normalizedDomain = normalizeCookieDomainFilter(options.domain)
+			return (cookie) => matchesCookieDomain(cookie.domain, normalizedDomain)
+		}
+		case 'site': {
+			const siteDomain = getLikelySiteDomain(pageState.origin)
+			if (!siteDomain) {
+				throw new Error(`Cannot determine site domain from ${pageState.origin}`)
+			}
+			return (cookie) => matchesCookieDomain(cookie.domain, siteDomain)
+		}
+		case 'origin': {
+			const host = getOriginHost(pageState.origin)
+			if (!host) {
+				throw new Error(`Cannot determine origin host from ${pageState.origin}`)
+			}
+			return (cookie) => cookieMatchesHost(cookie.domain, host)
+		}
+	}
+}
+
+const matchesCookieClearFilters = (cookie: AuthStateCookie, options: Pick<AuthCookieClearRequest, 'sessionOnly' | 'authOnly'>): boolean => {
+	if (options.sessionOnly && !cookie.session) {
+		return false
+	}
+	if (options.authOnly && !isLikelyAuthCookieName(cookie.name)) {
+		return false
+	}
+	return true
+}
+
+const resolveClearScopeValue = (pageState: Pick<PageState, 'origin'>, options: Pick<AuthCookieClearRequest, 'scope' | 'domain'>): string | null => {
+	switch (options.scope) {
+		case 'browserContext':
+			return null
+		case 'domain':
+			return normalizeCookieDomainFilter(options.domain)
+		case 'site':
+			return getLikelySiteDomain(pageState.origin)
+		case 'origin':
+			return getOriginHost(pageState.origin)
+	}
+}
 
 const normalizePageState = (value: unknown): PageState => {
 	const snapshot = typeof value === 'object' && value ? (value as RawStateSnapshot) : {}
