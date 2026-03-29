@@ -19,6 +19,7 @@ type TabInfo = {
 	attached: boolean
 	selectedFrameId?: string | null
 	targets?: PopupTarget[]
+	watcher: PopupWatcherStatus | null
 }
 
 type PopupEvent = {
@@ -32,22 +33,28 @@ type CurrentTargetSummary = {
 	tabId: number
 	type: 'page' | 'iframe'
 	title: string | null
-	url: string
+	url: string | null
 	targetId: string
 	frameId: string | null
-	attachedAt: number | null
+	attachedAt: number
 }
 
 type StatusPayload = {
+	bridgeConnected: boolean
+	attachedTabs: Array<{ tabId: number; url: string; title: string }>
+	watchers: PopupWatcherStatus[]
+	recentEvents: PopupEvent[]
+}
+
+type PopupWatcherStatus = {
+	tabId: number
 	bridgeConnected: boolean
 	watcherId: string | null
 	watcherHost: string | null
 	watcherPort: number | null
 	nativeHostPid: number | null
 	lastMessageAt: number | null
-	attachedTabs: Array<{ tabId: number; url: string; title: string }>
 	currentTarget: CurrentTargetSummary | null
-	recentEvents: PopupEvent[]
 }
 
 type StatusResponse = {
@@ -90,7 +97,7 @@ const eventList = document.getElementById('eventList') as HTMLDivElement
 
 let prevStateHash = ''
 let currentError: string | null = null
-let latestStatus: StatusPayload | null = null
+let latestCurrentWatcher: PopupWatcherStatus | null = null
 
 copyInfoButton.addEventListener('click', () => {
 	void copyWatcherInfo()
@@ -123,29 +130,29 @@ function showError(message: string | null): void {
 	errorBanner.classList.toggle('hidden', !message)
 }
 
-function updateCurrentTarget(status: StatusPayload | undefined): void {
-	const target = status?.currentTarget ?? null
+function updateCurrentTarget(watcher: PopupWatcherStatus | null): void {
+	const target = watcher?.currentTarget ?? null
 	const hasTarget = Boolean(target)
 
 	currentTargetPill.classList.toggle('empty', !hasTarget)
 	currentTargetKind.textContent = target ? (target.type === 'page' ? 'Page' : 'Iframe') : 'Target'
-	currentTargetTitle.textContent = target ? target.title || shortenUrl(target.url) : 'No target selected'
+	currentTargetTitle.textContent = target ? target.title || shortenUrl(target.url ?? '') : 'No target selected'
 	currentTargetUrl.textContent = target?.url ? shortenUrl(target.url) : 'Attach a tab to get started'
-	copyInfoButton.disabled = !canCopyWatcherInfo(status)
+	copyInfoButton.disabled = !canCopyWatcherInfo(watcher)
 }
 
-function updateHealth(status: StatusPayload | undefined): void {
-	const connected = status?.bridgeConnected ?? false
-	const target = status?.currentTarget ?? null
+function updateHealth(status: StatusPayload | undefined, watcher: PopupWatcherStatus | null): void {
+	const connected = watcher?.bridgeConnected ?? status?.bridgeConnected ?? false
+	const target = watcher?.currentTarget ?? null
 
 	healthBridge.textContent = connected ? 'Connected' : 'Disconnected'
 	healthBridge.classList.toggle('connected', connected)
 	healthBridge.classList.toggle('disconnected', !connected)
-	healthWatcherId.textContent = status?.watcherId ?? '-'
+	healthWatcherId.textContent = watcher?.watcherId ?? '-'
 	healthAttachedCount.textContent = String(status?.attachedTabs.length ?? 0)
 	healthSelectedTarget.textContent = target ? `${target.type === 'page' ? 'Page' : 'Iframe'} ${target.targetId}` : '-'
-	healthLastMessage.textContent = formatTimestamp(status?.lastMessageAt ?? null)
-	healthPid.textContent = status?.nativeHostPid ? String(status.nativeHostPid) : '-'
+	healthLastMessage.textContent = formatTimestamp(watcher?.lastMessageAt ?? null)
+	healthPid.textContent = watcher?.nativeHostPid ? String(watcher.nativeHostPid) : '-'
 }
 
 function renderEvents(events: PopupEvent[]): void {
@@ -227,12 +234,13 @@ function renderTabItem(tab: TabInfo, showTargets: boolean): string {
 	const actionButton = tab.attached
 		? `<button class="tab-action detach" data-tab-id="${tab.tabId}" data-action="detach">Detach</button>`
 		: `<button class="tab-action attach" data-tab-id="${tab.tabId}" data-action="attach">Attach</button>`
+	const watcherSuffix = tab.attached && tab.watcher?.watcherId ? ` (${escapeHtml(tab.watcher.watcherId)})` : ''
 
 	return `
     <div class="tab-item ${tab.attached ? 'attached' : ''}" data-tab-id="${tab.tabId}">
       ${favicon}
       <div class="tab-info">
-        <div class="tab-title">${escapeHtml(tab.title || 'Untitled')}</div>
+        <div class="tab-title">${escapeHtml(tab.title || 'Untitled')}${watcherSuffix}</div>
         <div class="tab-url">${escapeHtml(tab.url)}</div>
       </div>
       ${actionButton}
@@ -281,8 +289,12 @@ async function handleTabItemClick(event: Event): Promise<void> {
 	}
 
 	const tabItem = event.currentTarget as HTMLElement
+	if (tabItem.classList.contains('attached')) {
+		return
+	}
+
 	const tabId = parseInt(tabItem.dataset.tabId ?? '0', 10)
-	const action = tabItem.classList.contains('attached') ? 'detach' : 'attach'
+	const action: PopupAction = 'attach'
 
 	tabItem.style.opacity = '0.6'
 	tabItem.style.pointerEvents = 'none'
@@ -353,7 +365,7 @@ async function refreshTabs(forceRender = false): Promise<void> {
 		}
 
 		const status = statusResponse.status
-		latestStatus = status ?? null
+		latestCurrentWatcher = selectCurrentWatcher(status ?? null, tabsResponse.tabs ?? [], activeTab?.id)
 
 		const stateHash = JSON.stringify({
 			status,
@@ -368,8 +380,8 @@ async function refreshTabs(forceRender = false): Promise<void> {
 		prevStateHash = stateHash
 
 		updateStatus(status?.bridgeConnected ?? false, status?.attachedTabs.length ?? 0)
-		updateCurrentTarget(status)
-		updateHealth(status)
+		updateCurrentTarget(latestCurrentWatcher)
+		updateHealth(status, latestCurrentWatcher)
 		renderEvents(status?.recentEvents ?? [])
 
 		if (tabsResponse.success && tabsResponse.tabs) {
@@ -384,8 +396,9 @@ async function refreshTabs(forceRender = false): Promise<void> {
 		const message = error instanceof Error ? error.message : 'Failed to refresh popup'
 		showError(message)
 		updateStatus(false, 0)
-		updateCurrentTarget(undefined)
-		updateHealth(undefined)
+		latestCurrentWatcher = null
+		updateCurrentTarget(null)
+		updateHealth(undefined, null)
 		renderEvents([])
 		setEmptyState('⚠️', message)
 	}
@@ -414,7 +427,7 @@ function shortenUrl(input: string): string {
 }
 
 async function copyWatcherInfo(): Promise<void> {
-	const text = buildWatcherInfoText(latestStatus)
+	const text = buildWatcherInfoText()
 	if (!text) {
 		return
 	}
@@ -427,21 +440,18 @@ async function copyWatcherInfo(): Promise<void> {
 	}, 1500)
 }
 
-function canCopyWatcherInfo(status: StatusPayload | null | undefined): boolean {
-	return Boolean(status?.watcherId && status?.watcherHost && status?.watcherPort != null && status?.nativeHostPid && status?.currentTarget)
-}
-
-function buildWatcherInfoText(status: StatusPayload | null): string | null {
-	if (!canCopyWatcherInfo(status)) {
+function buildWatcherInfoText(): string | null {
+	if (!canCopyWatcherInfo(latestCurrentWatcher)) {
 		return null
 	}
 
-	const target = status!.currentTarget!
+	const watcher = latestCurrentWatcher!
+	const target = watcher.currentTarget!
 	const attached = target.attachedAt ? new Date(target.attachedAt).toISOString() : new Date().toISOString()
 	const fields = [
-		['ID', status!.watcherId!],
-		['Host', `${status!.watcherHost!}:${status!.watcherPort!}`],
-		['PID', String(status!.nativeHostPid!)],
+		['ID', watcher.watcherId!],
+		['Host', `${watcher.watcherHost!}:${watcher.watcherPort!}`],
+		['PID', String(watcher.nativeHostPid!)],
 		['Target', target.title || '(no title)'],
 		['URL', target.url || '(no url)'],
 		['Attached', attached],
@@ -452,6 +462,40 @@ function buildWatcherInfoText(status: StatusPayload | null): string | null {
 
 function capitalize(text: string): string {
 	return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function selectCurrentWatcher(status: StatusPayload | null, tabs: TabInfo[], activeTabId?: number): PopupWatcherStatus | null {
+	if (!status) {
+		return null
+	}
+
+	if (activeTabId !== undefined) {
+		const activeWatcher = findWatcherByTabId(status.watchers, activeTabId)
+		if (activeWatcher) {
+			return activeWatcher
+		}
+	}
+
+	for (const tab of tabs) {
+		if (!tab.attached) {
+			continue
+		}
+
+		const watcher = findWatcherByTabId(status.watchers, tab.tabId)
+		if (watcher) {
+			return watcher
+		}
+	}
+
+	return status.watchers[0] ?? null
+}
+
+function canCopyWatcherInfo(watcher: PopupWatcherStatus | null | undefined): boolean {
+	return Boolean(watcher?.watcherId && watcher?.watcherHost && watcher?.watcherPort != null && watcher?.nativeHostPid && watcher?.currentTarget)
+}
+
+function findWatcherByTabId(watchers: PopupWatcherStatus[], tabId: number): PopupWatcherStatus | null {
+	return watchers.find((watcher) => watcher.tabId === tabId) ?? null
 }
 
 function escapeHtml(text: string): string {

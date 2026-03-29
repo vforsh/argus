@@ -36,4 +36,32 @@ export const isLikelyAuthCookieName = (name: string): boolean => AUTH_COOKIE_PAT
 /** Whether a cookie name is likely just analytics/tracking noise. */
 export const isTrackingCookieName = (name: string): boolean => TRACKING_COOKIE_PATTERNS.some((pattern) => pattern.test(name))
 
+/**
+ * Best-effort site-domain heuristic for broadening auth export beyond the current host.
+ * This intentionally keeps sibling subdomains such as `auth.example.com` while avoiding
+ * unrelated browser cookies in other sites. IPs and localhost stay host-scoped.
+ */
+export const getLikelySiteDomain = (hostOrOrigin: string): string | null => {
+	const host = getOriginHost(hostOrOrigin) ?? normalizeCookieDomain(hostOrOrigin)
+	if (!host) {
+		return null
+	}
+
+	if (host === 'localhost' || isIpAddress(host)) {
+		return host
+	}
+
+	const parts = host.split('.').filter(Boolean)
+	if (parts.at(-1) === 'localhost') {
+		return 'localhost'
+	}
+	if (parts.length <= 2) {
+		return host
+	}
+
+	return parts.slice(-2).join('.')
+}
+
 const normalizeCookieDomain = (domain: string): string => domain.trim().toLowerCase().replace(/^\./, '')
+
+const isIpAddress = (value: string): boolean => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value) || value.includes(':')

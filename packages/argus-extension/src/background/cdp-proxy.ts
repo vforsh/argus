@@ -5,7 +5,15 @@
 
 import type { DebuggerManager } from './debugger-manager.js'
 import type { BridgeClient } from './bridge-client.js'
-import type { HostToExtension, CdpCommandMessage, AttachTabMessage, DetachTabMessage, EnableDomainMessage, TabInfo } from '../types/messages.js'
+import type {
+	HostToExtension,
+	CdpCommandMessage,
+	AttachTabMessage,
+	DetachTabMessage,
+	EnableDomainMessage,
+	TabInfo,
+	CookieQueryMessage,
+} from '../types/messages.js'
 
 export class CdpProxy {
 	private debuggerManager: DebuggerManager
@@ -66,6 +74,10 @@ export class CdpProxy {
 
 			case 'cdp_command':
 				await this.handleCdpCommand(message)
+				break
+
+			case 'cookie_query':
+				await this.handleCookieQuery(message)
 				break
 
 			case 'list_tabs':
@@ -133,6 +145,32 @@ export class CdpProxy {
 		} catch (err) {
 			this.bridgeClient.send({
 				type: 'cdp_response',
+				requestId: message.requestId,
+				error: {
+					message: err instanceof Error ? err.message : 'Unknown error',
+				},
+			})
+		}
+	}
+
+	/**
+	 * Query browser cookies from the attached tab's cookie store.
+	 */
+	private async handleCookieQuery(message: CookieQueryMessage): Promise<void> {
+		try {
+			const cookies = await this.debuggerManager.getCookies(message.tabId, {
+				domain: message.domain,
+				url: message.url,
+			})
+
+			this.bridgeClient.send({
+				type: 'cookie_query_response',
+				requestId: message.requestId,
+				cookies,
+			})
+		} catch (err) {
+			this.bridgeClient.send({
+				type: 'cookie_query_response',
 				requestId: message.requestId,
 				error: {
 					message: err instanceof Error ? err.message : 'Unknown error',

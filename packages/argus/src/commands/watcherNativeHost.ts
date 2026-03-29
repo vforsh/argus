@@ -42,14 +42,26 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 			// Ignore
 		}
 	}
+	let shuttingDown = false
+	const shutdown = (): void => {
+		if (shuttingDown) {
+			return
+		}
+		shuttingDown = true
+		void cleanup().then(() => process.exit(0))
+	}
 
 	process.on('SIGINT', () => {
-		void cleanup().then(() => process.exit(0))
+		shutdown()
 	})
 
 	process.on('SIGTERM', () => {
-		void cleanup().then(() => process.exit(0))
+		shutdown()
 	})
+
+	// Chrome closes stdin when the extension disconnects the Native Messaging port.
+	process.stdin.on('end', shutdown)
+	process.stdin.on('close', shutdown)
 
 	// Keep process running - Native Messaging will handle stdin/stdout
 	await new Promise(() => {})

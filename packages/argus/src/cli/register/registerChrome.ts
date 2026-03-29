@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import type { ChromeStartOptions } from '../../commands/chromeStart.js'
 import { runChromeStart } from '../../commands/chromeStart.js'
 import { runChromeVersion, runChromeStatus, runChromeList, runChromeStop } from '../../commands/chrome.js'
 import { loadArgusConfig, mergeChromeStartOptionsWithConfig, resolveArgusConfigPath } from '../../config/argusConfig.js'
@@ -12,36 +13,26 @@ export function registerChrome(program: Command): void {
 		.option('--url <url>', 'URL to open in Chrome')
 		.option('--from-watcher <watcherId>', 'Use match.url from a registered watcher')
 		.option('--profile <type>', 'Profile mode: temp, default-full, default-medium, or default-lite (default: default-lite)')
+		.option('--auth-state <path>', 'Load a portable auth snapshot into a fresh temp Chrome profile')
 		.option('--dev-tools', 'Open DevTools for new tabs')
 		.option('--headless', 'Run Chrome in headless mode (no visible window)')
 		.option('--config <path>', 'Path to Argus config file')
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --from-watcher app\n  $ argus chrome start --profile default-full\n  $ argus chrome start --profile default-medium\n  $ argus chrome start --profile default-lite\n  $ argus chrome start --profile temp\n  $ argus chrome start --dev-tools\n  $ argus chrome start --headless\n  $ argus chrome start --json\n',
+			'\nExamples:\n  $ argus chrome start\n  $ argus chrome start --url http://localhost:3000\n  $ argus chrome start --from-watcher app\n  $ argus chrome start --profile default-full\n  $ argus chrome start --profile default-medium\n  $ argus chrome start --profile default-lite\n  $ argus chrome start --profile temp\n  $ argus chrome start --auth-state ./auth.json\n  $ argus chrome start --dev-tools\n  $ argus chrome start --headless\n  $ argus chrome start --json\n',
 		)
 		.action(async (options, command) => {
 			const { config: configPath, ...cliOptions } = options
-			const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
-			if (!resolvedPath) {
-				if (configPath) {
-					return
-				}
-				await runChromeStart(cliOptions)
+			if (!normalizeAuthStateProfileOptions(command, cliOptions)) {
+				return
+			}
+			const startOptions = resolveChromeStartOptions(command, cliOptions, configPath)
+			if (!startOptions) {
 				return
 			}
 
-			const configResult = loadArgusConfig(resolvedPath)
-			if (!configResult) {
-				return
-			}
-
-			const merged = mergeChromeStartOptionsWithConfig(cliOptions, command, configResult)
-			if (!merged) {
-				return
-			}
-
-			await runChromeStart(merged)
+			await runChromeStart(startOptions)
 		})
 
 	chrome
@@ -95,3 +86,64 @@ export function registerChrome(program: Command): void {
 			await runChromeStop(options)
 		})
 }
+
+const normalizeAuthStateProfileOptions = (command: Command, options: { authState?: string; profile?: string }): boolean => {
+	if (!options.authState) {
+		return true
+	}
+
+	if (getOptionValueSource(command, 'profile') === 'cli') {
+		if (options.profile && options.profile !== 'temp') {
+			console.error('Cannot combine --auth-state with a copied Chrome profile. Use --profile temp or omit --profile.')
+			process.exitCode = 2
+			return false
+		}
+		return true
+	}
+
+	options.profile = undefined
+	return true
+}
+
+const resolveChromeStartOptions = (command: Command, cliOptions: ChromeStartOptions, configPath: string | undefined): ChromeStartOptions | null => {
+	const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
+	if (!resolvedPath) {
+		return configPath ? null : applyAuthStateOptionOverrides(command, cliOptions)
+	}
+
+	const configResult = loadArgusConfig(resolvedPath)
+	if (!configResult) {
+		return null
+	}
+
+	const merged = mergeChromeStartOptionsWithConfig(cliOptions, createOptionSourceProvider(command), configResult)
+	if (!merged) {
+		return null
+	}
+
+	return applyAuthStateOptionOverrides(command, merged)
+}
+
+const applyAuthStateOptionOverrides = <T extends { authState?: string; profile?: string; url?: string; fromWatcher?: string }>(
+	command: Command,
+	options: T,
+): T => {
+	if (!options.authState) {
+		return options
+	}
+
+	options.profile = 'temp'
+	if (getOptionValueSource(command, 'url') !== 'cli') {
+		options.url = undefined
+	}
+	if (getOptionValueSource(command, 'fromWatcher') !== 'cli') {
+		options.fromWatcher = undefined
+	}
+	return options
+}
+
+const createOptionSourceProvider = (command: Command): { getOptionValueSource: (key: string) => string } => ({
+	getOptionValueSource: (key) => getOptionValueSource(command, key),
+})
+
+const getOptionValueSource = (command: Command, key: string): string => command.getOptionValueSource(key) ?? ''

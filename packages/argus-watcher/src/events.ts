@@ -86,6 +86,8 @@ export type HttpRequestEvent = {
 		| 'net/tail'
 		| 'net/clear'
 		| 'auth/cookies'
+		| 'auth/state'
+		| 'auth/state/load'
 		| 'eval'
 		| 'trace/start'
 		| 'trace/stop'

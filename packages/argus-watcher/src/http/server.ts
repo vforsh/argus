@@ -1,12 +1,12 @@
 import http from 'node:http'
-import type { DialogStatus, LogLevel, WatcherRecord } from '@vforsh/argus-core'
+import type { AuthStateCookie, DialogStatus, LogLevel, WatcherRecord } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 import type { RuntimeEditor } from '../cdp/editor.js'
 import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
-import type { CdpSourceHandle } from '../sources/types.js'
+import type { CdpSourceCookieQuery, CdpSourceHandle } from '../sources/types.js'
 import type { EmulationController } from '../emulation/EmulationController.js'
 import type { ThrottleController } from '../throttle/ThrottleController.js'
 import { dispatch } from './router.js'
@@ -20,6 +20,8 @@ export type HttpRequestEventMetadata = {
 		| 'net/tail'
 		| 'net/clear'
 		| 'auth/cookies'
+		| 'auth/state'
+		| 'auth/state/load'
 		| 'eval'
 		| 'trace/start'
 		| 'trace/stop'
@@ -94,6 +96,8 @@ export type HttpServerOptions = {
 	throttleController: ThrottleController
 	/** Source handle for extension mode (enables /targets, /attach, /detach endpoints). */
 	sourceHandle?: CdpSourceHandle
+	/** Optional browser-cookie reader when the source can access cookies outside the page's request scope. */
+	readBrowserCookies?: (query: CdpSourceCookieQuery) => Promise<AuthStateCookie[]>
 	/** Optional callback invoked when logs or tail are requested. */
 	onRequest?: (event: HttpRequestEventMetadata) => void
 	/** Optional callback invoked when a shutdown request is received. */

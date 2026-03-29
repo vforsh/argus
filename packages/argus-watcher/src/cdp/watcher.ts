@@ -37,6 +37,7 @@ export type CdpWatcherOptions = {
 export type CdpWatcherHandle = {
 	session: CdpSessionHandle
 	stop: () => Promise<void>
+	getTarget: () => CdpTarget | null
 }
 
 /** Start CDP polling + websocket subscriptions for console/exception events. */
@@ -89,7 +90,11 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		options.onPageLoad?.()
 	})
 
-	return { stop, session }
+	return {
+		stop,
+		session,
+		getTarget: () => (currentTarget ? { ...currentTarget } : null),
+	}
 
 	async function runLoop(): Promise<void> {
 		let backoffMs = 1_000

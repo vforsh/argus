@@ -3,7 +3,7 @@
 	"name": "Argus CDP Bridge",
 	"version": "0.1.0",
 	"description": "Bridge CDP access for Argus without --remote-debugging-port",
-	"permissions": ["debugger", "tabs", "nativeMessaging", "storage"],
+	"permissions": ["cookies", "debugger", "tabs", "nativeMessaging", "storage"],
 	"host_permissions": ["<all_urls>"],
 	"background": {
 		"service_worker": "dist/background/service-worker.js",

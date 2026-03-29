@@ -7,6 +7,8 @@ import { handle as getNet } from './getNet.js'
 import { handle as getNetTail } from './getNetTail.js'
 import { handle as postNetClear } from './postNetClear.js'
 import { handle as getAuthCookies } from './getAuthCookies.js'
+import { handle as getAuthState } from './getAuthState.js'
+import { handle as postAuthStateLoad } from './postAuthStateLoad.js'
 import { handle as postEval } from './postEval.js'
 import { handle as postTraceStart } from './postTraceStart.js'
 import { handle as postTraceStop } from './postTraceStop.js'
@@ -59,6 +61,8 @@ export const watcherRoutes = [
 	defineRoute({ method: 'GET', path: '/net/tail', handler: getNetTail }),
 	defineRoute({ method: 'POST', path: '/net/clear', handler: postNetClear }),
 	defineRoute({ method: 'GET', path: '/auth/cookies', handler: getAuthCookies }),
+	defineRoute({ method: 'GET', path: '/auth/state', handler: getAuthState }),
+	defineRoute({ method: 'POST', path: '/auth/state/load', handler: postAuthStateLoad }),
 	defineRoute({ method: 'POST', path: '/eval', handler: postEval }),
 	defineRoute({ method: 'POST', path: '/trace/start', handler: postTraceStart }),
 	defineRoute({ method: 'POST', path: '/trace/stop', handler: postTraceStop }),

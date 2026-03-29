@@ -1,5 +1,8 @@
+import { createAuthStateOriginUrl, type AuthStateSnapshot } from '@vforsh/argus-core'
 import { rmSync } from 'node:fs'
 import type { PageConsoleLogging } from '@vforsh/argus-watcher'
+import { requestAuthStateSnapshot } from './auth.js'
+import { applyAuthStateSnapshotToChrome } from './chrome/authState.js'
 import { launchChrome, type LaunchChromeResult } from './chromeStart.js'
 import { createOutput } from '../output/io.js'
 import type { WatcherInjectConfig } from '../config/argusConfig.js'
@@ -9,6 +12,7 @@ import { startManagedWatcher } from './watcherSession.js'
 export type StartOptions = {
 	id: string
 	url?: string
+	authFrom?: string
 	json?: boolean
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
@@ -43,14 +47,22 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 	}
 
 	const watcherId = options.id.trim()
+	if (options.authFrom && options.profile && options.profile !== 'temp') {
+		output.writeWarn('Cannot combine --auth-from with a copied Chrome profile. Use --profile temp or omit --profile.')
+		process.exitCode = 2
+		return
+	}
 
-	// Resolve startup URL for Chrome (prepend http:// if needed)
-	const chromeUrl = normalizeHttpUrl(options.url)
+	const authState = await resolveStartAuthState(options, output)
+	if (!authState) {
+		return
+	}
 
 	// At least one targeting option is required for the watcher
-	const hasTargeting = options.url?.trim() || options.target?.trim() || options.origin?.trim() || options.type?.trim()
+	const matchInput = resolveWatcherMatchInput(options, authState.startupUrl)
+	const hasTargeting = matchInput.url?.trim() || matchInput.target?.trim() || matchInput.origin?.trim() || matchInput.type?.trim()
 	if (!hasTargeting) {
-		output.writeWarn('At least one targeting option is required: --url, --target, --origin, or --type.')
+		output.writeWarn('At least one targeting option is required: --url, --auth-from, --target, --origin, or --type.')
 		process.exitCode = 2
 		return
 	}
@@ -63,8 +75,8 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 	let chrome: LaunchChromeResult
 	try {
 		chrome = await launchChrome({
-			url: chromeUrl,
-			profile: options.profile,
+			url: authState.snapshot ? null : authState.startupUrl,
+			profile: authState.snapshot ? 'temp' : options.profile,
 			devTools: options.devTools,
 			headless: options.headless,
 		})
@@ -72,6 +84,23 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		output.writeWarn(error instanceof Error ? error.message : String(error))
 		process.exitCode = 1
 		return
+	}
+
+	if (authState.snapshot) {
+		try {
+			const hydrated = await applyAuthStateSnapshotToChrome({
+				snapshot: authState.snapshot,
+				cdpHost: chrome.cdpHost,
+				cdpPort: chrome.cdpPort,
+				startupUrl: authState.startupUrl,
+			})
+			authState.startupUrl = hydrated.startupUrl
+		} catch (error) {
+			await chrome.closeGracefully()
+			output.writeWarn(error instanceof Error ? error.message : String(error))
+			process.exitCode = 1
+			return
+		}
 	}
 
 	if (!options.json) {
@@ -83,7 +112,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		output.writeHuman('Attaching watcher...')
 	}
 
-	const match = buildWatcherMatch(options)
+	const match = buildWatcherMatch(resolveWatcherMatchInput(options, authState.startupUrl))
 
 	const startedWatcher = await startManagedWatcher({
 		output,
@@ -165,3 +194,38 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 
 	await waitForever()
 }
+
+const resolveStartAuthState = async (
+	options: StartOptions,
+	output: ReturnType<typeof createOutput>,
+): Promise<{ snapshot: AuthStateSnapshot | null; startupUrl: string | null } | null> => {
+	const startupUrl = normalizeHttpUrl(options.url)
+	if (!options.authFrom) {
+		return { snapshot: null, startupUrl }
+	}
+
+	const source = await requestAuthStateSnapshot(options.authFrom, {}, output)
+	if (!source) {
+		return null
+	}
+
+	return {
+		snapshot: source.data,
+		startupUrl: startupUrl ?? resolveSnapshotStartupUrl(source.data),
+	}
+}
+
+const resolveSnapshotStartupUrl = (snapshot: Pick<AuthStateSnapshot, 'url' | 'origin'>): string | null => {
+	if (snapshot.url.trim()) {
+		return snapshot.url.trim()
+	}
+	if (snapshot.origin.trim()) {
+		return createAuthStateOriginUrl(snapshot.origin)
+	}
+	return null
+}
+
+const resolveWatcherMatchInput = (options: StartOptions, startupUrl: string | null): StartOptions => ({
+	...options,
+	url: options.url ?? startupUrl ?? undefined,
+})

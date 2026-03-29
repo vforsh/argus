@@ -7,6 +7,9 @@ import type { ExtensionToHost, HostToExtension } from '../types/messages.js'
 
 export type MessageHandler = (message: HostToExtension) => void
 export type ConnectionHandler = () => void
+export type BridgeClientOptions = {
+	autoReconnect?: boolean
+}
 
 export class BridgeClient {
 	private port: chrome.runtime.Port | null = null
@@ -17,9 +20,12 @@ export class BridgeClient {
 	private reconnectAttempts = 0
 	private maxReconnectAttempts = 5
 	private reconnectDelay = 1000
+	private autoReconnect: boolean
+	private reconnectEnabled = true
 
-	constructor(hostName: string = 'com.vforsh.argus.bridge') {
+	constructor(hostName: string = 'com.vforsh.argus.bridge', options: BridgeClientOptions = {}) {
 		this.hostName = hostName
+		this.autoReconnect = options.autoReconnect ?? true
 	}
 
 	/**
@@ -50,6 +56,8 @@ export class BridgeClient {
 		if (this.port) {
 			return true // Already connected
 		}
+
+		this.reconnectEnabled = true
 
 		try {
 			this.port = chrome.runtime.connectNative(this.hostName)
@@ -94,6 +102,7 @@ export class BridgeClient {
 	 * Disconnect from the Native Messaging host.
 	 */
 	disconnect(): void {
+		this.reconnectEnabled = false
 		if (this.port) {
 			this.port.disconnect()
 			this.port = null
@@ -129,6 +138,10 @@ export class BridgeClient {
 	 * Schedule a reconnection attempt with exponential backoff.
 	 */
 	private scheduleReconnect(): void {
+		if (!this.autoReconnect || !this.reconnectEnabled) {
+			return
+		}
+
 		if (this.reconnectAttempts >= this.maxReconnectAttempts) {
 			console.log('[BridgeClient] Max reconnection attempts reached')
 			return

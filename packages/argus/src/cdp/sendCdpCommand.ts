@@ -13,6 +13,12 @@ export type CdpCommandPayload = {
 	params?: Record<string, unknown>
 }
 
+type CdpResponseMessage<T> = {
+	id?: number
+	result?: T
+	error?: { message?: string }
+}
+
 const getWebSocketCtor = (): WebSocketCtor | null => {
 	const ctor = (globalThis as { WebSocket?: WebSocketCtor }).WebSocket
 	return ctor ?? null
@@ -32,10 +38,9 @@ const toMessageText = (data: unknown): string | null => {
 }
 
 /**
- * Send a single CDP command over a target/browser websocket and wait for the matching response.
- * This stays intentionally tiny so command modules can focus on selecting targets and formatting output.
+ * Send a single CDP command over a target/browser websocket and return the raw `result` payload.
  */
-export const sendCdpCommand = async (wsUrl: string, payload: CdpCommandPayload, timeoutMs = 5_000): Promise<void> => {
+export const sendCdpRequest = async <T>(wsUrl: string, payload: CdpCommandPayload, timeoutMs = 5_000): Promise<T> => {
 	const WebSocketConstructor = getWebSocketCtor()
 	if (!WebSocketConstructor) {
 		throw new Error('WebSocket unavailable. Node 18+ required.')
@@ -44,7 +49,7 @@ export const sendCdpCommand = async (wsUrl: string, payload: CdpCommandPayload, 
 	const ws = new WebSocketConstructor(wsUrl)
 	const requestId = payload.id
 
-	await new Promise<void>((resolve, reject) => {
+	return await new Promise<T>((resolve, reject) => {
 		let settled = false
 		const timer = setTimeout(() => {
 			if (!settled) {
@@ -64,7 +69,7 @@ export const sendCdpCommand = async (wsUrl: string, payload: CdpCommandPayload, 
 			ws.removeEventListener?.('close', onClose)
 		}
 
-		const finish = (error?: Error) => {
+		const finish = (result?: T, error?: Error) => {
 			if (settled) {
 				return
 			}
@@ -77,14 +82,14 @@ export const sendCdpCommand = async (wsUrl: string, payload: CdpCommandPayload, 
 				reject(error)
 				return
 			}
-			resolve()
+			resolve(result as T)
 		}
 
 		const onOpen = () => {
 			try {
 				ws.send(JSON.stringify(payload))
 			} catch (error) {
-				finish(error instanceof Error ? error : new Error(String(error)))
+				finish(undefined, error instanceof Error ? error : new Error(String(error)))
 			}
 		}
 
@@ -95,26 +100,26 @@ export const sendCdpCommand = async (wsUrl: string, payload: CdpCommandPayload, 
 			}
 
 			try {
-				const message = JSON.parse(text) as { id?: number; error?: { message?: string } }
+				const message = JSON.parse(text) as CdpResponseMessage<T>
 				if (message.id !== requestId) {
 					return
 				}
 				if (message.error?.message) {
-					finish(new Error(message.error.message))
+					finish(undefined, new Error(message.error.message))
 					return
 				}
-				finish()
+				finish(message.result as T)
 			} catch (error) {
-				finish(error instanceof Error ? error : new Error(String(error)))
+				finish(undefined, error instanceof Error ? error : new Error(String(error)))
 			}
 		}
 
 		const onError = () => {
-			finish(new Error('WebSocket error'))
+			finish(undefined, new Error('WebSocket error'))
 		}
 
 		const onClose = () => {
-			finish(new Error('WebSocket closed before response'))
+			finish(undefined, new Error('WebSocket closed before response'))
 		}
 
 		ws.addEventListener('open', onOpen)
@@ -122,4 +127,12 @@ export const sendCdpCommand = async (wsUrl: string, payload: CdpCommandPayload, 
 		ws.addEventListener('error', onError)
 		ws.addEventListener('close', onClose)
 	})
+}
+
+/**
+ * Send a single CDP command and ignore any successful result payload.
+ * Keeps existing callsites terse while sharing the same request/response path.
+ */
+export const sendCdpCommand = async (wsUrl: string, payload: CdpCommandPayload, timeoutMs = 5_000): Promise<void> => {
+	await sendCdpRequest(wsUrl, payload, timeoutMs)
 }

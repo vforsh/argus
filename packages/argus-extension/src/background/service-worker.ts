@@ -1,27 +1,13 @@
 /**
  * Service Worker - Main entry point for the Argus CDP Bridge extension.
- * Orchestrates the DebuggerManager, BridgeClient, and CdpProxy.
+ * Owns one debugger manager plus one Native Messaging bridge session per attached tab.
  */
 
-import type { HostToExtension } from '../types/messages.js'
 import { DebuggerManager } from './debugger-manager.js'
-import { BridgeClient } from './bridge-client.js'
-import { CdpProxy } from './cdp-proxy.js'
+import { TabBridgeSession } from './tab-bridge-session.js'
 
-// Initialize core components
 const debuggerManager = new DebuggerManager()
-const bridgeClient = new BridgeClient('com.vforsh.argus.bridge')
-const cdpProxy = new CdpProxy(debuggerManager, bridgeClient)
-
-// Track connection status for badge
-let isConnected = false
-let watcherId: string | null = null
-let watcherHost: string | null = null
-let watcherPort: number | null = null
-let nativeHostPid: number | null = null
-let lastBridgeMessageAt: number | null = null
-let watcherTargetInfo: { targetId: string; title: string | null; url: string | null; attachedAt: number } | null = null
-// Popup selection is tab-scoped: one attached tab can expose multiple virtual iframe targets.
+const bridgeSessions = new Map<number, TabBridgeSession>()
 const selectedFrameByTabId = new Map<number, string | null>()
 const recentEvents: PopupEvent[] = []
 const MAX_RECENT_EVENTS = 8
@@ -41,19 +27,28 @@ type PopupTarget = {
 	url: string
 }
 
-type PopupTabWithTargets = Awaited<ReturnType<typeof cdpProxy.getTabsForPopup>>[number] & {
-	targets: PopupTarget[]
-	selectedFrameId?: string | null
+type PopupWatcherStatus = {
+	tabId: number
+	bridgeConnected: boolean
+	watcherId: string | null
+	watcherHost: string | null
+	watcherPort: number | null
+	nativeHostPid: number | null
+	lastMessageAt: number | null
+	currentTarget: {
+		type: 'page' | 'iframe'
+		title: string | null
+		url: string | null
+		targetId: string
+		frameId: string | null
+		attachedAt: number
+	} | null
 }
 
-type CurrentTargetSummary = {
-	tabId: number
-	type: 'page' | 'iframe'
-	title: string | null
-	url: string
-	targetId: string
-	frameId: string | null
-	attachedAt: number | null
+type PopupTabWithTargets = Awaited<ReturnType<typeof getTabsForPopup>>[number] & {
+	targets: PopupTarget[]
+	selectedFrameId?: string | null
+	watcher: PopupWatcherStatus | null
 }
 
 type PopupActionMessage = {
@@ -75,73 +70,29 @@ function recordEvent(level: PopupEvent['level'], source: PopupEvent['source'], m
 	}
 }
 
-// Update extension badge based on state
 function updateBadge(): void {
 	const attachedCount = debuggerManager.listAttached().length
 
 	if (attachedCount > 0) {
 		chrome.action.setBadgeText({ text: String(attachedCount) })
-		chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' }) // Green
-	} else if (isConnected) {
-		chrome.action.setBadgeText({ text: '' })
-	} else {
-		chrome.action.setBadgeText({ text: '!' })
-		chrome.action.setBadgeBackgroundColor({ color: '#FF5722' }) // Orange
+		chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' })
+		return
 	}
+
+	chrome.action.setBadgeText({ text: '' })
 }
 
-// Bridge connection handlers
-bridgeClient.onConnect(() => {
-	console.log('[ServiceWorker] Bridge connected')
-	isConnected = true
-	recordEvent('info', 'bridge', 'Native host connected')
-	updateBadge()
-})
-
-bridgeClient.onDisconnect(() => {
-	console.log('[ServiceWorker] Bridge disconnected')
-	isConnected = false
-	recordEvent('error', 'bridge', 'Native host disconnected')
-	updateBadge()
-})
-
-// Update badge when tabs attach/detach
 debuggerManager.onDetach((tabId, reason) => {
 	selectedFrameByTabId.delete(tabId)
-	if (watcherTargetInfo?.targetId.startsWith(`tab:${tabId}`) || watcherTargetInfo?.targetId.startsWith(`frame:${tabId}:`)) {
-		watcherTargetInfo = null
-	}
+	destroyBridgeSession(tabId)
 	recordEvent('error', 'debugger', `Tab ${tabId} detached: ${reason}`)
 	updateBadge()
 })
 
-bridgeClient.onMessage((message: HostToExtension) => {
-	lastBridgeMessageAt = Date.now()
-	if (message.type !== 'host_info') {
-		if (message.type === 'target_info') {
-			watcherTargetInfo = {
-				targetId: message.targetId,
-				title: message.title,
-				url: message.url,
-				attachedAt: message.attachedAt,
-			}
-			syncSelectedFrameFromWatcher(message.targetId)
-		}
-		return
-	}
-
-	watcherId = message.watcherId
-	watcherHost = message.watcherHost
-	watcherPort = message.watcherPort
-	nativeHostPid = message.pid
-	recordEvent('info', 'bridge', `Watcher ready: ${message.watcherId} (pid ${message.pid})`)
-})
-
-// Handle messages from popup
 chrome.runtime.onMessage.addListener(
 	(message: PopupActionMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
 		handlePopupMessage(message, sendResponse)
-		return true // Async response
+		return true
 	},
 )
 
@@ -160,7 +111,7 @@ async function handlePopupMessage(message: PopupActionMessage, sendResponse: (re
 					return
 				}
 
-				await cdpProxy.attachTab(tabId)
+				await attachBridgeSession(tabId)
 				selectedFrameByTabId.set(tabId, null)
 				recordEvent('info', 'popup', `Attached tab ${tabId}`)
 				updateBadge()
@@ -174,7 +125,13 @@ async function handlePopupMessage(message: PopupActionMessage, sendResponse: (re
 					return
 				}
 
-				await cdpProxy.detachTab(tabId)
+				const session = bridgeSessions.get(tabId)
+				if (session) {
+					await session.detach()
+				} else {
+					await debuggerManager.detach(tabId)
+				}
+				destroyBridgeSession(tabId)
 				selectedFrameByTabId.delete(tabId)
 				recordEvent('info', 'popup', `Detached tab ${tabId}`)
 				updateBadge()
@@ -188,48 +145,33 @@ async function handlePopupMessage(message: PopupActionMessage, sendResponse: (re
 					return
 				}
 
-				const frameId = message.frameId ?? null
-				const sent = bridgeClient.send({
-					type: 'target_selected',
-					tabId,
-					frameId,
-				})
-				if (!sent) {
-					recordEvent('error', 'popup', `Failed to select target for tab ${tabId}: bridge disconnected`)
-					sendResponse({ success: false, error: 'Bridge is not connected' })
+				const session = bridgeSessions.get(tabId)
+				if (!session) {
+					sendResponse({ success: false, error: `No watcher bridge for tab ${tabId}` })
 					return
 				}
+
+				const frameId = message.frameId ?? null
+				session.selectTarget(frameId)
 				recordEvent('info', 'popup', `Selected ${frameId ? `iframe ${frameId}` : 'page'} on tab ${tabId}`)
 				sendResponse({ success: true })
 				break
 			}
 
 			case 'getStatus': {
-				const tabsWithTargets = await getTabsWithTargets()
 				sendResponse({
 					success: true,
 					status: {
-						bridgeConnected: isConnected,
-						watcherId,
-						watcherHost,
-						watcherPort,
-						nativeHostPid,
-						lastMessageAt: lastBridgeMessageAt,
-						attachedTabs: debuggerManager.listAttached().map((t) => ({
-							tabId: t.tabId,
-							url: t.url,
-							title: t.title,
+						bridgeConnected: [...bridgeSessions.values()].some((session) => session.isConnected()),
+						attachedTabs: debuggerManager.listAttached().map((target) => ({
+							tabId: target.tabId,
+							url: target.url,
+							title: target.title,
 						})),
-						currentTarget: getCurrentTargetSummary(tabsWithTargets),
+						watchers: getWatcherStatuses(),
 						recentEvents,
 					},
 				})
-				break
-			}
-
-			case 'connectBridge': {
-				const connected = bridgeClient.connect()
-				sendResponse({ success: connected })
 				break
 			}
 
@@ -254,15 +196,138 @@ function requireTabId(message: PopupActionMessage, sendResponse: (response: unkn
 	return null
 }
 
-async function getTabsWithTargets(): Promise<PopupTabWithTargets[]> {
-	const tabs = await cdpProxy.getTabsForPopup()
-	return Promise.all(
-		tabs.map(async (tab) => ({
-			...tab,
-			targets: tab.attached ? await getPopupTargets(tab.tabId) : [],
-			selectedFrameId: getSelectedFrameId(tab.tabId),
-		})),
+async function attachBridgeSession(tabId: number): Promise<void> {
+	const existing = bridgeSessions.get(tabId)
+	if (existing) {
+		await connectBridgeSession(tabId, existing)
+		return
+	}
+
+	const session = new TabBridgeSession(tabId, debuggerManager, {
+		onWatcherInfo: (info) => {
+			recordEvent('info', 'bridge', `Watcher ready for tab ${tabId}: ${info.watcherId} (pid ${info.pid})`)
+		},
+		onTargetInfo: (info) => {
+			syncSelectedFrameFromWatcher(info.targetId)
+		},
+		onDisconnect: () => {
+			recordEvent('error', 'bridge', `Native host disconnected for tab ${tabId}`)
+			void debuggerManager.detach(tabId).catch(() => {})
+			destroyBridgeSession(tabId)
+			updateBadge()
+		},
+	})
+	bridgeSessions.set(tabId, session)
+	await connectBridgeSession(tabId, session)
+}
+
+async function connectBridgeSession(tabId: number, session: TabBridgeSession): Promise<void> {
+	try {
+		await session.connectAndAttach()
+	} catch (error) {
+		destroyBridgeSession(tabId)
+		throw error
+	}
+}
+
+function destroyBridgeSession(tabId: number): void {
+	const session = bridgeSessions.get(tabId)
+	if (!session) {
+		return
+	}
+
+	bridgeSessions.delete(tabId)
+	session.dispose()
+}
+
+function getWatcherStatuses(): PopupWatcherStatus[] {
+	return [...bridgeSessions.entries()]
+		.map(([tabId, session]) => buildWatcherStatus(tabId, session))
+		.filter((status): status is PopupWatcherStatus => status !== null)
+}
+
+function buildWatcherStatus(tabId: number, session: TabBridgeSession): PopupWatcherStatus | null {
+	const watcherInfo = session.getWatcherInfo()
+	const targetInfo = session.getTargetInfo()
+	const parsedTarget = targetInfo ? parseWatcherTargetId(targetInfo.targetId) : null
+
+	if (!watcherInfo && !targetInfo) {
+		return createWatcherStatus(tabId, session, null, null)
+	}
+
+	return createWatcherStatus(
+		tabId,
+		session,
+		watcherInfo ?? null,
+		targetInfo && parsedTarget
+			? {
+					type: parsedTarget.frameId ? 'iframe' : 'page',
+					title: targetInfo.title,
+					url: targetInfo.url,
+					targetId: targetInfo.targetId,
+					frameId: parsedTarget.frameId,
+					attachedAt: targetInfo.attachedAt,
+				}
+			: null,
 	)
+}
+
+async function getTabsWithTargets(): Promise<PopupTabWithTargets[]> {
+	const tabs = await getTabsForPopup()
+	return Promise.all(
+		tabs.map(async (tab) => {
+			const session = bridgeSessions.get(tab.tabId)
+			return {
+				...tab,
+				targets: tab.attached ? await getPopupTargets(tab.tabId) : [],
+				selectedFrameId: getSelectedFrameId(tab.tabId),
+				watcher: session ? buildWatcherStatus(tab.tabId, session) : null,
+			}
+		}),
+	)
+}
+
+function createWatcherStatus(
+	tabId: number,
+	session: TabBridgeSession,
+	watcherInfo: ReturnType<TabBridgeSession['getWatcherInfo']>,
+	currentTarget: PopupWatcherStatus['currentTarget'],
+): PopupWatcherStatus {
+	return {
+		tabId,
+		bridgeConnected: session.isConnected(),
+		watcherId: watcherInfo?.watcherId ?? null,
+		watcherHost: watcherInfo?.watcherHost ?? null,
+		watcherPort: watcherInfo?.watcherPort ?? null,
+		nativeHostPid: watcherInfo?.pid ?? null,
+		lastMessageAt: session.getLastMessageAt(),
+		currentTarget,
+	}
+}
+
+async function getTabsForPopup(): Promise<
+	Array<{
+		tabId: number
+		url: string
+		title: string
+		faviconUrl?: string
+		attached: boolean
+	}>
+> {
+	const chromeTabs = await chrome.tabs.query({})
+	const attachedTargets = debuggerManager.listAttached()
+	const attachedTabIds = new Set(attachedTargets.map((target) => target.tabId))
+
+	return chromeTabs
+		.filter((tab) => tab.id !== undefined && tab.url !== undefined)
+		.filter((tab) => !tab.url!.startsWith('chrome://') && !tab.url!.startsWith('chrome-extension://'))
+		.map((tab) => ({
+			tabId: tab.id!,
+			url: tab.url!,
+			title: tab.title ?? '',
+			faviconUrl: tab.favIconUrl,
+			attached: attachedTabIds.has(tab.id!),
+		}))
 }
 
 function syncSelectedFrameFromWatcher(targetId: string): void {
@@ -271,43 +336,7 @@ function syncSelectedFrameFromWatcher(targetId: string): void {
 		return
 	}
 
-	selectedFrameByTabId.clear()
 	selectedFrameByTabId.set(target.tabId, target.frameId)
-}
-
-function getCurrentTargetSummary(tabs: PopupTabWithTargets[]): CurrentTargetSummary | null {
-	const attachedTabs = tabs.filter((tab) => tab.attached)
-	const watcherTarget = watcherTargetInfo ? parseWatcherTargetId(watcherTargetInfo.targetId) : null
-	const selectedTab = findSelectedTab(attachedTabs, watcherTarget)
-	if (!selectedTab) {
-		return null
-	}
-
-	const selectedTarget = findSelectedTarget(selectedTab, watcherTarget?.frameId ?? null)
-	if (!selectedTarget) {
-		return null
-	}
-
-	const targetId = selectedTarget.frameId ? formatFrameTargetId(selectedTab.tabId, selectedTarget.frameId) : formatPageTargetId(selectedTab.tabId)
-	const targetInfo = watcherTargetInfo?.targetId === targetId ? watcherTargetInfo : null
-
-	return {
-		tabId: selectedTab.tabId,
-		type: selectedTarget.type,
-		title: (targetInfo?.title ?? selectedTarget.title) || null,
-		url: (targetInfo?.url ?? selectedTarget.url) || selectedTab.url,
-		targetId,
-		frameId: selectedTarget.frameId,
-		attachedAt: targetInfo?.attachedAt ?? debuggerManager.getTarget(selectedTab.tabId)?.attachedAt ?? null,
-	}
-}
-
-function formatPageTargetId(tabId: number): string {
-	return `tab:${tabId}`
-}
-
-function formatFrameTargetId(tabId: number, frameId: string): string {
-	return `frame:${tabId}:${frameId}`
 }
 
 function getSelectedFrameId(tabId: number): string | null | undefined {
@@ -316,22 +345,6 @@ function getSelectedFrameId(tabId: number): string | null | undefined {
 	}
 
 	return selectedFrameByTabId.get(tabId) ?? null
-}
-
-function findSelectedTab(
-	attachedTabs: PopupTabWithTargets[],
-	watcherTarget: { tabId: number; frameId: string | null } | null,
-): PopupTabWithTargets | null {
-	if (!watcherTarget) {
-		return attachedTabs[0] ?? null
-	}
-
-	return attachedTabs.find((tab) => tab.tabId === watcherTarget.tabId) ?? null
-}
-
-function findSelectedTarget(tab: PopupTabWithTargets, frameId: string | null): PopupTarget | null {
-	const effectiveFrameId = frameId ?? tab.selectedFrameId ?? null
-	return tab.targets.find((target) => (target.frameId ?? null) === effectiveFrameId) ?? tab.targets[0] ?? null
 }
 
 function parseWatcherTargetId(targetId: string): { tabId: number; frameId: string | null } | null {
@@ -378,10 +391,7 @@ async function getPopupTargets(tabId: number): Promise<PopupTarget[]> {
 	]
 }
 
-// Attempt to connect to bridge on startup
-// We do this lazily - the bridge may not be running yet
 console.log('[ServiceWorker] Argus CDP Bridge extension loaded')
-bridgeClient.connect()
+updateBadge()
 
-// Export for testing purposes
-export { debuggerManager, bridgeClient, cdpProxy }
+export { debuggerManager, bridgeSessions }

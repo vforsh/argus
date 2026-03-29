@@ -38,6 +38,13 @@ export type CdpResponseMessage = {
 	error?: { code?: number; message: string }
 }
 
+export type CookieQueryResponseMessage = {
+	type: 'cookie_query_response'
+	requestId: number
+	cookies?: NativeCookie[]
+	error?: { message: string }
+}
+
 export type ListTabsResponseMessage = {
 	type: 'list_tabs_response'
 	tabs: TabInfo[]
@@ -81,11 +88,24 @@ export type FrameSnapshot = {
 	sessionId: string | null
 }
 
+export type NativeCookie = {
+	name: string
+	value: string
+	domain: string
+	path: string
+	secure: boolean
+	httpOnly: boolean
+	session: boolean
+	expires: number | null
+	sameSite: string | null
+}
+
 export type ExtensionToHost =
 	| TabAttachedMessage
 	| TabDetachedMessage
 	| CdpEventMessage
 	| CdpResponseMessage
+	| CookieQueryResponseMessage
 	| ListTabsResponseMessage
 	| TargetSelectedMessage
 
@@ -126,10 +146,19 @@ export type EnableDomainMessage = {
 	domain: string
 }
 
+export type CookieQueryMessage = {
+	type: 'cookie_query'
+	requestId: number
+	tabId: number
+	domain?: string
+	url?: string
+}
+
 export type HostToExtension =
 	| AttachTabMessage
 	| DetachTabMessage
 	| CdpCommandMessage
+	| CookieQueryMessage
 	| ListTabsMessage
 	| EnableDomainMessage
 	| HostInfoMessage

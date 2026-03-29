@@ -13,6 +13,7 @@ import type {
 	CdpEventMeta,
 	FrameSnapshot,
 	TabAttachedMessage,
+	NativeCookie,
 } from './types.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 
@@ -87,6 +88,10 @@ export class SessionManager {
 				this.handleCdpResponse(message)
 				break
 
+			case 'cookie_query_response':
+				this.handleCookieQueryResponse(message)
+				break
+
 			case 'list_tabs_response':
 				this.handleListTabsResponse(message)
 				break
@@ -145,18 +150,29 @@ export class SessionManager {
 	 * Handle CDP response from the extension.
 	 */
 	private handleCdpResponse(message: ExtensionToHost & { type: 'cdp_response' }): void {
-		const pending = this.pendingRequests.get(message.requestId)
+		this.resolvePendingRequest(message.requestId, message.result, message.error)
+	}
+
+	/**
+	 * Handle cookie query response from the extension.
+	 */
+	private handleCookieQueryResponse(message: ExtensionToHost & { type: 'cookie_query_response' }): void {
+		this.resolvePendingRequest(message.requestId, message.cookies ?? [], message.error)
+	}
+
+	private resolvePendingRequest(requestId: number, result: unknown, error?: { message: string }): void {
+		const pending = this.pendingRequests.get(requestId)
 		if (!pending) {
 			return
 		}
 
-		this.pendingRequests.delete(message.requestId)
+		this.pendingRequests.delete(requestId)
 		clearTimeout(pending.timeout)
 
-		if (message.error) {
-			pending.reject(new Error(message.error.message))
+		if (error) {
+			pending.reject(new Error(error.message))
 		} else {
-			pending.resolve(message.result)
+			pending.resolve(result)
 		}
 	}
 
@@ -188,28 +204,18 @@ export class SessionManager {
 					throw this.createNotAttachedError()
 				}
 
-				const requestId = nextRequestId++
-				const timeoutMs = options?.timeoutMs ?? 30000
-
-				return new Promise((resolve, reject) => {
-					const timeout = setTimeout(() => {
-						this.pendingRequests.delete(requestId)
-						reject(new Error(`CDP request timed out after ${timeoutMs}ms`))
-					}, timeoutMs)
-
-					this.pendingRequests.set(requestId, { requestId, resolve, reject, timeout })
-
-					const message: HostToExtension = {
-						type: 'cdp_command',
-						requestId,
-						tabId,
-						method,
-						params,
-						sessionId: options?.sessionId,
-					}
-
-					this.messaging.send(message)
-				})
+				return this.sendBridgeRequest(
+					(requestId) =>
+						({
+							type: 'cdp_command',
+							requestId,
+							tabId,
+							method,
+							params,
+							sessionId: options?.sessionId,
+						}) satisfies HostToExtension,
+					options?.timeoutMs ?? 30000,
+				)
 			},
 
 			onEvent: (method, handler) => {
@@ -240,6 +246,27 @@ export class SessionManager {
 
 		this.sessions.set(tabId, session)
 		return session
+	}
+
+	/**
+	 * Query browser cookies for the attached tab's cookie store.
+	 */
+	async getCookies(tabId: number, query?: { domain?: string; url?: string }, timeoutMs = 5000): Promise<NativeCookie[]> {
+		if (!this.sessions.has(tabId)) {
+			throw this.createNotAttachedError()
+		}
+
+		return await this.sendBridgeRequest(
+			(requestId) =>
+				({
+					type: 'cookie_query',
+					requestId,
+					tabId,
+					domain: query?.domain,
+					url: query?.url,
+				}) satisfies HostToExtension,
+			timeoutMs,
+		)
 	}
 
 	/**
@@ -337,5 +364,24 @@ export class SessionManager {
 		const error = new Error('No tab attached via extension')
 		;(error as Error & { code?: string }).code = 'cdp_not_attached'
 		return error
+	}
+
+	private sendBridgeRequest<T>(buildMessage: (requestId: number) => HostToExtension, timeoutMs: number): Promise<T> {
+		const requestId = nextRequestId++
+
+		return new Promise((resolve, reject) => {
+			const timeout = setTimeout(() => {
+				this.pendingRequests.delete(requestId)
+				reject(new Error(`Bridge request timed out after ${timeoutMs}ms`))
+			}, timeoutMs)
+
+			this.pendingRequests.set(requestId, {
+				requestId,
+				resolve: (result) => resolve(result as T),
+				reject,
+				timeout,
+			})
+			this.messaging.send(buildMessage(requestId))
+		})
 	}
 }

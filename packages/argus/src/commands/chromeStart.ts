@@ -10,6 +10,7 @@ import { resolveChromeBin } from '../utils/chromeBin.js'
 import { getCdpPort } from '../utils/ports.js'
 import type { ChromeVersionResponse } from './chrome.js'
 import { normalizeHttpUrl, registerTerminationHandlers, waitForever } from './startShared.js'
+import { applyAuthStateToChrome } from './chrome/authState.js'
 
 export type ChromeStartOptions = {
 	url?: string
@@ -18,6 +19,7 @@ export type ChromeStartOptions = {
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
 	headless?: boolean
+	authState?: string
 }
 
 type ChromeStartResult = {
@@ -227,6 +229,13 @@ const normalizeProfile = (profile?: string): ChromeStartOptions['profile'] | nul
 	return null
 }
 
+const resolveProfileForChromeStart = (options: ChromeStartOptions): ChromeStartOptions['profile'] | undefined => {
+	if (!options.authState) {
+		return options.profile
+	}
+	return 'temp'
+}
+
 /**
  * Launch Chrome with CDP enabled. Returns a handle with the child process,
  * CDP coordinates, and a cleanup function. Throws on failure.
@@ -384,11 +393,13 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		startupUrl = normalizeHttpUrl(options.url)
 	}
 
+	const profile = resolveProfileForChromeStart(options)
+
 	let result: LaunchChromeResult
 	try {
 		result = await launchChrome({
-			url: startupUrl,
-			profile: options.profile,
+			url: options.authState ? null : startupUrl,
+			profile: profile ?? options.profile,
 			devTools: options.devTools,
 			headless: options.headless,
 		})
@@ -396,6 +407,23 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		output.writeWarn(error instanceof Error ? error.message : String(error))
 		process.exitCode = 1
 		return
+	}
+
+	if (options.authState) {
+		try {
+			const hydrated = await applyAuthStateToChrome({
+				authStatePath: options.authState,
+				cdpHost: result.cdpHost,
+				cdpPort: result.cdpPort,
+				startupUrl,
+			})
+			startupUrl = hydrated.startupUrl
+		} catch (error) {
+			await result.closeGracefully()
+			output.writeWarn(error instanceof Error ? error.message : String(error))
+			process.exitCode = 1
+			return
+		}
 	}
 
 	registerTerminationHandlers(() => result.closeGracefully())
@@ -414,7 +442,7 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		cdpHost: result.cdpHost,
 		cdpPort: result.cdpPort,
 		userDataDir: result.userDataDir,
-		startupUrl: result.startupUrl,
+		startupUrl,
 	}
 
 	if (options.json) {

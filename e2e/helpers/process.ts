@@ -1,11 +1,15 @@
 import { spawn, ChildProcess, SpawnOptions } from 'node:child_process'
 
+export interface CommandOptions extends SpawnOptions {
+	input?: string
+}
+
 export interface CommandResult {
 	stdout: string
 	stderr: string
 }
 
-export async function runCommand(cmd: string, args: string[], options: SpawnOptions = {}): Promise<CommandResult> {
+export async function runCommand(cmd: string, args: string[], options: CommandOptions = {}): Promise<CommandResult> {
 	return new Promise((resolve, reject) => {
 		const { proc, output } = spawnWithOutput(cmd, args, options)
 		proc.on('close', (code) => {
@@ -20,7 +24,7 @@ export interface CommandResultWithExit extends CommandResult {
 	code: number | null
 }
 
-export async function runCommandWithExit(cmd: string, args: string[], options: SpawnOptions = {}): Promise<CommandResultWithExit> {
+export async function runCommandWithExit(cmd: string, args: string[], options: CommandOptions = {}): Promise<CommandResultWithExit> {
 	return new Promise((resolve, reject) => {
 		const { proc, output } = spawnWithOutput(cmd, args, options)
 		proc.on('close', (code) => {
@@ -36,7 +40,7 @@ export interface SpawnedProcess {
 	stderr: string
 }
 
-export interface ExtendedSpawnOptions extends SpawnOptions {
+export interface ExtendedSpawnOptions extends CommandOptions {
 	debug?: boolean
 }
 
@@ -44,13 +48,21 @@ export async function spawnAndWait(cmd: string, args: string[], options: Extende
 	return new Promise((resolve, reject) => {
 		const { proc, output } = spawnWithOutput(cmd, args, options)
 		let resolved = false
-
-		proc.stdout?.on('data', () => {
+		const tryResolve = () => {
 			if (!resolved && readyRegex.test(output.stdout)) {
 				resolved = true
 				resolve({ proc, ...output })
 			}
+		}
+
+		proc.stdout?.on('data', () => {
+			tryResolve()
 		})
+
+		// Some commands print their ready line immediately, before we attach the
+		// waiter-specific listener above. Check the buffered output once up-front
+		// so fast-starting processes don't race the readiness detector.
+		tryResolve()
 
 		proc.on('error', (err) => {
 			if (!resolved) {
@@ -148,8 +160,9 @@ type BufferedOutput = {
 	stderr: string
 }
 
-const spawnWithOutput = (cmd: string, args: string[], options: SpawnOptions): { proc: ChildProcess; output: BufferedOutput } => {
-	const proc = spawn(cmd, args, { stdio: 'pipe', ...options })
+const spawnWithOutput = (cmd: string, args: string[], options: CommandOptions): { proc: ChildProcess; output: BufferedOutput } => {
+	const { input, ...spawnOptions } = options
+	const proc = spawn(cmd, args, { stdio: 'pipe', ...spawnOptions })
 	const output: BufferedOutput = { stdout: '', stderr: '' }
 
 	proc.stdout?.on('data', (data) => {
@@ -158,6 +171,10 @@ const spawnWithOutput = (cmd: string, args: string[], options: SpawnOptions): { 
 	proc.stderr?.on('data', (data) => {
 		output.stderr += data.toString()
 	})
+
+	if (input !== undefined) {
+		proc.stdin?.end(input)
+	}
 
 	return { proc, output }
 }

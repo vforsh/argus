@@ -55,27 +55,27 @@ This creates:
 argus extension setup <EXTENSION_ID>
 ```
 
-2. **Open Chrome with the extension loaded**. The extension service worker connects to the native host automatically, and that native host starts an extension-backed watcher process.
-3. **Attach to tabs**: Click the Argus extension icon in Chrome toolbar, then click "Attach" on the tabs you want to monitor.
-4. **Connect to a specific iframe (optional)**: Once a tab is attached, the popup shows the top page plus discovered iframe targets. Selecting an iframe keeps the debugger attached to the tab but switches Argus commands (`eval`, `dom *`, selector-based screenshots, etc.) to that frame.
+2. **Open Chrome with the extension loaded**. The extension creates a dedicated Native Messaging host + watcher process for each tab you attach.
+3. **Attach to tabs**: Click the Argus extension icon in Chrome toolbar, then click "Attach" on each tab you want to monitor. Every attached tab gets its own watcher id in the local registry.
+4. **Connect to a specific iframe (optional)**: Once a tab is attached, the popup shows the top page plus discovered iframe targets for that tab. Selecting an iframe keeps that tab's watcher attached but switches Argus commands (`eval`, `dom *`, selector-based screenshots, etc.) to that frame.
 5. **Use with Argus CLI**:
 
 ```bash
   # List watchers
   argus list
 
-  # View logs from the extension-backed watcher
-  # The default watcher id is usually "extension"
+  # View logs from a specific attached extension tab watcher
   argus logs extension
+  argus logs extension-2
 
   # Evaluate JavaScript
-  argus eval extension "document.title"
+  argus eval extension-2 "document.title"
 
   # List extension-backed page/iframe targets
-  argus page ls --id extension --tree
+  argus page ls --id extension-2 --tree
 ```
 
-If `extension` is already taken or stale, run `argus list` and use the watcher id shown there.
+Run `argus list` to see which watcher id belongs to which attached tab.
 
 ## How It Works
 
@@ -92,12 +92,12 @@ If `extension` is already taken or stale, run `argus list` and use the watcher i
 └─────────────────────┘                          └──────────────────────┘
 ```
 
-1. The extension service worker connects to the Native Messaging host on startup.
-2. Chrome launches `argus watcher native-host`, which starts `argus-watcher` in `source: 'extension'` mode and announces it in the local watcher registry.
-3. When you click "Attach" in the popup, the extension uses `chrome.debugger.attach()` to connect to the selected tab.
-4. CDP commands/events flow between the extension and watcher over Native Messaging.
-5. The watcher exposes the standard Argus HTTP API (`/logs`, `/eval`, `/dom/*`, `/targets`, `/attach`, `/detach`, etc.).
-6. Argus CLI connects to that watcher just like CDP mode.
+1. The extension service worker stays loaded in Chrome and owns the shared `chrome.debugger` lifecycle.
+2. When you click "Attach" in the popup, the extension launches a dedicated Native Messaging host for that tab.
+3. That host starts one `argus-watcher` in `source: 'extension'` mode and announces its own watcher id in the local registry.
+4. CDP commands/events for that tab flow between the extension and that tab-scoped watcher over Native Messaging.
+5. Each watcher exposes the standard Argus HTTP API (`/logs`, `/eval`, `/dom/*`, `/targets`, `/attach`, `/detach`, etc.) for its own tab plus that tab's iframe targets.
+6. Argus CLI connects to any attached tab watcher just like CDP mode.
 
 ## Limitations
 

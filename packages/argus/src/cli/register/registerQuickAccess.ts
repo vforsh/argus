@@ -27,6 +27,7 @@ export function registerQuickAccess(program: Command): void {
 		.description('Launch Chrome and attach a watcher in one command')
 		.requiredOption('--id <watcherId>', 'Watcher id')
 		.option('--url <url>', 'URL to open in Chrome and match for the watcher')
+		.option('--auth-from <watcherId>', 'Clone auth state from another watcher into a fresh temp Chrome session before attaching')
 		.option('--profile <type>', 'Chrome profile mode: temp, default-full, default-medium, or default-lite (default: default-lite)')
 		.option('--dev-tools', 'Open DevTools for new tabs')
 		.option('--headless', 'Run Chrome in headless mode')
@@ -41,7 +42,7 @@ export function registerQuickAccess(program: Command): void {
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus start --id app --url localhost:3000\n  $ argus start --id app --url localhost:3000 --dev-tools\n  $ argus start --id app --url localhost:3000 --profile temp\n  $ argus start --id app --type page --headless\n  $ argus start --id app --url localhost:3000 --inject ./debug.js\n  $ argus start --id app --url localhost:3000 --json\n',
+			'\nExamples:\n  $ argus start --id app --url localhost:3000\n  $ argus start --id app --auth-from extension-2\n  $ argus start --id app --auth-from extension-2 --url https://target.app/\n  $ argus start --id app --url localhost:3000 --dev-tools\n  $ argus start --id app --url localhost:3000 --profile temp\n  $ argus start --id app --type page --headless\n  $ argus start --id app --url localhost:3000 --inject ./debug.js\n  $ argus start --id app --url localhost:3000 --json\n',
 		)
 		.action(async (options, command) => {
 			const { config: configPath, inject, ...rest } = options
@@ -49,12 +50,15 @@ export function registerQuickAccess(program: Command): void {
 				...rest,
 				inject: inject ? { file: inject } : undefined,
 			}
+			if (!normalizeStartAuthOptions(command, cliOptions)) {
+				return
+			}
 			const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
 			if (!resolvedPath) {
 				if (configPath) {
 					return
 				}
-				await runStart(cliOptions)
+				await runStart(applyStartAuthOverrides(command, cliOptions))
 				return
 			}
 
@@ -73,7 +77,7 @@ export function registerQuickAccess(program: Command): void {
 				return
 			}
 
-			await runStart(mergedWatcher)
+			await runStart(applyStartAuthOverrides(command, mergedWatcher))
 		})
 
 	program
@@ -96,3 +100,35 @@ export function registerQuickAccess(program: Command): void {
 			await runReload(id, options)
 		})
 }
+
+const normalizeStartAuthOptions = (command: Command, options: { authFrom?: string; profile?: string }): boolean => {
+	if (!options.authFrom) {
+		return true
+	}
+
+	if (getOptionValueSource(command, 'profile') === 'cli') {
+		if (options.profile && options.profile !== 'temp') {
+			console.error('Cannot combine --auth-from with a copied Chrome profile. Use --profile temp or omit --profile.')
+			process.exitCode = 2
+			return false
+		}
+		return true
+	}
+
+	options.profile = undefined
+	return true
+}
+
+const applyStartAuthOverrides = <T extends { authFrom?: string; profile?: string; url?: string }>(command: Command, options: T): T => {
+	if (!options.authFrom) {
+		return options
+	}
+
+	options.profile = 'temp'
+	if (getOptionValueSource(command, 'url') !== 'cli') {
+		options.url = undefined
+	}
+	return options
+}
+
+const getOptionValueSource = (command: Command, key: string): string => command.getOptionValueSource(key) ?? ''

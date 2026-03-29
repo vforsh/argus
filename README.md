@@ -121,7 +121,7 @@ Then use the CLI as usual:
 ```bash
 argus list
 argus logs extension
-argus eval extension "document.title"
+argus eval extension-2 "document.title"
 argus watcher start --id app --source extension
 argus page ls --id app
 ```
@@ -130,8 +130,9 @@ argus page ls --id app
 
 - No special Chrome launch flags required
 - Manual tab selection through the extension popup
-- The popup can switch the active target between the top page and discovered iframes
-- `argus page ls --id <watcher>` shows those virtual iframe targets
+- Each attached tab gets its own watcher id; use `argus list` to see them
+- The popup can switch the active target between the top page and discovered iframes inside that tab
+- `argus page ls --id <watcher>` shows only that watcher's page/iframe targets
 
 ### Limitations
 
@@ -139,6 +140,34 @@ argus page ls --id app
 - Only one debugger can attach to a tab at a time
 - The target tab must stay open
 - Cross-origin iframe eval needs the iframe helper script
+
+## Reuse Auth State
+
+If you already have an authenticated tab attached through the extension watcher, you can export that auth state and replay it either into a fresh isolated Chrome session or into another already-running watcher tab:
+
+```bash
+# Export cookies + storage from the attached tab
+# Snapshot JSON also includes metadata such as export time, watcher id/source,
+# page title/site domain, cookie count, auth-looking cookie names, and recommended URL.
+argus auth export-state extension --out auth.json
+
+# Launch a fresh temp Chrome profile and hydrate it
+argus chrome start --auth-state auth.json
+
+# Or hydrate an already attached watcher tab in place
+argus auth load-state app --in auth.json
+
+# Or stream the snapshot without writing a temp file
+argus auth export-state extension | argus auth load-state app --in -
+
+# Or clone directly between watchers
+argus auth clone extension --to app
+
+# Or launch a fresh Chrome+watcher session from another watcher's auth
+argus start --id app --auth-from extension
+```
+
+Add `--url <url>` to override the final navigation target after hydration. By default Argus reopens the exported page URL. `--auth-state` always uses a fresh temp profile; combining it with copied Chrome profiles is intentionally rejected.
 
 ## Common Workflows
 

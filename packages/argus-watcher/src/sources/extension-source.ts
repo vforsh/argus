@@ -1,6 +1,5 @@
 import { createNativeMessaging } from '../native-messaging/messaging.js'
 import { SessionManager, type ExtensionSession } from '../native-messaging/session-manager.js'
-import type { TabInfo } from '../native-messaging/types.js'
 import type { CdpSourceHandle, CdpSourceTarget, CdpSourceBaseOptions } from './types.js'
 import type { CdpTargetContext } from '../cdp/connection.js'
 import {
@@ -8,7 +7,6 @@ import {
 	buildPageTarget,
 	createEmptyFrameState,
 	createNotAttachedError,
-	formatPageTargetId,
 	parseExtensionTargetId,
 	type ExtensionFrameState,
 } from './extension-frame-state.js'
@@ -130,42 +128,46 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	}
 
 	const listTargets = async (): Promise<CdpSourceTarget[]> => {
-		const tabs = await sessionManager.listTabs()
-		return tabs.flatMap((tab) => {
-			const session = currentSession?.tabId === tab.tabId ? currentSession : null
-			const state = frameStateByTabId.get(tab.tabId)
-			if (!session || !state || state.frames.size === 0) {
-				return [tabToTarget(tab)]
-			}
+		const session = currentSession
+		if (!session) {
+			return []
+		}
 
-			const activeFrameId = state.activeFrameId
-			const targets: CdpSourceTarget[] = [buildPageTarget(session, { attached: activeFrameId == null })]
-			for (const frame of buildFrameTargets(state, tab.tabId, activeFrameId, tab.faviconUrl)) {
-				targets.push(frame)
-			}
-			return targets
-		})
+		const state = frameStateByTabId.get(session.tabId)
+		if (!state || state.frames.size === 0) {
+			return [buildPageTarget(session, { attached: true })]
+		}
+
+		const activeFrameId = state.activeFrameId
+		const targets: CdpSourceTarget[] = [buildPageTarget(session, { attached: activeFrameId == null })]
+		for (const frame of buildFrameTargets(state, session.tabId, activeFrameId, session.faviconUrl)) {
+			targets.push(frame)
+		}
+		return targets
 	}
 
 	const attachTarget = (targetId: string): void => {
 		const target = parseExtensionTargetId(targetId)
-		const session = currentSession
-		if (!session || session.tabId !== target.tabId) {
-			const state = getOrCreateFrameState(target.tabId)
-			setRequestedTargetSelection(state, target.frameId)
-			sessionManager.attachTab(target.tabId)
-			return
-		}
+		const session = requireOwnedSession(target.tabId)
 		requestTargetSelection(session, target.frameId)
 	}
 
 	const detachTarget = (targetId: string): void => {
-		sessionManager.detachTab(parseExtensionTargetId(targetId).tabId)
+		const target = parseExtensionTargetId(targetId)
+		const session = requireOwnedSession(target.tabId)
+		sessionManager.detachTab(session.tabId)
 	}
 
 	return {
 		session: proxySession,
 		pageSession,
+		readBrowserCookies: async ({ domain, url }) => {
+			const session = getCurrentExtensionSession()
+			return await sessionManager.getCookies(session.tabId, {
+				domain: domain ?? undefined,
+				url: url ?? undefined,
+			})
+		},
 		syncWatcherInfo: (info) => {
 			hostInfo.watcherId = info.watcherId
 			hostInfo.watcherHost = info.watcherHost
@@ -187,6 +189,17 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			watcherPort: hostInfo.watcherPort,
 			pid: hostInfo.watcherPid,
 		})
+	}
+
+	function requireOwnedSession(tabId: number): ExtensionSession {
+		const session = currentSession
+		if (!session) {
+			throw createNotAttachedError()
+		}
+		if (session.tabId !== tabId) {
+			throw new Error(`Watcher ${hostInfo.watcherId} is pinned to tab ${session.tabId}, not tab ${tabId}`)
+		}
+		return session
 	}
 
 	function rebindDelegatingSessions(): void {
@@ -368,15 +381,3 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		)
 	}
 }
-
-/**
- * Convert TabInfo to CdpSourceTarget.
- */
-const tabToTarget = (tab: TabInfo): CdpSourceTarget => ({
-	id: formatPageTargetId(tab.tabId),
-	title: tab.title,
-	url: tab.url,
-	type: 'page',
-	faviconUrl: tab.faviconUrl,
-	attached: tab.attached,
-})

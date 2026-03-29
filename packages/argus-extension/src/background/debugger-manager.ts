@@ -26,6 +26,23 @@ type FrameRecord = {
 	sessionId: string | null
 }
 
+type CookieQuery = {
+	domain?: string
+	url?: string
+}
+
+type NativeCookie = {
+	name: string
+	value: string
+	domain: string
+	path: string
+	secure: boolean
+	httpOnly: boolean
+	session: boolean
+	expires: number | null
+	sameSite: string | null
+}
+
 export type AttachedTarget = {
 	tabId: number
 	debuggeeId: chrome.debugger.Debuggee
@@ -144,6 +161,32 @@ export class DebuggerManager {
 		return [...target.frames.values()]
 	}
 
+	/**
+	 * Read cookies from the attached tab's cookie store so extension-mode auth export can keep
+	 * sibling subdomain session cookies such as `auth.example.com`.
+	 */
+	async getCookies(tabId: number, query: CookieQuery = {}): Promise<NativeCookie[]> {
+		this.getRequiredTarget(tabId)
+		const storeId = await this.findCookieStoreId(tabId)
+		const cookies = await chrome.cookies.getAll({
+			domain: query.domain,
+			storeId: storeId ?? undefined,
+			url: query.domain ? undefined : query.url,
+		})
+
+		return cookies.map((cookie) => ({
+			name: cookie.name,
+			value: cookie.value,
+			domain: cookie.domain,
+			path: cookie.path,
+			secure: cookie.secure,
+			httpOnly: cookie.httpOnly,
+			session: cookie.session,
+			expires: typeof cookie.expirationDate === 'number' ? cookie.expirationDate : null,
+			sameSite: cookie.sameSite ?? null,
+		}))
+	}
+
 	private async configureAutoAttach(tabId: number, sessionId?: string | null): Promise<void> {
 		await this.sendCommand(
 			tabId,
@@ -193,6 +236,12 @@ export class DebuggerManager {
 		}
 
 		return { tabId: target.tabId, sessionId } as chrome.debugger.Debuggee
+	}
+
+	private async findCookieStoreId(tabId: number): Promise<string | null> {
+		const stores = await chrome.cookies.getAllCookieStores()
+		const store = stores.find((candidate) => candidate.tabIds.includes(tabId))
+		return store?.id ?? null
 	}
 
 	private handleCdpEvent(debuggee: chrome.debugger.Debuggee, method: string, params?: object): void {

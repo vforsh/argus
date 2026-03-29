@@ -252,6 +252,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		runtimeEditor,
 		emulationController,
 		throttleController,
+		readBrowserCookies: sourceHandle.readBrowserCookies,
 		sourceHandle: sourceMode === 'extension' ? sourceHandle : undefined,
 		onRequest: (event) => {
 			if (pageConsoleLogging === 'full') {

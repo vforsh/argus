@@ -5,6 +5,7 @@
 
 import type { WatcherMatch, WatcherChrome } from '@vforsh/argus-core'
 import { startCdpWatcher, type CdpWatcherOptions } from '../cdp/watcher.js'
+import { createCdpBrowserCookieReader } from '../cdp/browserCookies.js'
 import { createCdpSessionHandle, type CdpSessionController } from '../cdp/connection.js'
 import type { IgnoreMatcher } from '../cdp/ignoreList.js'
 import type { CdpSourceHandle, CdpSourceBaseOptions } from './types.js'
@@ -64,6 +65,7 @@ export const createCdpSource = (options: CdpSourceOptions): CdpSourceHandle => {
 	return {
 		session: watcher.session,
 		pageSession: watcher.session,
+		readBrowserCookies: createCdpBrowserCookieReader(chrome, () => watcher.getTarget()?.id ?? null),
 		stop: watcher.stop,
 		// CDP mode doesn't support listTargets/attachTarget/detachTarget
 		// (auto-attaches based on match criteria)

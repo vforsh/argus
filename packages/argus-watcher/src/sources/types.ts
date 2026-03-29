@@ -4,7 +4,7 @@
  * to work with either CDP WebSocket or Extension Native Messaging.
  */
 
-import type { LogEvent } from '@vforsh/argus-core'
+import type { AuthStateCookie, LogEvent } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 
 /**
@@ -25,6 +25,14 @@ export type CdpSourceTarget = {
 	faviconUrl?: string
 	/** Whether the target is currently attached. */
 	attached?: boolean
+}
+
+/** Browser-cookie query used by auth-state export to capture same-site auth outside the active page host. */
+export type CdpSourceCookieQuery = {
+	/** Best-effort site-domain filter (for example `stark.games`). Null means "no domain filter". */
+	domain?: string | null
+	/** Current page URL for source-specific cookie-store selection. */
+	url?: string | null
 }
 
 /**
@@ -74,6 +82,8 @@ export type CdpSourceHandle = {
 	pageSession?: CdpSessionHandle
 	/** Sync watcher metadata after the HTTP server has its final host/port (extension mode only). */
 	syncWatcherInfo?: (info: { watcherId: string; watcherHost: string; watcherPort: number; watcherPid: number }) => void
+	/** Read browser-level cookies for the attached session's site, when the source can do better than page-scoped CDP. */
+	readBrowserCookies?: (query: CdpSourceCookieQuery) => Promise<AuthStateCookie[]>
 	/** Stop the source and clean up resources. */
 	stop: () => Promise<void>
 	/** List available targets (extension mode only). */

@@ -54,6 +54,8 @@ argus watcher start --id app --url "$APP_URL" --chrome-port 9222  # run_in_backg
 
 ```bash
 argus start --id app --url localhost:3000
+argus start --id app --auth-from extension-2
+argus start --id app --auth-from extension-2 --url https://target.app/
 argus start --id app --url localhost:3000 --dev-tools
 argus start --id app --url localhost:3000 --profile temp
 argus start --id app --type page --headless
@@ -62,7 +64,7 @@ argus start --id app --url localhost:3000 --no-page-indicator
 argus start --id app --url localhost:3000 --json
 ```
 
-`--url` opens in Chrome and matches the watcher target. Accepts all chrome options (`--profile`, `--dev-tools`, `--headless`) and watcher options (`--type`, `--origin`, `--target`, `--parent`, `--inject`, `--artifacts`, `--no-page-indicator`). CDP port is wired automatically.
+`--url` opens in Chrome and matches the watcher target. `--auth-from` clones cookies + storage from another watcher into a fresh temp Chrome session before the new watcher attaches; add `--url` to override the final destination after hydration. Accepts all chrome options (`--profile`, `--dev-tools`, `--headless`) and watcher options (`--type`, `--origin`, `--target`, `--parent`, `--inject`, `--artifacts`, `--no-page-indicator`). CDP port is wired automatically.
 
 ### Chrome Start
 
@@ -95,7 +97,7 @@ argus watcher start --id app --source extension
 
 `--url` matches target URL substring. `--origin` matches protocol+host+port only. `--target` connects to a specific Chrome target ID. `--type` filters by target type (page, iframe, worker). `--parent` filters by parent target URL. `--inject` runs a JS file on attach + navigation. `--no-page-indicator` hides the in-page overlay in both CDP and extension mode — use this when capturing screenshots so the badge doesn't end up in the image.
 
-In extension mode, the popup can switch the watcher's active target between the top page and discovered iframes inside the attached tab. `argus page ls --id <watcher>` also shows those virtual iframe targets.
+In extension mode, each attached browser tab gets its own watcher id. The popup can switch that watcher's active target between the top page and discovered iframes inside the same attached tab. `argus list` shows the tab-scoped watcher ids, and `argus page ls --id <watcher>` shows the page/iframe targets for that watcher only.
 
 ### Logs
 
@@ -197,9 +199,17 @@ argus auth cookies app --show-values --json
 argus auth cookies app --for-origin --exclude-tracking
 argus auth export-cookies app --format netscape
 argus auth export-cookies app --for-origin --exclude-tracking
+argus auth export-state app --out auth.json
+argus auth export app --out auth.json
+argus auth load-state app --in auth.json
+argus auth export-state extension-2 | argus auth load-state app --in -
+argus auth load app --in auth.json --url https://target.app/
+argus auth clone extension-2 --to app
+argus chrome start --auth-state auth.json
+argus start --id app --auth-from extension-2
 ```
 
-`auth cookies` lists browser cookies for the attached page, with optional domain/flag filters. `--for-origin` keeps first-party cookies for the current page origin, and `--exclude-tracking` hides common analytics cookies such as `_ga` / `_ym`. `auth export-cookies` emits cookie jars for companion CLIs (`netscape`, `json`, or `header`) and supports the same filters.
+`auth cookies` lists browser cookies for the attached page, with optional domain/flag filters. `--for-origin` keeps first-party cookies for the current page origin, and `--exclude-tracking` hides common analytics cookies such as `_ga` / `_ym`. `auth export-cookies` emits cookie jars for companion CLIs (`netscape`, `json`, or `header`) and supports the same filters. `auth export-state`/`auth export` writes a portable JSON snapshot with cookies, `localStorage`, `sessionStorage`, and a metadata block (`exportedAt`, watcher provenance, page title/site domain, cookie count, auth-looking cookie names, recommended startup URL); stdout is pipe-friendly by default. `auth load-state`/`auth load` rehydrates that snapshot into the currently attached watcher tab, including `--in -` for stdin. `auth clone` skips the intermediate file and copies auth state directly between watchers. `chrome start --auth-state` loads a snapshot into a fresh temp Chrome profile, while `start --auth-from` does the same and immediately attaches a watcher.
 
 ### Trace
 
