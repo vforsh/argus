@@ -17,4 +17,4 @@ const plugin: ArgusPluginV1 = {
 export default plugin
 ```
 
-`@vforsh/argus/plugin` remains available as a compatibility re-export, but new plugins should target this package directly.
+Import plugin types from `@vforsh/argus-plugin-api`.

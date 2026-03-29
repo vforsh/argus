@@ -353,7 +353,6 @@ export default plugin
 ```
 
 TypeScript plugin authors should import from `@vforsh/argus-plugin-api`.
-`@vforsh/argus/plugin` remains available as a compatibility re-export.
 
 ## Troubleshooting
 
