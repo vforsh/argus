@@ -339,16 +339,21 @@ Argus can load optional CLI plugins that register additional top-level commands.
 Plugin modules must default-export:
 
 ```ts
-export default {
-	apiVersion: 1,
+import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginV1 } from '@vforsh/argus-plugin-api'
+
+const plugin: ArgusPluginV1 = {
+	apiVersion: ARGUS_PLUGIN_API_VERSION,
 	name: 'my-plugin',
 	register(ctx) {
 		ctx.program.command('mycmd').action(() => {})
 	},
 }
+
+export default plugin
 ```
 
-TypeScript plugin authors can import the types from `@vforsh/argus/plugin`.
+TypeScript plugin authors should import from `@vforsh/argus-plugin-api`.
+`@vforsh/argus/plugin` remains available as a compatibility re-export.
 
 ## Troubleshooting
 

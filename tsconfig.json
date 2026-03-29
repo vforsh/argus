@@ -3,6 +3,7 @@
 	"references": [
 		{ "path": "./packages/argus-core" },
 		{ "path": "./packages/argus-watcher" },
+		{ "path": "./packages/argus-plugin-api" },
 		{ "path": "./packages/argus" },
 		{ "path": "./packages/argus-client" }
 	]

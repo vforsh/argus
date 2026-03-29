@@ -378,8 +378,8 @@ Argus can load optional CLI plugins that register extra top-level commands.
 - Config: add `"plugins": ["<module-or-path>"]` to Argus config.
 - Env: set `ARGUS_PLUGINS` to comma-separated specifiers/paths.
 - Module contract: default export `{ apiVersion: 1, name, register(ctx) }`.
-
-TypeScript plugin types are exported from `@vforsh/argus/plugin`.
+- TypeScript: import plugin types from `@vforsh/argus-plugin-api`.
+- Compatibility: `@vforsh/argus/plugin` remains a re-export for older plugins.
 
 ---
 

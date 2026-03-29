@@ -19,11 +19,12 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.1.8",
+      "version": "0.1.12",
       "bin": {
         "argus": "dist/argus.js",
       },
       "dependencies": {
+        "@vforsh/argus-plugin-api": "workspace:*",
         "commander": "14.0.2",
         "prettier": "3.7.4",
       },
@@ -37,7 +38,7 @@
     },
     "packages/argus-core": {
       "name": "@vforsh/argus-core",
-      "version": "0.1.2",
+      "version": "0.1.5",
       "devDependencies": {
         "commander": "^14.0.2",
       },
@@ -53,9 +54,17 @@
         "esbuild": "^0.24.2",
       },
     },
+    "packages/argus-plugin-api": {
+      "name": "@vforsh/argus-plugin-api",
+      "version": "0.1.0",
+      "dependencies": {
+        "@vforsh/argus-core": "workspace:*",
+        "commander": "14.0.2",
+      },
+    },
     "packages/argus-watcher": {
       "name": "@vforsh/argus-watcher",
-      "version": "0.1.3",
+      "version": "0.1.9",
       "dependencies": {
         "@jridgewell/trace-mapping": "^0.3.31",
         "@vforsh/argus-core": "workspace:*",
@@ -193,6 +202,8 @@
     "@vforsh/argus-core": ["@vforsh/argus-core@workspace:packages/argus-core"],
 
     "@vforsh/argus-extension": ["@vforsh/argus-extension@workspace:packages/argus-extension"],
+
+    "@vforsh/argus-plugin-api": ["@vforsh/argus-plugin-api@workspace:packages/argus-plugin-api"],
 
     "@vforsh/argus-watcher": ["@vforsh/argus-watcher@workspace:packages/argus-watcher"],
 

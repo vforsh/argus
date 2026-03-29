@@ -1,13 +1,12 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginContextV1, type ArgusPluginV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 
 import { resolveArgusConfigPath, loadArgusConfig } from '../../config/argusConfig.js'
 import { createOutput } from '../../output/io.js'
 import { requestWatcherJson, writeRequestError } from '../../watchers/requestWatcher.js'
 import { runChromeOpen } from '../../commands/chrome.js'
-import type { ArgusPluginContextV1, ArgusPluginV1 } from '../../plugin.js'
-import { ARGUS_PLUGIN_API_VERSION } from '../../plugin.js'
 
 type PluginSource = 'config' | 'env'
 
