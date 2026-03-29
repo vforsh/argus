@@ -236,6 +236,17 @@
 			<button data-testid="btn-increment" onclick="incrementCounter()">Increment</button>
 		</section>
 
+		<!-- ── Dialogs ── -->
+		<section data-testid="dialog-section">
+			<h2>Dialogs</h2>
+			<div class="btn-row">
+				<button data-testid="btn-dialog-alert" onclick="triggerDialog('alert', 'playground alert message')">alert()</button>
+				<button data-testid="btn-dialog-confirm" onclick="triggerDialog('confirm', 'playground confirm message')">confirm()</button>
+				<button data-testid="btn-dialog-prompt" onclick="triggerDialog('prompt', 'playground prompt message', 'seed value')">prompt()</button>
+			</div>
+			<pre data-testid="dialog-output" id="dialog-output">—</pre>
+		</section>
+
 		<!-- ── Scroll test ── -->
 		<section data-testid="scroll-section">
 			<h2>Scroll Test</h2>
@@ -299,6 +310,43 @@
 				window.playground.counter++
 				document.getElementById('eval-counter').textContent = window.playground.counter
 				window.__events.push('increment')
+			}
+
+			// ── Dialog helpers ──
+			window.__dialogResults = []
+
+			function refreshDialogDisplay() {
+				const output = document.getElementById('dialog-output')
+				output.textContent = JSON.stringify(window.__dialogResults.slice(-5), null, 2) || '[]'
+			}
+
+			function triggerDialog(type, message, defaultPrompt = '') {
+				window.__dialogResults.push({
+					type,
+					message,
+					defaultPrompt: type === 'prompt' ? defaultPrompt : null,
+					state: 'pending',
+					ts: Date.now(),
+				})
+				refreshDialogDisplay()
+
+				setTimeout(() => {
+					let result = null
+					if (type === 'alert') {
+						alert(message)
+						result = 'accepted'
+					} else if (type === 'confirm') {
+						result = confirm(message)
+					} else if (type === 'prompt') {
+						result = prompt(message, defaultPrompt)
+					}
+
+					const entry = window.__dialogResults[window.__dialogResults.length - 1]
+					entry.state = 'resolved'
+					entry.result = result
+					entry.resolvedAt = Date.now()
+					refreshDialogDisplay()
+				}, 0)
 			}
 
 			// ── Console auto-logger ──
@@ -436,6 +484,7 @@
 			// ── Seed storage on load ──
 			seedStorage()
 			seedAuthState()
+			refreshDialogDisplay()
 		</script>
 	</body>
 </html>

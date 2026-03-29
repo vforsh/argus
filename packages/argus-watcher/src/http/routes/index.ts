@@ -32,6 +32,8 @@ import { handle as getEmulation } from './getEmulation.js'
 import { handle as postEmulation } from './postEmulation.js'
 import { handle as getThrottle } from './getThrottle.js'
 import { handle as postThrottle } from './postThrottle.js'
+import { handle as getDialog } from './getDialog.js'
+import { handle as postDialog } from './postDialog.js'
 import { handle as postStorageLocal } from './postStorageLocal.js'
 import { handle as postReload } from './postReload.js'
 import { handle as postShutdown } from './postShutdown.js'
@@ -81,6 +83,8 @@ export const watcherRoutes = [
 	defineRoute({ method: 'POST', path: '/emulation', handler: postEmulation }),
 	defineRoute({ method: 'GET', path: '/throttle', handler: getThrottle }),
 	defineRoute({ method: 'POST', path: '/throttle', handler: postThrottle }),
+	defineRoute({ method: 'GET', path: '/dialog', handler: getDialog }),
+	defineRoute({ method: 'POST', path: '/dialog', handler: postDialog }),
 	defineRoute({ method: 'POST', path: '/storage/local', handler: postStorageLocal }),
 	defineRoute({ method: 'POST', path: '/reload', handler: postReload }),
 	defineRoute({ method: 'POST', path: '/shutdown', handler: postShutdown }),

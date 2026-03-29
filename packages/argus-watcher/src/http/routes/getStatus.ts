@@ -18,6 +18,7 @@ const buildStatus = (ctx: RouteContext): StatusResponse => {
 		pid: watcher.pid,
 		attached: cdpStatus.attached,
 		target: cdpStatus.target,
+		dialog: ctx.getDialog(),
 		buffer,
 		watcher,
 		protocolVersion: ARGUS_PROTOCOL_VERSION,

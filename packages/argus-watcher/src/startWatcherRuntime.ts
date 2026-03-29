@@ -1,7 +1,8 @@
-import type { LogEvent } from '@vforsh/argus-core'
+import type { DialogStatus, LogEvent } from '@vforsh/argus-core'
 import { startHttpServer } from './http/server.js'
 import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
 import { createPageIndicatorController, validatePageIndicatorOptions, type PageIndicatorController } from './cdp/pageIndicator.js'
+import { DialogTracker } from './dialogs/DialogTracker.js'
 import type { CdpSourceHandle, CdpSourceStatus, CdpSourceTarget } from './sources/types.js'
 import type { StartWatcherOptions, WatcherHandle } from './index.js'
 import { buildInjectExpression, formatWatcherError } from './runtime/watcherInject.js'
@@ -20,6 +21,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	let shutdownRequested = false
 	let closeOnce: (() => Promise<void>) | null = null
 	let cdpStatus: CdpSourceStatus = { attached: false, target: null }
+	const dialogTracker = new DialogTracker()
 
 	const logToPageConsole = (message: string): void => {
 		if (pageConsoleLogging === 'none') {
@@ -186,6 +188,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	}
 
 	const handleSourceAttach = async (session: CdpSourceHandle['session'], target: CdpSourceTarget): Promise<void> => {
+		dialogTracker.clear()
 		runtimeEditor?.rebind()
 		await emulationController.onAttach(session)
 		await throttleController.onAttach(session)
@@ -202,6 +205,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	}
 
 	const handleSourceDetach = (reason?: string): void => {
+		dialogTracker.clear()
 		runtimeEditor?.rebind()
 		networkCapture?.onDetached()
 		indicatorController?.onDetach()
@@ -221,6 +225,18 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		onDetach: handleSourceDetach,
 	})
 
+	const dialogSession = sourceHandle.pageSession ?? sourceHandle.session
+	dialogSession.onEvent('Page.javascriptDialogOpening', (params) => {
+		const dialog = parseDialogStatus(params)
+		if (!dialog) {
+			return
+		}
+		dialogTracker.open(dialog)
+	})
+	dialogSession.onEvent('Page.javascriptDialogClosed', () => {
+		dialogTracker.close()
+	})
+
 	const server = await startHttpServer({
 		host,
 		port,
@@ -228,6 +244,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		netBuffer,
 		getWatcher: () => record,
 		getCdpStatus: () => cdpStatus,
+		getDialog: () => dialogTracker.getActive(),
 		pageCdpSession: sourceHandle.pageSession ?? sourceHandle.session,
 		cdpSession: sourceHandle.session,
 		traceRecorder,
@@ -294,3 +311,29 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		},
 	}
 }
+
+const parseDialogStatus = (params: unknown): DialogStatus | null => {
+	const record = params as {
+		type?: unknown
+		message?: unknown
+		defaultPrompt?: unknown
+		url?: unknown
+		hasBrowserHandler?: unknown
+	}
+
+	if (!isDialogType(record.type) || typeof record.message !== 'string') {
+		return null
+	}
+
+	return {
+		type: record.type,
+		message: record.message,
+		defaultPrompt: typeof record.defaultPrompt === 'string' ? record.defaultPrompt : null,
+		url: typeof record.url === 'string' && record.url !== '' ? record.url : null,
+		hasBrowserHandler: record.hasBrowserHandler === true,
+		openedAt: Date.now(),
+	}
+}
+
+const isDialogType = (value: unknown): value is DialogStatus['type'] =>
+	value === 'alert' || value === 'confirm' || value === 'prompt' || value === 'beforeunload'

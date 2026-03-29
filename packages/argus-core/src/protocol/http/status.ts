@@ -1,4 +1,5 @@
 import type { WatcherRecord } from '../../registry/types.js'
+import type { DialogStatus } from './dialog.js'
 import type { ArgusProtocolVersion } from '../version.js'
 
 /** Response payload for GET /status. */
@@ -11,6 +12,7 @@ export type StatusResponse = {
 		title: string | null
 		url: string | null
 	} | null
+	dialog?: DialogStatus | null
 	buffer: {
 		size: number
 		count: number

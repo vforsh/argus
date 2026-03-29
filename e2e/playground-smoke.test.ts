@@ -8,12 +8,15 @@ import { runCommand, spawnAndWait } from './helpers/process.js'
 import type { ChildProcess } from 'node:child_process'
 import type {
 	CodeListResponse,
+	DialogHandleResponse,
+	DialogStatusResponse,
 	DomInfoResponse,
 	DomTreeResponse,
 	EvalResponse,
 	ScreenshotResponse,
 	StorageLocalListResponse,
 } from '@vforsh/argus-core'
+import type { Page } from 'playwright'
 import type * as http from 'node:http'
 import { startPlaygroundServers, waitForWatcherReady } from '../playground/harness.ts'
 
@@ -24,6 +27,7 @@ describe('playground smoke tests', () => {
 	let tempDir: string
 	let env: Record<string, string | undefined>
 	let browser: Browser
+	let page: Page
 	let watcherProc: ChildProcess
 	let mainServer: http.Server
 	let crossOriginServer: http.Server
@@ -57,7 +61,7 @@ describe('playground smoke tests', () => {
 		})
 
 		const context = await browser.newContext()
-		const page = await context.newPage()
+		page = await context.newPage()
 		await page.goto(`http://127.0.0.1:${mainPort}/`)
 
 		const title = await page.title()
@@ -277,6 +281,126 @@ describe('playground smoke tests', () => {
 		expect(result.loaded).toBe(true)
 		expect(result.title).toBe('Playground Iframe')
 	})
+
+	test(
+		'dialog commands work against playground dialogs',
+		{
+			timeout: 15_000,
+		},
+		async () => {
+			const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+			const fetchDialogStatus = async (): Promise<DialogStatusResponse> => {
+				const { stdout } = await runCommand('bun', [BIN_PATH, 'dialog', 'status', 'playground', '--json'], { env })
+				return JSON.parse(stdout) as DialogStatusResponse
+			}
+
+			const waitForDialog = async (type: NonNullable<DialogStatusResponse['dialog']>['type']) => {
+				for (let i = 0; i < 40; i += 1) {
+					const status = await fetchDialogStatus()
+					if (status.dialog?.type === type) {
+						return status.dialog
+					}
+					await sleep(100)
+				}
+				throw new Error(`Timed out waiting for ${type} dialog`)
+			}
+
+			const waitForNoDialog = async (): Promise<void> => {
+				for (let i = 0; i < 40; i += 1) {
+					const status = await fetchDialogStatus()
+					if (!status.dialog) {
+						return
+					}
+					await sleep(100)
+				}
+				throw new Error('Timed out waiting for dialog to close')
+			}
+
+			const waitForPlaygroundDialogResult = async () => {
+				for (let i = 0; i < 40; i += 1) {
+					const result = await page.evaluate(() => {
+						const state = window as Window & {
+							__dialogResults?: Array<{ state?: string; result?: string | boolean | null }>
+						}
+						const entry = state.__dialogResults?.at(-1)
+						if (!entry || entry.state !== 'resolved') {
+							return null
+						}
+						return entry.result ?? null
+					})
+					if (result !== null) {
+						return result
+					}
+					await sleep(100)
+				}
+				throw new Error('Timed out waiting for playground dialog result')
+			}
+
+			const openPlaygroundDialog = async (buttonTestId: string) => {
+				let releaseDialog: (() => void) | null = null
+				const holdDialog = new Promise<void>((resolve) => {
+					releaseDialog = resolve
+				})
+
+				const browserDialog = new Promise<{ type: string; message: string; defaultValue: string }>((resolve) => {
+					page.once('dialog', async (dialog) => {
+						resolve({
+							type: dialog.type(),
+							message: dialog.message(),
+							defaultValue: dialog.defaultValue(),
+						})
+						await holdDialog
+					})
+				})
+
+				await page.getByTestId(buttonTestId).click()
+
+				return {
+					dialog: await browserDialog,
+					release: () => releaseDialog?.(),
+				}
+			}
+
+			const alertOpen = await openPlaygroundDialog('btn-dialog-alert')
+			expect(alertOpen.dialog.type).toBe('alert')
+			expect(alertOpen.dialog.message).toBe('playground alert message')
+			const alertStatus = await waitForDialog('alert')
+			expect(alertStatus.message).toBe('playground alert message')
+			await runCommand('bun', [BIN_PATH, 'dialog', 'accept', 'playground'], { env })
+			alertOpen.release()
+			await waitForNoDialog()
+			expect(await waitForPlaygroundDialogResult()).toBe('accepted')
+
+			const confirmOpen = await openPlaygroundDialog('btn-dialog-confirm')
+			expect(confirmOpen.dialog.type).toBe('confirm')
+			const confirmStatus = await waitForDialog('confirm')
+			expect(confirmStatus.message).toBe('playground confirm message')
+			await runCommand('bun', [BIN_PATH, 'dialog', 'dismiss', 'playground'], { env })
+			confirmOpen.release()
+			await waitForNoDialog()
+			expect(await waitForPlaygroundDialogResult()).toBe(false)
+
+			const promptOpen = await openPlaygroundDialog('btn-dialog-prompt')
+			expect(promptOpen.dialog.type).toBe('prompt')
+			expect(promptOpen.dialog.defaultValue).toBe('seed value')
+			const promptStatus = await waitForDialog('prompt')
+			expect(promptStatus.message).toBe('playground prompt message')
+			expect(promptStatus.defaultPrompt).toBe('seed value')
+
+			const { stdout: promptHandleOut } = await runCommand(
+				'bun',
+				[BIN_PATH, 'dialog', 'prompt', 'playground', '--text', 'playground override', '--json'],
+				{ env },
+			)
+			const promptHandle = JSON.parse(promptHandleOut) as DialogHandleResponse
+			expect(promptHandle.action).toBe('accept')
+			expect(promptHandle.dialog.type).toBe('prompt')
+			promptOpen.release()
+			await waitForNoDialog()
+			expect(await waitForPlaygroundDialogResult()).toBe('playground override')
+		},
+	)
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// screenshot

@@ -254,6 +254,18 @@ argus scroll-to app --selector ".panel" --by 0,500
 
 `--wait <duration>` (on click, fill) polls for the selector to appear before executing the action — useful for reactive UIs where elements render after navigation/SPA transitions. Duration format: `5s`, `500ms`, `2m`. `--text` filters by textContent, `--all` allows multiple matches.
 
+### Dialogs
+
+```bash
+argus dialog status app
+argus dialog accept app
+argus dialog dismiss app
+argus dialog prompt app --text "updated value"
+argus dialog status app --json
+```
+
+Browser JavaScript dialogs (`alert`, `confirm`, `prompt`, `beforeunload`). `status` shows the current active dialog, if any. `accept` and `dismiss` resolve the active dialog. `prompt` accepts the active prompt dialog and submits `--text`. Only one dialog can be active at a time.
+
 ### DOM (interact)
 
 ```bash
@@ -415,6 +427,7 @@ await close()
 
 - [EXTENSION.md](./reference/EXTENSION.md) — Extension workflow (non-CDP debugging)
 - [EXTENSION_IFRAME_EVAL.md](./reference/EXTENSION_IFRAME_EVAL.md) — Cross-origin iframe eval in extension mode
+- [DIALOG.md](./reference/DIALOG.md) — Browser dialog status + handling
 - [EVAL.md](./reference/EVAL.md) — Polling, flags, iframe eval
 - [IFRAMES.md](./reference/IFRAMES.md) — Target selection, cross-origin eval
 - [INJECT.md](./reference/INJECT.md) — Script injection on watcher attach

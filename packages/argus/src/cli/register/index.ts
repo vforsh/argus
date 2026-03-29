@@ -3,6 +3,7 @@ import { registerQuickAccess } from './registerQuickAccess.js'
 import { registerChrome } from './registerChrome.js'
 import { registerWatcher } from './registerWatcher.js'
 import { registerPage } from './registerPage.js'
+import { registerDialog } from './registerDialog.js'
 import { registerLogs } from './registerLogs.js'
 import { registerNet } from './registerNet.js'
 import { registerAuth } from './registerAuth.js'
@@ -28,6 +29,7 @@ export const coreProgramRegistrars: readonly ProgramRegistrar[] = [
 	registerChrome,
 	registerWatcher,
 	registerPage,
+	registerDialog,
 	registerLogs,
 	registerNet,
 	registerAuth,

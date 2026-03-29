@@ -1,5 +1,5 @@
 import http from 'node:http'
-import type { LogLevel, WatcherRecord } from '@vforsh/argus-core'
+import type { DialogStatus, LogLevel, WatcherRecord } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
@@ -43,6 +43,8 @@ export type HttpRequestEventMetadata = {
 		| 'dom/scroll-to'
 		| 'emulation'
 		| 'throttle'
+		| 'dialog/status'
+		| 'dialog/handle'
 		| 'storage/local'
 		| 'reload'
 		| 'shutdown'
@@ -78,6 +80,7 @@ export type HttpServerOptions = {
 	netBuffer: NetBuffer | null
 	getWatcher: () => WatcherRecord
 	getCdpStatus: () => { attached: boolean; target: { title: string | null; url: string | null } | null }
+	getDialog: () => DialogStatus | null
 	/** Session for page-scoped commands that must always target the top-level page. */
 	pageCdpSession: CdpSessionHandle
 	cdpSession: CdpSessionHandle

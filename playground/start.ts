@@ -40,6 +40,7 @@ const main = async (): Promise<void> => {
     argus logs playground
     argus eval playground "window.playground.counter"
     argus eval-until playground "window.playground.ready"
+    argus dialog status playground
     argus dom tree playground --selector "body" --depth 3
     argus dom info playground --selector '[data-testid="article-1"]'
     argus storage local list playground
