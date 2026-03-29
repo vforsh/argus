@@ -28,6 +28,8 @@
 
 - **Rebuild + package typecheck**: If you change anything under `packages/`, rebuild and typecheck the affected package(s) before testing. Prefer the package-specific scripts (e.g. `npm run build:<PACKAGE_1>`, `npm run build:<PACKAGE_2>`, etc.`); use `npm run build:packages` only when multiple packages changed.
 
+- **Extension rebuild**: If you change anything under `packages/argus-extension`, rebuild it with `bun run --cwd packages/argus-extension build`. For extension-only checks, pair it with `npm run typecheck:extension`.
+
 - **Public API must be documented (JSDoc)**: Any public API in `packages/*` (anything exported for consumption by other packages/apps) must have JSDoc. Document parameters, return values, and important invariants/edge cases so changes are safe to make later.
 
 - **Release hygiene**: Before `npm publish`, check the live registry versions with `npm view <pkg> version`. If the repo version already exists on npm, bump the affected package version(s) first, commit that bump, then publish. Do not discover this mid-publish.
