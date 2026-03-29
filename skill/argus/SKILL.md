@@ -156,6 +156,8 @@ argus screenshot app --out shot.png
 argus screenshot app --selector "canvas" --out canvas.png
 ```
 
+When the active extension target is an iframe, plain screenshots capture the iframe viewport only. `--selector` also works inside the selected iframe and crops that element from the rendered page output.
+
 ### Network
 
 ```bash

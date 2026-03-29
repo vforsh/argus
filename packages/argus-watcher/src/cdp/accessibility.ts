@@ -1,5 +1,6 @@
 import type { AXTreeNode, SnapshotResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
+import { resolveFirstSelectorNodeId } from './dom/selector.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CDP response types (internal)
@@ -138,36 +139,23 @@ export const fetchAccessibilitySnapshot = async (session: CdpSessionHandle, opti
 	// (e.g. forms without aria-label are invisible, their children parent up),
 	// we collect all backendDOMNodeIds within the DOM subtree and filter AX nodes by those.
 	if (options.selector) {
-		// Use Runtime.evaluate to get all backendNodeIds in the subtree efficiently
-		const resolveResult = (await session.sendAndWait('Runtime.evaluate', {
-			expression: `document.querySelector(${JSON.stringify(options.selector)})`,
-			returnByValue: false,
-		})) as { result?: { objectId?: string; subtype?: string } }
-
-		if (!resolveResult.result?.objectId || resolveResult.result.subtype === 'null') {
+		const domNodeId = await resolveFirstSelectorNodeId(session, options.selector)
+		if (!domNodeId) {
 			throw new Error(`No element found for selector: ${options.selector}`)
 		}
 
-		// Enable DOM and load the document tree so requestNode/querySelectorAll work.
-		await session.sendAndWait('DOM.enable')
+		// Load the subtree below the resolved root so we can translate DOM membership to AX nodes.
 		await session.sendAndWait('DOM.getDocument', { depth: -1 })
 
-		const domNode = (await session.sendAndWait('DOM.requestNode', {
-			objectId: resolveResult.result.objectId,
-		})) as { nodeId?: number }
-		if (!domNode.nodeId) {
-			throw new Error('Unable to resolve DOM node')
-		}
-
 		const allDescendants = (await session.sendAndWait('DOM.querySelectorAll', {
-			nodeId: domNode.nodeId,
+			nodeId: domNodeId,
 			selector: '*',
 		})) as { nodeIds?: number[] }
 		const descendantNodeIds = allDescendants.nodeIds ?? []
 
 		// Collect backendNodeIds for root + all descendants
 		const backendIds = new Set<number>()
-		const allDomNodeIds = [domNode.nodeId, ...descendantNodeIds]
+		const allDomNodeIds = [domNodeId, ...descendantNodeIds]
 		for (const nid of allDomNodeIds) {
 			const desc = (await session.sendAndWait('DOM.describeNode', { nodeId: nid, depth: 0 })) as {
 				node?: { backendNodeId?: number }

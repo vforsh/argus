@@ -59,7 +59,11 @@ export const createWatcherRuntimeServices = (
 			sourceHandle,
 			networkCapture: netBuffer ? createNetworkCapture({ session: sourceHandle.pageSession ?? sourceHandle.session, buffer: netBuffer }) : null,
 			traceRecorder: createTraceRecorder({ session: sourceHandle.session, artifactsDir: artifactsBaseDir }),
-			screenshotter: createScreenshotter({ session: sourceHandle.session, artifactsDir: artifactsBaseDir }),
+			screenshotter: createScreenshotter({
+				session: sourceHandle.session,
+				pageSession: sourceHandle.pageSession,
+				artifactsDir: artifactsBaseDir,
+			}),
 			runtimeEditor: createRuntimeEditor(sourceHandle.session),
 		}
 	}
