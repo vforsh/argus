@@ -5,12 +5,22 @@
 
 import { DebuggerManager } from './debugger-manager.js'
 import { TabBridgeSession } from './tab-bridge-session.js'
+import {
+	type RememberedTargetSelection,
+	type SelectionTarget,
+	TargetSelectionHistoryStore,
+	matchRememberedIframeTarget,
+} from './target-selection-history.js'
 
 const debuggerManager = new DebuggerManager()
 const bridgeSessions = new Map<number, TabBridgeSession>()
 const selectedFrameByTabId = new Map<number, string | null>()
+// Re-try a remembered iframe while Chrome is still populating frame metadata for a fresh attach.
+const pendingRememberedTargetByTabId = new Map<number, RememberedTargetSelection>()
+const targetSelectionHistory = new TargetSelectionHistoryStore()
 const recentEvents: PopupEvent[] = []
 const MAX_RECENT_EVENTS = 8
+const REMEMBERED_TARGET_RETRY_EVENTS = new Set(['Page.frameAttached', 'Page.frameDetached', 'Page.frameNavigated'])
 
 type PopupEvent = {
 	ts: number
@@ -130,6 +140,14 @@ debuggerManager.onDetach((tabId, reason) => {
 	void syncActionBadge()
 })
 
+debuggerManager.onEvent((tabId, method) => {
+	if (!shouldReplayRememberedTarget(tabId, method)) {
+		return
+	}
+
+	void replayRememberedTargetSelection(tabId)
+})
+
 chrome.runtime.onMessage.addListener(
 	(message: PopupActionMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
 		void handlePopupMessage(message, sendResponse)
@@ -153,7 +171,8 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 			case 'attach': {
 				const tabId = requireTabId(message)
 				await attachBridgeSession(tabId)
-				selectedFrameByTabId.set(tabId, null)
+				setSelectedFrame(tabId, null)
+				await prepareRememberedTargetSelection(tabId)
 				recordEvent('info', 'popup', `Attached tab ${tabId}`)
 				return { success: true }
 			}
@@ -173,7 +192,15 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 				}
 
 				const frameId = message.frameId ?? null
+				const target = getPopupTarget(tabId, frameId)
+				if (!target) {
+					return { success: false, error: `Unknown target for tab ${tabId}` }
+				}
+
 				session.selectTarget(frameId)
+				clearPendingRememberedTarget(tabId)
+				setSelectedFrame(tabId, frameId)
+				await rememberTargetSelection(tabId, target)
 				recordEvent('info', 'popup', `Selected ${frameId ? `iframe ${frameId}` : 'page'} on tab ${tabId}`)
 				return { success: true }
 			}
@@ -251,6 +278,7 @@ async function connectBridgeSession(tabId: number, session: TabBridgeSession): P
 
 function clearTabState(tabId: number): void {
 	selectedFrameByTabId.delete(tabId)
+	clearPendingRememberedTarget(tabId)
 	destroyBridgeSession(tabId)
 }
 
@@ -331,17 +359,15 @@ function buildWatcherStatus(tabId: number, session: TabBridgeSession): PopupWatc
 
 async function getTabsWithTargets(): Promise<PopupTabWithTargets[]> {
 	const tabs = await getTabsForPopup()
-	return Promise.all(
-		tabs.map(async (tab) => {
-			const session = bridgeSessions.get(tab.tabId)
-			return {
-				...tab,
-				targets: tab.attached ? await getPopupTargets(tab.tabId) : [],
-				selectedFrameId: getSelectedFrameId(tab.tabId),
-				watcher: session ? buildWatcherStatus(tab.tabId, session) : null,
-			}
-		}),
-	)
+	return tabs.map((tab) => {
+		const session = bridgeSessions.get(tab.tabId)
+		return {
+			...tab,
+			targets: tab.attached ? getPopupTargets(tab.tabId) : [],
+			selectedFrameId: getSelectedFrameId(tab.tabId),
+			watcher: session ? buildWatcherStatus(tab.tabId, session) : null,
+		}
+	})
 }
 
 function createWatcherStatus(
@@ -393,7 +419,7 @@ function syncSelectedFrameFromWatcher(targetId: string): void {
 		return
 	}
 
-	selectedFrameByTabId.set(target.tabId, target.frameId)
+	setSelectedFrame(target.tabId, target.frameId)
 }
 
 function getSelectedFrameId(tabId: number): string | null | undefined {
@@ -420,7 +446,7 @@ function parseWatcherTargetId(targetId: string): { tabId: number; frameId: strin
 	return null
 }
 
-async function getPopupTargets(tabId: number): Promise<PopupTarget[]> {
+function getPopupTargets(tabId: number): PopupTarget[] {
 	const frames = debuggerManager.getFrames(tabId)
 	const topFrameId = debuggerManager.getTarget(tabId)?.topFrameId ?? null
 	const topFrame = frames.find((frame) => frame.frameId === topFrameId) ?? frames.find((frame) => frame.parentFrameId == null)
@@ -446,6 +472,90 @@ async function getPopupTargets(tabId: number): Promise<PopupTarget[]> {
 				url: frame.url,
 			})),
 	]
+}
+
+function getPopupTarget(tabId: number, frameId: string | null): PopupTarget | null {
+	return getPopupTargets(tabId).find((target) => (target.frameId ?? null) === frameId) ?? null
+}
+
+function getPageUrlForTab(tabId: number): string | null {
+	return getPopupTarget(tabId, null)?.url ?? debuggerManager.getTarget(tabId)?.url ?? null
+}
+
+async function rememberTargetSelection(tabId: number, target: PopupTarget): Promise<void> {
+	const pageUrl = getPageUrlForTab(tabId)
+	if (!pageUrl) {
+		return
+	}
+
+	await targetSelectionHistory.remember(pageUrl, toSelectionTarget(target))
+}
+
+async function prepareRememberedTargetSelection(tabId: number): Promise<void> {
+	const pageUrl = getPageUrlForTab(tabId)
+	if (!pageUrl) {
+		clearPendingRememberedTarget(tabId)
+		return
+	}
+
+	const remembered = await targetSelectionHistory.getByPageUrl(pageUrl)
+	if (!remembered || remembered.target.type === 'page') {
+		clearPendingRememberedTarget(tabId)
+		return
+	}
+
+	setPendingRememberedTarget(tabId, remembered)
+	await replayRememberedTargetSelection(tabId)
+}
+
+async function replayRememberedTargetSelection(tabId: number): Promise<void> {
+	const remembered = pendingRememberedTargetByTabId.get(tabId)
+	const session = bridgeSessions.get(tabId)
+	if (!remembered || !session) {
+		return
+	}
+
+	const target = matchRememberedIframeTarget(
+		remembered,
+		getPopupTargets(tabId).map((candidate) => toSelectionTarget(candidate)),
+	)
+	if (!target?.frameId) {
+		return
+	}
+
+	try {
+		session.selectTarget(target.frameId)
+		setSelectedFrame(tabId, target.frameId)
+		clearPendingRememberedTarget(tabId)
+		recordEvent('info', 'bridge', `Restored iframe ${target.frameId} on tab ${tabId}`)
+	} catch (error) {
+		console.warn(`[ServiceWorker] Failed to restore remembered iframe for tab ${tabId}:`, error)
+	}
+}
+
+function shouldReplayRememberedTarget(tabId: number, method: string): boolean {
+	return pendingRememberedTargetByTabId.has(tabId) && REMEMBERED_TARGET_RETRY_EVENTS.has(method)
+}
+
+function setSelectedFrame(tabId: number, frameId: string | null): void {
+	selectedFrameByTabId.set(tabId, frameId)
+}
+
+function setPendingRememberedTarget(tabId: number, remembered: RememberedTargetSelection): void {
+	pendingRememberedTargetByTabId.set(tabId, remembered)
+}
+
+function clearPendingRememberedTarget(tabId: number): void {
+	pendingRememberedTargetByTabId.delete(tabId)
+}
+
+function toSelectionTarget(target: PopupTarget): SelectionTarget {
+	return {
+		type: target.type,
+		frameId: target.frameId,
+		title: target.title,
+		url: target.url,
+	}
 }
 
 console.log('[ServiceWorker] Argus CDP Bridge extension loaded')

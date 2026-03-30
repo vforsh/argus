@@ -31,6 +31,11 @@ type CookieQuery = {
 	url?: string
 }
 
+type CdpFrameTreeNode = {
+	frame?: { id?: string; parentId?: string; name?: string; url?: string }
+	childFrames?: CdpFrameTreeNode[]
+}
+
 type NativeCookie = {
 	name: string
 	value: string
@@ -42,6 +47,8 @@ type NativeCookie = {
 	expires: number | null
 	sameSite: string | null
 }
+
+const FRAME_TREE_SYNC_DELAY_MS = 150
 
 export type AttachedTarget = {
 	tabId: number
@@ -63,6 +70,7 @@ export class DebuggerManager {
 	private attached = new Map<number, AttachedTarget>()
 	private eventHandlers = new Set<CdpEventHandler>()
 	private detachHandlers = new Set<DebuggerDetachHandler>()
+	private frameTreeSyncTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 	constructor() {
 		chrome.debugger.onEvent.addListener((debuggee, method, params) => {
@@ -280,6 +288,7 @@ export class DebuggerManager {
 
 		this.updateStateFromEvent(tabId, sessionId, method, params)
 		this.emitEvent(tabId, method, params ?? {}, sessionId)
+		this.scheduleFrameTreeSyncIfNeeded(tabId, sessionId, method, params)
 	}
 
 	private async handleAttachedToTarget(tabId: number, params: object): Promise<void> {
@@ -328,30 +337,35 @@ export class DebuggerManager {
 			return
 		}
 
+		this.clearFrameTreeSync(record.sessionId, tabId)
 		this.dropChildSession(tabId, record.sessionId)
 	}
 
 	private async refreshFrameTree(tabId: number, sessionId: string | null): Promise<void> {
-		const frameTree = (await this.sendCommand(tabId, 'Page.getFrameTree', undefined, sessionId)) as {
-			frameTree?: {
-				frame?: { id?: string; parentId?: string; name?: string; url?: string }
-				childFrames?: unknown[]
-			}
-		}
-
-		this.mergeFrameTree(tabId, sessionId, frameTree.frameTree)
+		const result = (await this.sendCommand(tabId, 'Page.getFrameTree', undefined, sessionId)) as { frameTree?: CdpFrameTreeNode }
+		this.replaceFrameTreeSnapshot(tabId, sessionId, result.frameTree)
 	}
 
-	private mergeFrameTree(
-		tabId: number,
-		sessionId: string | null,
-		node:
-			| {
-					frame?: { id?: string; parentId?: string; name?: string; url?: string }
-					childFrames?: unknown[]
-			  }
-			| undefined,
-	): void {
+	/**
+	 * Each `Page.getFrameTree` result is a full snapshot for that session, so merge the refreshed
+	 * nodes and then prune frames from the same session that no longer exist after reload.
+	 */
+	private replaceFrameTreeSnapshot(tabId: number, sessionId: string | null, node: CdpFrameTreeNode | undefined): void {
+		if (!node?.frame?.id) {
+			return
+		}
+
+		const target = this.attached.get(tabId)
+		if (!target) {
+			return
+		}
+
+		const nextFrameIds = new Set<string>()
+		this.mergeFrameTree(tabId, sessionId, node, nextFrameIds)
+		this.pruneMissingSessionFrames(tabId, sessionId, nextFrameIds)
+	}
+
+	private mergeFrameTree(tabId: number, sessionId: string | null, node: CdpFrameTreeNode | undefined, nextFrameIds: Set<string>): void {
 		if (!node?.frame?.id) {
 			return
 		}
@@ -362,6 +376,7 @@ export class DebuggerManager {
 		}
 
 		const frameId = node.frame.id
+		nextFrameIds.add(frameId)
 		target.frames.set(frameId, this.toFrameRecord(node.frame, sessionId))
 
 		if (!node.frame.parentId && !sessionId) {
@@ -383,14 +398,23 @@ export class DebuggerManager {
 		)
 
 		for (const child of node.childFrames ?? []) {
-			this.mergeFrameTree(
-				tabId,
-				sessionId,
-				child as {
-					frame?: { id?: string; parentId?: string; name?: string; url?: string }
-					childFrames?: unknown[]
-				},
-			)
+			this.mergeFrameTree(tabId, sessionId, child, nextFrameIds)
+		}
+	}
+
+	private pruneMissingSessionFrames(tabId: number, sessionId: string | null, nextFrameIds: Set<string>): void {
+		const target = this.attached.get(tabId)
+		if (!target) {
+			return
+		}
+
+		for (const [frameId, frame] of target.frames.entries()) {
+			if (frame.sessionId !== sessionId || nextFrameIds.has(frameId)) {
+				continue
+			}
+
+			target.frames.delete(frameId)
+			this.emitEvent(tabId, 'Page.frameDetached', { frameId }, sessionId)
 		}
 	}
 
@@ -442,6 +466,53 @@ export class DebuggerManager {
 		}
 	}
 
+	/**
+	 * Chrome's frame attach/detach events during reload are not always complete. When the root frame
+	 * for a session navigates, refresh that session's full frame tree shortly afterward and treat it
+	 * as authoritative so stale iframe records do not linger in extension state.
+	 */
+	private scheduleFrameTreeSyncIfNeeded(tabId: number, sessionId: string | null, method: string, params?: object): void {
+		if (!shouldSyncFrameTreeSnapshot(method, params)) {
+			return
+		}
+
+		const key = getFrameTreeSyncKey(tabId, sessionId)
+		if (this.frameTreeSyncTimers.has(key)) {
+			return
+		}
+
+		const timer = setTimeout(() => {
+			this.frameTreeSyncTimers.delete(key)
+			void this.refreshFrameTree(tabId, sessionId).catch((error) => {
+				console.warn('[DebuggerManager] Failed to refresh frame tree after navigation:', error)
+			})
+		}, FRAME_TREE_SYNC_DELAY_MS)
+
+		this.frameTreeSyncTimers.set(key, timer)
+	}
+
+	private clearFrameTreeSync(sessionId: string | null, tabId: number): void {
+		const key = getFrameTreeSyncKey(tabId, sessionId)
+		const timer = this.frameTreeSyncTimers.get(key)
+		if (!timer) {
+			return
+		}
+
+		clearTimeout(timer)
+		this.frameTreeSyncTimers.delete(key)
+	}
+
+	private clearAllFrameTreeSync(tabId: number): void {
+		for (const [key, timer] of this.frameTreeSyncTimers.entries()) {
+			if (!key.startsWith(`${tabId}:`)) {
+				continue
+			}
+
+			clearTimeout(timer)
+			this.frameTreeSyncTimers.delete(key)
+		}
+	}
+
 	private toFrameRecord(frame: { id?: string; parentId?: string | null; url?: string; name?: string }, sessionId: string | null): FrameRecord {
 		return {
 			frameId: frame.id!,
@@ -458,11 +529,14 @@ export class DebuggerManager {
 			return
 		}
 
+		this.clearFrameTreeSync(sessionId, tabId)
+
 		if (sessionId) {
 			this.dropChildSession(tabId, sessionId)
 			return
 		}
 
+		this.clearAllFrameTreeSync(tabId)
 		this.attached.delete(tabId)
 		this.emitDetach(tabId, reason)
 	}
@@ -482,4 +556,17 @@ export class DebuggerManager {
 			this.emitEvent(tabId, 'Page.frameDetached', { frameId }, sessionId)
 		}
 	}
+}
+
+function shouldSyncFrameTreeSnapshot(method: string, params?: object): boolean {
+	if (method !== 'Page.frameNavigated' || !params) {
+		return false
+	}
+
+	const frame = (params as { frame?: { parentId?: string | null } }).frame
+	return frame?.parentId == null
+}
+
+function getFrameTreeSyncKey(tabId: number, sessionId: string | null): string {
+	return `${tabId}:${sessionId ?? 'root'}`
 }

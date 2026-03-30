@@ -4,6 +4,8 @@ import {
 	buildPageTarget,
 	collectFrameTree,
 	createRequestedFrameHint,
+	formatFrameTargetId,
+	formatPageTargetId,
 	frameToTarget,
 	resolveRequestedTarget,
 	type CdpFrameTreeNode,
@@ -35,11 +37,11 @@ export const getSelectedExtensionTarget = (session: ExtensionSession, state: Ext
 	}
 
 	const frame = state.frames.get(state.activeFrameId)
-	if (!frame) {
-		return buildPageTarget(session, { attached: true })
+	if (frame) {
+		return frameToTarget(session.tabId, frame, { attached: true, faviconUrl: session.faviconUrl, topFrameId: state.topFrameId })
 	}
 
-	return frameToTarget(session.tabId, frame, { attached: true, faviconUrl: session.faviconUrl, topFrameId: state.topFrameId })
+	return buildSelectedIframeFallbackTarget(session, state)
 }
 
 export const setRequestedTargetSelection = (state: ExtensionFrameState, frameId: string | null): void => {
@@ -172,4 +174,27 @@ const activateFrameTarget = (state: ExtensionFrameState, frameId: string, onTarg
 	state.activeAttachedAt = Date.now()
 	onTargetChanged()
 	return true
+}
+
+/**
+ * Extension events can briefly leave us with a selected iframe context before the matching frame
+ * metadata arrives. Keep status/indicator aligned with the selected iframe hint instead of
+ * regressing to the top page during that gap.
+ */
+const buildSelectedIframeFallbackTarget = (session: ExtensionSession, state: ExtensionFrameState): CdpSourceTarget => {
+	const hint = state.requestedFrameHint
+	const frameId = state.activeFrameId
+	if (!frameId) {
+		return buildPageTarget(session, { attached: true })
+	}
+
+	return {
+		id: formatFrameTargetId(session.tabId, frameId),
+		title: hint?.title ?? hint?.url ?? `iframe ${frameId}`,
+		url: hint?.url ?? session.url,
+		type: 'iframe',
+		parentId: formatPageTargetId(session.tabId),
+		faviconUrl: session.faviconUrl,
+		attached: true,
+	}
 }

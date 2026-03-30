@@ -31,10 +31,11 @@ export type ExtensionFrame = {
 export type RequestedFrameHint = {
 	/**
 	 * Exact iframe URL at the moment the user selected it.
-	 * We intentionally fail closed if the next frame does not report the same URL,
-	 * because rematching the wrong sibling iframe is worse than requiring a reselect.
+	 * Prefer an exact match first, then fall back to a normalized URL key when the reload only
+	 * changes query/hash noise. Both paths still fail closed unless the match is unique.
 	 */
 	url: string | null
+	urlKey: string | null
 	title: string | null
 }
 
@@ -192,6 +193,7 @@ export const createRequestedFrameHint = (frame: ExtensionFrame | null | undefine
 
 	return {
 		url: frame.url || null,
+		urlKey: normalizeFrameUrlKey(frame.url),
 		title: frame.title?.trim() || null,
 	}
 }
@@ -218,16 +220,7 @@ export const resolveRequestedFrameId = (
 		return null
 	}
 
-	const urlMatch = requestedFrameHint.url == null ? null : findSingleMatchingFrameId(state, (frame) => frame.url === requestedFrameHint.url)
-	if (urlMatch) {
-		return urlMatch
-	}
-
-	if (requestedFrameHint.url != null || !requestedFrameHint.title) {
-		return null
-	}
-
-	return findSingleMatchingFrameId(state, (frame) => frame.title?.trim() === requestedFrameHint.title)
+	return findRequestedFrameMatch(state, requestedFrameHint)
 }
 
 /**
@@ -260,4 +253,51 @@ const findSingleMatchingFrameId = (state: ExtensionFrameState, predicate: (frame
 		matchId = frame.frameId
 	}
 	return matchId
+}
+
+const findRequestedFrameMatch = (state: ExtensionFrameState, requestedFrameHint: RequestedFrameHint): string | null => {
+	const exactUrlMatch = findFrameMatchByUrl(state, requestedFrameHint.url)
+	if (exactUrlMatch) {
+		return exactUrlMatch
+	}
+
+	const normalizedUrlMatch = findFrameMatchByNormalizedUrl(state, requestedFrameHint.urlKey)
+	if (normalizedUrlMatch) {
+		return normalizedUrlMatch
+	}
+
+	if (requestedFrameHint.url != null || !requestedFrameHint.title) {
+		return null
+	}
+
+	return findSingleMatchingFrameId(state, (frame) => frame.title?.trim() === requestedFrameHint.title)
+}
+
+const findFrameMatchByUrl = (state: ExtensionFrameState, url: string | null): string | null => {
+	if (url == null) {
+		return null
+	}
+
+	return findSingleMatchingFrameId(state, (frame) => frame.url === url)
+}
+
+const findFrameMatchByNormalizedUrl = (state: ExtensionFrameState, urlKey: string | null): string | null => {
+	if (urlKey == null) {
+		return null
+	}
+
+	return findSingleMatchingFrameId(state, (frame) => normalizeFrameUrlKey(frame.url) === urlKey)
+}
+
+const normalizeFrameUrlKey = (url: string | null | undefined): string | null => {
+	if (!url || url.trim() === '') {
+		return null
+	}
+
+	try {
+		const parsed = new URL(url)
+		return `${parsed.origin}${parsed.pathname || '/'}`
+	} catch {
+		return url.split(/[?#]/, 1)[0] || null
+	}
 }

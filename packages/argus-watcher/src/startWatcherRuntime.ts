@@ -90,7 +90,23 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		if (!indicatorController) {
 			return
 		}
-		indicatorController.onNavigation(session, buildIndicatorInfo({ title: null, url: info.url }))
+
+		/**
+		 * Reinstall the indicator after the top page navigates, but keep showing the currently selected
+		 * watcher target when extension mode is attached to an iframe. Otherwise a parent-page
+		 * navigation can overwrite the modal with stale top-level metadata.
+		 */
+		const indicatorTarget = cdpStatus.attached
+			? {
+					title: cdpStatus.target?.title ?? null,
+					url: cdpStatus.target?.url ?? info.url,
+				}
+			: {
+					title: null,
+					url: info.url,
+				}
+
+		indicatorController.onNavigation(session, buildIndicatorInfo(indicatorTarget))
 	}
 
 	const onIndicatorLoad = (): void => {
@@ -201,6 +217,16 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		session: CdpSourceHandle['session'],
 		target: { id: string; title: string; url: string; type?: string | null; parentId?: string | null },
 	): void => {
+		updateCdpStatus({
+			attached: true,
+			target: {
+				title: target.title ?? null,
+				url: target.url ?? null,
+				type: target.type ?? null,
+				parentId: target.parentId ?? null,
+			},
+			reason: null,
+		})
 		onIndicatorAttach(session, target)
 	}
 

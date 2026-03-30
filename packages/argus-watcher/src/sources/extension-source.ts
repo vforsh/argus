@@ -24,6 +24,10 @@ import {
 
 export type ExtensionSourceOptions = CdpSourceBaseOptions
 
+const TARGET_RECOVERY_INTERVAL_MS = 500
+const TARGET_RECOVERY_TIMEOUT_MS = 30_000
+type TargetRecovery = { timer: ReturnType<typeof setInterval>; deadline: number }
+
 /**
  * Create an extension source that connects to Chrome via Native Messaging.
  * Returns a handle that can be used to control the source and access CDP session.
@@ -41,6 +45,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	let currentSession: ExtensionSession | null = null
 	let stopping = false
 	const frameStateByTabId = new Map<number, ExtensionFrameState>()
+	const targetRecoveryByTabId = new Map<number, TargetRecovery>()
 	const delegatingSessions = new Set<DelegatingSessionController>()
 	const getCurrentExtensionSession = (): ExtensionSession => {
 		if (!currentSession) {
@@ -64,6 +69,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				currentSession = null
 			}
 			rebindDelegatingSessions()
+			clearTargetRecovery(tabId)
 			frameStateByTabId.delete(tabId)
 			emitStatus(null, reason)
 			events.onDetach?.(reason)
@@ -123,6 +129,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 	const stop = async (): Promise<void> => {
 		stopping = true
+		clearAllTargetRecovery()
 		disposeDelegatingSessions()
 		messaging.stop()
 	}
@@ -215,6 +222,12 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		delegatingSessions.clear()
 	}
 
+	function clearAllTargetRecovery(): void {
+		for (const tabId of targetRecoveryByTabId.keys()) {
+			clearTargetRecovery(tabId)
+		}
+	}
+
 	async function bootstrapAttachedSession(session: ExtensionSession): Promise<void> {
 		try {
 			registerExtensionSessionEventHandlers({
@@ -238,7 +251,12 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				return
 			}
 
-			const target = buildPageTarget(session, { attached: true })
+			/**
+			 * Selection can land before bootstrap finishes (for example when the extension restores the
+			 * last iframe immediately after reconnect). Respect the current selected target here so the
+			 * watcher status and page indicator do not get overwritten with the parent page afterward.
+			 */
+			const target = getSelectedTarget(session) ?? buildPageTarget(session, { attached: true })
 			emitStatus(target, null)
 			await events.onAttach?.(session.handle, target)
 			reconcileTargetSelection(session)
@@ -349,9 +367,11 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	 */
 	function reconcileTargetSelection(session: ExtensionSession): boolean {
 		const state = getOrCreateFrameState(session.tabId)
-		return reconcileExtensionTargetSelection(session, state, () => {
+		const changed = reconcileExtensionTargetSelection(session, state, () => {
 			emitTargetChanged(session)
 		})
+		syncTargetRecovery(session, state)
+		return changed
 	}
 
 	async function refreshFrameTree(session: ExtensionSession): Promise<void> {
@@ -380,4 +400,73 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			contextId,
 		)
 	}
+
+	function syncTargetRecovery(session: ExtensionSession, state: ExtensionFrameState): void {
+		if (!needsTargetRecovery(state)) {
+			clearTargetRecovery(session.tabId)
+			return
+		}
+
+		if (targetRecoveryByTabId.has(session.tabId)) {
+			return
+		}
+
+		const timer = setInterval(() => {
+			void retryTargetRecovery(session.tabId)
+		}, TARGET_RECOVERY_INTERVAL_MS)
+
+		targetRecoveryByTabId.set(session.tabId, {
+			timer,
+			deadline: Date.now() + TARGET_RECOVERY_TIMEOUT_MS,
+		})
+	}
+
+	function clearTargetRecovery(tabId: number): void {
+		const recovery = targetRecoveryByTabId.get(tabId)
+		if (!recovery) {
+			return
+		}
+
+		clearInterval(recovery.timer)
+		targetRecoveryByTabId.delete(tabId)
+	}
+
+	async function retryTargetRecovery(tabId: number): Promise<void> {
+		const recovery = targetRecoveryByTabId.get(tabId)
+		const session = currentSession
+		if (!recovery || !session || session.tabId !== tabId) {
+			clearTargetRecovery(tabId)
+			return
+		}
+
+		if (hasTargetRecoveryExpired(recovery)) {
+			clearTargetRecovery(tabId)
+			return
+		}
+
+		const state = getOrCreateFrameState(tabId)
+		if (!needsTargetRecovery(state)) {
+			clearTargetRecovery(tabId)
+			return
+		}
+
+		try {
+			await refreshFrameTree(session)
+		} catch {
+			// Best-effort; Chrome can reject frame-tree reads transiently during reload.
+		}
+
+		reconcileTargetSelection(session)
+		if (!needsTargetRecovery(getOrCreateFrameState(tabId))) {
+			clearTargetRecovery(tabId)
+		}
+	}
+}
+
+function needsTargetRecovery(state: ExtensionFrameState): boolean {
+	return state.requestedFrameId != null && state.activeFrameId == null
+}
+
+function hasTargetRecoveryExpired(recovery: TargetRecovery): boolean {
+	return Date.now() >= recovery.deadline
 }
