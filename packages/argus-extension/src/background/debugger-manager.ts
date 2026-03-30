@@ -57,11 +57,12 @@ export type AttachedTarget = {
 }
 
 export type CdpEventHandler = (tabId: number, method: string, params: unknown, meta?: { sessionId?: string | null }) => void
+export type DebuggerDetachHandler = (tabId: number, reason: string) => void
 
 export class DebuggerManager {
 	private attached = new Map<number, AttachedTarget>()
-	private globalEventHandler: CdpEventHandler | null = null
-	private detachHandler: ((tabId: number, reason: string) => void) | null = null
+	private eventHandlers = new Set<CdpEventHandler>()
+	private detachHandlers = new Set<DebuggerDetachHandler>()
 
 	constructor() {
 		chrome.debugger.onEvent.addListener((debuggee, method, params) => {
@@ -75,12 +76,30 @@ export class DebuggerManager {
 		})
 	}
 
-	onEvent(handler: CdpEventHandler): void {
-		this.globalEventHandler = handler
+	onEvent(handler: CdpEventHandler): () => void {
+		this.eventHandlers.add(handler)
+		return () => {
+			this.eventHandlers.delete(handler)
+		}
 	}
 
-	onDetach(handler: (tabId: number, reason: string) => void): void {
-		this.detachHandler = handler
+	onDetach(handler: DebuggerDetachHandler): () => void {
+		this.detachHandlers.add(handler)
+		return () => {
+			this.detachHandlers.delete(handler)
+		}
+	}
+
+	private emitEvent(tabId: number, method: string, params: unknown, sessionId: string | null): void {
+		for (const handler of this.eventHandlers) {
+			handler(tabId, method, params, { sessionId })
+		}
+	}
+
+	private emitDetach(tabId: number, reason: string): void {
+		for (const handler of this.detachHandlers) {
+			handler(tabId, reason)
+		}
 	}
 
 	async attach(tabId: number): Promise<AttachedTarget> {
@@ -260,10 +279,7 @@ export class DebuggerManager {
 		}
 
 		this.updateStateFromEvent(tabId, sessionId, method, params)
-
-		if (this.globalEventHandler) {
-			this.globalEventHandler(tabId, method, params ?? {}, { sessionId })
-		}
+		this.emitEvent(tabId, method, params ?? {}, sessionId)
 	}
 
 	private async handleAttachedToTarget(tabId: number, params: object): Promise<void> {
@@ -352,21 +368,19 @@ export class DebuggerManager {
 			target.topFrameId = frameId
 		}
 
-		if (this.globalEventHandler) {
-			this.globalEventHandler(
-				tabId,
-				'Page.frameNavigated',
-				{
-					frame: {
-						id: frameId,
-						parentId: node.frame.parentId ?? null,
-						url: node.frame.url ?? '',
-						name: node.frame.name ?? null,
-					},
+		this.emitEvent(
+			tabId,
+			'Page.frameNavigated',
+			{
+				frame: {
+					id: frameId,
+					parentId: node.frame.parentId ?? null,
+					url: node.frame.url ?? '',
+					name: node.frame.name ?? null,
 				},
-				{ sessionId },
-			)
-		}
+			},
+			sessionId,
+		)
 
 		for (const child of node.childFrames ?? []) {
 			this.mergeFrameTree(
@@ -450,9 +464,7 @@ export class DebuggerManager {
 		}
 
 		this.attached.delete(tabId)
-		if (this.detachHandler) {
-			this.detachHandler(tabId, reason)
-		}
+		this.emitDetach(tabId, reason)
 	}
 
 	private dropChildSession(tabId: number, sessionId: string): void {
@@ -467,7 +479,7 @@ export class DebuggerManager {
 				continue
 			}
 			target.frames.delete(frameId)
-			this.globalEventHandler?.(tabId, 'Page.frameDetached', { frameId }, { sessionId })
+			this.emitEvent(tabId, 'Page.frameDetached', { frameId }, sessionId)
 		}
 	}
 }

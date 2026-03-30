@@ -94,6 +94,7 @@ export class TabBridgeSession {
 		}
 
 		this.disposed = true
+		this.cdpProxy.dispose()
 		this.bridgeClient.disconnect()
 	}
 

@@ -18,6 +18,8 @@ import type {
 export class CdpProxy {
 	private debuggerManager: DebuggerManager
 	private bridgeClient: BridgeClient
+	private removeDebuggerEventForwarding: (() => void) | null = null
+	private removeDebuggerDetachForwarding: (() => void) | null = null
 
 	constructor(debuggerManager: DebuggerManager, bridgeClient: BridgeClient) {
 		this.debuggerManager = debuggerManager
@@ -31,7 +33,7 @@ export class CdpProxy {
 	 * Forward CDP events from debugger to bridge.
 	 */
 	private setupEventForwarding(): void {
-		this.debuggerManager.onEvent((tabId, method, params, meta) => {
+		this.removeDebuggerEventForwarding = this.debuggerManager.onEvent((tabId, method, params, meta) => {
 			this.bridgeClient.send({
 				type: 'cdp_event',
 				tabId,
@@ -41,13 +43,20 @@ export class CdpProxy {
 			})
 		})
 
-		this.debuggerManager.onDetach((tabId, reason) => {
+		this.removeDebuggerDetachForwarding = this.debuggerManager.onDetach((tabId, reason) => {
 			this.bridgeClient.send({
 				type: 'tab_detached',
 				tabId,
 				reason,
 			})
 		})
+	}
+
+	dispose(): void {
+		this.removeDebuggerEventForwarding?.()
+		this.removeDebuggerEventForwarding = null
+		this.removeDebuggerDetachForwarding?.()
+		this.removeDebuggerDetachForwarding = null
 	}
 
 	/**
