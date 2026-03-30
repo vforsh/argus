@@ -76,6 +76,12 @@ const COPY_ICON = `
 	</svg>
 `
 
+const CHECK_ICON = `
+	<svg viewBox="0 0 16 16" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M3 8.5l3.1 3.1L13 4.75"></path>
+	</svg>
+`
+
 const DETACH_ICON = `
 	<svg viewBox="0 0 16 16" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 		<path d="M5.4 1.75h5.2l3.65 3.65v5.2l-3.65 3.65H5.4l-3.65-3.65V5.4z"></path>
@@ -109,7 +115,9 @@ let latestCurrentWatcher: PopupWatcherStatus | null = null
 let latestWatchers: PopupWatcherStatus[] = []
 
 copyAllButton.addEventListener('click', () => {
-	void copyAllWatchersInfo()
+	void copyAllWatchersInfo().catch((error) => {
+		showError(error instanceof Error ? error.message : 'Copy failed')
+	})
 })
 
 detachAllButton.addEventListener('click', () => {
@@ -250,7 +258,7 @@ function renderIconActionButton(tabId: number, action: Exclude<TabButtonAction, 
 			title="${label}"
 			aria-label="${label}"
 		>
-			${icon}
+			<span class="tab-action-icon" aria-hidden="true">${icon}</span>
 		</button>
 	`
 }
@@ -328,7 +336,11 @@ async function handleTabAction(event: Event): Promise<void> {
 	const action = button.dataset.action as TabButtonAction
 
 	if (action === 'copy-info') {
-		await copyWatcherInfo(tabId, button)
+		try {
+			await copyWatcherInfo(tabId, button)
+		} catch (error) {
+			showError(error instanceof Error ? error.message : 'Copy failed')
+		}
 		return
 	}
 
@@ -437,8 +449,9 @@ async function copyWatcherInfo(tabId: number, button: HTMLButtonElement): Promis
 		return
 	}
 
-	await navigator.clipboard.writeText(text)
-	restoreButtonFeedback(button, 'Copied!')
+	await copyTextToClipboard(text)
+	showError(null)
+	restoreButtonFeedback(button, 'Copied!', 1500, CHECK_ICON)
 }
 
 async function copyAllWatchersInfo(): Promise<void> {
@@ -447,8 +460,37 @@ async function copyAllWatchersInfo(): Promise<void> {
 		return
 	}
 
-	await navigator.clipboard.writeText(text)
+	await copyTextToClipboard(text)
+	showError(null)
 	restoreButtonFeedback(copyAllButton, 'Copied!')
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+	try {
+		await navigator.clipboard.writeText(text)
+		return
+	} catch {
+		// Chrome extension popups can lose Clipboard API access depending on focus/permission state.
+	}
+
+	const textarea = document.createElement('textarea')
+	textarea.value = text
+	textarea.setAttribute('readonly', 'true')
+	textarea.style.position = 'fixed'
+	textarea.style.opacity = '0'
+	textarea.style.pointerEvents = 'none'
+	document.body.appendChild(textarea)
+	textarea.select()
+	textarea.setSelectionRange(0, textarea.value.length)
+
+	try {
+		const copied = document.execCommand('copy')
+		if (!copied) {
+			throw new Error('Browser denied clipboard write')
+		}
+	} finally {
+		textarea.remove()
+	}
 }
 
 async function detachAllWatchers(): Promise<void> {
@@ -500,29 +542,34 @@ function setBusyButtonState(button: HTMLButtonElement, action: Extract<TabButton
 	}
 }
 
-function restoreButtonFeedback(button: HTMLButtonElement, label: string, timeoutMs = 1500): void {
-	const restore = setButtonFeedback(button, label)
+function restoreButtonFeedback(button: HTMLButtonElement, label: string, timeoutMs = 1500, iconMarkup?: string): void {
+	const restore = setButtonFeedback(button, label, iconMarkup)
 	setTimeout(() => {
 		restore()
 	}, timeoutMs)
 }
 
-function setButtonFeedback(button: HTMLButtonElement, label: string): () => void {
+function setButtonFeedback(button: HTMLButtonElement, label: string, iconMarkup?: string): () => void {
 	const previousTitle = button.title
 	const previousLabel = button.getAttribute('aria-label')
 	const previousText = getButtonLabel(button)
+	const previousIcon = getButtonIconMarkup(button)
 	const previousDisabled = button.disabled
 
 	button.disabled = true
 	button.title = label
 	button.setAttribute('aria-label', label)
 	setButtonLabel(button, label)
+	if (iconMarkup) {
+		setButtonIconMarkup(button, iconMarkup)
+	}
 
 	return () => {
 		button.disabled = previousDisabled
 		button.title = previousTitle
 		button.setAttribute('aria-label', previousLabel ?? previousTitle)
 		setButtonLabel(button, previousText)
+		setButtonIconMarkup(button, previousIcon)
 	}
 }
 
@@ -609,6 +656,17 @@ function setButtonLabel(button: HTMLButtonElement, label: string): void {
 	const labelNode = button.querySelector<HTMLElement>('[data-button-label]')
 	if (labelNode) {
 		labelNode.textContent = label
+	}
+}
+
+function getButtonIconMarkup(button: HTMLButtonElement): string {
+	return button.querySelector<HTMLElement>('.tab-action-icon')?.innerHTML ?? ''
+}
+
+function setButtonIconMarkup(button: HTMLButtonElement, iconMarkup: string): void {
+	const iconNode = button.querySelector<HTMLElement>('.tab-action-icon')
+	if (iconNode) {
+		iconNode.innerHTML = iconMarkup
 	}
 }
 

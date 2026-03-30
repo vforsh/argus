@@ -78,6 +78,12 @@
 				height: 28px;
 				padding: 0;
 				border-radius: 8px;
+				border: 1px solid transparent;
+				background: transparent;
+				transition:
+					background-color 0.15s,
+					border-color 0.15s,
+					color 0.15s;
 			}
 
 			.tab-action svg {
@@ -86,15 +92,37 @@
 				stroke: currentColor;
 			}
 
-			.tab-action.copy {
-				background: #fff;
-				color: #425364;
-				border: 1px solid #d3dbe4;
+			.tab-action-icon {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
 			}
 
-			.tab-action.copy:hover:not(:disabled) {
-				border-color: #9fc2e6;
+			[data-button-icon] {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+			}
+
+			.tab-action.copy {
+				color: #687887;
+			}
+
+			.tab-action.copy:hover:not(:disabled),
+			.tab-action.copy:focus-visible:not(:disabled) {
+				background: #eef4fb;
+				border-color: #d2e1f2;
 				color: #1b5e92;
+			}
+
+			.tab-action[data-feedback-state='success'] {
+				opacity: 1;
+			}
+
+			.tab-action.copy[data-feedback-state='success'] {
+				background: #edf8f0;
+				border-color: #cde8d5;
+				color: #2e7d32;
 			}
 
 			.page {
@@ -184,6 +212,7 @@
 			.panel-button {
 				display: inline-flex;
 				align-items: center;
+				justify-content: center;
 				gap: 6px;
 				padding: 6px 9px;
 				border: 1px solid #d3dbe4;
@@ -197,10 +226,16 @@
 			}
 
 			.panel-actions {
-				display: flex;
-				justify-content: flex-end;
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
 				gap: 8px;
-				margin-top: 12px;
+				margin-top: 14px;
+				padding-top: 12px;
+				border-top: 1px solid #e8edf2;
+			}
+
+			.panel-actions .panel-button {
+				width: 100%;
 			}
 
 			.panel-button svg {
@@ -212,6 +247,13 @@
 			.panel-button:hover:not(:disabled) {
 				border-color: #9fc2e6;
 				color: #1b5e92;
+			}
+
+			.panel-button[data-feedback-state='success'] {
+				opacity: 1;
+				background: #edf8f0;
+				border-color: #cde8d5;
+				color: #2e7d32;
 			}
 
 			.panel-button.danger {
@@ -303,12 +345,19 @@
 			}
 
 			.tab-action.detach {
-				background: #ffebee;
-				color: #d32f2f;
+				color: #c16a6a;
 			}
 
-			.tab-action.detach:hover {
-				background: #ffcdd2;
+			.tab-action.detach:hover:not(:disabled),
+			.tab-action.detach:focus-visible:not(:disabled) {
+				background: #fff1f1;
+				border-color: #f0d3d3;
+				color: #a62c20;
+			}
+
+			.tab-action:focus-visible {
+				outline: 2px solid #9fc2e6;
+				outline-offset: 2px;
 			}
 
 			.target-list {
@@ -454,7 +503,7 @@
 						<div class="health-value" id="healthPid">-</div>
 					</div>
 				</div>
-				<div class="panel-actions">
+				<div class="panel-actions" role="group" aria-label="Watcher actions">
 					<button
 						class="panel-button"
 						id="copyAllButton"
@@ -463,10 +512,12 @@
 						aria-label="Copy all watcher info"
 						disabled
 					>
-						<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
-							<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
-						</svg>
+						<span data-button-icon aria-hidden="true">
+							<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+								<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+							</svg>
+						</span>
 						<span data-button-label>Copy All</span>
 					</button>
 					<button
@@ -477,11 +528,13 @@
 						aria-label="Detach all watchers"
 						disabled
 					>
-						<svg viewBox="0 0 16 16" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<path d="M5.4 1.75h5.2l3.65 3.65v5.2l-3.65 3.65H5.4l-3.65-3.65V5.4z"></path>
-							<path d="M6 6l4 4"></path>
-							<path d="M10 6l-4 4"></path>
-						</svg>
+						<span data-button-icon aria-hidden="true">
+							<svg viewBox="0 0 16 16" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M5.4 1.75h5.2l3.65 3.65v5.2l-3.65 3.65H5.4l-3.65-3.65V5.4z"></path>
+								<path d="M6 6l4 4"></path>
+								<path d="M10 6l-4 4"></path>
+							</svg>
+						</span>
 						<span data-button-label>Detach All</span>
 					</button>
 				</div>
