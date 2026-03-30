@@ -45,6 +45,17 @@ type PopupWatcherStatus = {
 	} | null
 }
 
+type PopupStatusPayload = {
+	bridgeConnected: boolean
+	attachedTabs: Array<{
+		tabId: number
+		url: string
+		title: string
+	}>
+	watchers: PopupWatcherStatus[]
+	recentEvents: PopupEvent[]
+}
+
 type PopupTabWithTargets = Awaited<ReturnType<typeof getTabsForPopup>>[number] & {
 	targets: PopupTarget[]
 	selectedFrameId?: string | null
@@ -56,6 +67,14 @@ type PopupActionMessage = {
 	tabId?: number
 	frameId?: string | null
 }
+
+type PopupResponse =
+	| { success: true }
+	| { success: true; tabs: PopupTabWithTargets[] }
+	| { success: true; status: PopupStatusPayload }
+	| { success: false; error: string }
+
+let badgeSyncChain: Promise<void> = Promise.resolve()
 
 function recordEvent(level: PopupEvent['level'], source: PopupEvent['source'], message: string): void {
 	recentEvents.unshift({
@@ -70,130 +89,119 @@ function recordEvent(level: PopupEvent['level'], source: PopupEvent['source'], m
 	}
 }
 
-function updateBadge(): void {
-	const attachedCount = debuggerManager.listAttached().length
+/**
+ * Serialize badge writes and reconcile on popup reads so an external detach from Chrome's
+ * debugger infobar cannot leave stale badge text behind.
+ */
+function syncActionBadge(): Promise<void> {
+	badgeSyncChain = badgeSyncChain
+		.catch(() => undefined)
+		.then(async () => {
+			const attachedCount = debuggerManager.listAttached().length
+			await applyBadgeState(attachedCount)
+		})
+		.catch((error) => {
+			console.error('[ServiceWorker] Failed to sync action badge:', error)
+		})
+
+	return badgeSyncChain
+}
+
+async function applyBadgeState(attachedCount: number): Promise<void> {
+	const badgeText = attachedCount > 0 ? String(attachedCount) : ''
+	const tabs = await chrome.tabs.query({})
+
+	// Clear any tab-specific badge text Chrome may still be holding onto, then keep the default in sync.
+	await Promise.all(
+		tabs
+			.filter((tab): tab is chrome.tabs.Tab & { id: number } => tab.id !== undefined)
+			.map((tab) => chrome.action.setBadgeText({ tabId: tab.id, text: badgeText })),
+	)
+	await chrome.action.setBadgeText({ text: badgeText })
 
 	if (attachedCount > 0) {
-		chrome.action.setBadgeText({ text: String(attachedCount) })
-		chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' })
-		return
+		await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' })
 	}
-
-	chrome.action.setBadgeText({ text: '' })
 }
 
 debuggerManager.onDetach((tabId, reason) => {
-	selectedFrameByTabId.delete(tabId)
-	destroyBridgeSession(tabId)
+	clearTabState(tabId)
 	recordEvent('error', 'debugger', `Tab ${tabId} detached: ${reason}`)
-	updateBadge()
+	void syncActionBadge()
 })
 
 chrome.runtime.onMessage.addListener(
 	(message: PopupActionMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
-		handlePopupMessage(message, sendResponse)
+		void handlePopupMessage(message, sendResponse)
 		return true
 	},
 )
 
 async function handlePopupMessage(message: PopupActionMessage, sendResponse: (response: unknown) => void): Promise<void> {
+	pruneStaleBridgeSessions()
+	const response = await buildPopupResponse(message)
+	await syncActionBadge()
+	sendResponse(response)
+}
+
+async function buildPopupResponse(message: PopupActionMessage): Promise<PopupResponse> {
 	try {
 		switch (message.action) {
-			case 'getTargets': {
-				const tabsWithTargets = await getTabsWithTargets()
-				sendResponse({ success: true, tabs: tabsWithTargets })
-				break
-			}
+			case 'getTargets':
+				return { success: true, tabs: await getTabsWithTargets() }
 
 			case 'attach': {
-				const tabId = requireTabId(message, sendResponse)
-				if (tabId === null) {
-					return
-				}
-
+				const tabId = requireTabId(message)
 				await attachBridgeSession(tabId)
 				selectedFrameByTabId.set(tabId, null)
 				recordEvent('info', 'popup', `Attached tab ${tabId}`)
-				updateBadge()
-				sendResponse({ success: true })
-				break
+				return { success: true }
 			}
 
 			case 'detach': {
-				const tabId = requireTabId(message, sendResponse)
-				if (tabId === null) {
-					return
-				}
-
-				const session = bridgeSessions.get(tabId)
-				if (session) {
-					await session.detach()
-				} else {
-					await debuggerManager.detach(tabId)
-				}
-				destroyBridgeSession(tabId)
-				selectedFrameByTabId.delete(tabId)
+				const tabId = requireTabId(message)
+				await detachTab(tabId)
 				recordEvent('info', 'popup', `Detached tab ${tabId}`)
-				updateBadge()
-				sendResponse({ success: true })
-				break
+				return { success: true }
 			}
 
 			case 'selectTarget': {
-				const tabId = requireTabId(message, sendResponse)
-				if (tabId === null) {
-					return
-				}
-
+				const tabId = requireTabId(message)
 				const session = bridgeSessions.get(tabId)
 				if (!session) {
-					sendResponse({ success: false, error: `No watcher bridge for tab ${tabId}` })
-					return
+					return { success: false, error: `No watcher bridge for tab ${tabId}` }
 				}
 
 				const frameId = message.frameId ?? null
 				session.selectTarget(frameId)
 				recordEvent('info', 'popup', `Selected ${frameId ? `iframe ${frameId}` : 'page'} on tab ${tabId}`)
-				sendResponse({ success: true })
-				break
+				return { success: true }
 			}
 
-			case 'getStatus': {
-				sendResponse({
+			case 'getStatus':
+				return {
 					success: true,
-					status: {
-						bridgeConnected: [...bridgeSessions.values()].some((session) => session.isConnected()),
-						attachedTabs: debuggerManager.listAttached().map((target) => ({
-							tabId: target.tabId,
-							url: target.url,
-							title: target.title,
-						})),
-						watchers: getWatcherStatuses(),
-						recentEvents,
-					},
-				})
-				break
-			}
+					status: buildPopupStatusPayload(),
+				}
 
 			default:
-				sendResponse({ success: false, error: `Unknown action: ${message.action}` })
+				return { success: false, error: `Unknown action: ${message.action}` }
 		}
 	} catch (err) {
 		recordEvent('error', 'popup', err instanceof Error ? err.message : 'Unknown popup error')
-		sendResponse({
+		return {
 			success: false,
 			error: err instanceof Error ? err.message : 'Unknown error',
-		})
+		}
 	}
 }
 
-function requireTabId(message: PopupActionMessage, sendResponse: (response: unknown) => void): number | null {
+function requireTabId(message: PopupActionMessage): number {
 	if (message.tabId !== undefined) {
 		return message.tabId
 	}
 
-	sendResponse({ success: false, error: 'No tabId provided' })
-	return null
+	throw new Error('No tabId provided')
 }
 
 async function attachBridgeSession(tabId: number): Promise<void> {
@@ -213,12 +221,23 @@ async function attachBridgeSession(tabId: number): Promise<void> {
 		onDisconnect: () => {
 			recordEvent('error', 'bridge', `Native host disconnected for tab ${tabId}`)
 			void debuggerManager.detach(tabId).catch(() => {})
-			destroyBridgeSession(tabId)
-			updateBadge()
+			clearTabState(tabId)
+			void syncActionBadge()
 		},
 	})
 	bridgeSessions.set(tabId, session)
 	await connectBridgeSession(tabId, session)
+}
+
+async function detachTab(tabId: number): Promise<void> {
+	const session = bridgeSessions.get(tabId)
+	if (session) {
+		await session.detach()
+	} else {
+		await debuggerManager.detach(tabId)
+	}
+
+	clearTabState(tabId)
 }
 
 async function connectBridgeSession(tabId: number, session: TabBridgeSession): Promise<void> {
@@ -230,6 +249,31 @@ async function connectBridgeSession(tabId: number, session: TabBridgeSession): P
 	}
 }
 
+function clearTabState(tabId: number): void {
+	selectedFrameByTabId.delete(tabId)
+	destroyBridgeSession(tabId)
+}
+
+/**
+ * Chrome can drop the root debugger attachment from the infobar while the native host is still
+ * alive long enough to keep reporting its last selected target. Trim those orphaned bridge
+ * sessions before serving popup state so the badge and popup stay aligned with actual attachments.
+ */
+function pruneStaleBridgeSessions(): void {
+	for (const [tabId, session] of bridgeSessions.entries()) {
+		if (debuggerManager.isAttached(tabId)) {
+			continue
+		}
+
+		if (!session.getTargetInfo()) {
+			continue
+		}
+
+		clearTabState(tabId)
+		recordEvent('error', 'bridge', `Pruned stale watcher state for tab ${tabId}`)
+	}
+}
+
 function destroyBridgeSession(tabId: number): void {
 	const session = bridgeSessions.get(tabId)
 	if (!session) {
@@ -238,6 +282,19 @@ function destroyBridgeSession(tabId: number): void {
 
 	bridgeSessions.delete(tabId)
 	session.dispose()
+}
+
+function buildPopupStatusPayload(): PopupStatusPayload {
+	return {
+		bridgeConnected: [...bridgeSessions.values()].some((session) => session.isConnected()),
+		attachedTabs: debuggerManager.listAttached().map((target) => ({
+			tabId: target.tabId,
+			url: target.url,
+			title: target.title,
+		})),
+		watchers: getWatcherStatuses(),
+		recentEvents,
+	}
 }
 
 function getWatcherStatuses(): PopupWatcherStatus[] {
@@ -392,6 +449,6 @@ async function getPopupTargets(tabId: number): Promise<PopupTarget[]> {
 }
 
 console.log('[ServiceWorker] Argus CDP Bridge extension loaded')
-updateBadge()
+void syncActionBadge()
 
 export { debuggerManager, bridgeSessions }
