@@ -3,6 +3,7 @@ import {
 	parseTextPattern,
 	type CodeGrepMatch,
 	type CodeGrepResponse,
+	type CodeGrepSkippedResource,
 	type CodeListResponse,
 	type CodeReadResponse,
 	type CodeResource,
@@ -27,6 +28,10 @@ type CssStyleSheetAddedParams = {
 		styleSheetId?: string
 		sourceURL?: string
 	}
+}
+
+type CssStyleSheetRemovedParams = {
+	styleSheetId?: string
 }
 
 type DebuggerGetScriptSourceResult = {
@@ -106,13 +111,18 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 			const parsedPattern = parseTextPattern(pattern)
 			const normalizedUrlPattern = normalizeSearchPattern(urlPattern)
 			const matches: CodeGrepMatch[] = []
+			const skippedResources: CodeGrepSkippedResource[] = []
 
 			for (const resource of getResources()) {
 				if (!matchesUrlPattern(resource, normalizedUrlPattern)) {
 					continue
 				}
 
-				const source = await getSource(resource)
+				const source = await getSourceForGrep(resource, skippedResources)
+				if (source == null) {
+					continue
+				}
+
 				const lines = source.split('\n')
 				for (let index = 0; index < lines.length; index++) {
 					const line = lines[index] ?? ''
@@ -127,12 +137,12 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 						lineContent: line,
 					})
 					if (matches.length >= MAX_GREP_MATCHES) {
-						return { ok: true, matches }
+						return { ok: true, matches, skippedResources }
 					}
 				}
 			}
 
-			return { ok: true, matches }
+			return { ok: true, matches, skippedResources }
 		},
 		reset: () => {
 			resetState()
@@ -169,6 +179,14 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 			inlinePrefix: INLINE_STYLESHEET_PREFIX,
 			sessionId: meta.sessionId ?? null,
 		})
+	}
+
+	function handleStyleSheetRemoved(params: CssStyleSheetRemovedParams, meta: CdpEventMeta): void {
+		if (!params.styleSheetId) {
+			return
+		}
+
+		removeResourceById(stylesheets, params.styleSheetId, meta.sessionId ?? null)
 	}
 
 	async function ensureEnabled(): Promise<void> {
@@ -209,6 +227,9 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 			session.onEvent('CSS.styleSheetAdded', (params, meta) => {
 				handleStyleSheetAdded(params as CssStyleSheetAddedParams, meta)
 			}),
+			session.onEvent('CSS.styleSheetRemoved', (params, meta) => {
+				handleStyleSheetRemoved(params as CssStyleSheetRemovedParams, meta)
+			}),
 		]
 		listenersBound = true
 	}
@@ -245,6 +266,26 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 		return source
 	}
 
+	async function getSourceForGrep(resource: RuntimeResource, skippedResources: CodeGrepSkippedResource[]): Promise<string | null> {
+		try {
+			return await getSource(resource)
+		} catch (error) {
+			// Only stale per-resource handles are downgraded to warnings. Transport/session failures should still abort the command.
+			const reason = getStaleResourceReason(resource, error)
+			if (!reason) {
+				throw error
+			}
+
+			removeResource(resource)
+			skippedResources.push({
+				url: resource.url,
+				type: resource.type,
+				reason,
+			})
+			return null
+		}
+	}
+
 	function registerResource(
 		store: Map<string, RuntimeResource>,
 		input: {
@@ -270,6 +311,22 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 		store.set(resource.url, resource)
 		sources.delete(getSourceCacheKey(resource))
 		touchResources()
+	}
+
+	function removeResource(resource: RuntimeResource): void {
+		const store = resource.type === 'stylesheet' ? stylesheets : scripts
+		store.delete(resource.url)
+		sources.delete(getSourceCacheKey(resource))
+	}
+
+	function removeResourceById(store: Map<string, RuntimeResource>, id: string, sessionId: string | null): void {
+		for (const resource of store.values()) {
+			if (resource.id !== id || resource.sessionId !== sessionId) {
+				continue
+			}
+
+			removeResource(resource)
+		}
 	}
 
 	function waitForResourceQuietPeriod(): Promise<void> {
@@ -357,6 +414,15 @@ const getSessionOptions = (resource: RuntimeResource): { sessionId?: string } | 
 	resource.sessionId ? { sessionId: resource.sessionId } : undefined
 
 const getSourceCacheKey = (resource: RuntimeResource): string => `${resource.type}:${resource.sessionId ?? 'root'}:${resource.id}`
+
+const getStaleResourceReason = (resource: RuntimeResource, error: unknown): string | null => {
+	const message = error instanceof Error ? error.message : String(error)
+	if (resource.type === 'stylesheet' && /No style sheet with given id found/i.test(message)) {
+		return message
+	}
+
+	return null
+}
 
 const buildResourceHandle = (url: string, id: string, sessionId: string | null): string => {
 	if (url.startsWith(INLINE_SCRIPT_PREFIX) || url.startsWith(INLINE_STYLESHEET_PREFIX)) {

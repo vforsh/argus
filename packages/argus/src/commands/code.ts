@@ -1,7 +1,13 @@
 import type { CodeGrepResponse, CodeListResponse, CodeReadResponse, ErrorResponse } from '@vforsh/argus-core'
 import { parseTextPattern } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
-import { formatCodeMatches, formatCodeResources, formatCodeStrings, formatPrettyCodeMatches } from '../output/code.js'
+import {
+	formatCodeGrepSkippedResourcesWarning,
+	formatCodeMatches,
+	formatCodeResources,
+	formatCodeStrings,
+	formatPrettyCodeMatches,
+} from '../output/code.js'
 import { buildPrettyCodeMatches, formatRuntimeSource } from '../runtime-code/format.js'
 import { extractCodeStrings } from '../runtime-code/strings.js'
 import type { CodeStringFilters, CodeStringKind, CodeStringMatch, LoadedCodeResource } from '../runtime-code/types.js'
@@ -115,6 +121,8 @@ export const runCodeGrep = async (id: string | undefined, pattern: string, optio
 	if (!response) {
 		return
 	}
+
+	writeCodeGrepWarnings(response.skippedResources, output)
 
 	if (options.json) {
 		output.writeJson(response)
@@ -391,6 +399,15 @@ const parseCodeStringKinds = (value: string | undefined, output: CodeOutput): Se
 
 const writeNoResourcesFound = (output: CodeOutput, pattern?: string): void => {
 	output.writeWarn(pattern ? `No runtime resources matched: ${pattern}` : 'No runtime resources discovered.')
+}
+
+const writeCodeGrepWarnings = (skippedResources: CodeGrepResponse['skippedResources'], output: CodeOutput): void => {
+	const warning = formatCodeGrepSkippedResourcesWarning(skippedResources)
+	if (!warning) {
+		return
+	}
+
+	output.writeWarn(warning)
 }
 
 const writeErrorResponse = (response: ErrorResponse, output: CodeOutput): void => {

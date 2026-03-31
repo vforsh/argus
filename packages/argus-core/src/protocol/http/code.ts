@@ -59,8 +59,20 @@ export type CodeGrepMatch = {
 	lineContent: string
 }
 
+/** Runtime resource skipped during grep because its live handle could not be read. */
+export type CodeGrepSkippedResource = {
+	/** Runtime resource URL originally discovered via `code ls`. */
+	url: string
+	/** Resource kind. */
+	type: CodeResourceType
+	/** Human-readable read failure reason. */
+	reason: string
+}
+
 /** Response payload for POST /code/grep. */
 export type CodeGrepResponse = {
 	ok: true
 	matches: CodeGrepMatch[]
+	/** Non-fatal runtime resources skipped while searching. */
+	skippedResources: CodeGrepSkippedResource[]
 }

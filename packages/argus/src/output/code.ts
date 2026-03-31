@@ -1,4 +1,4 @@
-import type { CodeGrepMatch, CodeResource } from '@vforsh/argus-core'
+import type { CodeGrepMatch, CodeGrepSkippedResource, CodeResource } from '@vforsh/argus-core'
 import type { CodeStringMatch, PrettyCodeMatch } from '../runtime-code/types.js'
 
 export const formatCodeResources = (resources: CodeResource[]): string => {
@@ -21,3 +21,16 @@ export const formatPrettyCodeMatches = (matches: PrettyCodeMatch[]): string =>
 
 export const formatCodeStrings = (matches: CodeStringMatch[]): string =>
 	matches.map((match) => `${match.type.padEnd(10)} ${match.url}:${match.lineNumber} [${match.kind}] ${match.value}`).join('\n')
+
+export const formatCodeGrepSkippedResourcesWarning = (skippedResources: CodeGrepSkippedResource[]): string | null => {
+	if (skippedResources.length === 0) {
+		return null
+	}
+
+	if (skippedResources.length === 1) {
+		const [resource] = skippedResources
+		return `Skipped 1 stale runtime resource while grepping: ${resource.type} ${resource.url} (${resource.reason})`
+	}
+
+	return `Skipped ${skippedResources.length} stale runtime resources while grepping. Use --json for per-resource details.`
+}
