@@ -134,7 +134,7 @@ argus code strings app --url app.js
 argus code strings app --url app.js --kind url,identifier --match '/admin\\/api/'
 ```
 
-`code ls` lists runtime JS/CSS resources discovered through CDP. `code read` returns line-numbered source. `code grep` searches sources with plain strings or `/regex/flags`, and `--pretty` renders clipped context for humans. `code deminify` pretty-prints a runtime resource. `code strings` extracts high-signal string literals such as URLs, keys, and camelCase identifiers, ranks the most reverse-engineering-friendly values first, and supports `--kind` / `--match` for narrower scans. Full runtime-code docs: [RUNTIME_CODE.md](./reference/RUNTIME_CODE.md)
+`code ls` lists runtime JS/CSS resources discovered through CDP. `code read` returns line-numbered source. `code grep` searches sources with plain strings or `/regex/flags`, skips stale stylesheet handles instead of aborting the whole search, and `--pretty` renders clipped context for humans. `code deminify` pretty-prints a runtime resource. `code strings` extracts high-signal string literals such as URLs, keys, and camelCase identifiers, ranks the most reverse-engineering-friendly values first, and supports `--kind` / `--match` for narrower scans. Full runtime-code docs: [RUNTIME_CODE.md](./reference/RUNTIME_CODE.md)
 
 ### Eval-Until
 

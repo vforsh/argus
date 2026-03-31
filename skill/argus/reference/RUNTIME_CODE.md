@@ -33,3 +33,4 @@ argus code strings app --url app.js --kind url,identifier --match '/admin\\/api/
 - `code strings` favors signal over completeness by default. Use `--all` to include low-signal literals too.
 - `code strings --kind` accepts a comma-separated subset of `url,key,identifier,message,other`.
 - `code strings --match` reuses the same plain-string or `/regex/flags` pattern format as `code grep`.
+- `code grep` skips stale stylesheet handles, emits a warning on stderr, and still returns matches from healthy resources. Details: [RUNTIME_CODE_STALE_STYLESHEET.md](./RUNTIME_CODE_STALE_STYLESHEET.md).
