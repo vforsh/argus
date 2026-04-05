@@ -1,5 +1,6 @@
 import type { CdpNode } from './types.js'
 import type { CdpSessionHandle, CdpTargetContext } from '../connection.js'
+import type { ElementRefRegistry } from '../elementRefs.js'
 import { filterNodesByText } from '../text-filter.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,6 +31,26 @@ export type ResolveSelectorTargetOptions = {
 	all: boolean
 	text?: string
 	waitMs?: number
+}
+
+export type ResolveElementTargetOptions = {
+	selector?: string
+	ref?: string
+	all: boolean
+	text?: string
+	waitMs?: number
+}
+
+export type DomNodeHandle = {
+	nodeId?: number
+	backendNodeId?: number
+}
+
+export type ResolvedElementTarget = SelectorMatchResult & {
+	allHandles: DomNodeHandle[]
+	handles: DomNodeHandle[]
+	target: { kind: 'selector'; value: string } | { kind: 'ref'; value: string }
+	missingRef?: boolean
 }
 
 export const getDomRootId = async (session: CdpSessionHandle): Promise<number> => {
@@ -100,6 +121,51 @@ export const resolveSelectorTargets = async (session: CdpSessionHandle, options:
 	return resolveSelectorMatches(session, rootId, options.selector, options.all, options.text)
 }
 
+export const resolveElementTargets = async (
+	session: CdpSessionHandle,
+	elementRefs: ElementRefRegistry,
+	options: ResolveElementTargetOptions,
+): Promise<ResolvedElementTarget> => {
+	await session.sendAndWait('DOM.enable')
+
+	if (options.ref) {
+		const backendNodeId = elementRefs.resolve(options.ref)
+		if (backendNodeId == null) {
+			return {
+				target: { kind: 'ref', value: options.ref },
+				allNodeIds: [],
+				nodeIds: [],
+				allHandles: [],
+				handles: [],
+				missingRef: true,
+			}
+		}
+		return {
+			target: { kind: 'ref', value: options.ref },
+			allNodeIds: [],
+			nodeIds: [],
+			allHandles: [{ backendNodeId }],
+			handles: [{ backendNodeId }],
+		}
+	}
+
+	if (!options.selector) {
+		throw new Error('selector or ref is required')
+	}
+
+	const result =
+		(options.waitMs ?? 0) > 0
+			? await waitForSelectorMatches(session, options.selector, options.all, options.text, options.waitMs ?? 0)
+			: await resolveSelectorMatches(session, await getDomRootId(session), options.selector, options.all, options.text)
+
+	return {
+		target: { kind: 'selector', value: options.selector },
+		allHandles: result.allNodeIds.map((nodeId) => ({ nodeId })),
+		handles: result.nodeIds.map((nodeId) => ({ nodeId })),
+		...result,
+	}
+}
+
 /** Resolve the first node id matching a selector, or null when no match exists. */
 export const resolveFirstSelectorNodeId = async (session: CdpSessionHandle, selector: string, text?: string): Promise<number | null> => {
 	const { nodeIds } = await resolveSelectorTargets(session, {
@@ -109,6 +175,48 @@ export const resolveFirstSelectorNodeId = async (session: CdpSessionHandle, sele
 	})
 
 	return nodeIds[0] ?? null
+}
+
+export const describeNodeByBackendId = async (session: CdpSessionHandle, backendNodeId: number): Promise<CdpNode | null> => {
+	const described = (await session.sendAndWait('DOM.describeNode', {
+		backendNodeId,
+		depth: 0,
+	})) as { node?: CdpNode }
+	return described.node ?? null
+}
+
+export const resolveNodeIdByBackendId = async (session: CdpSessionHandle, backendNodeId: number): Promise<number | null> => {
+	const describedNode = await describeNodeByBackendId(session, backendNodeId)
+	if (describedNode?.nodeId) {
+		return describedNode.nodeId
+	}
+
+	// Prime the document tree first so CDP can map backend ids back into frontend node ids.
+	await getDomRootId(session)
+
+	const pushed = (await session.sendAndWait('DOM.pushNodesByBackendIdsToFrontend', {
+		backendNodeIds: [backendNodeId],
+	})) as { nodeIds?: number[] }
+	const nodeId = pushed.nodeIds?.[0]
+	return typeof nodeId === 'number' && nodeId > 0 ? nodeId : null
+}
+
+export const resolveNodeIdForRef = async (session: CdpSessionHandle, elementRefs: ElementRefRegistry, ref: string): Promise<number | null> => {
+	const backendNodeId = elementRefs.resolve(ref)
+	if (backendNodeId == null) {
+		return null
+	}
+	return resolveNodeIdByBackendId(session, backendNodeId)
+}
+
+export const toDomNodeDescriptor = (handle: DomNodeHandle): { nodeId: number } | { backendNodeId: number } => {
+	if (handle.nodeId != null) {
+		return { nodeId: handle.nodeId }
+	}
+	if (handle.backendNodeId != null) {
+		return { backendNodeId: handle.backendNodeId }
+	}
+	throw new Error('DOM node handle is missing both nodeId and backendNodeId')
 }
 
 /**

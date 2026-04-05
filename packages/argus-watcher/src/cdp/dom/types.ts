@@ -1,6 +1,7 @@
 /** CDP node shape returned by DOM.describeNode. */
 export type CdpNode = {
 	nodeId: number
+	backendNodeId?: number
 	nodeType: number
 	nodeName: string
 	localName?: string

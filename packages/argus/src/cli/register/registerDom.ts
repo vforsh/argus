@@ -38,9 +38,11 @@ export function registerDom(program: Command): void {
 	registerDomSelectorCommand(dom, {
 		name: 'info',
 		description: 'Fetch detailed info for element(s) matching a CSS selector',
+		allowRef: true,
 		examples: [
 			'argus dom info app --selector "body"',
 			'argus dom info app --selector "div" --all',
+			'argus dom info app --ref e3',
 			'argus dom info app --selector "#root" --json',
 		],
 		textOption: {
@@ -56,9 +58,11 @@ export function registerDom(program: Command): void {
 	registerDomSelectorCommand(dom, {
 		name: 'focus',
 		description: 'Focus element(s) matching a CSS selector',
+		allowRef: true,
 		examples: [
 			'argus dom focus app --selector "#input"',
 			'argus dom focus app --testid "search-box"',
+			'argus dom focus app --ref e5',
 			'argus dom focus app --selector ".item" --all',
 		],
 		textOption: {

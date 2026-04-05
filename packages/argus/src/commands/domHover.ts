@@ -1,11 +1,12 @@
 import type { DomHoverResponse } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
 import { requestWatcherAction } from '../watchers/requestWatcher.js'
-import { requireSelector, writeNoElementFound } from './dom/shared.js'
+import { describeElementTarget, requireElementTarget, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom hover command. */
 export type DomHoverOptions = {
-	selector: string
+	selector?: string
+	ref?: string
 	all?: boolean
 	text?: string
 	json?: boolean
@@ -14,8 +15,8 @@ export type DomHoverOptions = {
 /** Execute the dom hover command for a watcher id. */
 export const runDomHover = async (id: string | undefined, options: DomHoverOptions): Promise<void> => {
 	const output = createOutput(options)
-	const selector = requireSelector(options, output)
-	if (!selector) {
+	const target = requireElementTarget({ selector: options.selector, ref: options.ref }, output)
+	if (!target) {
 		return
 	}
 
@@ -25,7 +26,8 @@ export const runDomHover = async (id: string | undefined, options: DomHoverOptio
 			path: '/dom/hover',
 			method: 'POST',
 			body: {
-				selector,
+				selector: target.selector,
+				ref: target.ref,
 				all: options.all ?? false,
 				text: options.text,
 			},
@@ -44,10 +46,10 @@ export const runDomHover = async (id: string | undefined, options: DomHoverOptio
 	}
 
 	if (successResp.matches === 0) {
-		writeNoElementFound(selector, output)
+		writeNoElementFound(target.selector ?? target.ref!, output)
 		return
 	}
 
 	const label = successResp.hovered === 1 ? 'element' : 'elements'
-	output.writeHuman(`Hovered ${successResp.hovered} ${label} for selector: ${selector}`)
+	output.writeHuman(`Hovered ${successResp.hovered} ${label} for ${describeElementTarget(target)}`)
 }

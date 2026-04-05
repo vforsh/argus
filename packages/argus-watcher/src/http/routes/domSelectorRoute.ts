@@ -3,6 +3,7 @@ import { respondInvalidBody, respondJson, readJsonBody } from '../httpUtils.js'
 
 type SelectorPayload = {
 	selector?: unknown
+	ref?: unknown
 	all?: unknown
 }
 
@@ -10,7 +11,7 @@ type SelectorPayload = {
  * Shared parser for DOM routes that require a selector and optional `all` toggle.
  * Keeps route modules focused on the actual DOM operation.
  */
-export const readDomSelectorPayload = async <T extends SelectorPayload>(
+export const readDomTargetPayload = async <T extends SelectorPayload>(
 	req: http.IncomingMessage,
 	res: http.ServerResponse,
 ): Promise<{ payload: T; all: boolean } | null> => {
@@ -19,8 +20,10 @@ export const readDomSelectorPayload = async <T extends SelectorPayload>(
 		return null
 	}
 
-	if (!payload.selector || typeof payload.selector !== 'string') {
-		respondInvalidBody(res, 'selector is required')
+	const hasSelector = typeof payload.selector === 'string' && payload.selector.trim() !== ''
+	const hasRef = typeof payload.ref === 'string' && payload.ref.trim() !== ''
+	if (hasSelector === hasRef) {
+		respondInvalidBody(res, 'Exactly one of selector or ref is required')
 		return null
 	}
 
@@ -32,6 +35,9 @@ export const readDomSelectorPayload = async <T extends SelectorPayload>(
 
 	return { payload, all }
 }
+
+/** Backwards-compatible alias used by selector-only routes while they migrate to ref support. */
+export const readDomSelectorPayload = readDomTargetPayload
 
 export const respondMultipleMatches = (res: http.ServerResponse, matches: number, action: string): void => {
 	respondJson(
@@ -45,4 +51,33 @@ export const respondMultipleMatches = (res: http.ServerResponse, matches: number
 		},
 		400,
 	)
+}
+
+export const respondMissingElementRef = (res: http.ServerResponse, ref: string): void => {
+	respondJson(
+		res,
+		{
+			ok: false,
+			error: {
+				message: `Unknown or stale element ref: ${ref}. Run argus snapshot or locate again.`,
+				code: 'invalid_ref',
+			},
+		},
+		400,
+	)
+}
+
+export const respondTargetResolutionError = (res: http.ServerResponse, error: unknown): boolean => {
+	if (!error || typeof error !== 'object') {
+		return false
+	}
+
+	const code = 'code' in error ? (error as { code?: unknown }).code : undefined
+	if (code !== 'invalid_ref') {
+		return false
+	}
+
+	const message = error instanceof Error && error.message ? error.message : 'Unknown or stale element ref. Run argus snapshot or locate again.'
+	respondJson(res, { ok: false, error: { message, code: 'invalid_ref' } }, 400)
+	return true
 }

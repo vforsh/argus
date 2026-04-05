@@ -1,12 +1,12 @@
 import type { DomInfoRequest, DomInfoResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
-import { readDomSelectorPayload, respondMultipleMatches } from './domSelectorRoute.js'
+import { readDomTargetPayload, respondMultipleMatches, respondTargetResolutionError } from './domSelectorRoute.js'
 import { emitRequest } from './types.js'
 import { fetchDomInfoBySelector } from '../../cdp/dom.js'
 import { respondJson, respondError } from '../httpUtils.js'
 
 export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const parsed = await readDomSelectorPayload<DomInfoRequest>(req, res)
+	const parsed = await readDomTargetPayload<DomInfoRequest>(req, res)
 	if (!parsed) {
 		return
 	}
@@ -15,8 +15,9 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 	emitRequest(ctx, res, 'dom/info')
 
 	try {
-		const response: DomInfoResponse = await fetchDomInfoBySelector(ctx.cdpSession, {
+		const response: DomInfoResponse = await fetchDomInfoBySelector(ctx.cdpSession, ctx.elementRefs, {
 			selector: payload.selector,
+			ref: payload.ref,
 			all,
 			outerHtmlMaxChars: payload.outerHtmlMaxChars,
 			text: payload.text,
@@ -28,6 +29,9 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 
 		respondJson(res, response)
 	} catch (error) {
+		if (respondTargetResolutionError(res, error)) {
+			return
+		}
 		respondError(res, error)
 	}
 }

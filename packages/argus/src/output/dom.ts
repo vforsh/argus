@@ -14,7 +14,8 @@ export const formatNodeLabel = (node: DomNode | DomElementInfo): string => {
 			label += `.${cls}`
 		}
 	}
-	return `<${label}>`
+	const ref = 'ref' in node && typeof node.ref === 'string' ? ` [${node.ref}]` : ''
+	return `<${label}>${ref}`
 }
 
 /**

@@ -4,6 +4,7 @@ import { resolveTestId } from '../../commands/resolveTestId.js'
 type DomCommandOptions = {
 	selector?: string
 	testid?: string
+	ref?: string
 	json?: boolean
 }
 
@@ -13,6 +14,7 @@ type DomSelectorCommandSpec = {
 	examples: string[]
 	alias?: string
 	allowsAll?: boolean
+	allowRef?: boolean
 	textOption?: {
 		flags: string
 		description: string
@@ -35,6 +37,9 @@ export const registerDomSelectorCommand = (parent: Command, spec: DomSelectorCom
 
 	command.option('--selector <css>', 'CSS selector to match element(s)')
 	command.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
+	if (spec.allowRef) {
+		command.option('--ref <elementRef>', 'Stable element ref from snapshot/locate output')
+	}
 
 	if (spec.allowsAll !== false) {
 		command.option('--all', 'Allow multiple matches (default: error if >1 match)')

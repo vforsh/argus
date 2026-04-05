@@ -3,11 +3,12 @@ import { formatDomInfo } from '../output/dom.js'
 import { createOutput } from '../output/io.js'
 import { parsePositiveInt } from '../cli/parse.js'
 import { requestWatcherAction } from '../watchers/requestWatcher.js'
-import { requireSelector, writeNoElementFound } from './dom/shared.js'
+import { requireElementTarget, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom info command. */
 export type DomInfoOptions = {
-	selector: string
+	selector?: string
+	ref?: string
 	all?: boolean
 	outerHtmlMax?: string
 	text?: string
@@ -17,8 +18,8 @@ export type DomInfoOptions = {
 /** Execute the dom info command for a watcher id. */
 export const runDomInfo = async (id: string | undefined, options: DomInfoOptions): Promise<void> => {
 	const output = createOutput(options)
-	const selector = requireSelector(options, output)
-	if (!selector) {
+	const target = requireElementTarget({ selector: options.selector, ref: options.ref }, output)
+	if (!target) {
 		return
 	}
 
@@ -35,7 +36,8 @@ export const runDomInfo = async (id: string | undefined, options: DomInfoOptions
 			path: '/dom/info',
 			method: 'POST',
 			body: {
-				selector,
+				selector: target.selector,
+				ref: target.ref,
 				all: options.all ?? false,
 				outerHtmlMaxChars,
 				text: options.text,
@@ -55,7 +57,7 @@ export const runDomInfo = async (id: string | undefined, options: DomInfoOptions
 	}
 
 	if (successResp.matches === 0) {
-		writeNoElementFound(selector, output)
+		writeNoElementFound(target.selector ?? target.ref!, output)
 		return
 	}
 

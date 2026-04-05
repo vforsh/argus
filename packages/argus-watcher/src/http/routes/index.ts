@@ -15,6 +15,7 @@ import { handle as postTraceStart } from './postTraceStart.js'
 import { handle as postTraceStop } from './postTraceStop.js'
 import { handle as postScreenshot } from './postScreenshot.js'
 import { handle as postSnapshot } from './postSnapshot.js'
+import { handleLocateLabel, handleLocateRole, handleLocateText } from './postLocate.js'
 import { handle as postCodeList } from './postCodeList.js'
 import { handle as postCodeRead } from './postCodeRead.js'
 import { handle as postCodeGrep } from './postCodeGrep.js'
@@ -73,6 +74,9 @@ export const watcherRoutes = [
 	defineRoute({ method: 'POST', path: '/trace/stop', handler: postTraceStop }),
 	defineRoute({ method: 'POST', path: '/screenshot', handler: postScreenshot }),
 	defineRoute({ method: 'POST', path: '/snapshot', handler: postSnapshot }),
+	defineRoute({ method: 'POST', path: '/locate/role', handler: handleLocateRole }),
+	defineRoute({ method: 'POST', path: '/locate/text', handler: handleLocateText }),
+	defineRoute({ method: 'POST', path: '/locate/label', handler: handleLocateLabel }),
 	defineRoute({ method: 'POST', path: '/code/list', handler: postCodeList }),
 	defineRoute({ method: 'POST', path: '/code/read', handler: postCodeRead }),
 	defineRoute({ method: 'POST', path: '/code/grep', handler: postCodeGrep }),

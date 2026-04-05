@@ -1,9 +1,9 @@
 import type { DomClickRequest, DomClickResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
-import { respondMultipleMatches } from './domSelectorRoute.js'
+import { respondMissingElementRef, respondMultipleMatches, respondTargetResolutionError } from './domSelectorRoute.js'
 import { emitRequest } from './types.js'
-import { resolveDomSelectorMatches, clickDomNodes, clickAtPoint, resolveNodeTopLeft } from '../../cdp/mouse.js'
-import { resolveSelectorTargets } from '../../cdp/dom/selector.js'
+import { clickDomNodes, clickAtPoint, resolveNodeTopLeft } from '../../cdp/mouse.js'
+import { resolveElementTargets } from '../../cdp/dom/selector.js'
 import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
 
 export const handle: RouteHandler = async (req, res, _url, ctx) => {
@@ -13,10 +13,15 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 	}
 
 	const hasSelector = typeof payload.selector === 'string' && payload.selector.length > 0
+	const hasRef = typeof payload.ref === 'string' && payload.ref.length > 0
 	const hasCoords = payload.x != null || payload.y != null
 
-	if (!hasSelector && !hasCoords) {
-		return respondInvalidBody(res, 'selector or x,y coordinates are required')
+	if (!hasSelector && !hasRef && !hasCoords) {
+		return respondInvalidBody(res, 'selector, ref, or x,y coordinates are required')
+	}
+
+	if (hasSelector && hasRef) {
+		return respondInvalidBody(res, 'selector and ref are mutually exclusive')
 	}
 
 	if (hasCoords) {
@@ -44,47 +49,61 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 	emitRequest(ctx, res, 'dom/click')
 
 	try {
-		// Coordinate-only click (no selector)
-		if (!hasSelector) {
+		// Coordinate-only click (no selector/ref)
+		if (!hasSelector && !hasRef) {
 			await clickAtPoint(ctx.cdpSession, payload.x!, payload.y!, button)
 			const response: DomClickResponse = { ok: true, matches: 0, clicked: 1 }
 			return respondJson(res, response)
 		}
 
-		const { allNodeIds, nodeIds } =
+		const resolved =
 			waitMs > 0
-				? await resolveSelectorTargets(ctx.cdpSession, {
-						selector: payload.selector!,
+				? await resolveElementTargets(ctx.cdpSession, ctx.elementRefs, {
+						selector: payload.selector,
+						ref: payload.ref,
 						all,
 						text: payload.text,
 						waitMs,
 					})
-				: await resolveDomSelectorMatches(ctx.cdpSession, payload.selector!, all, payload.text)
+				: await resolveElementTargets(ctx.cdpSession, ctx.elementRefs, {
+						selector: payload.selector,
+						ref: payload.ref,
+						all,
+						text: payload.text,
+					})
 
-		if (!all && allNodeIds.length > 1) {
-			return respondMultipleMatches(res, allNodeIds.length, 'click')
+		if (resolved.missingRef && payload.ref) {
+			return respondMissingElementRef(res, payload.ref)
+		}
+		const { allHandles, handles } = resolved
+
+		if (!all && allHandles.length > 1) {
+			return respondMultipleMatches(res, allHandles.length, 'click')
 		}
 
-		if (allNodeIds.length === 0) {
+		if (allHandles.length === 0) {
 			const response: DomClickResponse = { ok: true, matches: 0, clicked: 0 }
 			return respondJson(res, response)
 		}
 
 		// Selector + coordinates: click at offset from each element's top-left
 		if (hasCoords) {
-			for (const nodeId of nodeIds) {
-				const topLeft = await resolveNodeTopLeft(ctx.cdpSession, nodeId)
+			for (const handle of handles) {
+				const topLeft = await resolveNodeTopLeft(ctx.cdpSession, handle)
 				await clickAtPoint(ctx.cdpSession, topLeft.x + payload.x!, topLeft.y + payload.y!, button)
 			}
-			const response: DomClickResponse = { ok: true, matches: allNodeIds.length, clicked: nodeIds.length }
+			const response: DomClickResponse = { ok: true, matches: allHandles.length, clicked: handles.length }
 			return respondJson(res, response)
 		}
 
 		// Selector only: click element center (existing behavior)
-		await clickDomNodes(ctx.cdpSession, nodeIds, button)
-		const response: DomClickResponse = { ok: true, matches: allNodeIds.length, clicked: nodeIds.length }
+		await clickDomNodes(ctx.cdpSession, handles, button)
+		const response: DomClickResponse = { ok: true, matches: allHandles.length, clicked: handles.length }
 		respondJson(res, response)
 	} catch (error) {
+		if (respondTargetResolutionError(res, error)) {
+			return
+		}
 		respondError(res, error)
 	}
 }

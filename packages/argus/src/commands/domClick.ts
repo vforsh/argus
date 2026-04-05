@@ -1,11 +1,12 @@
 import type { DomClickResponse } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
 import { requestWatcherAction } from '../watchers/requestWatcher.js'
-import { parseWaitDuration, parseXY, writeNoElementFound } from './dom/shared.js'
+import { describeElementTarget, parseWaitDuration, parseXY, requireElementTarget, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom click command. */
 export type DomClickOptions = {
 	selector?: string
+	ref?: string
 	pos?: string
 	button?: string
 	all?: boolean
@@ -18,11 +19,16 @@ export type DomClickOptions = {
 export const runDomClick = async (id: string | undefined, options: DomClickOptions): Promise<void> => {
 	const output = createOutput(options)
 
-	const hasSelector = options.selector != null && options.selector.trim() !== ''
+	const hasRawTarget = Boolean(options.selector?.trim() || options.ref?.trim())
+	const target = hasRawTarget ? requireElementTarget({ selector: options.selector, ref: options.ref }, output) : null
+	if (hasRawTarget && !target) {
+		return
+	}
+	const hasSelectorTarget = Boolean(target?.selector || target?.ref)
 	const hasPos = options.pos != null
 
-	if (!hasSelector && !hasPos) {
-		output.writeWarn('--selector or --pos is required')
+	if (!hasSelectorTarget && !hasPos) {
+		output.writeWarn('--selector, --testid, --ref, or --pos is required')
 		process.exitCode = 2
 		return
 	}
@@ -54,8 +60,13 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 	}
 
 	const body: Record<string, unknown> = {}
-	if (hasSelector) {
-		body.selector = options.selector
+	if (target) {
+		if (target.selector) {
+			body.selector = target.selector
+		}
+		if (target.ref) {
+			body.ref = target.ref
+		}
 		body.all = options.all ?? false
 		if (options.text != null) {
 			body.text = options.text
@@ -93,20 +104,20 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 	}
 
 	// Coordinate-only click
-	if (!hasSelector) {
+	if (!target) {
 		output.writeHuman(`Clicked at (${x}, ${y})`)
 		return
 	}
 
 	if (successResp.matches === 0) {
-		writeNoElementFound(options.selector!, output)
+		writeNoElementFound(target.selector ?? target.ref!, output)
 		return
 	}
 
 	const label = successResp.clicked === 1 ? 'element' : 'elements'
 	if (hasPos) {
-		output.writeHuman(`Clicked ${successResp.clicked} ${label} for selector: ${options.selector} at offset (${x}, ${y})`)
+		output.writeHuman(`Clicked ${successResp.clicked} ${label} for ${describeElementTarget(target)} at offset (${x}, ${y})`)
 	} else {
-		output.writeHuman(`Clicked ${successResp.clicked} ${label} for selector: ${options.selector}`)
+		output.writeHuman(`Clicked ${successResp.clicked} ${label} for ${describeElementTarget(target)}`)
 	}
 }

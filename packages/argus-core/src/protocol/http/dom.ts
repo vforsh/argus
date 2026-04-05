@@ -1,3 +1,14 @@
+/** Stable element ref emitted by `snapshot` / `locate` and accepted by ref-aware commands. */
+export type ElementRef = string
+
+/** Shared element-target shape for commands that can address a node by selector or ref. */
+export type DomElementTarget = {
+	/** CSS selector to match element(s). */
+	selector?: string
+	/** Stable element ref such as "e12". Mutually exclusive with selector. */
+	ref?: ElementRef
+}
+
 /**
  * A node in the DOM element tree.
  * Only contains element nodes (nodeType === 1); text/comment nodes are filtered out.
@@ -19,6 +30,8 @@ export type DomNode = {
  * Detailed info about a single DOM element.
  */
 export type DomElementInfo = {
+	/** Stable element ref when the watcher can map this element back to a DOM-backed action target. */
+	ref?: ElementRef
 	/** CDP node ID. */
 	nodeId: number
 	/** Lowercased tag name. */
@@ -67,9 +80,7 @@ export type DomTreeResponse = {
 /**
  * Request payload for POST /dom/info.
  */
-export type DomInfoRequest = {
-	/** CSS selector to match element(s). */
-	selector: string
+export type DomInfoRequest = DomElementTarget & {
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
 	/** Max characters for outerHTML. Default: 50000. */
@@ -92,9 +103,7 @@ export type DomInfoResponse = {
 /**
  * Request payload for POST /dom/hover.
  */
-export type DomHoverRequest = {
-	/** CSS selector to match element(s). */
-	selector: string
+export type DomHoverRequest = DomElementTarget & {
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
 	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
@@ -121,6 +130,8 @@ export type MouseButton = 'left' | 'middle' | 'right'
 export type DomClickRequest = {
 	/** CSS selector to match element(s). */
 	selector?: string
+	/** Stable element ref to click. Mutually exclusive with selector. */
+	ref?: ElementRef
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
 	/** Viewport x-coordinate, or x-offset from element top-left when selector is set. */
@@ -292,6 +303,8 @@ export type DomSetFileResponse = {
 export type DomScrollToRequest = {
 	/** CSS selector to match element(s). */
 	selector?: string
+	/** Stable element ref to scroll. Mutually exclusive with selector. */
+	ref?: ElementRef
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
 	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
@@ -324,6 +337,8 @@ export type DomScrollToResponse = {
 export type DomScrollRequest = {
 	/** CSS selector to match element(s) — scroll origin is element center. */
 	selector?: string
+	/** Stable element ref — scroll origin is element center. Mutually exclusive with selector/x/y. */
+	ref?: ElementRef
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
 	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
@@ -350,9 +365,7 @@ export type DomScrollResponse = {
 /**
  * Request payload for POST /dom/fill.
  */
-export type DomFillRequest = {
-	/** CSS selector to match input/textarea/contenteditable element(s). */
-	selector: string
+export type DomFillRequest = DomElementTarget & {
 	/** Value to fill into the element. */
 	value: string
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
@@ -377,9 +390,7 @@ export type DomFillResponse = {
 /**
  * Request payload for POST /dom/focus.
  */
-export type DomFocusRequest = {
-	/** CSS selector to match element(s). */
-	selector: string
+export type DomFocusRequest = DomElementTarget & {
 	/** Allow multiple matches. If false and >1 match, error. Default: false. */
 	all?: boolean
 	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */

@@ -212,13 +212,18 @@ argus net tail app --grep api
 argus dom tree app --selector "#root"
 argus dom info app --testid "submit-btn"
 argus snapshot app --interactive
+argus locate role app button --name "Submit"
 ```
+
+`snapshot` and `locate` emit stable watcher-local refs such as `e5`, which you can feed back into ref-aware commands like `click`, `fill`, `hover`, and `dom info`.
 
 ### Interact with the page
 
 ```bash
 argus click app --selector "button.primary"
+argus click app --ref e5
 argus fill app --name email "vlad@example.com"
+argus locate label app "Email" --action fill --value "vlad@example.com"
 argus dom scroll app --by 0,300
 ```
 
@@ -323,6 +328,7 @@ Four packages:
 | `net` / `net tail`                                     | Fetch or stream network requests         |
 | `eval`                                                 | Evaluate JS expression                   |
 | `eval-until` / `wait`                                  | Poll JS expression until truthy          |
+| `locate role\|text\|label`                             | Find semantic elements and return refs   |
 | `code ls\|read\|grep\|deminify\|strings`               | Inspect and analyze runtime code         |
 | `dom tree` / `dom info`                                | Inspect DOM                              |
 | `click\|hover\|fill\|keydown\|scroll-to`               | Interact with elements                   |
@@ -339,6 +345,7 @@ Four packages:
 
 - `--selector <css>`: target elements by CSS selector
 - `--testid <id>`: shorthand for `--selector "[data-testid='<id>']"`
+- `--ref <elementRef>`: target an element ref from `snapshot` / `locate` output
 - `--text <string>`: filter by text content, supports `/regex/flags`
 - `--name <attr>`: shorthand for `--selector "[name=<attr>]"`
 - `--all`: allow multiple element matches

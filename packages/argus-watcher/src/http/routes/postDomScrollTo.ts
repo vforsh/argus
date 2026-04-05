@@ -73,7 +73,11 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 			return respondJson(res, response)
 		}
 
-		const { scrollX, scrollY } = await scrollDomNodes(ctx.cdpSession, nodeIds, mode)
+		const { scrollX, scrollY } = await scrollDomNodes(
+			ctx.cdpSession,
+			nodeIds.map((nodeId) => ({ nodeId })),
+			mode,
+		)
 		const response: DomScrollToResponse = { ok: true, matches: allNodeIds.length, scrolled: nodeIds.length, scrollX, scrollY }
 		respondJson(res, response)
 	} catch (error) {

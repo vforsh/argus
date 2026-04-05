@@ -67,7 +67,11 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 			return respondJson(res, response)
 		}
 
-		await emulateScrollOnNodes(ctx.cdpSession, nodeIds, payload.delta)
+		await emulateScrollOnNodes(
+			ctx.cdpSession,
+			nodeIds.map((nodeId) => ({ nodeId })),
+			payload.delta,
+		)
 		const response: DomScrollResponse = { ok: true, matches: allNodeIds.length, scrolled: nodeIds.length }
 		respondJson(res, response)
 	} catch (error) {

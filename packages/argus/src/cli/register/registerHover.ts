@@ -9,12 +9,13 @@ export function registerHover(program: Command): void {
 		.description('Hover over element(s) matching a CSS selector')
 		.option('--selector <css>', 'CSS selector to match element(s)')
 		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
+		.option('--ref <elementRef>', 'Stable element ref from snapshot/locate output')
 		.option('--all', 'Allow multiple matches (default: error if >1 match)')
 		.option('--text <string>', 'Filter by textContent (trimmed). Supports /regex/flags syntax')
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus hover app --selector "#btn"\n  $ argus hover app --selector ".item" --all\n  $ argus hover app --selector "#btn" --json\n',
+			'\nExamples:\n  $ argus hover app --selector "#btn"\n  $ argus hover app --ref e5\n  $ argus hover app --selector ".item" --all\n  $ argus hover app --selector "#btn" --json\n',
 		)
 		.action(async (id, options) => {
 			if (!resolveTestId(options)) return

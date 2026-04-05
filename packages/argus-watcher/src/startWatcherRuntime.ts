@@ -2,6 +2,7 @@ import type { DialogStatus, LogEvent } from '@vforsh/argus-core'
 import { startHttpServer } from './http/server.js'
 import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
 import { createPageIndicatorController, validatePageIndicatorOptions, type PageIndicatorController } from './cdp/pageIndicator.js'
+import { ElementRefRegistry } from './cdp/elementRefs.js'
 import { DialogTracker } from './dialogs/DialogTracker.js'
 import type { CdpSourceHandle, CdpSourceStatus, CdpSourceTarget } from './sources/types.js'
 import type { StartWatcherOptions, WatcherHandle } from './index.js'
@@ -22,6 +23,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	let closeOnce: (() => Promise<void>) | null = null
 	let cdpStatus: CdpSourceStatus = { attached: false, target: null }
 	const dialogTracker = new DialogTracker()
+	const elementRefs = new ElementRefRegistry()
 
 	const logToPageConsole = (message: string): void => {
 		if (pageConsoleLogging === 'none') {
@@ -194,6 +196,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	}
 
 	const handlePageNavigation = (info: { url: string; title: string | null }): void => {
+		elementRefs.reset()
 		fileLogger?.rotate(info)
 		onIndicatorNavigation(getIndicatorSession(), info)
 		runtimeEditor?.reset()
@@ -204,6 +207,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	}
 
 	const handleSourceAttach = async (session: CdpSourceHandle['session'], target: CdpSourceTarget): Promise<void> => {
+		elementRefs.reset()
 		dialogTracker.clear()
 		runtimeEditor?.rebind()
 		await emulationController.onAttach(session)
@@ -217,6 +221,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		session: CdpSourceHandle['session'],
 		target: { id: string; title: string; url: string; type?: string | null; parentId?: string | null },
 	): void => {
+		elementRefs.reset()
 		updateCdpStatus({
 			attached: true,
 			target: {
@@ -231,6 +236,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	}
 
 	const handleSourceDetach = (reason?: string): void => {
+		elementRefs.reset()
 		dialogTracker.clear()
 		runtimeEditor?.rebind()
 		networkCapture?.onDetached()
@@ -268,6 +274,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		port,
 		buffer,
 		netBuffer,
+		elementRefs,
 		getWatcher: () => record,
 		getCdpStatus: () => cdpStatus,
 		getDialog: () => dialogTracker.getActive(),

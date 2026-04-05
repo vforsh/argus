@@ -3,6 +3,7 @@ import type { AuthStateCookie, DialogStatus, LogLevel, WatcherRecord } from '@vf
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
+import type { ElementRefRegistry } from '../cdp/elementRefs.js'
 import type { RuntimeEditor } from '../cdp/editor.js'
 import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
@@ -31,6 +32,9 @@ export type HttpRequestEventMetadata = {
 		| 'trace/stop'
 		| 'screenshot'
 		| 'snapshot'
+		| 'locate/role'
+		| 'locate/text'
+		| 'locate/label'
 		| 'code/list'
 		| 'code/read'
 		| 'code/grep'
@@ -88,6 +92,7 @@ export type HttpServerOptions = {
 	getWatcher: () => WatcherRecord
 	getCdpStatus: () => { attached: boolean; target: { title: string | null; url: string | null } | null }
 	getDialog: () => DialogStatus | null
+	elementRefs: ElementRefRegistry
 	/** Session for page-scoped commands that must always target the top-level page. */
 	pageCdpSession: CdpSessionHandle
 	cdpSession: CdpSessionHandle

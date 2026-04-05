@@ -236,29 +236,38 @@ argus dom tree app --testid "main-content"
 argus dom tree app --selector "div" --all --depth 3
 argus dom info app --selector "#root"
 argus dom info app --selector "div" --all --json
+argus dom info app --ref e3
 argus snapshot app
 argus snapshot app --interactive
 argus snapshot app --selector "form" --depth 3
 argus snapshot app --testid "login-form"
+argus locate role app button --name "Submit"
+argus locate text app "Continue"
+argus locate label app "Email" --action fill --value "me@example.com"
 ```
 
 `--testid <id>` is shorthand for `--selector "[data-testid='<id>']"` and works on all commands that accept `--selector`. Cannot be combined with `--selector`.
 
-`dom tree` returns a DOM subtree; control depth with `--depth` (default 2), cap nodes with `--max-nodes`. `dom info` returns detailed element info (attributes, outerHTML, box model). `snapshot` (aliases: `snap`, `ax`) captures an accessibility tree; `--interactive` / `-i` filters to buttons, links, inputs, etc.
+`dom tree` returns a DOM subtree; control depth with `--depth` (default 2), cap nodes with `--max-nodes`. `dom info` returns detailed element info (attributes, outerHTML, box model) and also accepts `--ref <elementRef>`. `snapshot` (aliases: `snap`, `ax`) captures an accessibility tree; `--interactive` / `-i` filters to buttons, links, inputs, etc.
+
+`snapshot` and `locate` emit stable watcher-local refs such as `e5`, which you can feed back into ref-aware commands instead of repeating selectors. `locate role|text|label` is the semantic lookup layer: match by accessibility role + name, visible/accessible text, or form label/accessibility name. Use `--action click|fill|focus|hover` to run the follow-up action immediately; `--value` is required with `--action fill`.
 
 ### Interact (top-level)
 
 ```bash
 argus click app --selector "button.submit"
 argus click app --testid "submit-btn"
+argus click app --ref e5
 argus click app --selector ".delayed-btn" --wait 5s
 argus click app --pos 100,200
 argus click app --selector "#item" --button right
 argus click app --pos 100,200 --button middle
 argus hover app --selector ".menu-item"
+argus hover app --ref e5
 argus hover app --selector ".item" --all
 argus fill app --selector "#username" "Bob"
 argus fill app --testid "username" "Bob"
+argus fill app --ref e7 "Bob"
 argus fill app --selector "textarea" "New content"
 argus fill app --selector "input[type=text]" --all "reset"
 argus fill app --selector "#desc" --value-file ./description.txt
@@ -276,7 +285,7 @@ argus scroll-to app --selector ".panel" --to 0,1000
 argus scroll-to app --selector ".panel" --by 0,500
 ```
 
-`click` clicks at coordinates (`--pos x,y`) or on elements matching `--selector`/`--testid`. `--button left|middle|right` selects the mouse button (default: left). `hover` dispatches mouseover/mouseenter on matched elements. `fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur). Value can come from inline arg, `--value-file <path>`, or `--value-stdin` (also `-` as value arg). `keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos. `scroll-to` programmatically scrolls via `scrollTo()`/`scrollBy()`/`scrollIntoView()`. `--selector` alone scrolls element into view. `--to x,y` / `--by x,y` alone scrolls the viewport. Combine `--selector` with `--to`/`--by` to scroll within a scrollable container. Returns `{ scrollX, scrollY }`.
+`click` clicks at coordinates (`--pos x,y`) or on elements matching `--selector`/`--testid`/`--ref`. `--button left|middle|right` selects the mouse button (default: left). `hover` dispatches mouseover/mouseenter on matched elements and also accepts `--ref`. `fill` sets value on input/textarea/contenteditable; triggers framework-compatible events (focus → input → change → blur) and accepts `--selector`, `--testid`, `--name`, or `--ref`. Value can come from inline arg, `--value-file <path>`, or `--value-stdin` (also `-` as value arg). `keydown` dispatches keyboard events; use `--selector` to focus an element first, `--modifiers` for combos. `scroll-to` programmatically scrolls via `scrollTo()`/`scrollBy()`/`scrollIntoView()`. `--selector` alone scrolls element into view. `--to x,y` / `--by x,y` alone scrolls the viewport. Combine `--selector` with `--to`/`--by` to scroll within a scrollable container. Returns `{ scrollX, scrollY }`.
 
 `--wait <duration>` (on click, fill) polls for the selector to appear before executing the action — useful for reactive UIs where elements render after navigation/SPA transitions. Duration format: `5s`, `500ms`, `2m`. `--text` filters by textContent, `--all` allows multiple matches.
 
@@ -297,12 +306,13 @@ Browser JavaScript dialogs (`alert`, `confirm`, `prompt`, `beforeunload`). `stat
 ```bash
 argus dom focus app --selector "#input"
 argus dom focus app --testid "search-box"
+argus dom focus app --ref e5
 argus dom set-file app --selector "input[type=file]" --file ./build.zip
 argus dom upload app --selector "input[type=file]" --file ~/Downloads/test.zip
 argus dom set-file app --selector "#upload" --file a.png --wait 5s
 ```
 
-`dom focus` programmatically focuses an element via CDP (`DOM.focus`); useful before typing or keyboard interactions. `dom set-file` (alias: `dom upload`) sets files on `<input type="file">` elements; `--wait` polls for selector. Path flags (`--file`, `--value-file`, `--html-file`, `--artifacts`, inject paths) all support `~/` expansion.
+`dom focus` programmatically focuses an element via CDP (`DOM.focus`); useful before typing or keyboard interactions. It accepts `--selector`, `--testid`, or `--ref`. `dom set-file` (alias: `dom upload`) sets files on `<input type="file">` elements; `--wait` polls for selector. Path flags (`--file`, `--value-file`, `--html-file`, `--artifacts`, inject paths) all support `~/` expansion.
 
 ### DOM (scroll — emulate gesture)
 

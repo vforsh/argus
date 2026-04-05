@@ -1,5 +1,5 @@
 import type { CdpSessionHandle } from '../connection.js'
-import { getDomRootId, resolveSelectorMatches } from './selector.js'
+import { getDomRootId, resolveSelectorMatches, toDomNodeDescriptor, type DomNodeHandle } from './selector.js'
 
 /** Options for filling input/textarea/contenteditable elements. */
 export type FillElementsOptions = {
@@ -43,11 +43,11 @@ const FILL_FUNCTION = `function(value) {
 }`
 
 /** Fill pre-resolved node IDs with a value. Skips selector resolution. */
-export const fillResolvedNodes = async (session: CdpSessionHandle, nodeIds: number[], value: string): Promise<number> => {
-	if (nodeIds.length === 0) return 0
+export const fillResolvedNodes = async (session: CdpSessionHandle, handles: DomNodeHandle[], value: string): Promise<number> => {
+	if (handles.length === 0) return 0
 
-	for (const nodeId of nodeIds) {
-		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+	for (const handle of handles) {
+		const resolved = (await session.sendAndWait('DOM.resolveNode', toDomNodeDescriptor(handle))) as { object?: { objectId?: string } }
 		const objectId = resolved.object?.objectId
 		if (!objectId) continue
 
@@ -60,7 +60,7 @@ export const fillResolvedNodes = async (session: CdpSessionHandle, nodeIds: numb
 		})
 	}
 
-	return nodeIds.length
+	return handles.length
 }
 
 /**
@@ -74,6 +74,10 @@ export const fillElements = async (session: CdpSessionHandle, options: FillEleme
 	const rootId = await getDomRootId(session)
 	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, options.all ?? false, options.text)
 
-	const filledCount = await fillResolvedNodes(session, nodeIds, options.value)
+	const filledCount = await fillResolvedNodes(
+		session,
+		nodeIds.map((nodeId) => ({ nodeId })),
+		options.value,
+	)
 	return { allNodeIds, filledCount }
 }

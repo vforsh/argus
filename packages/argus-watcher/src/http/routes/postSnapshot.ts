@@ -21,11 +21,15 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 	emitRequest(ctx, res, 'snapshot')
 
 	try {
-		const response: SnapshotResponse = await fetchAccessibilitySnapshot(ctx.cdpSession, {
-			selector: payload.selector,
-			depth: payload.depth,
-			interactive: payload.interactive ?? false,
-		})
+		const response: SnapshotResponse = await fetchAccessibilitySnapshot(
+			ctx.cdpSession,
+			{
+				selector: payload.selector,
+				depth: payload.depth,
+				interactive: payload.interactive ?? false,
+			},
+			ctx.elementRefs,
+		)
 		respondJson(res, response)
 	} catch (error) {
 		respondError(res, error)

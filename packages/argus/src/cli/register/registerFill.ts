@@ -10,6 +10,7 @@ export function registerFill(program: Command): void {
 		.description('Fill input/textarea/contenteditable elements with a value')
 		.option('--selector <css>', 'CSS selector for target element(s)')
 		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
+		.option('--ref <elementRef>', 'Stable element ref from snapshot/locate output')
 		.option('--name <attr>', 'Shorthand for --selector "[name=<attr>]"')
 		.option('--value-file <path>', 'Read value from a file')
 		.option('--value-stdin', 'Read value from stdin (also triggered by "-" as value arg)')
@@ -19,11 +20,11 @@ export function registerFill(program: Command): void {
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus fill app --selector "#username" "Bob"\n  $ argus fill app --testid "username" "Bob"\n  $ argus fill app --name "title" "Hello"\n  $ argus fill app --selector "textarea" "New content"\n  $ argus fill app --selector "input[type=text]" --all "reset"\n  $ argus fill app --selector "#desc" --value-file ./description.txt\n  $ echo "hello" | argus fill app --selector "#input" --value-stdin\n  $ argus fill app --selector "#input" - < value.txt\n',
+			'\nExamples:\n  $ argus fill app --selector "#username" "Bob"\n  $ argus fill app --testid "username" "Bob"\n  $ argus fill app --ref e7 "Bob"\n  $ argus fill app --name "title" "Hello"\n  $ argus fill app --selector "textarea" "New content"\n  $ argus fill app --selector "input[type=text]" --all "reset"\n  $ argus fill app --selector "#desc" --value-file ./description.txt\n  $ echo "hello" | argus fill app --selector "#input" --value-stdin\n  $ argus fill app --selector "#input" - < value.txt\n',
 		)
 		.action(async (id, value, options) => {
-			if (options.testid && options.name) {
-				console.error('Cannot use both --testid and --name.')
+			if (options.name && (options.testid || options.ref)) {
+				console.error('Cannot use --name with --testid or --ref.')
 				process.exitCode = 2
 				return
 			}

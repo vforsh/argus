@@ -1,7 +1,8 @@
 import type { DomElementInfo, DomInfoResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../connection.js'
+import type { ElementRefRegistry } from '../elementRefs.js'
 import type { CdpDescribeResult } from './types.js'
-import { getDomRootId, resolveSelectorMatches, toAttributesRecord, countElementChildren, clamp } from './selector.js'
+import { clamp, countElementChildren, resolveElementTargets, toAttributesRecord, toDomNodeDescriptor } from './selector.js'
 
 const DEFAULT_OUTER_HTML_MAX_CHARS = 50_000
 const MAX_OUTER_HTML_CHARS = 500_000
@@ -12,7 +13,8 @@ type CdpOuterHtmlResult = {
 
 /** Options for fetching DOM element info by selector. */
 export type FetchDomInfoOptions = {
-	selector: string
+	selector?: string
+	ref?: string
 	all?: boolean
 	outerHtmlMaxChars?: number
 	text?: string
@@ -21,24 +23,35 @@ export type FetchDomInfoOptions = {
 /**
  * Fetch detailed info for element(s) matching a CSS selector.
  */
-export const fetchDomInfoBySelector = async (session: CdpSessionHandle, options: FetchDomInfoOptions): Promise<DomInfoResponse> => {
+export const fetchDomInfoBySelector = async (
+	session: CdpSessionHandle,
+	elementRefs: ElementRefRegistry,
+	options: FetchDomInfoOptions,
+): Promise<DomInfoResponse> => {
 	const all = options.all ?? false
 	const maxChars = clamp(options.outerHtmlMaxChars ?? DEFAULT_OUTER_HTML_MAX_CHARS, 0, MAX_OUTER_HTML_CHARS)
 
-	await session.sendAndWait('DOM.enable')
+	const resolved = await resolveElementTargets(session, elementRefs, {
+		selector: options.selector,
+		ref: options.ref,
+		all,
+		text: options.text,
+	})
+	if (resolved.missingRef && options.ref) {
+		throw Object.assign(new Error(`Unknown or stale element ref: ${options.ref}`), { code: 'invalid_ref' })
+	}
+	const { allHandles, handles } = resolved
 
-	const rootId = await getDomRootId(session)
-	const { allNodeIds, nodeIds } = await resolveSelectorMatches(session, rootId, options.selector, all, options.text)
-
-	if (allNodeIds.length === 0) {
+	if (allHandles.length === 0) {
 		return { ok: true, matches: 0, elements: [] }
 	}
 
 	const elements: DomElementInfo[] = []
 
-	for (const nodeId of nodeIds) {
+	for (const handle of handles) {
+		const descriptor = toDomNodeDescriptor(handle)
 		const describeResult = (await session.sendAndWait('DOM.describeNode', {
-			nodeId,
+			...descriptor,
 			depth: 1, // Just enough to get child count
 		})) as CdpDescribeResult
 
@@ -54,7 +67,7 @@ export const fetchDomInfoBySelector = async (session: CdpSessionHandle, options:
 		let outerHTMLTruncated = false
 
 		try {
-			const htmlResult = (await session.sendAndWait('DOM.getOuterHTML', { nodeId })) as CdpOuterHtmlResult
+			const htmlResult = (await session.sendAndWait('DOM.getOuterHTML', descriptor)) as CdpOuterHtmlResult
 			outerHTML = htmlResult.outerHTML ?? null
 
 			if (outerHTML && outerHTML.length > maxChars) {
@@ -66,7 +79,8 @@ export const fetchDomInfoBySelector = async (session: CdpSessionHandle, options:
 		}
 
 		elements.push({
-			nodeId,
+			ref: node.backendNodeId != null ? elementRefs.getOrCreate(node.backendNodeId) : undefined,
+			nodeId: node.nodeId,
 			tag: (node.localName ?? node.nodeName).toLowerCase(),
 			attributes,
 			childElementCount,
@@ -75,5 +89,5 @@ export const fetchDomInfoBySelector = async (session: CdpSessionHandle, options:
 		})
 	}
 
-	return { ok: true, matches: allNodeIds.length, elements }
+	return { ok: true, matches: allHandles.length, elements }
 }

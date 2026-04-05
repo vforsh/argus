@@ -1,5 +1,5 @@
 import type { CdpSessionHandle } from './connection.js'
-import { resolveSelectorTargets } from './dom/selector.js'
+import { resolveSelectorTargets, toDomNodeDescriptor, type DomNodeHandle } from './dom/selector.js'
 
 type SelectorMatchResult = {
 	allNodeIds: number[]
@@ -20,14 +20,14 @@ export const resolveDomSelectorMatches = async (
 	return resolveSelectorTargets(session, { selector, all, text })
 }
 
-export const hoverDomNodes = async (session: CdpSessionHandle, nodeIds: number[]): Promise<void> => {
-	if (nodeIds.length === 0) {
+export const hoverDomNodes = async (session: CdpSessionHandle, handles: DomNodeHandle[]): Promise<void> => {
+	if (handles.length === 0) {
 		return
 	}
 
-	for (const nodeId of nodeIds) {
-		await scrollIntoView(session, nodeId)
-		const point = await resolveNodeCenter(session, nodeId)
+	for (const handle of handles) {
+		await scrollIntoView(session, handle)
+		const point = await resolveNodeCenter(session, handle)
 		await dispatchMouseEvent(session, { type: 'mouseMoved', x: point.x, y: point.y })
 	}
 }
@@ -42,49 +42,54 @@ export const clickAtPoint = async (session: CdpSessionHandle, x: number, y: numb
 	await dispatchMouseEvent(session, { type: 'mouseReleased', x, y, button, buttons: 0, clickCount: 1 })
 }
 
-export const resolveNodeTopLeft = async (session: CdpSessionHandle, nodeId: number): Promise<Point> => {
-	const { x, y, w, h } = await resolveNodeRect(session, nodeId)
+export const resolveNodeTopLeft = async (session: CdpSessionHandle, handle: DomNodeHandle): Promise<Point> => {
+	const { x, y, w, h } = await resolveNodeRect(session, handle)
 	if (w <= 0 || h <= 0) {
 		throw createNotInteractableError('Element has zero area')
 	}
 	return { x, y }
 }
 
-export const clickDomNodes = async (session: CdpSessionHandle, nodeIds: number[], button: 'left' | 'middle' | 'right' = 'left'): Promise<void> => {
-	if (nodeIds.length === 0) {
+export const clickDomNodes = async (
+	session: CdpSessionHandle,
+	handles: DomNodeHandle[],
+	button: 'left' | 'middle' | 'right' = 'left',
+): Promise<void> => {
+	if (handles.length === 0) {
 		return
 	}
 
 	const mask = BUTTON_MASK[button] ?? 1
-	for (const nodeId of nodeIds) {
-		await scrollIntoView(session, nodeId)
-		const point = await resolveNodeCenter(session, nodeId)
+	for (const handle of handles) {
+		await scrollIntoView(session, handle)
+		const point = await resolveNodeCenter(session, handle)
 		await dispatchMouseEvent(session, { type: 'mouseMoved', x: point.x, y: point.y })
 		await dispatchMouseEvent(session, { type: 'mousePressed', x: point.x, y: point.y, button, buttons: mask, clickCount: 1 })
 		await dispatchMouseEvent(session, { type: 'mouseReleased', x: point.x, y: point.y, button, buttons: 0, clickCount: 1 })
 	}
 }
 
-export const focusDomNodes = async (session: CdpSessionHandle, nodeIds: number[]): Promise<void> => {
-	if (nodeIds.length === 0) {
+export const focusDomNodes = async (session: CdpSessionHandle, handles: DomNodeHandle[]): Promise<void> => {
+	if (handles.length === 0) {
 		return
 	}
 
-	for (const nodeId of nodeIds) {
-		await scrollIntoView(session, nodeId)
-		await session.sendAndWait('DOM.focus', { nodeId })
+	for (const handle of handles) {
+		await scrollIntoView(session, handle)
+		await session.sendAndWait('DOM.focus', toDomNodeDescriptor(handle))
 	}
 }
 
-export const scrollIntoView = async (session: CdpSessionHandle, nodeId: number): Promise<void> => {
+export const scrollIntoView = async (session: CdpSessionHandle, handle: DomNodeHandle): Promise<void> => {
+	const descriptor = toDomNodeDescriptor(handle)
 	try {
-		await session.sendAndWait('DOM.scrollIntoViewIfNeeded', { nodeId })
+		await session.sendAndWait('DOM.scrollIntoViewIfNeeded', descriptor)
 		return
 	} catch {
 		// Fallback to runtime evaluation if CDP cannot scroll directly.
 	}
 
-	const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+	const resolved = (await session.sendAndWait('DOM.resolveNode', descriptor)) as { object?: { objectId?: string } }
 	const objectId = resolved.object?.objectId
 	if (!objectId) {
 		throw createNotInteractableError('Unable to resolve node for scrolling')
@@ -106,16 +111,16 @@ type ScrollMode = { to?: { x: number; y: number }; by?: { x: number; y: number }
  * Scroll matched DOM elements. If mode has to/by, scrolls within the element container.
  * Otherwise scrolls each element into view.
  */
-export const scrollDomNodes = async (session: CdpSessionHandle, nodeIds: number[], mode: ScrollMode): Promise<ScrollPosition> => {
-	if (nodeIds.length === 0) {
+export const scrollDomNodes = async (session: CdpSessionHandle, handles: DomNodeHandle[], mode: ScrollMode): Promise<ScrollPosition> => {
+	if (handles.length === 0) {
 		return getViewportScroll(session)
 	}
 
-	for (const nodeId of nodeIds) {
+	for (const handle of handles) {
 		if (mode.to || mode.by) {
-			await scrollElementContainer(session, nodeId, mode)
+			await scrollElementContainer(session, handle, mode)
 		} else {
-			await scrollIntoView(session, nodeId)
+			await scrollIntoView(session, handle)
 		}
 	}
 
@@ -135,8 +140,8 @@ export const scrollViewport = async (session: CdpSessionHandle, mode: ScrollMode
 	return getViewportScroll(session)
 }
 
-const scrollElementContainer = async (session: CdpSessionHandle, nodeId: number, mode: ScrollMode): Promise<void> => {
-	const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+const scrollElementContainer = async (session: CdpSessionHandle, handle: DomNodeHandle, mode: ScrollMode): Promise<void> => {
+	const resolved = (await session.sendAndWait('DOM.resolveNode', toDomNodeDescriptor(handle))) as { object?: { objectId?: string } }
 	const objectId = resolved.object?.objectId
 	if (!objectId) {
 		throw createNotInteractableError('Unable to resolve node for scrolling')
@@ -162,8 +167,8 @@ const getViewportScroll = async (session: CdpSessionHandle): Promise<ScrollPosit
 	return { scrollX: parsed.scrollX, scrollY: parsed.scrollY }
 }
 
-const resolveNodeCenter = async (session: CdpSessionHandle, nodeId: number): Promise<Point> => {
-	const { x, y, w, h } = await resolveNodeRect(session, nodeId)
+const resolveNodeCenter = async (session: CdpSessionHandle, handle: DomNodeHandle): Promise<Point> => {
+	const { x, y, w, h } = await resolveNodeRect(session, handle)
 	if (w <= 0 || h <= 0) {
 		throw createNotInteractableError('Element has zero area')
 	}
@@ -171,8 +176,9 @@ const resolveNodeCenter = async (session: CdpSessionHandle, nodeId: number): Pro
 }
 
 /** Uses getBoundingClientRect() to get viewport-relative coordinates (no scroll-offset ambiguity). */
-const resolveNodeRect = async (session: CdpSessionHandle, nodeId: number): Promise<{ x: number; y: number; w: number; h: number }> => {
-	const boxModel = (await session.sendAndWait('DOM.getBoxModel', { nodeId }).catch(() => null)) as {
+const resolveNodeRect = async (session: CdpSessionHandle, handle: DomNodeHandle): Promise<{ x: number; y: number; w: number; h: number }> => {
+	const descriptor = toDomNodeDescriptor(handle)
+	const boxModel = (await session.sendAndWait('DOM.getBoxModel', descriptor).catch(() => null)) as {
 		model?: { border?: number[]; content?: number[] }
 	} | null
 	const quad = boxModel?.model?.border ?? boxModel?.model?.content
@@ -186,7 +192,7 @@ const resolveNodeRect = async (session: CdpSessionHandle, nodeId: number): Promi
 		return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
 	}
 
-	const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
+	const resolved = (await session.sendAndWait('DOM.resolveNode', descriptor)) as { object?: { objectId?: string } }
 	const objectId = resolved.object?.objectId
 	if (!objectId) {
 		throw createNotInteractableError('Unable to resolve node')
@@ -218,14 +224,14 @@ export const emulateScroll = async (session: CdpSessionHandle, x: number, y: num
 }
 
 /** Emulate touch scroll gestures on resolved DOM nodes (scrolls at each element's center). */
-export const emulateScrollOnNodes = async (session: CdpSessionHandle, nodeIds: number[], delta: { x: number; y: number }): Promise<void> => {
-	if (nodeIds.length === 0) {
+export const emulateScrollOnNodes = async (session: CdpSessionHandle, handles: DomNodeHandle[], delta: { x: number; y: number }): Promise<void> => {
+	if (handles.length === 0) {
 		return
 	}
 
-	for (const nodeId of nodeIds) {
-		await scrollIntoView(session, nodeId)
-		const point = await resolveNodeCenter(session, nodeId)
+	for (const handle of handles) {
+		await scrollIntoView(session, handle)
+		const point = await resolveNodeCenter(session, handle)
 		await emulateScroll(session, point.x, point.y, delta)
 	}
 }

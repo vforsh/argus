@@ -6,7 +6,16 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { getFreePort } from './helpers/ports.js'
 import { runCommand, spawnAndWait, stopProcess } from './helpers/process.js'
 import type { ChildProcess } from 'node:child_process'
-import type { DomTreeResponse, DomInfoResponse, DomHoverResponse, DomClickResponse, DomKeydownResponse, ErrorResponse } from '@vforsh/argus-core'
+import type {
+	DomTreeResponse,
+	DomInfoResponse,
+	DomHoverResponse,
+	DomClickResponse,
+	DomKeydownResponse,
+	ErrorResponse,
+	LocateResponse,
+	SnapshotResponse,
+} from '@vforsh/argus-core'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -33,6 +42,7 @@ const TEST_HTML = `
       <article class="article" data-testid="article-2">
         <p class="paragraph">Third paragraph</p>
       </article>
+      <label for="input">Email</label>
       <input id="input" type="text" />
       <button id="btn" class="action">Click me</button>
       <div id="multi-1" class="multi">Multi One</div>
@@ -314,6 +324,58 @@ describe('dom tree and dom info e2e', () => {
 
 		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
 		expect(events).toContain('click:btn')
+	})
+
+	test('snapshot emits stable element refs for actionable nodes', async () => {
+		const { stdout } = await runArgus(['snapshot', watcherId, '--interactive', '--json'])
+		const response = JSON.parse(stdout) as SnapshotResponse
+		expect(response.ok).toBe(true)
+
+		const flatten = (nodes: SnapshotResponse['roots']): Array<{ ref?: string; role: string; name: string }> =>
+			nodes.flatMap((node) => [node, ...(node.children ? flatten(node.children) : [])])
+
+		const button = flatten(response.roots).find((node) => node.role === 'button' && node.name === 'Click me')
+		expect(button?.ref).toMatch(/^e\d+$/)
+	})
+
+	test('dom click accepts --ref from snapshot output', async () => {
+		await page.evaluate(() => {
+			;(globalThis as { __events?: string[] }).__events = []
+		})
+
+		const { stdout: snapshotStdout } = await runArgus(['snapshot', watcherId, '--interactive', '--json'])
+		const snapshot = JSON.parse(snapshotStdout) as SnapshotResponse
+		const flatten = (nodes: SnapshotResponse['roots']): Array<{ ref?: string; role: string; name: string }> =>
+			nodes.flatMap((node) => [node, ...(node.children ? flatten(node.children) : [])])
+		const buttonRef = flatten(snapshot.roots).find((node) => node.role === 'button' && node.name === 'Click me')?.ref
+		expect(buttonRef).toMatch(/^e\d+$/)
+
+		const { stdout } = await runArgus(['click', watcherId, '--ref', buttonRef!, '--json'])
+		const response = JSON.parse(stdout) as DomClickResponse
+		expect(response.ok).toBe(true)
+		expect(response.clicked).toBe(1)
+
+		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		expect(events).toContain('click:btn')
+	})
+
+	test('locate role finds semantic matches and returns refs', async () => {
+		const { stdout } = await runArgus(['locate', 'role', watcherId, 'button', '--name', 'Click me', '--json'])
+		const response = JSON.parse(stdout) as LocateResponse
+		expect(response.ok).toBe(true)
+		expect(response.matches).toBe(1)
+		expect(response.elements[0]?.ref).toMatch(/^e\d+$/)
+		expect(response.elements[0]?.role).toBe('button')
+		expect(response.elements[0]?.name).toBe('Click me')
+	})
+
+	test('locate label can fill a control via --action fill', async () => {
+		await page.locator('#input').fill('')
+
+		await runArgus(['locate', 'label', watcherId, 'Email', '--action', 'fill', '--value', 'agent@example.com'])
+
+		const value = await page.locator('#input').inputValue()
+		expect(value).toBe('agent@example.com')
 	})
 
 	test('dom click errors on multiple matches without --all', async () => {

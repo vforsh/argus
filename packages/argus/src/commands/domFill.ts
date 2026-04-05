@@ -5,11 +5,12 @@ import { formatError } from '../cli/parse.js'
 import { readStdin } from './evalShared.js'
 import { resolvePath } from '../utils/paths.js'
 import { requestWatcherAction } from '../watchers/requestWatcher.js'
-import { parseWaitDuration, writeNoElementFound } from './dom/shared.js'
+import { describeElementTarget, parseWaitDuration, requireElementTarget, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom fill command. */
 export type DomFillOptions = {
 	selector?: string
+	ref?: string
 	name?: string
 	valueFile?: string
 	valueStdin?: boolean
@@ -71,8 +72,8 @@ const resolveValueInput = async (value: string | undefined, options: DomFillOpti
 export const runDomFill = async (id: string | undefined, value: string | undefined, options: DomFillOptions): Promise<void> => {
 	const output = createOutput(options)
 
-	if (options.name && options.selector) {
-		output.writeWarn('Cannot use both --name and --selector')
+	if (options.name && (options.selector || options.ref)) {
+		output.writeWarn('Cannot use --name with --selector or --ref')
 		process.exitCode = 2
 		return
 	}
@@ -81,9 +82,8 @@ export const runDomFill = async (id: string | undefined, value: string | undefin
 		options.selector = `[name="${options.name}"]`
 	}
 
-	if (!options.selector || options.selector.trim() === '') {
-		output.writeWarn('--selector, --name, or --testid is required')
-		process.exitCode = 2
+	const target = requireElementTarget({ selector: options.selector, ref: options.ref }, output)
+	if (!target) {
 		return
 	}
 
@@ -99,10 +99,15 @@ export const runDomFill = async (id: string | undefined, value: string | undefin
 	}
 
 	const body: Record<string, unknown> = {
-		selector: options.selector,
 		value: resolvedValue,
 		all: options.all ?? false,
 		text: options.text,
+	}
+	if (target.selector) {
+		body.selector = target.selector
+	}
+	if (target.ref) {
+		body.ref = target.ref
 	}
 	if (waitMs > 0) {
 		body.wait = waitMs
@@ -129,10 +134,10 @@ export const runDomFill = async (id: string | undefined, value: string | undefin
 	}
 
 	if (successResp.matches === 0) {
-		writeNoElementFound(options.selector, output)
+		writeNoElementFound(target.selector ?? target.ref!, output)
 		return
 	}
 
 	const elLabel = successResp.filled === 1 ? '1 element' : `${successResp.filled} elements`
-	output.writeHuman(`Filled ${elLabel} for selector: ${options.selector}`)
+	output.writeHuman(`Filled ${elLabel} for ${describeElementTarget(target)}`)
 }

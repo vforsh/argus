@@ -1,9 +1,9 @@
 import type { DomFillRequest, DomFillResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
-import { respondMultipleMatches } from './domSelectorRoute.js'
+import { respondMissingElementRef, respondMultipleMatches, respondTargetResolutionError } from './domSelectorRoute.js'
 import { emitRequest } from './types.js'
 import { fillResolvedNodes } from '../../cdp/dom.js'
-import { resolveSelectorTargets } from '../../cdp/dom/selector.js'
+import { resolveElementTargets } from '../../cdp/dom/selector.js'
 import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
 
 export const handle: RouteHandler = async (req, res, _url, ctx) => {
@@ -12,8 +12,10 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		return
 	}
 
-	if (!payload.selector || typeof payload.selector !== 'string') {
-		return respondInvalidBody(res, 'selector is required')
+	const hasSelector = typeof payload.selector === 'string' && payload.selector.trim() !== ''
+	const hasRef = typeof payload.ref === 'string' && payload.ref.trim() !== ''
+	if (hasSelector === hasRef) {
+		return respondInvalidBody(res, 'Exactly one of selector or ref is required')
 	}
 
 	if (typeof payload.value !== 'string') {
@@ -33,21 +35,29 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 	emitRequest(ctx, res, 'dom/fill')
 
 	try {
-		const { allNodeIds, nodeIds } = await resolveSelectorTargets(ctx.cdpSession, {
+		const resolved = await resolveElementTargets(ctx.cdpSession, ctx.elementRefs, {
 			selector: payload.selector,
+			ref: payload.ref,
 			all,
 			text: payload.text,
 			waitMs,
 		})
+		if (resolved.missingRef && payload.ref) {
+			return respondMissingElementRef(res, payload.ref)
+		}
+		const { allHandles, handles } = resolved
 
-		if (!all && allNodeIds.length > 1) {
-			return respondMultipleMatches(res, allNodeIds.length, 'fill')
+		if (!all && allHandles.length > 1) {
+			return respondMultipleMatches(res, allHandles.length, 'fill')
 		}
 
-		const filledCount = await fillResolvedNodes(ctx.cdpSession, nodeIds, payload.value)
-		const response: DomFillResponse = { ok: true, matches: allNodeIds.length, filled: filledCount }
+		const filledCount = await fillResolvedNodes(ctx.cdpSession, handles, payload.value)
+		const response: DomFillResponse = { ok: true, matches: allHandles.length, filled: filledCount }
 		respondJson(res, response)
 	} catch (error) {
+		if (respondTargetResolutionError(res, error)) {
+			return
+		}
 		respondError(res, error)
 	}
 }

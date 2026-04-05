@@ -1,5 +1,6 @@
 import type { AXTreeNode, SnapshotResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
+import type { ElementRefRegistry } from './elementRefs.js'
 import { resolveFirstSelectorNodeId } from './dom/selector.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,6 +41,14 @@ export type FetchSnapshotOptions = {
 	selector?: string
 	depth?: number
 	interactive?: boolean
+}
+
+export type AccessibleElementRecord = {
+	backendNodeId: number
+	ref: string
+	role: string
+	name: string
+	value?: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -126,60 +135,34 @@ const RELEVANT_PROPERTIES = new Set([
  * 4. Reconstruct flat array into nested tree
  * 5. Apply filters (skip ignored, flatten generic, interactive-only, depth)
  */
-export const fetchAccessibilitySnapshot = async (session: CdpSessionHandle, options: FetchSnapshotOptions): Promise<SnapshotResponse> => {
+export const fetchAccessibilitySnapshot = async (
+	session: CdpSessionHandle,
+	options: FetchSnapshotOptions,
+	elementRefs: ElementRefRegistry,
+): Promise<SnapshotResponse> => {
 	await session.sendAndWait('Accessibility.enable')
-
-	// Always fetch the full tree — getPartialAXTree with fetchRelatives:false
-	// returns only a single node without descendants, which is not useful.
-	const axResult = (await session.sendAndWait('Accessibility.getFullAXTree')) as CdpAXTreeResult
-	let nodes = axResult.nodes ?? []
-
-	// If a CSS selector is provided, scope to that DOM subtree.
-	// Since the AX tree structure doesn't always mirror DOM containment
-	// (e.g. forms without aria-label are invisible, their children parent up),
-	// we collect all backendDOMNodeIds within the DOM subtree and filter AX nodes by those.
-	if (options.selector) {
-		const domNodeId = await resolveFirstSelectorNodeId(session, options.selector)
-		if (!domNodeId) {
-			throw new Error(`No element found for selector: ${options.selector}`)
-		}
-
-		// Load the subtree below the resolved root so we can translate DOM membership to AX nodes.
-		await session.sendAndWait('DOM.getDocument', { depth: -1 })
-
-		const allDescendants = (await session.sendAndWait('DOM.querySelectorAll', {
-			nodeId: domNodeId,
-			selector: '*',
-		})) as { nodeIds?: number[] }
-		const descendantNodeIds = allDescendants.nodeIds ?? []
-
-		// Collect backendNodeIds for root + all descendants
-		const backendIds = new Set<number>()
-		const allDomNodeIds = [domNodeId, ...descendantNodeIds]
-		for (const nid of allDomNodeIds) {
-			const desc = (await session.sendAndWait('DOM.describeNode', { nodeId: nid, depth: 0 })) as {
-				node?: { backendNodeId?: number }
-			}
-			if (desc.node?.backendNodeId != null) {
-				backendIds.add(desc.node.backendNodeId)
-			}
-		}
-
-		// Filter AX nodes: keep those with matching backendDOMNodeId
-		// Plus all their AX descendants (for text nodes etc. that don't have backendDOMNodeId)
-		nodes = filterByDomSubtree(nodes, backendIds)
-	}
+	const nodes = await resolveAccessibilityNodes(session, options.selector)
 
 	const totalNodes = nodes.length
 
 	const roots = buildTree(nodes, {
 		depth: options.depth,
 		interactive: options.interactive ?? false,
+		elementRefs,
 	})
 
 	const returnedNodes = countNodes(roots)
 
 	return { ok: true as const, roots, totalNodes, returnedNodes }
+}
+
+export const listAccessibleElements = async (
+	session: CdpSessionHandle,
+	elementRefs: ElementRefRegistry,
+	options: { selector?: string } = {},
+): Promise<AccessibleElementRecord[]> => {
+	const nodes = await resolveAccessibilityNodes(session, options.selector)
+	return collectAccessibleElements(nodes, elementRefs)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -189,6 +172,7 @@ export const fetchAccessibilitySnapshot = async (session: CdpSessionHandle, opti
 type BuildTreeOptions = {
 	depth?: number
 	interactive: boolean
+	elementRefs: ElementRefRegistry
 }
 
 /**
@@ -260,6 +244,9 @@ const convertNode = (nodeMap: Map<string, CdpAXNode>, nodeId: string, currentDep
 
 	// Build the output node
 	const result: AXTreeNode = { role, name }
+	if (cdpNode.backendDOMNodeId != null) {
+		result.ref = options.elementRefs.getOrCreate(cdpNode.backendDOMNodeId)
+	}
 
 	const value = extractStringValue(cdpNode.value)
 	if (value != null && value !== '') {
@@ -289,6 +276,100 @@ const convertNode = (nodeMap: Map<string, CdpAXNode>, nodeId: string, currentDep
 	}
 
 	return [result]
+}
+
+const fetchAccessibilityNodes = async (session: CdpSessionHandle): Promise<CdpAXNode[]> => {
+	const axResult = (await session.sendAndWait('Accessibility.getFullAXTree')) as CdpAXTreeResult
+	return axResult.nodes ?? []
+}
+
+const resolveAccessibilityNodes = async (session: CdpSessionHandle, selector?: string): Promise<CdpAXNode[]> => {
+	// Always fetch the full tree — getPartialAXTree with fetchRelatives:false
+	// returns only a single node without descendants, which is not useful.
+	const nodes = await fetchAccessibilityNodes(session)
+	if (!selector) {
+		return nodes
+	}
+
+	return filterAccessibilityNodesBySelector(session, nodes, selector)
+}
+
+const filterAccessibilityNodesBySelector = async (session: CdpSessionHandle, nodes: CdpAXNode[], selector: string): Promise<CdpAXNode[]> => {
+	const domNodeId = await resolveFirstSelectorNodeId(session, selector)
+	if (!domNodeId) {
+		throw new Error(`No element found for selector: ${selector}`)
+	}
+
+	// Load the subtree below the resolved root so we can translate DOM membership to AX nodes.
+	await session.sendAndWait('DOM.getDocument', { depth: -1 })
+
+	const allDescendants = (await session.sendAndWait('DOM.querySelectorAll', {
+		nodeId: domNodeId,
+		selector: '*',
+	})) as { nodeIds?: number[] }
+	const descendantNodeIds = allDescendants.nodeIds ?? []
+
+	const backendIds = new Set<number>()
+	const allDomNodeIds = [domNodeId, ...descendantNodeIds]
+	for (const nid of allDomNodeIds) {
+		const desc = (await session.sendAndWait('DOM.describeNode', { nodeId: nid, depth: 0 })) as {
+			node?: { backendNodeId?: number }
+		}
+		if (desc.node?.backendNodeId != null) {
+			backendIds.add(desc.node.backendNodeId)
+		}
+	}
+
+	return filterByDomSubtree(nodes, backendIds)
+}
+
+const collectAccessibleElements = (nodes: CdpAXNode[], elementRefs: ElementRefRegistry): AccessibleElementRecord[] => {
+	const byBackendId = new Map<number, AccessibleElementRecord>()
+
+	for (const node of nodes) {
+		if (node.ignored || node.backendDOMNodeId == null) {
+			continue
+		}
+
+		const role = extractStringValue(node.role) ?? 'unknown'
+		if (role === 'InlineTextBox') {
+			continue
+		}
+
+		const name = extractStringValue(node.name) ?? ''
+		const value = extractStringValue(node.value)
+		const next: AccessibleElementRecord = {
+			backendNodeId: node.backendDOMNodeId,
+			ref: elementRefs.getOrCreate(node.backendDOMNodeId),
+			role,
+			name,
+			value: value && value !== '' ? value : undefined,
+		}
+
+		const existing = byBackendId.get(node.backendDOMNodeId)
+		if (!existing || scoreAccessibleElement(next) > scoreAccessibleElement(existing)) {
+			byBackendId.set(node.backendDOMNodeId, next)
+		}
+	}
+
+	return [...byBackendId.values()]
+}
+
+const scoreAccessibleElement = (record: AccessibleElementRecord): number => {
+	let score = 0
+	if (!GENERIC_ROLES.has(record.role)) {
+		score += 10
+	}
+	if (record.name) {
+		score += 5
+	}
+	if (INTERACTIVE_ROLES.has(record.role)) {
+		score += 3
+	}
+	if (record.value) {
+		score += 1
+	}
+	return score
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

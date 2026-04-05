@@ -3,6 +3,8 @@
  * Reconstructed from CDP's flat AXNode array into a nested structure.
  */
 export type AXTreeNode = {
+	/** Stable element ref for actionable DOM-backed nodes (e.g. "e12"). */
+	ref?: string
 	/** Accessibility role (e.g. "button", "textbox", "heading", "link"). */
 	role: string
 	/** Accessible name (visible label or aria-label). */

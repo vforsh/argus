@@ -1,9 +1,12 @@
 import type { Output } from '../../output/io.js'
 import { parseDurationMs } from '../../time.js'
 
-export type DomSelectorOptions = {
+export type DomElementTarget = {
 	selector?: string
+	ref?: string
 }
+
+export type DomSelectorOptions = DomElementTarget
 
 export const requireSelector = (options: DomSelectorOptions, output: Output): string | null => {
 	const selector = options.selector?.trim()
@@ -12,6 +15,29 @@ export const requireSelector = (options: DomSelectorOptions, output: Output): st
 	}
 
 	output.writeWarn('--selector or --testid is required')
+	process.exitCode = 2
+	return null
+}
+
+export const requireElementTarget = (options: DomElementTarget, output: Output): DomElementTarget | null => {
+	const selector = options.selector?.trim()
+	const ref = options.ref?.trim()
+
+	if (selector && ref) {
+		output.writeWarn('Cannot use both --selector and --ref')
+		process.exitCode = 2
+		return null
+	}
+
+	if (ref) {
+		return { ref }
+	}
+
+	if (selector) {
+		return { selector }
+	}
+
+	output.writeWarn('--selector, --testid, or --ref is required')
 	process.exitCode = 2
 	return null
 }
@@ -37,6 +63,16 @@ export const writeNoElementFound = (selector: string, output: Output, hint?: str
 		output.writeWarn(hint)
 	}
 	process.exitCode = 1
+}
+
+export const describeElementTarget = (target: DomElementTarget): string => {
+	if (target.ref) {
+		return `ref: ${target.ref}`
+	}
+	if (target.selector) {
+		return `selector: ${target.selector}`
+	}
+	return 'element target'
 }
 
 export const parseXY = (value: string): { x: number; y: number } | null => {
