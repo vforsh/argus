@@ -1,11 +1,14 @@
 import type { Command } from 'commander'
 import { runNetClear } from '../../commands/netClear.js'
+import { runNetExport } from '../../commands/netExport.js'
 import { runNet } from '../../commands/net.js'
 import { runNetShow } from '../../commands/netShow.js'
 import { runNetSummary } from '../../commands/netSummary.js'
 import { runNetTail } from '../../commands/netTail.js'
 import { runNetWatch } from '../../commands/netWatch.js'
 import { collectValues } from '../validation.js'
+
+const RELOAD_SELECTED_SCOPE_NOTE = '\n\nNote:\n  --reload does not support --scope selected or --frame selected.\n'
 
 export function registerNet(program: Command): void {
 	const net = program
@@ -66,10 +69,32 @@ export function registerNet(program: Command): void {
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus net watch app --reload --settle 3s\n  $ argus net watch app --reload --ignore-host mc.yandex.ru\n  $ argus net watch app --max-timeout 30s --json\n',
+			`\nExamples:\n  $ argus net watch app --reload --settle 3s\n  $ argus net watch app --reload --ignore-host mc.yandex.ru\n  $ argus net watch app --max-timeout 30s --json${RELOAD_SELECTED_SCOPE_NOTE}`,
 		)
 		.action(async (id, options) => {
 			await runNetWatch(id, resolveCommandOptions(options))
+		})
+
+	const exportCommand = net
+		.command('export')
+		.argument('[id]', 'Watcher id to export')
+		.description('Export buffered network requests in a portable format')
+		.option('--format <format>', 'Export format (currently: har)', 'har')
+		.option('--out <path>', 'Write the exported file to this path')
+		.option('--reload', 'Reload the attached page before exporting')
+		.option('--ignore-cache', 'Bypass browser cache when used with --reload')
+		.option('--settle <duration>', 'Quiet window before finishing reload capture (e.g. 3s, 500ms)')
+		.option('--max-timeout <duration>', 'Stop reload capture after this total duration even if the page stays chatty')
+		.option('--no-clear', 'Keep the existing buffer instead of starting fresh when used with --reload')
+	applyNetFilterOptions(exportCommand, { includeSince: true })
+	exportCommand
+		.option('--json', 'Output JSON metadata for automation')
+		.addHelpText(
+			'after',
+			`\nExamples:\n  $ argus net export app --out boot.har\n  $ argus net export app --reload --settle 3s --out boot.har\n  $ argus net export app --format har --first-party --out boot.har --json${RELOAD_SELECTED_SCOPE_NOTE}`,
+		)
+		.action(async (id, options) => {
+			await runNetExport(id, resolveCommandOptions(options))
 		})
 
 	net.command('show')
@@ -187,6 +212,8 @@ const parseNetArgv = (argv: string[]): Record<string, unknown> => {
 		'--frame',
 		'--slow-over',
 		'--large-over',
+		'--format',
+		'--out',
 	] as const) {
 		const value = readValue(flag)
 		if (value) {

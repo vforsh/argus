@@ -83,6 +83,13 @@ export type NetResponse = {
 	nextAfter: number
 }
 
+/** Response payload for GET /net/requests. */
+export type NetRequestsResponse = {
+	ok: true
+	requests: NetworkRequestDetail[]
+	nextAfter: number
+}
+
 /** Response payload for GET /net/tail. */
 export type NetTailResponse = {
 	ok: true

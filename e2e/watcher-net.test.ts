@@ -206,6 +206,39 @@ describe('network workflow e2e', () => {
 		expect(detailByRequestId.id).toBe(delayedRequest!.id)
 		expect(detailByRequestId.requestId).toBe(delayedRequest!.requestId)
 
+		const harPath = path.join(tempDir, 'boot.har')
+		const { stdout: exportOut } = await runCommand(
+			'node',
+			[BIN_PATH, 'net', 'export', watcherId, '--reload', '--settle', '400ms', '--ignore-pattern', '/poll', '--out', harPath, '--json'],
+			{ env },
+		)
+		const exportResult = JSON.parse(exportOut) as {
+			ok: true
+			format: string
+			out: string
+			requestCount: number
+			reloaded: boolean
+			timedOut: boolean
+		}
+		expect(exportResult.format).toBe('har')
+		expect(exportResult.out).toBe(harPath)
+		expect(exportResult.reloaded).toBe(true)
+		expect(exportResult.timedOut).toBe(false)
+		expect(exportResult.requestCount).toBeGreaterThan(0)
+
+		const exportedHar = JSON.parse(await fs.readFile(harPath, 'utf8')) as {
+			log: {
+				version: string
+				creator: { name: string }
+				entries: Array<{ request: { url: string } }>
+			}
+		}
+		expect(exportedHar.log.version).toBe('1.2')
+		expect(exportedHar.log.creator.name).toBe('Argus')
+		expect(exportedHar.log.entries.some((entry) => entry.request.url.includes('/api/fast'))).toBe(true)
+		expect(exportedHar.log.entries.some((entry) => entry.request.url.includes('/api/slow'))).toBe(true)
+		expect(exportedHar.log.entries.some((entry) => entry.request.url.includes('/api/delayed'))).toBe(true)
+
 		const { stdout: summaryOut } = await runCommand('node', [BIN_PATH, 'net', 'summary', watcherId, '--json'], { env })
 		const summary = JSON.parse(summaryOut) as {
 			totalRequests: number

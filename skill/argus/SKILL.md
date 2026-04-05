@@ -172,6 +172,8 @@ argus net watch app --reload --settle 3s --max-timeout 30s
 argus net extension --scope selected --host stark.games --resource-type Fetch
 argus net extension --first-party --slow-over 500ms --status 4xx
 argus net extension --large-over 100kb --mime application/json
+argus net export app --out boot.har
+argus net export app --reload --settle 3s --out boot.har
 argus net show 42 app
 argus net show 90829.507 extension --json
 argus net summary app
@@ -180,7 +182,7 @@ argus net tail app
 argus net tail app --grep api --json
 ```
 
-`net clear` resets the watcher’s buffered requests so the next inspection starts clean. `net watch` now waits for an actual quiet window: it tails matching requests until no new matches arrive for `--settle`, and `--max-timeout` stops the watch if the page never settles. `net show` drills into one buffered request by Argus id or raw CDP request id, including redacted request/response headers, initiator, redirect chain, cache/service-worker flags, remote endpoint, and timing phases. `net`/`net tail`/`net watch` also support richer filtering: host, method, status or status class (`2xx`), resource type, MIME prefix, first-party vs third-party, failed-only, slow-over, large-over, and target scope. Scope is explicit: use `--scope selected` or `--frame selected` when you want iframe-only traffic in extension mode.
+`net clear` resets the watcher’s buffered requests so the next inspection starts clean. `net watch` now waits for an actual quiet window: it tails matching requests until no new matches arrive for `--settle`, and `--max-timeout` stops the watch if the page never settles. `net export --format har` writes the current buffer, or a fresh reload capture, as a HAR file. `net show` drills into one buffered request by Argus id or raw CDP request id, including redacted request/response headers, initiator, redirect chain, cache/service-worker flags, remote endpoint, and timing phases. `net`/`net tail`/`net watch`/`net export` also support richer filtering: host, method, status or status class (`2xx`), resource type, MIME prefix, first-party vs third-party, failed-only, slow-over, large-over, and target scope. Scope is explicit: use `--scope selected` or `--frame selected` when you want iframe-only traffic in extension mode, but reload-driven `net watch` / `net export` intentionally reject selected-frame scope.
 
 ### Storage
 

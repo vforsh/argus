@@ -38,6 +38,11 @@ export class NetBuffer {
 		return this.listMatchingSummaries(limit, (event) => matchesNetFilters(event.summary, filters))
 	}
 
+	/** List detailed request records after the given id, respecting filters and limit. */
+	listDetailsAfter(after: number, filters: NetFilters, limit: number): NetworkRequestDetail[] {
+		return this.listMatchingDetails(limit, (event) => event.summary.id > after && matchesNetFilters(event.summary, filters))
+	}
+
 	/** Retrieve one buffered request by Argus numeric id. */
 	getById(id: number): NetworkRequestDetail | null {
 		return this.events.find((event) => event.detail.id === id)?.detail ?? null
@@ -87,5 +92,12 @@ export class NetBuffer {
 			.filter(match)
 			.slice(0, limit)
 			.map((event) => event.summary)
+	}
+
+	private listMatchingDetails(limit: number, match: (event: StoredNetRecord) => boolean): NetworkRequestDetail[] {
+		return this.events
+			.filter(match)
+			.slice(0, limit)
+			.map((event) => event.detail)
 	}
 }

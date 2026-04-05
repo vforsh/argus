@@ -85,6 +85,7 @@ export type HttpRequestEvent = {
 		| 'logs'
 		| 'tail'
 		| 'net'
+		| 'net/requests'
 		| 'net/request'
 		| 'net/tail'
 		| 'net/clear'
