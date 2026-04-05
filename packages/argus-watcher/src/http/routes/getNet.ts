@@ -1,7 +1,7 @@
 import type { NetResponse } from '@vforsh/argus-core'
 import type { RouteHandler } from './types.js'
 import { emitRequest } from './types.js'
-import { parseNetRequestFilters } from './netFilters.js'
+import { parseNetRequestFilters, toNetRequestEventQuery } from './netFilters.js'
 import { respondJson, clampNumber } from '../httpUtils.js'
 
 export const handle: RouteHandler = (_req, res, url, ctx) => {
@@ -13,19 +13,16 @@ export const handle: RouteHandler = (_req, res, url, ctx) => {
 		after: clampNumber(url.searchParams.get('after'), 0),
 		limit: clampNumber(url.searchParams.get('limit'), 500, 1, 5000),
 		sinceTs: clampNumber(url.searchParams.get('sinceTs'), undefined),
+		context: ctx.getNetFilterContext?.() ?? null,
 	})
+	if (filters.error || !filters.value) {
+		return respondJson(res, { ok: false, error: { code: 'invalid_net_filter', message: filters.error ?? 'Invalid network filter' } }, 400)
+	}
 
-	emitRequest(ctx, res, 'net', {
-		after: filters.after,
-		limit: filters.limit,
-		sinceTs: filters.sinceTs,
-		grep: filters.grep,
-		ignoreHosts: filters.ignoreHosts,
-		ignorePatterns: filters.ignorePatterns,
-	})
+	emitRequest(ctx, res, 'net', toNetRequestEventQuery(filters.value))
 
-	const requests = ctx.netBuffer.listAfter(filters.after, filters, filters.limit)
-	const nextAfter = requests.length > 0 ? (requests[requests.length - 1]?.id ?? filters.after) : filters.after
+	const requests = ctx.netBuffer.listAfter(filters.value.after, filters.value, filters.value.limit)
+	const nextAfter = requests.length > 0 ? (requests[requests.length - 1]?.id ?? filters.value.after) : filters.value.after
 	const response: NetResponse = { ok: true, requests, nextAfter }
 	respondJson(res, response)
 }

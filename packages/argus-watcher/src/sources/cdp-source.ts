@@ -66,6 +66,17 @@ export const createCdpSource = (options: CdpSourceOptions): CdpSourceHandle => {
 		session: watcher.session,
 		pageSession: watcher.session,
 		readBrowserCookies: createCdpBrowserCookieReader(chrome, () => watcher.getTarget()?.id ?? null),
+		getNetFilterContext: () => {
+			const target = watcher.getTarget()
+			const context = watcher.session.getTargetContext?.()
+			return {
+				sourceMode: 'cdp',
+				selectedFrameId: context?.kind === 'frame' ? context.frameId : null,
+				topFrameId: null,
+				selectedTargetUrl: target?.url ?? null,
+				pageUrl: target?.url ?? null,
+			}
+		},
 		stop: watcher.stop,
 		// CDP mode doesn't support listTargets/attachTarget/detachTarget
 		// (auto-attaches based on match criteria)

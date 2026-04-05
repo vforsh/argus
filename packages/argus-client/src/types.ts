@@ -1,4 +1,4 @@
-import type { LogEvent, LogLevel, NetworkRequestSummary, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { LogEvent, LogLevel, NetworkRequestDetail, NetworkRequestSummary, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
 
 /** Options for configuring the Argus client. */
 export type ArgusClientOptions = {
@@ -154,6 +154,8 @@ export type ArgusClient = {
 	logs: (watcherId: string, options?: LogsOptions) => Promise<LogsResult>
 	/** Fetch network request summaries from a watcher. */
 	net: (watcherId: string, options?: NetOptions) => Promise<NetResult>
+	/** Fetch the detailed record for one buffered network request. */
+	netRequest: (watcherId: string, request: number | string) => Promise<NetworkRequestDetail>
 	/** Evaluate a JS expression in the connected page. */
 	eval: (watcherId: string, options: EvalOptions) => Promise<EvalResult>
 	/** Start Chrome tracing and write to disk on the watcher. */

@@ -1,67 +1,57 @@
-import type { NetworkRequestSummary } from '@vforsh/argus-core'
+import type { NetworkRequestDetail, NetworkRequestSummary } from '@vforsh/argus-core'
+import { matchesNetFilters, type NetFilters } from '../net/filtering.js'
 
-export type NetFilters = {
-	grep?: string
-	sinceTs?: number
-	ignoreHosts?: string[]
-	ignorePatterns?: string[]
+type StoredNetRecord = {
+	summary: NetworkRequestSummary
+	detail: NetworkRequestDetail
 }
 
-type Waiter = {
-	after: number
-	filters: NetFilters
-	limit: number
-	resolve: (events: NetworkRequestSummary[]) => void
-	timer: NodeJS.Timeout
-}
-
-/** In-memory ring buffer for network request summaries with long-poll waiters. */
+/** In-memory ring buffer for network request summaries plus per-request detail records. */
 export class NetBuffer {
 	private readonly maxSize: number
-	private events: NetworkRequestSummary[] = []
+	private events: StoredNetRecord[] = []
 	private nextId = 1
-	private waiters: Waiter[] = []
 
 	constructor(maxSize: number) {
 		this.maxSize = maxSize
 	}
 
-	/** Add a network summary and return the stored entry with id. */
-	add(event: Omit<NetworkRequestSummary, 'id'>): NetworkRequestSummary {
-		const entry: NetworkRequestSummary = { ...event, id: this.nextId++ }
-		this.events.push(entry)
+	/** Add a network summary/detail pair and return the stored detail record with id. */
+	add(record: { summary: Omit<NetworkRequestSummary, 'id'>; detail: Omit<NetworkRequestDetail, 'id'> }): NetworkRequestDetail {
+		const id = this.nextId++
+		const stored: StoredNetRecord = {
+			summary: { ...record.summary, id },
+			detail: { ...record.detail, id },
+		}
+		this.events.push(stored)
 		this.trim()
-		this.flushWaiters()
-		return entry
+		return stored.detail
 	}
 
 	/** List events after the given id, respecting filters and limit. */
 	listAfter(after: number, filters: NetFilters, limit: number): NetworkRequestSummary[] {
-		const filtered = this.events.filter((event) => event.id > after && matchesFilters(event, filters))
-		return filtered.slice(0, limit)
+		return this.listMatchingSummaries(limit, (event) => event.summary.id > after && matchesNetFilters(event.summary, filters))
 	}
 
 	/** List buffered events without an `after` cursor. */
 	list(filters: NetFilters, limit = this.maxSize): NetworkRequestSummary[] {
-		const filtered = this.events.filter((event) => matchesFilters(event, filters))
-		return filtered.slice(0, limit)
+		return this.listMatchingSummaries(limit, (event) => matchesNetFilters(event.summary, filters))
 	}
 
-	/** Wait for events after an id or timeout. */
-	waitForAfter(after: number, filters: NetFilters, limit: number, timeoutMs: number): Promise<NetworkRequestSummary[]> {
-		const immediate = this.listAfter(after, filters, limit)
-		if (immediate.length > 0) {
-			return Promise.resolve(immediate)
+	/** Retrieve one buffered request by Argus numeric id. */
+	getById(id: number): NetworkRequestDetail | null {
+		return this.events.find((event) => event.detail.id === id)?.detail ?? null
+	}
+
+	/** Retrieve the most recent buffered request by CDP request id. */
+	getByRequestId(requestId: string): NetworkRequestDetail | null {
+		for (let index = this.events.length - 1; index >= 0; index -= 1) {
+			const current = this.events[index]
+			if (current?.detail.requestId === requestId) {
+				return current.detail
+			}
 		}
-
-		return new Promise((resolve) => {
-			const timer = setTimeout(() => {
-				this.waiters = this.waiters.filter((waiter) => waiter.timer !== timer)
-				resolve([])
-			}, timeoutMs)
-
-			this.waiters.push({ after, filters, limit, resolve, timer })
-		})
+		return null
 	}
 
 	/** Get buffer size and id boundaries. */
@@ -73,8 +63,8 @@ export class NetBuffer {
 		return {
 			size: this.maxSize,
 			count: this.events.length,
-			minId: this.events[0]?.id ?? null,
-			maxId: this.events[this.events.length - 1]?.id ?? null,
+			minId: this.events[0]?.summary.id ?? null,
+			maxId: this.events[this.events.length - 1]?.summary.id ?? null,
 		}
 	}
 
@@ -92,76 +82,10 @@ export class NetBuffer {
 		this.events = this.events.slice(this.events.length - this.maxSize)
 	}
 
-	private flushWaiters(): void {
-		if (this.waiters.length === 0) {
-			return
-		}
-
-		const remaining: Waiter[] = []
-		for (const waiter of this.waiters) {
-			const events = this.listAfter(waiter.after, waiter.filters, waiter.limit)
-			if (events.length > 0) {
-				clearTimeout(waiter.timer)
-				waiter.resolve(events)
-				continue
-			}
-			remaining.push(waiter)
-		}
-		this.waiters = remaining
+	private listMatchingSummaries(limit: number, match: (event: StoredNetRecord) => boolean): NetworkRequestSummary[] {
+		return this.events
+			.filter(match)
+			.slice(0, limit)
+			.map((event) => event.summary)
 	}
-}
-
-const matchesFilters = (event: NetworkRequestSummary, filters: NetFilters): boolean => {
-	if (filters.sinceTs && event.ts < filters.sinceTs) {
-		return false
-	}
-
-	const haystack = event.url.toLowerCase()
-
-	if (filters.grep) {
-		const needle = filters.grep.toLowerCase()
-		if (!haystack.includes(needle)) {
-			return false
-		}
-	}
-
-	if (filters.ignorePatterns && filters.ignorePatterns.length > 0) {
-		for (const pattern of filters.ignorePatterns) {
-			if (haystack.includes(pattern.toLowerCase())) {
-				return false
-			}
-		}
-	}
-
-	if (filters.ignoreHosts && filters.ignoreHosts.length > 0 && shouldIgnoreHost(event.url, filters.ignoreHosts)) {
-		return false
-	}
-
-	return true
-}
-
-const shouldIgnoreHost = (url: string, ignoreHosts: string[]): boolean => {
-	let parsed: URL | null = null
-	try {
-		parsed = new URL(url)
-	} catch {
-		parsed = null
-	}
-
-	const hostname = parsed?.hostname?.toLowerCase()
-	const host = parsed?.host?.toLowerCase()
-	for (const candidate of ignoreHosts) {
-		const normalized = candidate.toLowerCase()
-		if (!normalized) {
-			continue
-		}
-		if (hostname && (hostname === normalized || hostname.endsWith(`.${normalized}`))) {
-			return true
-		}
-		if (host && host === normalized) {
-			return true
-		}
-	}
-
-	return false
 }

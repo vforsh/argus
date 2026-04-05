@@ -1,7 +1,6 @@
 import type { EvalResponse, NetResponse, NetworkRequestSummary } from '@vforsh/argus-core'
 import type { NetCliFilterOptions } from './netShared.js'
 import { appendNetCommandParams, validateNetCommandOptions } from './netShared.js'
-import { filterNetworkRequests } from '../net/requestFilters.js'
 import { createOutput } from '../output/io.js'
 import { formatWatcherTransportError, fetchWatcherJson, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { formatNetSummaryReport, summarizeNetworkRequests, type NavigationTimingSummary } from '../net/summary.js'
@@ -29,7 +28,7 @@ export const runNetSummary = async (id: string | undefined, options: NetSummaryO
 	const { watcher } = resolved
 	let requests: NetworkRequestSummary[]
 	try {
-		requests = filterNetworkRequests(await fetchAllRequests(watcher, options), options)
+		requests = await fetchAllRequests(watcher, options)
 	} catch (error) {
 		output.writeWarn(formatWatcherTransportError(watcher, error))
 		process.exitCode = 1

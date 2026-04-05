@@ -10,6 +10,7 @@ import type { Screenshotter } from '../cdp/screenshot.js'
 import type { CdpSourceCookieQuery, CdpSourceHandle } from '../sources/types.js'
 import type { EmulationController } from '../emulation/EmulationController.js'
 import type { ThrottleController } from '../throttle/ThrottleController.js'
+import type { NetFilterContext, NetParty, NetScope } from '../net/filtering.js'
 import { dispatch } from './router.js'
 
 /** Optional metadata for the HTTP request event. */
@@ -18,6 +19,7 @@ export type HttpRequestEventMetadata = {
 		| 'logs'
 		| 'tail'
 		| 'net'
+		| 'net/request'
 		| 'net/tail'
 		| 'net/clear'
 		| 'auth/cookies'
@@ -64,6 +66,8 @@ export type HttpRequestEventMetadata = {
 		| 'detach'
 	remoteAddress: string | null
 	query?: {
+		id?: number
+		requestId?: string
 		after?: number
 		limit?: number
 		levels?: LogLevel[]
@@ -73,6 +77,17 @@ export type HttpRequestEventMetadata = {
 		sinceTs?: number
 		timeoutMs?: number
 		grep?: string
+		hosts?: string[]
+		methods?: string[]
+		statuses?: string[]
+		resourceTypes?: string[]
+		mimeTypes?: string[]
+		scope?: NetScope
+		frame?: string
+		party?: NetParty
+		failedOnly?: boolean
+		minDurationMs?: number
+		minTransferBytes?: number
 		ignoreHosts?: string[]
 		ignorePatterns?: string[]
 		origin?: string
@@ -105,6 +120,8 @@ export type HttpServerOptions = {
 	throttleController: ThrottleController
 	/** Source handle for extension mode (enables /targets, /attach, /detach endpoints). */
 	sourceHandle?: CdpSourceHandle
+	/** Best-effort target metadata for resolving net scope filters. */
+	getNetFilterContext?: () => NetFilterContext | null
 	/** Optional browser-cookie reader when the source can access cookies outside the page's request scope. */
 	readBrowserCookies?: (query: CdpSourceCookieQuery) => Promise<AuthStateCookie[]>
 	/** Optional callback invoked when logs or tail are requested. */

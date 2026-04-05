@@ -168,13 +168,19 @@ argus net app --grep api
 argus net clear app
 argus net watch app --reload --settle 3s
 argus net watch app --reload --settle 3s --ignore-pattern /poll
+argus net watch app --reload --settle 3s --max-timeout 30s
+argus net extension --scope selected --host stark.games --resource-type Fetch
+argus net extension --first-party --slow-over 500ms --status 4xx
+argus net extension --large-over 100kb --mime application/json
+argus net show 42 app
+argus net show 90829.507 extension --json
 argus net summary app
 argus net app --json
 argus net tail app
 argus net tail app --grep api --json
 ```
 
-`net clear` resets the watcher’s buffered requests so the next inspection starts clean. `net watch` is the tight loop command: optionally clear, optionally reload, wait for the settle window, then report the captured requests. `net summary` rolls the current buffer into status counts, failures, slowest requests, largest transfers, top hosts, and navigation timing when available.
+`net clear` resets the watcher’s buffered requests so the next inspection starts clean. `net watch` now waits for an actual quiet window: it tails matching requests until no new matches arrive for `--settle`, and `--max-timeout` stops the watch if the page never settles. `net show` drills into one buffered request by Argus id or raw CDP request id, including redacted request/response headers, initiator, redirect chain, cache/service-worker flags, remote endpoint, and timing phases. `net`/`net tail`/`net watch` also support richer filtering: host, method, status or status class (`2xx`), resource type, MIME prefix, first-party vs third-party, failed-only, slow-over, large-over, and target scope. Scope is explicit: use `--scope selected` or `--frame selected` when you want iframe-only traffic in extension mode.
 
 ### Storage
 

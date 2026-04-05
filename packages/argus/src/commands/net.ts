@@ -1,7 +1,7 @@
 import type { NetResponse } from '@vforsh/argus-core'
 import type { NetCliListOptions } from './netShared.js'
 import { appendNetCommandParams } from './netShared.js'
-import { formatNetworkRequest } from '../output/format.js'
+import { formatNetworkRequest } from '../output/net.js'
 import { createOutput } from '../output/io.js'
 import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 

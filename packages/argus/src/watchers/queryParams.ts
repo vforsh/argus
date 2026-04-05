@@ -79,10 +79,58 @@ export const appendLogFilterParams = (
 	return {}
 }
 
-export const appendNetFilterParams = (params: URLSearchParams, options: { grep?: string }): void => {
+export const appendNetFilterParams = (
+	params: URLSearchParams,
+	options: {
+		grep?: string
+		host?: string[]
+		method?: string[]
+		status?: string[]
+		resourceType?: string[]
+		mime?: string[]
+		scope?: string
+		frame?: string
+		party?: 'first' | 'third'
+		failedOnly?: boolean
+		minDurationMs?: number
+		minTransferBytes?: number
+	},
+): void => {
 	const grep = normalizeQueryValue(options.grep)
 	if (grep) {
 		params.set('grep', grep)
+	}
+
+	appendRepeatedParams(params, 'host', options.host)
+	appendRepeatedParams(params, 'method', options.method)
+	appendRepeatedParams(params, 'status', options.status)
+	appendRepeatedParams(params, 'resourceType', options.resourceType)
+	appendRepeatedParams(params, 'mime', options.mime)
+
+	const scope = normalizeQueryValue(options.scope)
+	if (scope) {
+		params.set('scope', scope)
+	}
+
+	const frame = normalizeQueryValue(options.frame)
+	if (frame) {
+		params.set('frame', frame)
+	}
+
+	if (options.party) {
+		params.set('party', options.party)
+	}
+
+	if (options.failedOnly) {
+		params.set('failedOnly', '1')
+	}
+
+	if (options.minDurationMs != null) {
+		params.set('minDurationMs', String(options.minDurationMs))
+	}
+
+	if (options.minTransferBytes != null) {
+		params.set('minTransferBytes', String(options.minTransferBytes))
 	}
 }
 
@@ -140,4 +188,15 @@ const normalizeRepeatedValues = (values?: string[]): { values: string[]; error?:
 	}
 
 	return { values: normalized }
+}
+
+const appendRepeatedParams = (params: URLSearchParams, key: string, values?: string[]): void => {
+	const normalized = normalizeRepeatedValues(values)
+	if (normalized.error) {
+		return
+	}
+
+	for (const value of normalized.values) {
+		params.append(key, value)
+	}
 }

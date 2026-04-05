@@ -1,4 +1,5 @@
 import type { CdpSourceTarget } from './types.js'
+import { normalizeNetUrlKey } from '../net/filtering.js'
 
 type SessionSummary = {
 	tabId: number
@@ -193,7 +194,7 @@ export const createRequestedFrameHint = (frame: ExtensionFrame | null | undefine
 
 	return {
 		url: frame.url || null,
-		urlKey: normalizeFrameUrlKey(frame.url),
+		urlKey: normalizeNetUrlKey(frame.url),
 		title: frame.title?.trim() || null,
 	}
 }
@@ -286,18 +287,5 @@ const findFrameMatchByNormalizedUrl = (state: ExtensionFrameState, urlKey: strin
 		return null
 	}
 
-	return findSingleMatchingFrameId(state, (frame) => normalizeFrameUrlKey(frame.url) === urlKey)
-}
-
-const normalizeFrameUrlKey = (url: string | null | undefined): string | null => {
-	if (!url || url.trim() === '') {
-		return null
-	}
-
-	try {
-		const parsed = new URL(url)
-		return `${parsed.origin}${parsed.pathname || '/'}`
-	} catch {
-		return url.split(/[?#]/, 1)[0] || null
-	}
+	return findSingleMatchingFrameId(state, (frame) => normalizeNetUrlKey(frame.url) === urlKey)
 }

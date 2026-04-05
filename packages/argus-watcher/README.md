@@ -108,4 +108,6 @@ Behavior details:
 
 ## Network capture
 
-Network request capture is opt-in via `net.enabled`. When disabled (default), the `/net` and `/net/tail` HTTP endpoints return a `net_disabled` error.
+Network request capture is opt-in via `net.enabled`. When disabled (default), the `/net`, `/net/request`, and `/net/tail` HTTP endpoints return a `net_disabled` error.
+
+When enabled, `/net` and `/net/tail` support summary-level filtering by host, method, status or status class (`2xx`), resource type, MIME prefix, first-party vs third-party, failed-only, minimum duration, minimum transfer size, and explicit target scope (`selected`, `page`, `tab`). In extension mode, `selected` / `page` resolve against the current target state, while the default remains whole-tab capture for predictable behavior.

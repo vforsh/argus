@@ -1,6 +1,7 @@
 import type {
 	EvalResponse,
 	LogsResponse,
+	NetRequestResponse,
 	NetResponse,
 	RegistryV1,
 	ScreenshotResponse,
@@ -97,6 +98,29 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 				requests: response.requests,
 				nextAfter: response.nextAfter,
 			}
+		},
+		netRequest: async (watcherId: string, request: number | string) => {
+			const params = new URLSearchParams()
+			if (typeof request === 'number') {
+				if (!Number.isFinite(request) || request < 1) {
+					throw new Error(`Invalid request value: ${request}`)
+				}
+				params.set('id', String(request))
+			} else {
+				const normalized = request.trim()
+				if (!normalized) {
+					throw new Error('request is required')
+				}
+				params.set(/^\d+$/.test(normalized) ? 'id' : 'requestId', normalized)
+			}
+
+			const { data: response } = await requestWatcher<NetRequestResponse>({ registryPath, ttlMs }, watcherId, {
+				path: '/net/request',
+				query: params,
+				timeoutMs: logsTimeoutMs,
+			})
+
+			return response.request
 		},
 		eval: async (watcherId: string, evalOptions: EvalOptions): Promise<EvalResult> => {
 			if (!evalOptions || !evalOptions.expression || evalOptions.expression.trim() === '') {

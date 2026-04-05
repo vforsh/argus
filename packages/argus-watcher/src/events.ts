@@ -58,6 +58,8 @@ export type LogRequestQuery = {
  * Query parameters for network/tail requests.
  */
 export type NetRequestQuery = {
+	id?: number
+	requestId?: string
 	after?: number
 	limit?: number
 	sinceTs?: number
@@ -83,6 +85,7 @@ export type HttpRequestEvent = {
 		| 'logs'
 		| 'tail'
 		| 'net'
+		| 'net/request'
 		| 'net/tail'
 		| 'net/clear'
 		| 'auth/cookies'

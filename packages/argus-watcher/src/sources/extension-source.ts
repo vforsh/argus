@@ -175,6 +175,22 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				url: url ?? undefined,
 			})
 		},
+		getNetFilterContext: () => {
+			const session = currentSession
+			if (!session) {
+				return null
+			}
+
+			const state = frameStateByTabId.get(session.tabId)
+			const selectedTarget = getSelectedTarget(session)
+			return {
+				sourceMode: 'extension',
+				selectedFrameId: state?.activeFrameId ?? null,
+				topFrameId: state?.topFrameId ?? session.topFrameId,
+				selectedTargetUrl: selectedTarget?.url ?? session.url,
+				pageUrl: session.url,
+			}
+		},
 		syncWatcherInfo: (info) => {
 			hostInfo.watcherId = info.watcherId
 			hostInfo.watcherHost = info.watcherHost

@@ -2,6 +2,7 @@ const SENSITIVE_KEYS = new Set(['token', 'access_token', 'auth', 'authorization'
 const AUTH_HEADER_NAMES = new Set([
 	'authorization',
 	'cookie',
+	'set-cookie',
 	'x-api-key',
 	'x-auth-token',
 	'x-csrf-token',
@@ -74,8 +75,48 @@ export const pickCapturedAuthHeaders = (headers: Record<string, unknown> | undef
 	return Object.keys(captured).length > 0 ? captured : undefined
 }
 
+/** Capture all headers while redacting sensitive values. */
+export const captureHeaders = (headers: Record<string, unknown> | undefined): Record<string, string> | undefined => {
+	if (!headers) {
+		return undefined
+	}
+
+	const captured: Record<string, string> = {}
+
+	for (const [name, rawValue] of Object.entries(headers)) {
+		const normalizedName = name.trim().toLowerCase()
+		if (!normalizedName) {
+			continue
+		}
+
+		const value = normalizeHeaderValue(rawValue)
+		if (!value) {
+			continue
+		}
+
+		captured[normalizedName] = shouldRedactHeader(normalizedName) ? redactHeaderValue(normalizedName, value) : value
+	}
+
+	return Object.keys(captured).length > 0 ? captured : undefined
+}
+
 /** Merge two captured auth-header maps, preferring newer values for the same header name. */
 export const mergeCapturedAuthHeaders = (
+	current: Record<string, string> | undefined,
+	incoming: Record<string, string> | undefined,
+): Record<string, string> | undefined => {
+	if (!current) {
+		return incoming
+	}
+	if (!incoming) {
+		return current
+	}
+
+	return { ...current, ...incoming }
+}
+
+/** Merge two captured header maps, preferring newer values for the same header name. */
+export const mergeCapturedHeaders = (
 	current: Record<string, string> | undefined,
 	incoming: Record<string, string> | undefined,
 ): Record<string, string> | undefined => {
@@ -115,11 +156,19 @@ const redactHeaderValue = (name: string, value: string): string => {
 		return redactAuthorizationHeader(value)
 	}
 
-	if (name === 'cookie') {
+	if (name === 'cookie' || name === 'set-cookie') {
 		return redactCookieHeader(value)
 	}
 
 	return redactToken(value)
+}
+
+const shouldRedactHeader = (name: string): boolean => {
+	if (AUTH_HEADER_NAMES.has(name)) {
+		return true
+	}
+
+	return name.includes('token') || name.includes('secret') || name.includes('auth') || name.includes('key') || name.includes('session')
 }
 
 const redactAuthorizationHeader = (value: string): string => {

@@ -64,6 +64,18 @@ describe('network workflow e2e', () => {
 				return
 			}
 
+			if (url.pathname === '/api/delayed') {
+				res.writeHead(200, { 'Content-Type': 'application/json' })
+				res.end(JSON.stringify({ delayed: true }))
+				return
+			}
+
+			if (url.pathname === '/api/really-delayed') {
+				res.writeHead(200, { 'Content-Type': 'application/json' })
+				res.end(JSON.stringify({ reallyDelayed: true }))
+				return
+			}
+
 			res.writeHead(404)
 			res.end('missing')
 		})
@@ -158,14 +170,41 @@ describe('network workflow e2e', () => {
 		const watchResult = JSON.parse(watchOut) as {
 			cleared: number
 			reloaded: boolean
-			requests: Array<{ url: string }>
+			timedOut: boolean
+			requests: Array<{ id: number; requestId: string; url: string; status: number | null; timingPhases?: unknown }>
 		}
 		expect(watchResult.cleared).toBeGreaterThanOrEqual(0)
 		expect(watchResult.reloaded).toBe(true)
+		expect(watchResult.timedOut).toBe(false)
 		expect(watchResult.requests.some((request) => request.url.includes('/api/fast'))).toBe(true)
 		expect(watchResult.requests.some((request) => request.url.includes('/api/slow'))).toBe(true)
 		expect(watchResult.requests.some((request) => request.url.includes('/api/fail'))).toBe(true)
 		expect(watchResult.requests.some((request) => request.url.includes('/api/big'))).toBe(true)
+		expect(watchResult.requests.some((request) => request.url.includes('/api/delayed'))).toBe(true)
+
+		const delayedRequest = watchResult.requests.find((request) => request.url.includes('/api/delayed'))
+		expect(delayedRequest).toBeTruthy()
+
+		const { stdout: detailOut } = await runCommand('node', [BIN_PATH, 'net', 'show', String(delayedRequest!.id), watcherId, '--json'], { env })
+		const detail = JSON.parse(detailOut) as {
+			id: number
+			requestId: string
+			url: string
+			status: number | null
+			timingPhases: { totalMs: number | null } | null
+		}
+		expect(detail.id).toBe(delayedRequest!.id)
+		expect(detail.requestId).toBe(delayedRequest!.requestId)
+		expect(detail.url.includes('/api/delayed')).toBe(true)
+		expect(detail.status).toBe(200)
+		expect(detail.timingPhases?.totalMs).not.toBeNull()
+
+		const { stdout: detailByRequestIdOut } = await runCommand('node', [BIN_PATH, 'net', 'show', delayedRequest!.requestId, watcherId, '--json'], {
+			env,
+		})
+		const detailByRequestId = JSON.parse(detailByRequestIdOut) as { id: number; requestId: string }
+		expect(detailByRequestId.id).toBe(delayedRequest!.id)
+		expect(detailByRequestId.requestId).toBe(delayedRequest!.requestId)
 
 		const { stdout: summaryOut } = await runCommand('node', [BIN_PATH, 'net', 'summary', watcherId, '--json'], { env })
 		const summary = JSON.parse(summaryOut) as {
@@ -205,6 +244,50 @@ describe('network workflow e2e', () => {
 		expect(filteredSummary.topHosts.some((entry) => entry.host.includes('localhost'))).toBe(false)
 		expect(filteredSummary.slowestRequests.some((request) => request.url.includes('localhost'))).toBe(false)
 		expect(filteredSummary.largestTransfers.some((request) => request.url.includes('localhost'))).toBe(false)
+
+		const { stdout: thirdPartyOut } = await runCommand('node', [BIN_PATH, 'net', watcherId, '--third-party', '--json'], { env })
+		const thirdPartyRequests = JSON.parse(thirdPartyOut) as Array<{ url: string }>
+		expect(thirdPartyRequests.length).toBeGreaterThan(0)
+		expect(thirdPartyRequests.every((request) => request.url.includes('localhost'))).toBe(true)
+
+		const { stdout: firstPartyOut } = await runCommand('node', [BIN_PATH, 'net', watcherId, '--first-party', '--json'], { env })
+		const firstPartyRequests = JSON.parse(firstPartyOut) as Array<{ url: string }>
+		expect(firstPartyRequests.length).toBeGreaterThan(0)
+		expect(firstPartyRequests.some((request) => request.url.includes('/api/fast'))).toBe(true)
+		expect(firstPartyRequests.some((request) => request.url.includes('localhost'))).toBe(false)
+
+		const { stdout: failedOnlyOut } = await runCommand('node', [BIN_PATH, 'net', watcherId, '--status', '503', '--failed-only', '--json'], {
+			env,
+		})
+		const failedOnlyRequests = JSON.parse(failedOnlyOut) as Array<{ url: string; status: number | null }>
+		expect(failedOnlyRequests).toHaveLength(1)
+		expect(failedOnlyRequests[0]?.url.includes('/api/fail')).toBe(true)
+		expect(failedOnlyRequests[0]?.status).toBe(503)
+
+		const { stdout: slowOut } = await runCommand(
+			'node',
+			[BIN_PATH, 'net', watcherId, '--resource-type', 'Fetch', '--mime', 'application/json', '--slow-over', '200ms', '--json'],
+			{ env },
+		)
+		const slowRequests = JSON.parse(slowOut) as Array<{ url: string }>
+		expect(slowRequests.some((request) => request.url.includes('/api/slow'))).toBe(true)
+
+		const { stdout: largeOut } = await runCommand('node', [BIN_PATH, 'net', watcherId, '--large-over', '60kb', '--json'], { env })
+		const largeRequests = JSON.parse(largeOut) as Array<{ url: string }>
+		expect(largeRequests).toHaveLength(1)
+		expect(largeRequests[0]?.url.includes('/api/big')).toBe(true)
+
+		const { stdout: timedWatchOut } = await runCommand(
+			'node',
+			[BIN_PATH, 'net', 'watch', watcherId, '--reload', '--settle', '300ms', '--max-timeout', '1200ms', '--json'],
+			{ env },
+		)
+		const timedWatch = JSON.parse(timedWatchOut) as {
+			timedOut: boolean
+			requests: Array<{ url: string }>
+		}
+		expect(timedWatch.timedOut).toBe(true)
+		expect(timedWatch.requests.length).toBeGreaterThan(0)
 	}, 15_000)
 })
 
@@ -223,6 +306,12 @@ const renderAppHtml = (analyticsPort: number): string => `
 			fetch('/api/slow').catch(() => {})
 			fetch('/api/fail').catch(() => {})
 			fetch('/api/big').catch(() => {})
+			setTimeout(() => {
+				fetch('/api/delayed').catch(() => {})
+			}, 500)
+			setTimeout(() => {
+				fetch('/api/really-delayed').catch(() => {})
+			}, 2500)
 			fetch(analyticsBase + '/beacon').catch(() => {})
 			if (!window.__netPollStarted) {
 				window.__netPollStarted = true

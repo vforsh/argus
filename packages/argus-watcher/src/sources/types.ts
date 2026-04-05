@@ -6,6 +6,7 @@
 
 import type { AuthStateCookie, LogEvent } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../cdp/connection.js'
+import type { NetFilterContext } from '../net/filtering.js'
 
 /**
  * Represents a CDP target (either from Chrome /json or extension tabs).
@@ -84,6 +85,8 @@ export type CdpSourceHandle = {
 	syncWatcherInfo?: (info: { watcherId: string; watcherHost: string; watcherPort: number; watcherPid: number }) => void
 	/** Read browser-level cookies for the attached session's site, when the source can do better than page-scoped CDP. */
 	readBrowserCookies?: (query: CdpSourceCookieQuery) => Promise<AuthStateCookie[]>
+	/** Best-effort target metadata used to resolve network filter scope in HTTP routes. */
+	getNetFilterContext?: () => NetFilterContext | null
 	/** Stop the source and clean up resources. */
 	stop: () => Promise<void>
 	/** List available targets (extension mode only). */
