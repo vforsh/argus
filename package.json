@@ -2,7 +2,7 @@
 	"name": "argus",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/vforsh/argus.git"
+		"url": "git+https://github.com/vforsh/argus.git"
 	},
 	"private": true,
 	"type": "module",
