@@ -191,6 +191,15 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				pageUrl: session.url,
 			}
 		},
+		getFrameSessionId: (frameId) => {
+			const session = currentSession
+			if (!session) {
+				return null
+			}
+
+			const state = frameStateByTabId.get(session.tabId)
+			return state?.frames.get(frameId)?.sessionId ?? null
+		},
 		syncWatcherInfo: (info) => {
 			hostInfo.watcherId = info.watcherId
 			hostInfo.watcherHost = info.watcherHost

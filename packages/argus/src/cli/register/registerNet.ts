@@ -1,7 +1,9 @@
 import type { Command } from 'commander'
 import { runNetClear } from '../../commands/netClear.js'
 import { runNetExport } from '../../commands/netExport.js'
+import { runNetInspect } from '../../commands/netInspect.js'
 import { runNet } from '../../commands/net.js'
+import { runNetBody } from '../../commands/netBody.js'
 import { runNetShow } from '../../commands/netShow.js'
 import { runNetSummary } from '../../commands/netSummary.js'
 import { runNetTail } from '../../commands/netTail.js'
@@ -107,6 +109,43 @@ export function registerNet(program: Command): void {
 			await runNetShow(id, request, resolveCommandOptions(options))
 		})
 
+	net.command('body')
+		.argument('<request>', 'Argus request id or raw CDP requestId')
+		.argument('[id]', 'Watcher id to query')
+		.description('Print one buffered request or response body')
+		.option('--request', 'Return the request body instead of the response body')
+		.option('--json', 'Output JSON metadata for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus net body 42 app\n  $ argus net body 42 app --request\n  $ argus net body 90829.507 extension --json\n',
+		)
+		.action(async (request, id, options) => {
+			await runNetBody(id, request, resolveCommandOptions(options))
+		})
+
+	const inspect = net
+		.command('inspect')
+		.argument('<pattern>', 'Substring match over redacted URLs; newest match wins')
+		.argument('[id]', 'Watcher id to inspect')
+		.description('Clear/reload, wait for network quiet, then inspect the newest matching request')
+		.option('--reload', 'Reload the attached page before inspecting (default)')
+		.option('--ignore-cache', 'Bypass browser cache during reload')
+		.option('--settle <duration>', 'Quiet window before finishing capture (e.g. 3s, 500ms)')
+		.option('--max-timeout <duration>', 'Stop after this total capture duration even if the page stays chatty')
+		.option('--no-clear', 'Keep the existing buffer instead of starting fresh')
+		.option('--request', 'Include the request body')
+		.option('--response', 'Include the response body')
+	applyNetFilterOptions(inspect, { includeSince: false, includeGrep: false })
+	inspect
+		.option('--json', 'Output JSON metadata for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus net inspect game/init extension --reload\n  $ argus net inspect game/init extension --reload --request --response\n  $ argus net inspect /api/post app --settle 400ms --json\n',
+		)
+		.action(async (pattern, id, options) => {
+			await runNetInspect(id, pattern, resolveCommandOptions(options))
+		})
+
 	const summary = net.command('summary').argument('[id]', 'Watcher id to summarize').description('Summarize buffered network requests')
 	applyNetFilterOptions(summary, { includeSince: true })
 	summary
@@ -120,12 +159,14 @@ export function registerNet(program: Command): void {
 		})
 }
 
-const applyNetFilterOptions = (command: Command, options: { includeSince?: boolean } = {}): void => {
+const applyNetFilterOptions = (command: Command, options: { includeSince?: boolean; includeGrep?: boolean } = {}): void => {
 	if (options.includeSince) {
 		command.option('--since <duration>', 'Filter by time window (e.g. 10m, 2h, 30s)')
 	}
 
-	command.option('--grep <substring>', 'Substring match over redacted URLs')
+	if (options.includeGrep !== false) {
+		command.option('--grep <substring>', 'Substring match over redacted URLs')
+	}
 	command.option('--host <host>', 'Only include requests to host (repeatable)', collectValues, [])
 	command.option('--method <method>', 'Only include HTTP method (repeatable)', collectValues, [])
 	command.option('--status <status>', 'Only include HTTP status or class like 2xx (repeatable)', collectValues, [])
@@ -198,6 +239,12 @@ const parseNetArgv = (argv: string[]): Record<string, unknown> => {
 	}
 	if (argv.includes('--failed-only')) {
 		parsed.failedOnly = true
+	}
+	if (argv.includes('--request')) {
+		parsed.request = true
+	}
+	if (argv.includes('--response')) {
+		parsed.response = true
 	}
 
 	for (const flag of [

@@ -33,6 +33,8 @@ type InflightRequest = {
 	requestId: string
 	url: string
 	method: string
+	hasRequestBody: boolean
+	bodySessionId: string | null
 	summaryRequestHeaders?: Record<string, string>
 	requestHeaders?: Record<string, string>
 	responseHeaders?: Record<string, string>
@@ -83,6 +85,14 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		return next
 	}
 
+	const getOrCreateForSession = (requestId: string, sessionId?: string | null): InflightRequest => {
+		const entry = getOrCreate(requestId)
+		if (sessionId != null) {
+			entry.bodySessionId = sessionId
+		}
+		return entry
+	}
+
 	const finalize = (requestId: string): void => {
 		const record = inflight.get(requestId)
 		if (!record) {
@@ -128,12 +138,16 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 			protocol: record.protocol,
 			priority: record.priority,
 			timingPhases,
+			body: {
+				request: record.hasRequestBody,
+				response: hasResponseBody(record),
+			},
 		}
 
-		options.buffer.add({ summary, detail })
+		options.buffer.add({ summary, detail, bodySessionId: record.bodySessionId })
 	}
 
-	options.session.onEvent('Network.requestWillBeSent', (params) => {
+	options.session.onEvent('Network.requestWillBeSent', (params, meta) => {
 		const payload = params as {
 			requestId?: string
 			request?: {
@@ -141,6 +155,9 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 				method?: string
 				headers?: Record<string, unknown>
 				initialPriority?: string
+				hasPostData?: boolean
+				postData?: string
+				postDataEntries?: unknown[]
 			}
 			timestamp?: number
 			type?: string
@@ -155,7 +172,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 			return
 		}
 
-		const entry = getOrCreate(requestId)
+		const entry = getOrCreateForSession(requestId, meta.sessionId)
 		const nextUrl = payload.request?.url ?? entry.url
 
 		if (payload.redirectResponse && entry.url) {
@@ -170,6 +187,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 
 		entry.url = nextUrl
 		entry.method = payload.request?.method ?? entry.method
+		entry.hasRequestBody = hasRequestBody(payload.request) || entry.hasRequestBody
 		mergeRequestHeaders(entry, payload.request?.headers)
 		entry.resourceType = payload.type ?? entry.resourceType
 		entry.startTime = pickNumber(payload.timestamp) ?? entry.startTime
@@ -180,7 +198,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		entry.priority = normalizeString(payload.request?.initialPriority) ?? entry.priority
 	})
 
-	options.session.onEvent('Network.requestWillBeSentExtraInfo', (params) => {
+	options.session.onEvent('Network.requestWillBeSentExtraInfo', (params, meta) => {
 		const payload = params as {
 			requestId?: string
 			headers?: Record<string, unknown>
@@ -189,11 +207,11 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		if (!requestId) {
 			return
 		}
-		const entry = getOrCreate(requestId)
+		const entry = getOrCreateForSession(requestId, meta.sessionId)
 		mergeRequestHeaders(entry, payload.headers)
 	})
 
-	options.session.onEvent('Network.responseReceived', (params) => {
+	options.session.onEvent('Network.responseReceived', (params, meta) => {
 		const payload = params as {
 			requestId?: string
 			response?: {
@@ -219,7 +237,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 			return
 		}
 
-		const entry = getOrCreate(requestId)
+		const entry = getOrCreateForSession(requestId, meta.sessionId)
 		entry.url = payload.response?.url ?? entry.url
 		entry.status = pickNumber(payload.response?.status) ?? entry.status
 		entry.statusText = normalizeString(payload.response?.statusText) ?? entry.statusText
@@ -237,7 +255,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		entry.responseTiming = payload.response?.timing ?? entry.responseTiming
 	})
 
-	options.session.onEvent('Network.responseReceivedExtraInfo', (params) => {
+	options.session.onEvent('Network.responseReceivedExtraInfo', (params, meta) => {
 		const payload = params as {
 			requestId?: string
 			statusCode?: number
@@ -247,47 +265,48 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		if (!requestId) {
 			return
 		}
-		const entry = getOrCreate(requestId)
+		const entry = getOrCreateForSession(requestId, meta.sessionId)
 		entry.status = pickNumber(payload.statusCode) ?? entry.status
 		mergeResponseHeaders(entry, payload.headers)
 	})
 
-	options.session.onEvent('Network.requestServedFromCache', (params) => {
+	options.session.onEvent('Network.requestServedFromCache', (params, meta) => {
 		const payload = params as { requestId?: string }
 		if (!payload.requestId) {
 			return
 		}
-		getOrCreate(payload.requestId).servedFromCache = true
+		const entry = getOrCreateForSession(payload.requestId, meta.sessionId)
+		entry.servedFromCache = true
 	})
 
-	options.session.onEvent('Network.resourceChangedPriority', (params) => {
+	options.session.onEvent('Network.resourceChangedPriority', (params, meta) => {
 		const payload = params as { requestId?: string; newPriority?: string }
 		if (!payload.requestId) {
 			return
 		}
-		const entry = getOrCreate(payload.requestId)
+		const entry = getOrCreateForSession(payload.requestId, meta.sessionId)
 		entry.priority = normalizeString(payload.newPriority) ?? entry.priority
 	})
 
-	options.session.onEvent('Network.loadingFinished', (params) => {
+	options.session.onEvent('Network.loadingFinished', (params, meta) => {
 		const payload = params as { requestId?: string; encodedDataLength?: number; timestamp?: number }
 		const requestId = payload.requestId
 		if (!requestId) {
 			return
 		}
-		const entry = getOrCreate(requestId)
+		const entry = getOrCreateForSession(requestId, meta.sessionId)
 		entry.encodedDataLength = pickNumber(payload.encodedDataLength) ?? entry.encodedDataLength
 		entry.endTime = pickNumber(payload.timestamp) ?? entry.endTime
 		finalize(requestId)
 	})
 
-	options.session.onEvent('Network.loadingFailed', (params) => {
+	options.session.onEvent('Network.loadingFailed', (params, meta) => {
 		const payload = params as { requestId?: string; errorText?: string; timestamp?: number }
 		const requestId = payload.requestId
 		if (!requestId) {
 			return
 		}
-		const entry = getOrCreate(requestId)
+		const entry = getOrCreateForSession(requestId, meta.sessionId)
 		entry.errorText = payload.errorText ?? entry.errorText
 		entry.endTime = pickNumber(payload.timestamp) ?? entry.endTime
 		finalize(requestId)
@@ -307,6 +326,8 @@ const createInflightRequest = (requestId: string): InflightRequest => ({
 	requestId,
 	url: '',
 	method: 'GET',
+	hasRequestBody: false,
+	bodySessionId: null,
 	summaryRequestHeaders: undefined,
 	requestHeaders: undefined,
 	responseHeaders: undefined,
@@ -361,6 +382,73 @@ const resetRedirectState = (entry: InflightRequest): void => {
 	entry.remotePort = null
 	entry.protocol = null
 	entry.responseTiming = null
+}
+
+const hasRequestBody = (
+	request:
+		| {
+				hasPostData?: boolean
+				postData?: string
+				postDataEntries?: unknown[]
+		  }
+		| undefined,
+): boolean => {
+	if (!request) {
+		return false
+	}
+
+	if (request.hasPostData === true) {
+		return true
+	}
+
+	if (typeof request.postData === 'string' && request.postData !== '') {
+		return true
+	}
+
+	return Array.isArray(request.postDataEntries) && request.postDataEntries.length > 0
+}
+
+/**
+ * Bodies are fetched lazily via CDP, so this flag answers "is a body worth trying to read?"
+ * rather than "did we eagerly store bytes in the buffer?"
+ */
+const hasResponseBody = (entry: InflightRequest): boolean => {
+	if (entry.errorText) {
+		return false
+	}
+
+	if (entry.method.toUpperCase() === 'HEAD') {
+		return false
+	}
+
+	if (entry.status == null) {
+		return false
+	}
+
+	if (parseContentLength(entry.responseHeaders) === 0) {
+		return false
+	}
+
+	return !RESPONSE_STATUSES_WITHOUT_BODY.has(entry.status)
+}
+
+const RESPONSE_STATUSES_WITHOUT_BODY = new Set([101, 103, 204, 205, 304])
+
+const parseContentLength = (headers: Record<string, string> | undefined): number | null => {
+	if (!headers) {
+		return null
+	}
+
+	for (const [name, value] of Object.entries(headers)) {
+		if (name.toLowerCase() !== 'content-length') {
+			continue
+		}
+
+		const parsed = Number(value)
+		return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+	}
+
+	return null
 }
 
 const buildTimingPhases = (timing: ResponseTimingPayload | null, totalMs: number | null): NetworkTimingPhases | null => {

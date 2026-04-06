@@ -56,6 +56,12 @@ export type NetworkTimingPhases = {
 	downloadMs: number | null
 }
 
+/** Whether Argus expects request/response bodies to be fetchable for a buffered entry. */
+export type NetworkBodyAvailability = {
+	request: boolean
+	response: boolean
+}
+
 /** Full request record used by `net show`. */
 export type NetworkRequestDetail = NetworkRequestSummary & {
 	requestHeaders?: Record<string, string>
@@ -74,6 +80,7 @@ export type NetworkRequestDetail = NetworkRequestSummary & {
 	protocol: string | null
 	priority: string | null
 	timingPhases: NetworkTimingPhases | null
+	body: NetworkBodyAvailability
 }
 
 /** Response payload for GET /net. */
@@ -109,4 +116,18 @@ export type NetClearResponse = {
 export type NetRequestResponse = {
 	ok: true
 	request: NetworkRequestDetail
+}
+
+/** Which body payload to fetch for a buffered request. */
+export type NetRequestBodyPart = 'request' | 'response'
+
+/** Response payload for GET /net/request/body. */
+export type NetRequestBodyResponse = {
+	ok: true
+	id: number
+	requestId: string
+	part: NetRequestBodyPart
+	mimeType: string | null
+	body: string
+	base64Encoded: boolean
 }

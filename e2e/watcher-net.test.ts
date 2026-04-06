@@ -52,6 +52,21 @@ describe('network workflow e2e', () => {
 				return
 			}
 
+			if (url.pathname === '/api/post') {
+				const chunks: Buffer[] = []
+				req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+				req.on('end', () => {
+					res.writeHead(200, { 'Content-Type': 'application/json' })
+					res.end(
+						JSON.stringify({
+							ok: true,
+							received: chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null,
+						}),
+					)
+				})
+				return
+			}
+
 			if (url.pathname === '/api/fail') {
 				res.writeHead(503, { 'Content-Type': 'application/json' })
 				res.end(JSON.stringify({ ok: false }))
@@ -67,6 +82,12 @@ describe('network workflow e2e', () => {
 			if (url.pathname === '/api/delayed') {
 				res.writeHead(200, { 'Content-Type': 'application/json' })
 				res.end(JSON.stringify({ delayed: true }))
+				return
+			}
+
+			if (url.pathname === '/api/late-match') {
+				res.writeHead(200, { 'Content-Type': 'application/json' })
+				res.end(JSON.stringify({ lateMatch: true }))
 				return
 			}
 
@@ -177,6 +198,7 @@ describe('network workflow e2e', () => {
 		expect(watchResult.reloaded).toBe(true)
 		expect(watchResult.timedOut).toBe(false)
 		expect(watchResult.requests.some((request) => request.url.includes('/api/fast'))).toBe(true)
+		expect(watchResult.requests.some((request) => request.url.includes('/api/post'))).toBe(true)
 		expect(watchResult.requests.some((request) => request.url.includes('/api/slow'))).toBe(true)
 		expect(watchResult.requests.some((request) => request.url.includes('/api/fail'))).toBe(true)
 		expect(watchResult.requests.some((request) => request.url.includes('/api/big'))).toBe(true)
@@ -205,6 +227,111 @@ describe('network workflow e2e', () => {
 		const detailByRequestId = JSON.parse(detailByRequestIdOut) as { id: number; requestId: string }
 		expect(detailByRequestId.id).toBe(delayedRequest!.id)
 		expect(detailByRequestId.requestId).toBe(delayedRequest!.requestId)
+
+		const postRequest = watchResult.requests.find((request) => request.url.includes('/api/post'))
+		expect(postRequest).toBeTruthy()
+
+		const { stdout: postDetailOut } = await runCommand('node', [BIN_PATH, 'net', 'show', String(postRequest!.id), watcherId, '--json'], { env })
+		const postDetail = JSON.parse(postDetailOut) as {
+			id: number
+			body: { request: boolean; response: boolean }
+		}
+		expect(postDetail.id).toBe(postRequest!.id)
+		expect(postDetail.body).toEqual({ request: true, response: true })
+
+		const { stdout: responseBodyOut } = await runCommand('node', [BIN_PATH, 'net', 'body', String(postRequest!.id), watcherId, '--json'], { env })
+		const responseBody = JSON.parse(responseBodyOut) as {
+			part: 'response'
+			base64Encoded: boolean
+			body: string
+		}
+		expect(responseBody.part).toBe('response')
+		expect(responseBody.base64Encoded).toBe(false)
+		expect(JSON.parse(responseBody.body)).toEqual({
+			ok: true,
+			received: { source: 'argus-net-e2e', count: 1 },
+		})
+
+		const { stdout: requestBodyOut } = await runCommand(
+			'node',
+			[BIN_PATH, 'net', 'body', String(postRequest!.id), watcherId, '--request', '--json'],
+			{ env },
+		)
+		const requestBody = JSON.parse(requestBodyOut) as {
+			part: 'request'
+			base64Encoded: boolean
+			body: string
+		}
+		expect(requestBody.part).toBe('request')
+		expect(requestBody.base64Encoded).toBe(false)
+		expect(JSON.parse(requestBody.body)).toEqual({
+			source: 'argus-net-e2e',
+			count: 1,
+		})
+
+		const { stdout: inspectOut } = await runCommand(
+			'node',
+			[BIN_PATH, 'net', 'inspect', '/api/post', watcherId, '--reload', '--settle', '400ms', '--ignore-pattern', '/poll', '--json'],
+			{ env },
+		)
+		const inspectResult = JSON.parse(inspectOut) as {
+			ok: true
+			pattern: string
+			reloaded: boolean
+			timedOut: boolean
+			matchedCount: number
+			request: { url: string; method: string; body: { request: boolean; response: boolean } }
+			requestBody: { part: 'request'; body: string } | null
+			responseBody: { part: 'response'; body: string } | null
+		}
+		expect(inspectResult.ok).toBe(true)
+		expect(inspectResult.pattern).toBe('/api/post')
+		expect(inspectResult.reloaded).toBe(true)
+		expect(inspectResult.timedOut).toBe(false)
+		expect(inspectResult.matchedCount).toBeGreaterThan(0)
+		expect(inspectResult.request.url.includes('/api/post')).toBe(true)
+		expect(inspectResult.request.method).toBe('POST')
+		expect(inspectResult.request.body).toEqual({ request: true, response: true })
+		expect(inspectResult.requestBody?.part).toBe('request')
+		expect(JSON.parse(inspectResult.requestBody?.body ?? 'null')).toEqual({
+			source: 'argus-net-e2e',
+			count: 1,
+		})
+		expect(inspectResult.responseBody?.part).toBe('response')
+		expect(JSON.parse(inspectResult.responseBody?.body ?? 'null')).toEqual({
+			ok: true,
+			received: { source: 'argus-net-e2e', count: 1 },
+		})
+
+		const { stdout: lateInspectOut } = await runCommand(
+			'node',
+			[
+				BIN_PATH,
+				'net',
+				'inspect',
+				'/api/late-match',
+				watcherId,
+				'--reload',
+				'--settle',
+				'400ms',
+				'--ignore-pattern',
+				'/poll',
+				'--response',
+				'--json',
+			],
+			{ env },
+		)
+		const lateInspect = JSON.parse(lateInspectOut) as {
+			ok: true
+			pattern: string
+			request: { url: string; method: string }
+			responseBody: { part: 'response'; body: string } | null
+		}
+		expect(lateInspect.ok).toBe(true)
+		expect(lateInspect.pattern).toBe('/api/late-match')
+		expect(lateInspect.request.url.includes('/api/late-match')).toBe(true)
+		expect(lateInspect.request.method).toBe('GET')
+		expect(JSON.parse(lateInspect.responseBody?.body ?? 'null')).toEqual({ lateMatch: true })
 
 		const harPath = path.join(tempDir, 'boot.har')
 		const { stdout: exportOut } = await runCommand(
@@ -336,12 +463,20 @@ const renderAppHtml = (analyticsPort: number): string => `
 		const analyticsBase = 'http://localhost:${analyticsPort}'
 		const run = () => {
 			fetch('/api/fast').catch(() => {})
+			fetch('/api/post', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ source: 'argus-net-e2e', count: 1 }),
+			}).catch(() => {})
 			fetch('/api/slow').catch(() => {})
 			fetch('/api/fail').catch(() => {})
 			fetch('/api/big').catch(() => {})
 			setTimeout(() => {
 				fetch('/api/delayed').catch(() => {})
 			}, 500)
+			setTimeout(() => {
+				fetch('/api/late-match').catch(() => {})
+			}, 1200)
 			setTimeout(() => {
 				fetch('/api/really-delayed').catch(() => {})
 			}, 2500)

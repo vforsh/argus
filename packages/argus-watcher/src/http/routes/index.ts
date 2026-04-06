@@ -6,6 +6,7 @@ import { handle as getTail } from './getTail.js'
 import { handle as getNet } from './getNet.js'
 import { handle as getNetRequests } from './getNetRequests.js'
 import { handle as getNetRequest } from './getNetRequest.js'
+import { handle as getNetRequestBody } from './getNetRequestBody.js'
 import { handle as getNetTail } from './getNetTail.js'
 import { handle as postNetClear } from './postNetClear.js'
 import { handle as getAuthCookies } from './getAuthCookies.js'
@@ -64,6 +65,7 @@ export const watcherRoutes = [
 	defineRoute({ method: 'GET', path: '/net', handler: getNet }),
 	defineRoute({ method: 'GET', path: '/net/requests', handler: getNetRequests }),
 	defineRoute({ method: 'GET', path: '/net/request', handler: getNetRequest }),
+	defineRoute({ method: 'GET', path: '/net/request/body', handler: getNetRequestBody }),
 	defineRoute({ method: 'GET', path: '/net/tail', handler: getNetTail }),
 	defineRoute({ method: 'POST', path: '/net/clear', handler: postNetClear }),
 	defineRoute({ method: 'GET', path: '/auth/cookies', handler: getAuthCookies }),

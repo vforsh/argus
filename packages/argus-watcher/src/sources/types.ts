@@ -87,6 +87,8 @@ export type CdpSourceHandle = {
 	readBrowserCookies?: (query: CdpSourceCookieQuery) => Promise<AuthStateCookie[]>
 	/** Best-effort target metadata used to resolve network filter scope in HTTP routes. */
 	getNetFilterContext?: () => NetFilterContext | null
+	/** Resolve the child CDP session that owns a given frame (extension mode only). */
+	getFrameSessionId?: (frameId: string) => string | null
 	/** Stop the source and clean up resources. */
 	stop: () => Promise<void>
 	/** List available targets (extension mode only). */

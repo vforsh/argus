@@ -4,7 +4,10 @@ import { matchesNetFilters, type NetFilters } from '../net/filtering.js'
 type StoredNetRecord = {
 	summary: NetworkRequestSummary
 	detail: NetworkRequestDetail
+	bodySessionId: string | null
 }
+
+export type NetBufferRecord = StoredNetRecord
 
 /** In-memory ring buffer for network request summaries plus per-request detail records. */
 export class NetBuffer {
@@ -17,11 +20,20 @@ export class NetBuffer {
 	}
 
 	/** Add a network summary/detail pair and return the stored detail record with id. */
-	add(record: { summary: Omit<NetworkRequestSummary, 'id'>; detail: Omit<NetworkRequestDetail, 'id'> }): NetworkRequestDetail {
+	add(record: {
+		summary: Omit<NetworkRequestSummary, 'id'>
+		detail: Omit<NetworkRequestDetail, 'id'>
+		/**
+		 * Child-session owner for lazy CDP body reads.
+		 * Null means the request belongs to the root page session.
+		 */
+		bodySessionId?: string | null
+	}): NetworkRequestDetail {
 		const id = this.nextId++
 		const stored: StoredNetRecord = {
 			summary: { ...record.summary, id },
 			detail: { ...record.detail, id },
+			bodySessionId: record.bodySessionId ?? null,
 		}
 		this.events.push(stored)
 		this.trim()
@@ -45,15 +57,33 @@ export class NetBuffer {
 
 	/** Retrieve one buffered request by Argus numeric id. */
 	getById(id: number): NetworkRequestDetail | null {
-		return this.events.find((event) => event.detail.id === id)?.detail ?? null
+		return this.findRecordById(id)?.detail ?? null
 	}
 
 	/** Retrieve the most recent buffered request by CDP request id. */
 	getByRequestId(requestId: string): NetworkRequestDetail | null {
+		return this.findRecordByRequestId(requestId)?.detail ?? null
+	}
+
+	/** Retrieve the full stored record by Argus numeric id. */
+	getRecordById(id: number): NetBufferRecord | null {
+		return this.findRecordById(id)
+	}
+
+	/** Retrieve the most recent full stored record by CDP request id. */
+	getRecordByRequestId(requestId: string): NetBufferRecord | null {
+		return this.findRecordByRequestId(requestId)
+	}
+
+	private findRecordById(id: number): StoredNetRecord | null {
+		return this.events.find((event) => event.detail.id === id) ?? null
+	}
+
+	private findRecordByRequestId(requestId: string): StoredNetRecord | null {
 		for (let index = this.events.length - 1; index >= 0; index -= 1) {
 			const current = this.events[index]
 			if (current?.detail.requestId === requestId) {
-				return current.detail
+				return current
 			}
 		}
 		return null

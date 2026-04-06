@@ -1,4 +1,4 @@
-import type { LogLevel } from '@vforsh/argus-core'
+import type { LogLevel, NetRequestBodyPart } from '@vforsh/argus-core'
 
 /**
  * Event payload for when the watcher attaches to a CDP target.
@@ -60,6 +60,7 @@ export type LogRequestQuery = {
 export type NetRequestQuery = {
 	id?: number
 	requestId?: string
+	part?: NetRequestBodyPart
 	after?: number
 	limit?: number
 	sinceTs?: number
@@ -87,6 +88,7 @@ export type HttpRequestEvent = {
 		| 'net'
 		| 'net/requests'
 		| 'net/request'
+		| 'net/request/body'
 		| 'net/tail'
 		| 'net/clear'
 		| 'auth/cookies'

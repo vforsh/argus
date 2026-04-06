@@ -74,8 +74,9 @@ export const registerExtensionSessionEventHandlers = ({
 		}
 
 		const state = getOrCreateFrameState(session.tabId)
+		const preservedSessionId = pickFrameSessionId(meta.sessionId, state.frames.get(frame.frameId)?.sessionId)
 		state.frames.set(frame.frameId, frame)
-		frame.sessionId = meta.sessionId ?? null
+		frame.sessionId = preservedSessionId
 		if (!frame.parentFrameId) {
 			if (!meta.sessionId) {
 				state.topFrameId = frame.frameId
@@ -112,7 +113,7 @@ export const registerExtensionSessionEventHandlers = ({
 			parentFrameId: record.parentFrameId ?? state.topFrameId ?? null,
 			url: '',
 			title: null,
-			sessionId: meta.sessionId ?? null,
+			sessionId: pickFrameSessionId(meta.sessionId, state.frames.get(record.frameId)?.sessionId),
 		})
 		reconcileTargetSelection(session)
 	})
@@ -138,3 +139,6 @@ export const registerExtensionSessionEventHandlers = ({
 		events.onLog(toExceptionEvent(params, session, { ignoreMatcher, stripUrlPrefixes }))
 	})
 }
+
+const pickFrameSessionId = (nextSessionId: string | null | undefined, existingSessionId: string | null | undefined): string | null =>
+	nextSessionId ?? existingSessionId ?? null

@@ -1,5 +1,5 @@
 import http from 'node:http'
-import type { AuthStateCookie, DialogStatus, LogLevel, WatcherRecord } from '@vforsh/argus-core'
+import type { AuthStateCookie, DialogStatus, LogLevel, NetRequestBodyPart, WatcherRecord } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
@@ -21,6 +21,7 @@ export type HttpRequestEventMetadata = {
 		| 'net'
 		| 'net/requests'
 		| 'net/request'
+		| 'net/request/body'
 		| 'net/tail'
 		| 'net/clear'
 		| 'auth/cookies'
@@ -69,6 +70,7 @@ export type HttpRequestEventMetadata = {
 	query?: {
 		id?: number
 		requestId?: string
+		part?: NetRequestBodyPart
 		after?: number
 		limit?: number
 		levels?: LogLevel[]

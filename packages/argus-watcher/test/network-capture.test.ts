@@ -12,39 +12,44 @@ describe('network capture', () => {
 		await capture.onAttached()
 		expect(stub.calls).toEqual(['Network.enable'])
 
-		stub.emit('Network.requestWillBeSent', {
-			requestId: 'req-1',
-			timestamp: 1,
-			type: 'Fetch',
-			documentURL: 'https://example.com/app?access_token=secret',
-			frameId: 'frame-1',
-			loaderId: 'loader-1',
-			initiator: {
-				type: 'script',
-				url: 'https://example.com/app.js?token=secret',
-				lineNumber: 10,
-				columnNumber: 4,
-				stack: {
-					callFrames: [
-						{
-							functionName: 'loadData',
-							url: 'https://example.com/app.js?token=secret',
-							lineNumber: 10,
-							columnNumber: 4,
-						},
-					],
+		stub.emit(
+			'Network.requestWillBeSent',
+			{
+				requestId: 'req-1',
+				timestamp: 1,
+				type: 'Fetch',
+				documentURL: 'https://example.com/app?access_token=secret',
+				frameId: 'frame-1',
+				loaderId: 'loader-1',
+				initiator: {
+					type: 'script',
+					url: 'https://example.com/app.js?token=secret',
+					lineNumber: 10,
+					columnNumber: 4,
+					stack: {
+						callFrames: [
+							{
+								functionName: 'loadData',
+								url: 'https://example.com/app.js?token=secret',
+								lineNumber: 10,
+								columnNumber: 4,
+							},
+						],
+					},
+				},
+				request: {
+					url: 'https://example.com/start?access_token=secret',
+					method: 'POST',
+					hasPostData: true,
+					headers: {
+						Authorization: 'Bearer abcdefghijklmnop',
+						'X-Client': 'argus-test',
+					},
+					initialPriority: 'Low',
 				},
 			},
-			request: {
-				url: 'https://example.com/start?access_token=secret',
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer abcdefghijklmnop',
-					'X-Client': 'argus-test',
-				},
-				initialPriority: 'Low',
-			},
-		})
+			{ sessionId: 'frame-session-1' },
+		)
 
 		stub.emit('Network.requestWillBeSentExtraInfo', {
 			requestId: 'req-1',
@@ -133,6 +138,7 @@ describe('network capture', () => {
 
 		const detailById = buffer.getById(summary?.id ?? 0)
 		const detailByRequestId = buffer.getByRequestId('req-1')
+		const recordById = buffer.getRecordById(summary?.id ?? 0)
 		expect(detailById).toEqual(detailByRequestId)
 		expect(detailById).toMatchObject({
 			statusText: 'OK',
@@ -164,6 +170,10 @@ describe('network capture', () => {
 				waitMs: 28,
 				downloadMs: 50,
 			},
+			body: {
+				request: true,
+				response: true,
+			},
 		})
 		expect(detailById?.requestHeaders).toMatchObject({
 			authorization: 'Bearer abcd...mnop',
@@ -183,6 +193,7 @@ describe('network capture', () => {
 				columnNumber: 4,
 			},
 		])
+		expect(recordById?.bodySessionId).toBe('frame-session-1')
 	})
 })
 

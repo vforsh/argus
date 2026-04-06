@@ -205,11 +205,14 @@ argus logs tail app --levels error
 argus net app --since 5m --grep api
 argus net tail app --grep api
 argus net watch app --reload --settle 3s
+argus net inspect /api/post app --reload
 argus net show 42 app
+argus net body 42 app
+argus net body 42 app --request
 argus net export app --reload --settle 3s --out boot.har
 ```
 
-`net watch` waits for a real quiet window instead of a fixed sleep, `net show` drills into one buffered request, and `net export --format har` writes the current buffer or a fresh reload capture as a HAR file for sharing in other tools. Reload-driven `net watch` / `net export` intentionally reject selected-frame scope.
+`net watch` waits for a real quiet window instead of a fixed sleep, `net inspect` turns the common “clear + reload + settle + find match + dump bodies” loop into one command, `net show` drills into one buffered request and surfaces whether request/response bodies are fetchable, `net body` prints one buffered request or response body on demand, and `net export --format har` writes the current buffer or a fresh reload capture as a HAR file for sharing in other tools. Reload-driven `net watch` / `net export` / `net inspect` intentionally reject selected-frame scope.
 
 ### Inspect the DOM
 

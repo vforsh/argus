@@ -108,8 +108,8 @@ Behavior details:
 
 ## Network capture
 
-Network request capture is opt-in via `net.enabled`. When disabled (default), the `/net`, `/net/request`, and `/net/tail` HTTP endpoints return a `net_disabled` error.
+Network request capture is opt-in via `net.enabled`. When disabled (default), the `/net`, `/net/request`, `/net/request/body`, and `/net/tail` HTTP endpoints return a `net_disabled` error.
 
-When enabled, `/net`, `/net/tail`, `/net/request`, and `/net/requests` expose buffered request summaries/details. `/net` and `/net/tail` stay summary-focused, while `/net/request` and `/net/requests` return the richer records used by `argus net show` and `argus net export --format har`.
+When enabled, `/net`, `/net/tail`, `/net/request`, `/net/request/body`, and `/net/requests` expose buffered request summaries/details. `/net` and `/net/tail` stay summary-focused, `/net/request` and `/net/requests` return the richer records used by `argus net show` and `argus net export --format har`, and `/net/request/body` fetches one request or response body lazily from CDP on demand.
 
 All network endpoints support filtering by host, method, status or status class (`2xx`), resource type, MIME prefix, first-party vs third-party, failed-only, minimum duration, minimum transfer size, and explicit target scope (`selected`, `page`, `tab`). In extension mode, `selected` / `page` resolve against the current target state, while the default remains whole-tab capture for predictable behavior.
