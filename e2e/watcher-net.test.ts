@@ -448,7 +448,65 @@ describe('network workflow e2e', () => {
 		}
 		expect(timedWatch.timedOut).toBe(true)
 		expect(timedWatch.requests.length).toBeGreaterThan(0)
-	}, 15_000)
+
+		const { stdout: gatedWatchOut } = await runCommand(
+			'node',
+			[
+				BIN_PATH,
+				'net',
+				'watch',
+				watcherId,
+				'--reload',
+				'--settle-after',
+				'window.__netReady === true',
+				'--settle-after-interval',
+				'100ms',
+				'--settle',
+				'400ms',
+				'--ignore-pattern',
+				'/poll',
+				'--json',
+			],
+			{ env },
+		)
+		const gatedWatch = JSON.parse(gatedWatchOut) as {
+			timedOut: boolean
+			requests: Array<{ url: string }>
+		}
+		expect(gatedWatch.timedOut).toBe(false)
+		expect(gatedWatch.requests.some((request) => request.url.includes('/api/really-delayed'))).toBe(true)
+
+		const { stdout: gatedInspectOut } = await runCommand(
+			'node',
+			[
+				BIN_PATH,
+				'net',
+				'inspect',
+				'/api/really-delayed',
+				watcherId,
+				'--reload',
+				'--settle-after',
+				'window.__netReady === true',
+				'--settle-after-interval',
+				'100ms',
+				'--settle',
+				'400ms',
+				'--ignore-pattern',
+				'/poll',
+				'--response',
+				'--json',
+			],
+			{ env },
+		)
+		const gatedInspect = JSON.parse(gatedInspectOut) as {
+			ok: true
+			request: { url: string }
+			responseBody: { part: 'response'; body: string } | null
+		}
+		expect(gatedInspect.ok).toBe(true)
+		expect(gatedInspect.request.url.includes('/api/really-delayed')).toBe(true)
+		expect(JSON.parse(gatedInspect.responseBody?.body ?? 'null')).toEqual({ reallyDelayed: true })
+	}, 25_000)
 })
 
 const renderAppHtml = (analyticsPort: number): string => `
@@ -461,6 +519,7 @@ const renderAppHtml = (analyticsPort: number): string => `
 <body>
 	<script>
 		const analyticsBase = 'http://localhost:${analyticsPort}'
+		window.__netReady = false
 		const run = () => {
 			fetch('/api/fast').catch(() => {})
 			fetch('/api/post', {
@@ -480,6 +539,9 @@ const renderAppHtml = (analyticsPort: number): string => `
 			setTimeout(() => {
 				fetch('/api/really-delayed').catch(() => {})
 			}, 2500)
+			setTimeout(() => {
+				window.__netReady = true
+			}, 2200)
 			fetch(analyticsBase + '/beacon').catch(() => {})
 			if (!window.__netPollStarted) {
 				window.__netPollStarted = true

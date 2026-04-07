@@ -1,17 +1,11 @@
 import type { NetResponse } from '@vforsh/argus-core'
-import type { NetCliFilterOptions } from './netShared.js'
-import { captureNetWindow, parseNetCaptureOptions } from './netCapture.js'
+import { captureNetWindow, parseNetCaptureOptions, type NetCaptureOptions } from './netCapture.js'
 import { formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { createOutput } from '../output/io.js'
 import { formatNetworkRequest } from '../output/net.js'
 
-export type NetWatchOptions = NetCliFilterOptions & {
+export type NetWatchOptions = NetCaptureOptions & {
 	json?: boolean
-	reload?: boolean
-	clear?: boolean
-	settle?: string
-	ignoreCache?: boolean
-	maxTimeout?: string
 }
 
 export const runNetWatch = async (id: string | undefined, options: NetWatchOptions): Promise<void> => {

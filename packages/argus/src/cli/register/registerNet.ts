@@ -63,15 +63,15 @@ export function registerNet(program: Command): void {
 		.description('Optionally clear/reload, then wait until network activity settles')
 		.option('--reload', 'Reload the attached page before watching')
 		.option('--ignore-cache', 'Bypass browser cache when used with --reload')
-		.option('--settle <duration>', 'Quiet window before finishing (e.g. 3s, 500ms)')
 		.option('--max-timeout <duration>', 'Stop after this total watch duration even if the page stays chatty')
 		.option('--no-clear', 'Keep the existing buffer instead of starting fresh')
+	applyNetSettleOptions(watch, 'Quiet window before finishing')
 	applyNetFilterOptions(watch)
 	watch
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			`\nExamples:\n  $ argus net watch app --reload --settle 3s\n  $ argus net watch app --reload --ignore-host mc.yandex.ru\n  $ argus net watch app --max-timeout 30s --json${RELOAD_SELECTED_SCOPE_NOTE}`,
+			`\nExamples:\n  $ argus net watch app --reload --settle 3s\n  $ argus net watch app --reload --settle-after "window.appReady" --settle 2s\n  $ argus net watch app --reload --ignore-host mc.yandex.ru\n  $ argus net watch app --max-timeout 30s --json${RELOAD_SELECTED_SCOPE_NOTE}`,
 		)
 		.action(async (id, options) => {
 			await runNetWatch(id, resolveCommandOptions(options))
@@ -85,15 +85,15 @@ export function registerNet(program: Command): void {
 		.option('--out <path>', 'Write the exported file to this path')
 		.option('--reload', 'Reload the attached page before exporting')
 		.option('--ignore-cache', 'Bypass browser cache when used with --reload')
-		.option('--settle <duration>', 'Quiet window before finishing reload capture (e.g. 3s, 500ms)')
 		.option('--max-timeout <duration>', 'Stop reload capture after this total duration even if the page stays chatty')
 		.option('--no-clear', 'Keep the existing buffer instead of starting fresh when used with --reload')
+	applyNetSettleOptions(exportCommand, 'Quiet window before finishing reload capture')
 	applyNetFilterOptions(exportCommand, { includeSince: true })
 	exportCommand
 		.option('--json', 'Output JSON metadata for automation')
 		.addHelpText(
 			'after',
-			`\nExamples:\n  $ argus net export app --out boot.har\n  $ argus net export app --reload --settle 3s --out boot.har\n  $ argus net export app --format har --first-party --out boot.har --json${RELOAD_SELECTED_SCOPE_NOTE}`,
+			`\nExamples:\n  $ argus net export app --out boot.har\n  $ argus net export app --reload --settle 3s --out boot.har\n  $ argus net export app --reload --settle-after "window.appReady" --settle 2s --out boot.har\n  $ argus net export app --format har --first-party --out boot.har --json${RELOAD_SELECTED_SCOPE_NOTE}`,
 		)
 		.action(async (id, options) => {
 			await runNetExport(id, resolveCommandOptions(options))
@@ -130,17 +130,17 @@ export function registerNet(program: Command): void {
 		.description('Clear/reload, wait for network quiet, then inspect the newest matching request')
 		.option('--reload', 'Reload the attached page before inspecting (default)')
 		.option('--ignore-cache', 'Bypass browser cache during reload')
-		.option('--settle <duration>', 'Quiet window before finishing capture (e.g. 3s, 500ms)')
 		.option('--max-timeout <duration>', 'Stop after this total capture duration even if the page stays chatty')
 		.option('--no-clear', 'Keep the existing buffer instead of starting fresh')
 		.option('--request', 'Include the request body')
 		.option('--response', 'Include the response body')
+	applyNetSettleOptions(inspect, 'Quiet window before finishing capture')
 	applyNetFilterOptions(inspect, { includeSince: false, includeGrep: false })
 	inspect
 		.option('--json', 'Output JSON metadata for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus net inspect game/init extension --reload\n  $ argus net inspect game/init extension --reload --request --response\n  $ argus net inspect /api/post app --settle 400ms --json\n',
+			'\nExamples:\n  $ argus net inspect game/init extension --reload\n  $ argus net inspect game/init extension --reload --request --response\n  $ argus net inspect /api/post app --settle-after "window.appReady" --settle 400ms --json\n',
 		)
 		.action(async (pattern, id, options) => {
 			await runNetInspect(id, pattern, resolveCommandOptions(options))
@@ -181,6 +181,12 @@ const applyNetFilterOptions = (command: Command, options: { includeSince?: boole
 	command.option('--large-over <size>', 'Only include requests larger than this threshold (for example 100kb, 2mb)')
 	command.option('--ignore-host <host>', 'Ignore requests to host (repeatable)', collectValues, [])
 	command.option('--ignore-pattern <substring>', 'Ignore requests whose URL contains substring (repeatable)', collectValues, [])
+}
+
+const applyNetSettleOptions = (command: Command, description: string): void => {
+	command.option('--settle <duration>', `${description} (e.g. 3s, 500ms)`)
+	command.option('--settle-after <expression>', 'Wait for this JS expression to become truthy before the quiet window can start')
+	command.option('--settle-after-interval <duration>', 'Polling interval for --settle-after (default: 250ms)')
 }
 
 const resolveCommandOptions = (value: unknown): Record<string, unknown> => {
@@ -254,6 +260,8 @@ const parseNetArgv = (argv: string[]): Record<string, unknown> => {
 		'--since',
 		'--grep',
 		'--settle',
+		'--settle-after',
+		'--settle-after-interval',
 		'--max-timeout',
 		'--scope',
 		'--frame',

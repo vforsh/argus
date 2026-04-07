@@ -171,9 +171,11 @@ argus net app --since 5m
 argus net app --grep api
 argus net clear app
 argus net watch app --reload --settle 3s
+argus net watch app --reload --settle-after "window.appReady" --settle 2s
 argus net watch app --reload --settle 3s --ignore-pattern /poll
 argus net watch app --reload --settle 3s --max-timeout 30s
 argus net inspect game/init extension --reload
+argus net inspect /api/post app --settle-after "window.appReady" --settle 400ms
 argus net inspect game/init extension --reload --request --response
 argus net extension --scope selected --host stark.games --resource-type Fetch
 argus net extension --first-party --slow-over 500ms --status 4xx
@@ -190,7 +192,7 @@ argus net tail app
 argus net tail app --grep api --json
 ```
 
-`net clear` resets the watcher’s buffered requests so the next inspection starts clean. `net watch` now waits for an actual quiet window: it tails matching requests until no new matches arrive for `--settle`, and `--max-timeout` stops the watch if the page never settles. `net inspect` is the happy path for one endpoint: it captures a fresh window, picks the newest URL match, prints a compact header summary, and dumps request/response bodies in one shot. `net export --format har` writes the current buffer, or a fresh reload capture, as a HAR file. `net show` drills into one buffered request by Argus id or raw CDP request id, including redacted request/response headers, initiator, redirect chain, cache/service-worker flags, remote endpoint, timing phases, and request/response body availability. `net body` lazily fetches either the response body (default) or `--request` body from CDP so the ring buffer stays lean. `net`/`net tail`/`net watch`/`net export`/`net inspect` also support richer filtering: host, method, status or status class (`2xx`), resource type, MIME prefix, first-party vs third-party, failed-only, slow-over, large-over, and target scope. Scope is explicit: use `--scope selected` or `--frame selected` when you want iframe-only traffic in extension mode, but reload-driven `net watch` / `net export` / `net inspect` intentionally reject selected-frame scope.
+`net clear` resets the watcher’s buffered requests so the next inspection starts clean. `net watch` now waits for an actual quiet window: it tails matching requests until no new matches arrive for `--settle`, and `--max-timeout` stops the watch if the page never settles. Add `--settle-after "<expr>"` when network quiet alone is too early: Argus polls the page every `250ms` by default (override with `--settle-after-interval`) until the expression becomes truthy, then starts the normal quiet-window countdown. `net inspect` is the happy path for one endpoint: it captures a fresh window, picks the newest URL match, prints a compact header summary, and dumps request/response bodies in one shot. `net export --format har` writes the current buffer, or a fresh reload capture, as a HAR file. `net show` drills into one buffered request by Argus id or raw CDP request id, including redacted request/response headers, initiator, redirect chain, cache/service-worker flags, remote endpoint, timing phases, and request/response body availability. `net body` lazily fetches either the response body (default) or `--request` body from CDP so the ring buffer stays lean. `net`/`net tail`/`net watch`/`net export`/`net inspect` also support richer filtering: host, method, status or status class (`2xx`), resource type, MIME prefix, first-party vs third-party, failed-only, slow-over, large-over, and target scope. Scope is explicit: use `--scope selected` or `--frame selected` when you want iframe-only traffic in extension mode, but reload-driven `net watch` / `net export` / `net inspect` intentionally reject selected-frame scope.
 
 ### Storage
 

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { NetRequestsResponse, NetworkRequestDetail } from '@vforsh/argus-core'
 import type { NetCliFilterOptions } from './netShared.js'
-import { captureNetWindow, parseNetCaptureOptions } from './netCapture.js'
+import { captureNetWindow, parseNetCaptureOptions, type NetCaptureOptions } from './netCapture.js'
 import { appendNetCommandParams, validateNetCommandOptions } from './netShared.js'
 import { buildHarFromNetworkRequests } from '../net/har.js'
 import { createOutput } from '../output/io.js'
@@ -17,15 +17,10 @@ type ValidatedNetExportOptions = {
 	capture?: NonNullable<ReturnType<typeof parseNetCaptureOptions>['value']>
 }
 
-export type NetExportOptions = NetCliFilterOptions & {
+export type NetExportOptions = NetCaptureOptions & {
 	json?: boolean
 	out?: string
 	format?: string
-	reload?: boolean
-	clear?: boolean
-	settle?: string
-	ignoreCache?: boolean
-	maxTimeout?: string
 }
 
 export const runNetExport = async (id: string | undefined, options: NetExportOptions): Promise<void> => {
