@@ -184,6 +184,13 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 				return { success: true }
 			}
 
+			case 'focusTab': {
+				const tabId = requireTabId(message)
+				await focusTab(tabId)
+				recordEvent('info', 'popup', `Focused tab ${tabId}`)
+				return { success: true }
+			}
+
 			case 'selectTarget': {
 				const tabId = requireTabId(message)
 				const session = bridgeSessions.get(tabId)
@@ -265,6 +272,15 @@ async function detachTab(tabId: number): Promise<void> {
 	}
 
 	clearTabState(tabId)
+}
+
+/**
+ * Activating the tab is not enough when it lives in a background window, so explicitly focus the host window too.
+ */
+async function focusTab(tabId: number): Promise<void> {
+	const tab = await chrome.tabs.get(tabId)
+	await chrome.tabs.update(tabId, { active: true })
+	await chrome.windows.update(tab.windowId, { focused: true })
 }
 
 async function connectBridgeSession(tabId: number, session: TabBridgeSession): Promise<void> {

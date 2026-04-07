@@ -66,7 +66,7 @@ type ActionResponse = {
 	error?: string
 }
 
-type PopupAction = 'attach' | 'detach' | 'selectTarget'
+type PopupAction = 'attach' | 'detach' | 'focusTab' | 'selectTarget'
 type TabButtonAction = 'attach' | 'detach' | 'copy-info'
 
 const COPY_ICON = `
@@ -307,23 +307,29 @@ async function handleTabItemClick(event: Event): Promise<void> {
 	}
 
 	const tabItem = event.currentTarget as HTMLElement
-	if (tabItem.classList.contains('attached')) {
-		return
-	}
-
 	const tabId = getTabId(tabItem)
+	const action = getTabItemAction(tabItem)
 
 	tabItem.style.opacity = '0.6'
 	tabItem.style.pointerEvents = 'none'
 
 	try {
-		await runPopupAction('attach', { tabId })
-		await refreshTabs(true)
+		await runPopupAction(action, { tabId })
+		if (action === 'attach') {
+			await refreshTabs(true)
+		}
 	} catch (error) {
-		showError(error instanceof Error ? error.message : 'Attach failed')
+		showError(error instanceof Error ? error.message : `${capitalize(action)} failed`)
 		tabItem.style.opacity = '1'
 		tabItem.style.pointerEvents = 'auto'
 	}
+}
+
+/**
+ * Attached rows act like "jump to this Chrome tab"; unattached rows keep the existing one-click attach flow.
+ */
+function getTabItemAction(tabItem: HTMLElement): Extract<PopupAction, 'attach' | 'focusTab'> {
+	return tabItem.classList.contains('attached') ? 'focusTab' : 'attach'
 }
 
 async function handleTabAction(event: Event): Promise<void> {
