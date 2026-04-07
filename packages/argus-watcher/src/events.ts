@@ -73,6 +73,11 @@ export type NetRequestQuery = {
 	includeValues?: boolean
 }
 
+export type TabListRequestQuery = {
+	url?: string
+	title?: string
+}
+
 /**
  * Event payload for when a client requests logs or tail via HTTP.
  */
@@ -130,13 +135,14 @@ export type HttpRequestEvent = {
 		| 'storage/session'
 		| 'reload'
 		| 'shutdown'
+		| 'tabs'
 		| 'targets'
 		| 'attach'
 		| 'detach'
 	/** IP address of the requester (best-effort). */
 	remoteAddress: string | null
 	/** Parsed query parameters. */
-	query?: LogRequestQuery | NetRequestQuery
+	query?: LogRequestQuery | NetRequestQuery | TabListRequestQuery
 }
 
 /**

@@ -3,6 +3,7 @@ import { runExtensionSetup } from '../../commands/extension/setup.js'
 import { runExtensionRemove } from '../../commands/extension/remove.js'
 import { runExtensionStatus } from '../../commands/extension/status.js'
 import { runExtensionInfo } from '../../commands/extension/info.js'
+import { runExtensionTabs } from '../../commands/extension/tabs.js'
 
 export function registerExtension(program: Command): void {
 	const extension = program.command('extension').alias('ext').description('Browser extension management')
@@ -41,5 +42,20 @@ export function registerExtension(program: Command): void {
 		.option('--json', 'Output JSON for automation')
 		.action(async (options) => {
 			await runExtensionInfo(options)
+		})
+
+	extension
+		.command('tabs')
+		.description('List browser tabs visible to the extension transport')
+		.option('--id <watcherId>', 'Extension-backed watcher id to use as the transport')
+		.option('--url <substring>', 'Filter tabs by URL substring')
+		.option('--title <substring>', 'Filter tabs by title substring')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus ext tabs\n  $ argus ext tabs --url localhost\n  $ argus ext tabs --title Docs --json\n  $ argus ext tabs --id extension-2\n',
+		)
+		.action(async (options) => {
+			await runExtensionTabs(options)
 		})
 }

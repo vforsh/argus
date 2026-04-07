@@ -11,6 +11,7 @@ import {
 	TargetSelectionHistoryStore,
 	matchRememberedIframeTarget,
 } from './target-selection-history.js'
+import { listBrowserTabs } from './tab-list.js'
 
 const debuggerManager = new DebuggerManager()
 const bridgeSessions = new Map<number, TabBridgeSession>()
@@ -413,20 +414,7 @@ async function getTabsForPopup(): Promise<
 		attached: boolean
 	}>
 > {
-	const chromeTabs = await chrome.tabs.query({})
-	const attachedTargets = debuggerManager.listAttached()
-	const attachedTabIds = new Set(attachedTargets.map((target) => target.tabId))
-
-	return chromeTabs
-		.filter((tab) => tab.id !== undefined && tab.url !== undefined)
-		.filter((tab) => !tab.url!.startsWith('chrome://') && !tab.url!.startsWith('chrome-extension://'))
-		.map((tab) => ({
-			tabId: tab.id!,
-			url: tab.url!,
-			title: tab.title ?? '',
-			faviconUrl: tab.favIconUrl,
-			attached: attachedTabIds.has(tab.id!),
-		}))
+	return await listBrowserTabs(debuggerManager)
 }
 
 function syncSelectedFrameFromWatcher(targetId: string): void {

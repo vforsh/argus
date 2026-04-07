@@ -64,6 +64,10 @@ argus extension setup <EXTENSION_ID>
   # List watchers
   argus list
 
+  # List browser tabs through any attached extension watcher
+  argus ext tabs
+  argus ext tabs --url localhost
+
   # View logs from a specific attached extension tab watcher
   argus logs extension
   argus logs extension-2
@@ -75,7 +79,7 @@ argus extension setup <EXTENSION_ID>
   argus page ls --id extension-2 --tree
 ```
 
-Run `argus list` to see which watcher id belongs to which attached tab.
+Run `argus list` to see which watcher id belongs to which attached tab. `argus ext tabs` reuses any attached extension watcher as its transport, so at least one tab must already be attached in the popup.
 
 ## How It Works
 

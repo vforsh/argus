@@ -8,6 +8,11 @@ import type { AuthStateCookie, LogEvent } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 import type { NetFilterContext } from '../net/filtering.js'
 
+export type ExtensionTabListFilter = {
+	url?: string
+	title?: string
+}
+
 /**
  * Represents a CDP target (either from Chrome /json or extension tabs).
  */
@@ -93,6 +98,16 @@ export type CdpSourceHandle = {
 	stop: () => Promise<void>
 	/** List available targets (extension mode only). */
 	listTargets?: () => Promise<CdpSourceTarget[]>
+	/** List browser tabs visible to the extension transport (extension mode only). */
+	listTabs?: (filter?: ExtensionTabListFilter) => Promise<
+		Array<{
+			tabId: number
+			url: string
+			title: string
+			faviconUrl?: string
+			attached: boolean
+		}>
+	>
 	/** Attach to a specific target by ID (extension mode only). */
 	attachTarget?: (targetId: string) => void
 	/** Detach from a specific target by ID (extension mode only). */

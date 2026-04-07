@@ -14,6 +14,7 @@ import type {
 	TabInfo,
 	CookieQueryMessage,
 } from '../types/messages.js'
+import { listBrowserTabs } from './tab-list.js'
 
 export class CdpProxy {
 	private debuggerManager: DebuggerManager
@@ -192,31 +193,7 @@ export class CdpProxy {
 	 * List available tabs.
 	 */
 	private async handleListTabs(message: { filter?: { url?: string; title?: string } }): Promise<void> {
-		const chromeTabs = await chrome.tabs.query({})
-		const attachedTargets = this.debuggerManager.listAttached()
-		const attachedTabIds = new Set(attachedTargets.map((t) => t.tabId))
-
-		let tabs: TabInfo[] = chromeTabs
-			.filter((tab) => tab.id !== undefined && tab.url !== undefined)
-			.map((tab) => ({
-				tabId: tab.id!,
-				url: tab.url!,
-				title: tab.title ?? '',
-				faviconUrl: tab.favIconUrl,
-				attached: attachedTabIds.has(tab.id!),
-			}))
-
-		// Apply filters if provided
-		if (message.filter) {
-			if (message.filter.url) {
-				const urlFilter = message.filter.url.toLowerCase()
-				tabs = tabs.filter((t) => t.url.toLowerCase().includes(urlFilter))
-			}
-			if (message.filter.title) {
-				const titleFilter = message.filter.title.toLowerCase()
-				tabs = tabs.filter((t) => t.title.toLowerCase().includes(titleFilter))
-			}
-		}
+		const tabs: TabInfo[] = await listBrowserTabs(this.debuggerManager, message.filter)
 
 		this.bridgeClient.send({
 			type: 'list_tabs_response',
@@ -258,19 +235,6 @@ export class CdpProxy {
 	 * Get list of tabs for popup UI.
 	 */
 	async getTabsForPopup(): Promise<TabInfo[]> {
-		const chromeTabs = await chrome.tabs.query({})
-		const attachedTargets = this.debuggerManager.listAttached()
-		const attachedTabIds = new Set(attachedTargets.map((t) => t.tabId))
-
-		return chromeTabs
-			.filter((tab) => tab.id !== undefined && tab.url !== undefined)
-			.filter((tab) => !tab.url!.startsWith('chrome://') && !tab.url!.startsWith('chrome-extension://'))
-			.map((tab) => ({
-				tabId: tab.id!,
-				url: tab.url!,
-				title: tab.title ?? '',
-				faviconUrl: tab.favIconUrl,
-				attached: attachedTabIds.has(tab.id!),
-			}))
+		return await listBrowserTabs(this.debuggerManager)
 	}
 }

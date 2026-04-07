@@ -209,6 +209,9 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		},
 		stop,
 		listTargets,
+		listTabs: async (filter) => {
+			return await sessionManager.listTabs(filter)
+		},
 		attachTarget,
 		detachTarget,
 	}

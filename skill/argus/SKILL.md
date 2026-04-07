@@ -99,6 +99,8 @@ argus watcher start --id app --source extension
 
 In extension mode, each attached browser tab gets its own watcher id. The popup can switch that watcher's active target between the top page and discovered iframes inside the same attached tab. `argus list` shows the tab-scoped watcher ids, and `argus page ls --id <watcher>` shows the page/iframe targets for that watcher only.
 
+You can also ask any attached extension watcher for the browser tab list: `argus ext tabs`, `argus ext tabs --url localhost`, or `argus ext tabs --id extension-2`. This requires at least one tab to already be attached in the extension popup.
+
 ### Logs
 
 ```bash

@@ -63,6 +63,7 @@ export type HttpRequestEventMetadata = {
 		| 'storage/session'
 		| 'reload'
 		| 'shutdown'
+		| 'tabs'
 		| 'targets'
 		| 'attach'
 		| 'detach'
@@ -95,6 +96,8 @@ export type HttpRequestEventMetadata = {
 		ignorePatterns?: string[]
 		origin?: string
 		domain?: string
+		url?: string
+		title?: string
 		includeValues?: boolean
 	}
 	ts: number

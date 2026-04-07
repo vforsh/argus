@@ -45,6 +45,7 @@ import { handle as postStorageLocal } from './postStorageLocal.js'
 import { handle as postStorageSession } from './postStorageSession.js'
 import { handle as postReload } from './postReload.js'
 import { handle as postShutdown } from './postShutdown.js'
+import { handle as getExtensionTabs } from './getExtensionTabs.js'
 import { handle as getTargets } from './getTargets.js'
 import { handle as postAttach } from './postAttach.js'
 import { handle as postDetach } from './postDetach.js'
@@ -109,6 +110,7 @@ export const watcherRoutes = [
 	defineRoute({ method: 'POST', path: '/storage/session', handler: postStorageSession }),
 	defineRoute({ method: 'POST', path: '/reload', handler: postReload }),
 	defineRoute({ method: 'POST', path: '/shutdown', handler: postShutdown }),
+	defineRoute({ method: 'GET', path: '/tabs', handler: getExtensionTabs, extensionOnly: true }),
 	defineRoute({ method: 'GET', path: '/targets', handler: getTargets, extensionOnly: true }),
 	defineRoute({ method: 'POST', path: '/attach', handler: postAttach, extensionOnly: true }),
 	defineRoute({ method: 'POST', path: '/detach', handler: postDetach, extensionOnly: true }),
