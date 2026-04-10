@@ -3,6 +3,8 @@
  * Displays tabs, target selection, and bridge/debugger health.
  */
 
+import { isLowInterestTarget } from './classify-target.js'
+
 type PopupTarget = {
 	type: 'page' | 'iframe'
 	frameId: string | null
@@ -265,34 +267,56 @@ function renderIconActionButton(tabId: number, action: Exclude<TabButtonAction, 
 
 function renderTargetList(tab: TabInfo): string {
 	const targets = tab.targets ?? []
-	if (targets.length <= 1) {
-		return ''
+	if (targets.length <= 1) return ''
+
+	const interesting: PopupTarget[] = []
+	const lowInterest: PopupTarget[] = []
+	for (const target of targets) {
+		;(isLowInterestTarget(target) ? lowInterest : interesting).push(target)
 	}
+
+	const interestingHtml = interesting.map((t) => renderTargetItem(tab, t)).join('')
+
+	if (lowInterest.length === 0) {
+		return `<div class="target-list">${interestingHtml}</div>`
+	}
+
+	const hasSelectedLowInterest = lowInterest.some((t) => isTargetSelected(tab.selectedFrameId, t.frameId))
+	const expanded = hasSelectedLowInterest ? 'open' : ''
+	const lowInterestHtml = lowInterest.map((t) => renderTargetItem(tab, t)).join('')
 
 	return `
     <div class="target-list">
-      ${targets
-			.map((target) => {
-				const isSelected = isTargetSelected(tab.selectedFrameId, target.frameId)
-				const kindLabel = target.type === 'page' ? 'Page' : 'Iframe'
-				return `
-            <button
-              class="target-item ${isSelected ? 'selected' : ''}"
-              data-action="select-target"
-              data-tab-id="${tab.tabId}"
-              data-frame-id="${escapeHtml(target.frameId ?? '')}"
-              type="button"
-            >
-              <span class="target-kind">${kindLabel}</span>
-              <span class="target-meta">
-                <span class="target-title">${escapeHtml(target.title || kindLabel)}</span>
-                <span class="target-url">${escapeHtml(target.url || '(no url)')}</span>
-              </span>
-            </button>
-          `
-			})
-			.join('')}
+      ${interestingHtml}
+      <details class="target-collapsed" ${expanded}>
+        <summary class="target-collapsed-toggle">
+          ${lowInterest.length} other iframe${lowInterest.length === 1 ? '' : 's'}
+        </summary>
+        <div class="target-collapsed-list">
+          ${lowInterestHtml}
+        </div>
+      </details>
     </div>
+  `
+}
+
+function renderTargetItem(tab: TabInfo, target: PopupTarget): string {
+	const isSelected = isTargetSelected(tab.selectedFrameId, target.frameId)
+	const kindLabel = target.type === 'page' ? 'Page' : 'Iframe'
+	return `
+    <button
+      class="target-item ${isSelected ? 'selected' : ''}"
+      data-action="select-target"
+      data-tab-id="${tab.tabId}"
+      data-frame-id="${escapeHtml(target.frameId ?? '')}"
+      type="button"
+    >
+      <span class="target-kind">${kindLabel}</span>
+      <span class="target-meta">
+        <span class="target-title">${escapeHtml(target.title || kindLabel)}</span>
+        <span class="target-url">${escapeHtml(target.url || '(no url)')}</span>
+      </span>
+    </button>
   `
 }
 

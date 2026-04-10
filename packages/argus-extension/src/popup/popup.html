@@ -428,6 +428,59 @@
 				text-overflow: ellipsis;
 			}
 
+			.target-collapsed {
+				border: none;
+			}
+
+			.target-collapsed-toggle {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				padding: 5px 10px;
+				font-size: 11px;
+				color: #7b8793;
+				cursor: pointer;
+				user-select: none;
+				list-style: none;
+			}
+
+			.target-collapsed-toggle::-webkit-details-marker {
+				display: none;
+			}
+
+			.target-collapsed-toggle::before {
+				content: '▸';
+				font-size: 10px;
+				transition: transform 0.15s;
+			}
+
+			.target-collapsed[open] > .target-collapsed-toggle::before {
+				transform: rotate(90deg);
+			}
+
+			.target-collapsed-toggle:hover {
+				color: #4a5662;
+			}
+
+			.target-collapsed-list {
+				display: flex;
+				flex-direction: column;
+				gap: 4px;
+				padding-top: 4px;
+			}
+
+			.target-collapsed-list .target-item {
+				opacity: 0.65;
+			}
+
+			.target-collapsed-list .target-item:hover {
+				opacity: 1;
+			}
+
+			.target-collapsed-list .target-item.selected {
+				opacity: 1;
+			}
+
 			.empty-state {
 				text-align: center;
 				padding: 40px 20px;
