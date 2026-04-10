@@ -6,7 +6,7 @@ import { runIframeHelper } from '../../commands/iframeHelper.js'
 export function registerEval(program: Command): void {
 	const evalCmd = program
 		.command('eval')
-		.alias('e')
+		.alias('js')
 		.argument('[id]', 'Watcher id to query')
 		.argument('[expression]', 'JS expression to evaluate (or use --file / --stdin)')
 		.description('Evaluate a JS expression in the connected page')

@@ -273,6 +273,19 @@ test(
 				expect(silentErr.trim()).toBe('')
 
 				const {
+					stdout: jsAliasOut,
+					stderr: jsAliasErr,
+					code: jsAliasCode,
+				} = await runCommandWithExit('bun', [BIN_PATH, 'js', watcherId, '1+1'], { env })
+				expect(jsAliasCode).toBe(0)
+				expect(jsAliasOut).toMatch(/\b2\b/)
+				expect(jsAliasErr.trim()).toBe('')
+
+				const { code: oldAliasCode, stderr: oldAliasErr } = await runCommandWithExit('bun', [BIN_PATH, 'e', watcherId, '1+1'], { env })
+				expect(oldAliasCode).not.toBe(0)
+				expect(oldAliasErr).toMatch(/unknown command/i)
+
+				const {
 					stdout: failOut,
 					stderr: failErr,
 					code: failCode,

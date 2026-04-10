@@ -2,10 +2,13 @@
 
 Evaluate JavaScript in page connected to watcher.
 
+Alias: `argus js`
+
 ## Syntax
 
 ```bash
 argus eval [id] "<expression>" [flags]
+argus js [id] "<expression>" [flags]
 ```
 
 ## Examples
