@@ -101,6 +101,7 @@ const availableSection = document.getElementById('availableSection') as HTMLDivE
 const availableContent = document.getElementById('availableContent') as HTMLDivElement
 const attachedCount = document.getElementById('attachedCount') as HTMLSpanElement
 const errorBanner = document.getElementById('errorBanner') as HTMLDivElement
+const healthSummary = document.getElementById('healthSummary') as HTMLSpanElement
 const healthBridge = document.getElementById('healthBridge') as HTMLDivElement
 const healthWatcherId = document.getElementById('healthWatcherId') as HTMLDivElement
 const healthAttachedCount = document.getElementById('healthAttachedCount') as HTMLDivElement
@@ -124,6 +125,11 @@ copyAllButton.addEventListener('click', () => {
 
 detachAllButton.addEventListener('click', () => {
 	void detachAllWatchers()
+})
+
+// Prevent button clicks inside the health summary from toggling the <details> open/close.
+document.querySelector('.health-summary-actions')?.addEventListener('click', (event) => {
+	event.stopPropagation()
 })
 
 async function sendMessage<T>(message: { action: string; tabId?: number; frameId?: string | null }): Promise<T> {
@@ -158,18 +164,28 @@ function showError(message: string | null): void {
 function updateHealth(status: StatusPayload | undefined, watcher: PopupWatcherStatus | null): void {
 	const connected = watcher?.bridgeConnected ?? status?.bridgeConnected ?? false
 	const target = watcher?.currentTarget ?? null
+	const tabCount = status?.attachedTabs.length ?? 0
 
+	healthSummary.textContent = buildHealthSummaryText(connected, watcher?.watcherId ?? null, tabCount)
 	healthBridge.textContent = connected ? 'Connected' : 'Disconnected'
 	healthBridge.classList.toggle('connected', connected)
 	healthBridge.classList.toggle('disconnected', !connected)
 	healthWatcherId.textContent = watcher?.watcherId ?? '-'
-	healthAttachedCount.textContent = String(status?.attachedTabs.length ?? 0)
+	healthAttachedCount.textContent = String(tabCount)
 	healthSelectedTarget.textContent = target ? `${target.type === 'page' ? 'Page' : 'Iframe'} ${target.targetId}` : '-'
 	healthLastMessage.textContent = formatTimestamp(watcher?.lastMessageAt ?? null)
 	healthPid.textContent = watcher?.nativeHostPid ? String(watcher.nativeHostPid) : '-'
 	const hasWatchers = latestWatchers.length > 0
 	copyAllButton.disabled = !hasWatchers
 	detachAllButton.disabled = !hasWatchers
+}
+
+function buildHealthSummaryText(connected: boolean, watcherId: string | null, tabCount: number): string {
+	const parts: string[] = []
+	if (watcherId) parts.push(watcherId)
+	parts.push(connected ? 'Connected' : 'Disconnected')
+	if (tabCount > 0) parts.push(`${tabCount} tab${tabCount === 1 ? '' : 's'}`)
+	return parts.join(' · ')
 }
 
 function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
@@ -197,15 +213,16 @@ function renderTabItem(tab: TabInfo, showTargets: boolean): string {
 	const favicon = tab.faviconUrl
 		? `<img class="tab-favicon" src="${escapeHtml(tab.faviconUrl)}" alt="">`
 		: `<div class="tab-favicon" style="background: #e0e0e0"></div>`
-	const watcherSuffix = tab.attached && tab.watcher?.watcherId ? ` (${escapeHtml(tab.watcher.watcherId)})` : ''
+	const watcherSuffix = tab.attached && tab.watcher?.watcherId ? ` (${tab.watcher.watcherId})` : ''
 	const actions = tab.attached ? renderAttachedTabActions(tab.tabId) : renderAttachButton(tab.tabId)
+	const fullTitle = (tab.title || 'Untitled') + watcherSuffix
 
 	return `
     <div class="tab-item ${tab.attached ? 'attached' : ''}" data-tab-id="${tab.tabId}">
       ${favicon}
       <div class="tab-info">
-        <div class="tab-title">${escapeHtml(tab.title || 'Untitled')}${watcherSuffix}</div>
-        <div class="tab-url">${escapeHtml(tab.url)}</div>
+        <div class="tab-title" title="${escapeHtml(fullTitle)}">${escapeHtml(fullTitle)}</div>
+        <div class="tab-url" title="${escapeHtml(tab.url)}">${escapeHtml(tab.url)}</div>
       </div>
       ${actions}
     </div>
@@ -272,7 +289,11 @@ function renderTargetList(tab: TabInfo): string {
 	const interesting: PopupTarget[] = []
 	const lowInterest: PopupTarget[] = []
 	for (const target of targets) {
-		;(isLowInterestTarget(target) ? lowInterest : interesting).push(target)
+		if (isLowInterestTarget(target)) {
+			lowInterest.push(target)
+		} else {
+			interesting.push(target)
+		}
 	}
 
 	const interestingHtml = interesting.map((t) => renderTargetItem(tab, t)).join('')
@@ -303,6 +324,8 @@ function renderTargetList(tab: TabInfo): string {
 function renderTargetItem(tab: TabInfo, target: PopupTarget): string {
 	const isSelected = isTargetSelected(tab.selectedFrameId, target.frameId)
 	const kindLabel = target.type === 'page' ? 'Page' : 'Iframe'
+	const title = target.title || kindLabel
+	const url = target.url || '(no url)'
 	return `
     <button
       class="target-item ${isSelected ? 'selected' : ''}"
@@ -313,8 +336,8 @@ function renderTargetItem(tab: TabInfo, target: PopupTarget): string {
     >
       <span class="target-kind">${kindLabel}</span>
       <span class="target-meta">
-        <span class="target-title">${escapeHtml(target.title || kindLabel)}</span>
-        <span class="target-url">${escapeHtml(target.url || '(no url)')}</span>
+        <span class="target-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+        <span class="target-url" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
       </span>
     </button>
   `
@@ -574,9 +597,7 @@ function setBusyButtonState(button: HTMLButtonElement, action: Extract<TabButton
 
 function restoreButtonFeedback(button: HTMLButtonElement, label: string, timeoutMs = 1500, iconMarkup?: string): void {
 	const restore = setButtonFeedback(button, label, iconMarkup)
-	setTimeout(() => {
-		restore()
-	}, timeoutMs)
+	setTimeout(restore, timeoutMs)
 }
 
 function setButtonFeedback(button: HTMLButtonElement, label: string, iconMarkup?: string): () => void {
