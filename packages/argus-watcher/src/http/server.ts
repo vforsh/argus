@@ -42,6 +42,7 @@ export type HttpRequestEventMetadata = {
 		| 'code/list'
 		| 'code/read'
 		| 'code/grep'
+		| 'code/edit'
 		| 'dom/tree'
 		| 'dom/info'
 		| 'dom/hover'

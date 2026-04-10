@@ -1,6 +1,7 @@
 import {
 	matchesTextPattern,
 	parseTextPattern,
+	type CodeEditResponse,
 	type CodeGrepMatch,
 	type CodeGrepResponse,
 	type CodeGrepSkippedResource,
@@ -42,6 +43,11 @@ type CssGetStyleSheetTextResult = {
 	text?: string
 }
 
+type DebuggerSetScriptSourceResult = {
+	status?: string
+	exceptionDetails?: { text?: string; exception?: { description?: string } }
+}
+
 const INLINE_SCRIPT_PREFIX = 'inline://'
 const INLINE_STYLESHEET_PREFIX = 'inline-css://'
 const QUIET_PERIOD_MS = 100
@@ -53,6 +59,7 @@ export type RuntimeEditor = {
 	list: (options?: { pattern?: string }) => Promise<CodeListResponse>
 	read: (options: { url: string; offset?: number; limit?: number }) => Promise<CodeReadResponse>
 	grep: (options: { pattern: string; urlPattern?: string }) => Promise<CodeGrepResponse>
+	edit: (options: { url: string; source: string }) => Promise<CodeEditResponse>
 	reset: () => void
 	rebind: () => void
 }
@@ -104,6 +111,20 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 				startLine: startLineIndex + 1,
 				endLine: endLineIndex,
 			}
+		},
+
+		edit: async ({ url, source }) => {
+			await ensureEnabled()
+			const resource = getResource(url)
+
+			if (resource.type === 'stylesheet') {
+				await session.sendAndWait('CSS.setStyleSheetText', { styleSheetId: resource.id, text: source }, getSessionOptions(resource))
+			} else {
+				await editScript(session, resource, source)
+			}
+
+			sources.set(getSourceCacheKey(resource), source)
+			return { ok: true, resource: toCodeResource(resource) }
 		},
 
 		grep: async ({ pattern, urlPattern }) => {
@@ -414,6 +435,47 @@ const getSessionOptions = (resource: RuntimeResource): { sessionId?: string } | 
 	resource.sessionId ? { sessionId: resource.sessionId } : undefined
 
 const getSourceCacheKey = (resource: RuntimeResource): string => `${resource.type}:${resource.sessionId ?? 'root'}:${resource.id}`
+
+async function editScript(session: CdpSessionHandle, resource: RuntimeResource, source: string): Promise<void> {
+	let result: DebuggerSetScriptSourceResult
+	try {
+		result = (await session.sendAndWait(
+			'Debugger.setScriptSource',
+			{ scriptId: resource.id, scriptSource: source },
+			getSessionOptions(resource),
+		)) as DebuggerSetScriptSourceResult
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (/setScriptSource.*no longer available/i.test(message)) {
+			throw new Error(
+				'Live JS editing is not supported in Chrome 145+. Use `argus eval` to modify runtime state, or `argus code edit` on stylesheets.',
+			)
+		}
+		throw error
+	}
+	assertScriptEditAccepted(result)
+}
+
+/** Throw a descriptive error when V8 rejects a live script edit. */
+const assertScriptEditAccepted = (result: DebuggerSetScriptSourceResult): void => {
+	const status = result.status ?? 'Ok'
+	if (status === 'Ok') {
+		return
+	}
+
+	if (status === 'CompileError') {
+		const detail = result.exceptionDetails?.exception?.description ?? result.exceptionDetails?.text ?? 'unknown compile error'
+		throw new Error(`Script edit rejected (CompileError): ${detail}`)
+	}
+
+	const STATUS_LABELS: Record<string, string> = {
+		BlockedByActiveGenerator: 'a generator function is currently suspended on the call stack',
+		BlockedByActiveFunction: 'the edited function is currently on the call stack',
+		BlockedByTopLevelEsModuleChange: 'top-level changes to ES modules are not supported',
+	}
+	const reason = STATUS_LABELS[status] ?? status
+	throw new Error(`Script edit rejected: ${reason}`)
+}
 
 const getStaleResourceReason = (resource: RuntimeResource, error: unknown): string | null => {
 	const message = error instanceof Error ? error.message : String(error)

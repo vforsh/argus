@@ -22,6 +22,7 @@ import { handleLocateLabel, handleLocateRole, handleLocateText } from './postLoc
 import { handle as postCodeList } from './postCodeList.js'
 import { handle as postCodeRead } from './postCodeRead.js'
 import { handle as postCodeGrep } from './postCodeGrep.js'
+import { handle as postCodeEdit } from './postCodeEdit.js'
 import { handle as postDomTree } from './postDomTree.js'
 import { handle as postDomInfo } from './postDomInfo.js'
 import { handle as postDomHover } from './postDomHover.js'
@@ -87,6 +88,7 @@ export const watcherRoutes = [
 	defineRoute({ method: 'POST', path: '/code/list', handler: postCodeList }),
 	defineRoute({ method: 'POST', path: '/code/read', handler: postCodeRead }),
 	defineRoute({ method: 'POST', path: '/code/grep', handler: postCodeGrep }),
+	defineRoute({ method: 'POST', path: '/code/edit', handler: postCodeEdit }),
 	defineRoute({ method: 'POST', path: '/dom/tree', handler: postDomTree }),
 	defineRoute({ method: 'POST', path: '/dom/info', handler: postDomInfo }),
 	defineRoute({ method: 'POST', path: '/dom/hover', handler: postDomHover }),

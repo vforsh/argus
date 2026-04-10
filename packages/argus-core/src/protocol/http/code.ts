@@ -76,3 +76,17 @@ export type CodeGrepResponse = {
 	/** Non-fatal runtime resources skipped while searching. */
 	skippedResources: CodeGrepSkippedResource[]
 }
+
+/** Request payload for POST /code/edit. */
+export type CodeEditRequest = {
+	/** Resource URL from /code/list. */
+	url: string
+	/** Full replacement source text. */
+	source: string
+}
+
+/** Response payload for POST /code/edit. */
+export type CodeEditResponse = {
+	ok: true
+	resource: CodeResource
+}

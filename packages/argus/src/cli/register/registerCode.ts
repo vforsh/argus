@@ -1,5 +1,6 @@
 import type { Command } from 'commander'
 import { runCodeDeminify, runCodeGrep, runCodeList, runCodeRead, runCodeStrings } from '../../commands/code.js'
+import { runCodeEdit } from '../../commands/codeEdit.js'
 
 export function registerCode(program: Command): void {
 	const code = program.command('code').description('Inspect runtime JS/CSS resources')
@@ -52,6 +53,28 @@ export function registerCode(program: Command): void {
 		)
 		.action(async (url, options) => {
 			await runCodeDeminify(options.id, url, options)
+		})
+
+	code.command('edit')
+		.argument('<url>', 'Runtime resource URL from `argus code ls`')
+		.option('--id <watcherId>', 'Watcher id to query')
+		.option('--file <path>', 'Read replacement source from a file')
+		.option('--search <pattern>', 'Plain string or /regex/flags to find in the existing source')
+		.option('--replace <text>', 'Replacement text (required with --search)')
+		.option('--all', 'Replace all occurrences (with --search/--replace)')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			[
+				'\nExamples:',
+				'  $ argus code edit http://127.0.0.1:3333/app.js --id playground --search "DEBUG=false" --replace "DEBUG=true"',
+				'  $ argus code edit http://127.0.0.1:3333/app.js --id playground --file ./patched.js',
+				'  $ cat patched.css | argus code edit inline-css://1 --id playground',
+				'',
+			].join('\n'),
+		)
+		.action(async (url, options) => {
+			await runCodeEdit(options.id, url, options)
 		})
 
 	code.command('strings')

@@ -134,11 +134,13 @@ argus code read inline://42 --id app
 argus code grep '/featureFlag/' --id app
 argus code grep showLogsByHost --id app --pretty
 argus code deminify http://127.0.0.1:3333/app.js --id app
+argus code edit http://127.0.0.1:3333/app.js --id app --search "DEBUG=false" --replace "DEBUG=true"
+argus code edit http://127.0.0.1:3333/app.js --id app --file ./patched.js
 argus code strings app --url app.js
 argus code strings app --url app.js --kind url,identifier --match '/admin\\/api/'
 ```
 
-`code ls` lists runtime JS/CSS resources discovered through CDP. `code read` returns line-numbered source. `code grep` searches sources with plain strings or `/regex/flags`, skips stale stylesheet handles instead of aborting the whole search, and `--pretty` renders clipped context for humans. `code deminify` pretty-prints a runtime resource. `code strings` extracts high-signal string literals such as URLs, keys, and camelCase identifiers, ranks the most reverse-engineering-friendly values first, and supports `--kind` / `--match` for narrower scans. Full runtime-code docs: [RUNTIME_CODE.md](./reference/RUNTIME_CODE.md)
+`code ls` lists runtime JS/CSS resources discovered through CDP. `code read` returns line-numbered source. `code grep` searches sources with plain strings or `/regex/flags`, skips stale stylesheet handles instead of aborting the whole search, and `--pretty` renders clipped context for humans. `code deminify` pretty-prints a runtime resource. `code edit` live-patches a runtime stylesheet via CDP; accepts `--search/--replace` for surgical edits, `--file` for full replacement from disk, or piped stdin. JS script editing is not supported on Chrome 145+ — use `argus eval` for runtime JS modifications. `code strings` extracts high-signal string literals such as URLs, keys, and camelCase identifiers, ranks the most reverse-engineering-friendly values first, and supports `--kind` / `--match` for narrower scans. Full runtime-code docs: [RUNTIME_CODE.md](./reference/RUNTIME_CODE.md)
 
 ### Eval-Until
 
