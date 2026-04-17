@@ -6,6 +6,8 @@ import { resolveFirstSelectorNodeId } from './dom/selector.js'
 
 type Clip = { x: number; y: number; width: number; height: number; scale: number }
 type VisualViewport = { pageX?: number; pageY?: number; scale?: number }
+const SCREENSHOT_CDP_TIMEOUT_MS = 20_000
+const SCREENSHOT_CDP_MAX_ATTEMPTS = 2
 
 type CaptureSubject = { kind: 'viewport' } | { kind: 'selector'; selector: string } | { kind: 'clip'; clip: ScreenshotClipRegion }
 
@@ -100,17 +102,35 @@ const createFrameCapturePlan = async (options: {
 }
 
 const captureScreenshot = async (session: CdpSessionHandle, options: { format: 'png'; clip?: Clip }): Promise<CaptureResult> => {
-	const payload = await session.sendAndWait('Page.captureScreenshot', {
-		format: options.format,
-		clip: options.clip,
-	})
+	let lastError: unknown
 
-	const response = payload as { data?: string }
-	if (!response.data) {
-		throw new Error('Failed to capture screenshot')
+	for (let attempt = 1; attempt <= SCREENSHOT_CDP_MAX_ATTEMPTS; attempt += 1) {
+		try {
+			// Hidden Electron targets can occasionally stall on the first screenshot request.
+			const payload = await session.sendAndWait(
+				'Page.captureScreenshot',
+				{
+					format: options.format,
+					clip: options.clip,
+				},
+				{ timeoutMs: SCREENSHOT_CDP_TIMEOUT_MS },
+			)
+
+			const response = payload as { data?: string }
+			if (!response.data) {
+				throw new Error('Failed to capture screenshot')
+			}
+
+			return { data: response.data, clipped: Boolean(options.clip) }
+		} catch (error) {
+			lastError = error
+			if (!isScreenshotTimeout(error) || attempt === SCREENSHOT_CDP_MAX_ATTEMPTS) {
+				throw error
+			}
+		}
 	}
 
-	return { data: response.data, clipped: Boolean(options.clip) }
+	throw lastError instanceof Error ? lastError : new Error('Failed to capture screenshot')
 }
 
 const resolveFrameViewportClip = async (pageSession: CdpSessionHandle, frameId: string): Promise<Clip> => {
@@ -204,6 +224,8 @@ const resolveVisualViewport = async (session: CdpSessionHandle): Promise<VisualV
 	const metrics = await session.sendAndWait('Page.getLayoutMetrics')
 	return (metrics as { visualViewport?: VisualViewport }).visualViewport
 }
+
+const isScreenshotTimeout = (error: unknown): boolean => error instanceof Error && error.message.startsWith('CDP request timed out after')
 
 const offsetClip = (outer: Clip, inner: Clip): Clip => ({
 	x: outer.x + inner.x,

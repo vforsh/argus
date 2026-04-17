@@ -100,6 +100,51 @@ describe('screenshotter', () => {
 		}
 	})
 
+	it('retries screenshot capture once when the CDP request times out', async () => {
+		const calls: string[] = []
+		const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-screenshot-'))
+		let captureAttempts = 0
+		const pageSession = createSessionStub({
+			targetContext: { kind: 'page' },
+			sendAndWait: async (method, params, options) => {
+				calls.push(`page:${method}`)
+				if (method === 'Page.getLayoutMetrics') {
+					return { visualViewport: { scale: 2 } }
+				}
+				if (method === 'Page.captureScreenshot') {
+					captureAttempts += 1
+					expect(options).toEqual({ timeoutMs: 20_000 })
+					if (captureAttempts === 1) {
+						throw new Error('CDP request timed out after 20000ms')
+					}
+					expect(params).toEqual({
+						format: 'png',
+						clip: { x: 12, y: 24, width: 320, height: 180, scale: 2 },
+					})
+					return { data: Buffer.from('png').toString('base64') }
+				}
+				throw new Error(`Unexpected page CDP method: ${method}`)
+			},
+		})
+
+		try {
+			const screenshotter = createScreenshotter({
+				session: pageSession,
+				artifactsDir,
+			})
+
+			await screenshotter.capture({
+				outFile: path.join(artifactsDir, 'page-clip-retry.png'),
+				format: 'png',
+				clip: { x: 12, y: 24, width: 320, height: 180 },
+			})
+
+			expect(calls).toEqual(['page:Page.getLayoutMetrics', 'page:Page.captureScreenshot', 'page:Page.captureScreenshot'])
+		} finally {
+			await fs.rm(artifactsDir, { recursive: true, force: true })
+		}
+	})
+
 	it('captures a selector inside an iframe by translating frame-relative coordinates', async () => {
 		const calls: string[] = []
 		const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-screenshot-'))
@@ -256,7 +301,7 @@ describe('screenshotter', () => {
 
 const createSessionStub = (options: {
 	targetContext: CdpTargetContext
-	sendAndWait: (method: string, params?: Record<string, unknown>) => Promise<unknown>
+	sendAndWait: (method: string, params?: Record<string, unknown>, options?: { timeoutMs?: number; sessionId?: string }) => Promise<unknown>
 }): CdpSessionHandle => ({
 	isAttached: () => true,
 	sendAndWait: options.sendAndWait,

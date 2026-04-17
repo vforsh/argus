@@ -2,6 +2,8 @@ import type { ScreenshotClipRegion, ScreenshotResponse } from '@vforsh/argus-cor
 import { createOutput, type Output } from '../output/io.js'
 import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
+const SCREENSHOT_REQUEST_TIMEOUT_MS = 45_000
+
 /** Options for the screenshot command. */
 export type ScreenshotOptions = {
 	json?: boolean
@@ -34,7 +36,7 @@ export const runScreenshot = async (id: string | undefined, options: ScreenshotO
 			clip,
 			format: 'png',
 		},
-		timeoutMs: 15_000,
+		timeoutMs: SCREENSHOT_REQUEST_TIMEOUT_MS,
 	})
 
 	if (!result.ok) {
