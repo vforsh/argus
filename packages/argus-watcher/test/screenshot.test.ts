@@ -61,6 +61,45 @@ describe('screenshotter', () => {
 		}
 	})
 
+	it('captures a viewport-relative rectangular clip on the current target', async () => {
+		const calls: string[] = []
+		const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-screenshot-'))
+		const pageSession = createSessionStub({
+			targetContext: { kind: 'page' },
+			sendAndWait: async (method, params) => {
+				calls.push(`page:${method}`)
+				if (method === 'Page.getLayoutMetrics') {
+					return { visualViewport: { scale: 2 } }
+				}
+				if (method === 'Page.captureScreenshot') {
+					expect(params).toEqual({
+						format: 'png',
+						clip: { x: 12, y: 24, width: 320, height: 180, scale: 2 },
+					})
+					return { data: Buffer.from('png').toString('base64') }
+				}
+				throw new Error(`Unexpected page CDP method: ${method}`)
+			},
+		})
+
+		try {
+			const screenshotter = createScreenshotter({
+				session: pageSession,
+				artifactsDir,
+			})
+
+			await screenshotter.capture({
+				outFile: path.join(artifactsDir, 'page-clip.png'),
+				format: 'png',
+				clip: { x: 12, y: 24, width: 320, height: 180 },
+			})
+
+			expect(calls).toEqual(['page:Page.getLayoutMetrics', 'page:Page.captureScreenshot'])
+		} finally {
+			await fs.rm(artifactsDir, { recursive: true, force: true })
+		}
+	})
+
 	it('captures a selector inside an iframe by translating frame-relative coordinates', async () => {
 		const calls: string[] = []
 		const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-screenshot-'))
@@ -139,6 +178,73 @@ describe('screenshotter', () => {
 				'iframe:DOM.getDocument',
 				'iframe:DOM.querySelectorAll',
 				'iframe:DOM.getBoxModel',
+				'iframe:Page.getLayoutMetrics',
+				'page:Page.captureScreenshot',
+			])
+		} finally {
+			await fs.rm(artifactsDir, { recursive: true, force: true })
+		}
+	})
+
+	it('captures a rectangular clip inside an iframe by translating frame-relative coordinates', async () => {
+		const calls: string[] = []
+		const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-screenshot-'))
+		const iframeSession = createSessionStub({
+			targetContext: { kind: 'frame', frameId: 'frame-1', executionContextId: 7, sessionId: 'session-1' },
+			sendAndWait: async (method) => {
+				calls.push(`iframe:${method}`)
+				if (method === 'Page.getLayoutMetrics') {
+					return { visualViewport: { scale: 1 } }
+				}
+				throw new Error(`Unexpected iframe CDP method: ${method}`)
+			},
+		})
+		const pageSession = createSessionStub({
+			targetContext: { kind: 'page' },
+			sendAndWait: async (method, params) => {
+				calls.push(`page:${method}`)
+				if (method === 'DOM.getFrameOwner') {
+					return { backendNodeId: 42 }
+				}
+				if (method === 'DOM.getBoxModel') {
+					expect(params).toEqual({ backendNodeId: 42 })
+					return {
+						model: {
+							content: [100, 200, 500, 200, 500, 500, 100, 500],
+						},
+					}
+				}
+				if (method === 'Page.getLayoutMetrics') {
+					return { visualViewport: { pageX: 0, pageY: 0, scale: 1 } }
+				}
+				if (method === 'Page.captureScreenshot') {
+					expect(params).toEqual({
+						format: 'png',
+						clip: { x: 130, y: 245, width: 120, height: 90, scale: 1 },
+					})
+					return { data: Buffer.from('png').toString('base64') }
+				}
+				throw new Error(`Unexpected page CDP method: ${method}`)
+			},
+		})
+
+		try {
+			const screenshotter = createScreenshotter({
+				session: iframeSession,
+				pageSession,
+				artifactsDir,
+			})
+
+			await screenshotter.capture({
+				outFile: path.join(artifactsDir, 'frame-clip.png'),
+				format: 'png',
+				clip: { x: 30, y: 45, width: 120, height: 90 },
+			})
+
+			expect(calls).toEqual([
+				'page:DOM.getFrameOwner',
+				'page:DOM.getBoxModel',
+				'page:Page.getLayoutMetrics',
 				'iframe:Page.getLayoutMetrics',
 				'page:Page.captureScreenshot',
 			])

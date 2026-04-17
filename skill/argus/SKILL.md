@@ -162,9 +162,10 @@ Full eval docs (polling, flags, iframe, eval-until): [EVAL.md](./reference/EVAL.
 ```bash
 argus screenshot app --out shot.png
 argus screenshot app --selector "canvas" --out canvas.png
+argus screenshot app --clip 100,80,640,360 --out crop.png
 ```
 
-When the active extension target is an iframe, plain screenshots capture the iframe viewport only. `--selector` also works inside the selected iframe and crops that element from the rendered page output.
+`--clip` crops a viewport-relative rectangle in CSS pixels (`x,y,width,height`) from the selected target. When the active extension target is an iframe, plain screenshots capture the iframe viewport only, and both `--selector` and `--clip` are resolved relative to that iframe before the final crop is taken from the rendered page output.
 
 ### Network
 

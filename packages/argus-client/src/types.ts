@@ -1,4 +1,12 @@
-import type { LogEvent, LogLevel, NetworkRequestDetail, NetworkRequestSummary, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
+import type {
+	LogEvent,
+	LogLevel,
+	NetworkRequestDetail,
+	NetworkRequestSummary,
+	ScreenshotClipRegion,
+	StatusResponse,
+	WatcherRecord,
+} from '@vforsh/argus-core'
 
 /** Options for configuring the Argus client. */
 export type ArgusClientOptions = {
@@ -137,6 +145,8 @@ export type TraceStopResult = {
 export type ScreenshotOptions = {
 	outFile?: string
 	selector?: string
+	/** Viewport-relative crop rectangle in CSS pixels. Mutually exclusive with `selector`. */
+	clip?: ScreenshotClipRegion
 	format?: 'png'
 }
 

@@ -10,11 +10,12 @@ export function registerSnapshot(program: Command): void {
 		.description('Capture a screenshot to disk on the watcher')
 		.option('--out <file>', 'Output file path (absolute or relative to artifacts directory)')
 		.option('--selector <selector>', 'Optional CSS selector for element-only capture')
+		.option('--clip <x,y,width,height>', 'Viewport-relative rectangle crop in CSS pixels')
 		.option('--testid <id>', 'Shorthand for --selector "[data-testid=\'<id>\']"')
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus screenshot app\n  $ argus screenshot app --out /tmp/screenshot.png\n  $ argus screenshot app --selector "body"\n',
+			'\nExamples:\n  $ argus screenshot app\n  $ argus screenshot app --out /tmp/screenshot.png\n  $ argus screenshot app --selector "body"\n  $ argus screenshot app --clip 100,80,640,360\n',
 		)
 		.action(async (id, options) => {
 			if (!resolveTestId(options)) return

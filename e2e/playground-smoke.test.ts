@@ -424,4 +424,13 @@ describe('playground smoke tests', () => {
 		const stat = await fs.stat(response.outFile)
 		expect(stat.size).toBeGreaterThan(0)
 	})
+
+	test('screenshot supports viewport-relative clip rectangles', async () => {
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'screenshot', 'playground', '--clip', '20,30,160,90', '--json'], { env })
+		const response = JSON.parse(stdout) as ScreenshotResponse
+		expect(response.ok).toBe(true)
+		expect(response.clipped).toBe(true)
+		const stat = await fs.stat(response.outFile)
+		expect(stat.size).toBeGreaterThan(0)
+	})
 })
