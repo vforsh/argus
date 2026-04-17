@@ -28,6 +28,8 @@
 
 - **Rebuild + package typecheck**: If you change anything under `packages/`, rebuild and typecheck the affected package(s) before testing. Prefer the package-specific scripts (e.g. `npm run build:<PACKAGE_1>`, `npm run build:<PACKAGE_2>`, etc.`); use `npm run build:packages` only when multiple packages changed.
 
+- **Build steps must be serial**: Don’t run `clean`, `tsc -b`, `npm run build:*`, or Bun bundle steps in parallel with other commands that read from `dist/`. `clean:packages` removes emitted files first; anything that inspects/bundles `dist/` mid-rebuild can report fake “missing export” failures from half-built output. If a bundle error points at `packages/*/dist/*`, rerun the build serially before treating it as a real source bug.
+
 - **Extension rebuild**: If you change anything under `packages/argus-extension`, rebuild it with `bun run --cwd packages/argus-extension build`. For extension-only checks, pair it with `npm run typecheck:extension`.
 
 - **Public API must be documented (JSDoc)**: Any public API in `packages/*` (anything exported for consumption by other packages/apps) must have JSDoc. Document parameters, return values, and important invariants/edge cases so changes are safe to make later.
