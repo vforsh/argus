@@ -13,7 +13,7 @@ export type DomScrollOptions = {
 	json?: boolean
 }
 
-/** Execute the dom scroll command (emulate touch scroll gesture) for a watcher id. */
+/** Execute the dom scroll command (dispatch mouse wheel input) for a watcher id. */
 export const runDomScroll = async (id: string | undefined, options: DomScrollOptions): Promise<void> => {
 	const output = createOutput(options)
 

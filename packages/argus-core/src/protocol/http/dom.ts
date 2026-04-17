@@ -332,7 +332,7 @@ export type DomScrollToResponse = {
 
 /**
  * Request payload for POST /dom/scroll.
- * Emulates touch scroll gestures via CDP Input.emulateTouchScrollGesture.
+ * Dispatches mouse wheel input via CDP Input.dispatchMouseEvent (type=mouseWheel).
  */
 export type DomScrollRequest = {
 	/** CSS selector to match element(s) — scroll origin is element center. */

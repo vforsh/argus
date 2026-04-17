@@ -174,9 +174,11 @@ Examples:
 
 	registerDomSelectorCommand(dom, {
 		name: 'scroll',
-		description: 'Emulate a touch scroll gesture (fires real scroll/wheel events)',
+		alias: 'wheel',
+		description: 'Dispatch mouse wheel input (fires real wheel/scroll events)',
 		examples: [
 			'argus dom scroll app --by 0,300',
+			'argus dom wheel app --selector "input[type=number]" --by 0,-120',
 			'argus dom scroll app --selector ".panel" --by 0,200',
 			'argus dom scroll app --testid "feed" --by 0,500',
 			'argus dom scroll app --pos 400,300 --by 0,200',

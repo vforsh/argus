@@ -339,12 +339,13 @@ argus dom set-file app --selector "#upload" --file a.png --wait 5s
 
 ```bash
 argus dom scroll app --by 0,300
+argus dom wheel app --selector "input[type=number]" --by 0,-120
 argus dom scroll app --selector ".panel" --by 0,200
 argus dom scroll app --testid "feed" --by 0,500
 argus dom scroll app --pos 400,300 --by 0,200
 ```
 
-Emulates touch scroll gestures via CDP `Input.emulateTouchScrollGesture` — fires real wheel/scroll events. `--by dx,dy` is required (positive y = scroll down). Without `--selector` or `--pos`, scrolls at viewport center. `--selector`/`--testid` scrolls at element center. `--pos` scrolls at explicit viewport coordinates (mutually exclusive with selector).
+Dispatches mouse wheel input via CDP `Input.dispatchMouseEvent` with `type: 'mouseWheel'` — fires real wheel/scroll events. Alias: `argus dom wheel ...`. `--by dx,dy` is required (positive y = scroll down). Without `--selector` or `--pos`, scrolls at viewport center. `--selector`/`--testid` scrolls at element center. `--pos` scrolls at explicit viewport coordinates (mutually exclusive with selector).
 
 ### Emulation
 

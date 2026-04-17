@@ -223,7 +223,7 @@ export const emulateScroll = async (session: CdpSessionHandle, x: number, y: num
 	})
 }
 
-/** Emulate touch scroll gestures on resolved DOM nodes (scrolls at each element's center). */
+/** Dispatch mouse wheel input on resolved DOM nodes (uses each element's center point). */
 export const emulateScrollOnNodes = async (session: CdpSessionHandle, handles: DomNodeHandle[], delta: { x: number; y: number }): Promise<void> => {
 	if (handles.length === 0) {
 		return

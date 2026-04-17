@@ -233,6 +233,7 @@ argus click app --ref e5
 argus fill app --name email "vlad@example.com"
 argus locate label app "Email" --action fill --value "vlad@example.com"
 argus dom scroll app --by 0,300
+argus dom wheel app --selector "input[type=number]" --by 0,-120
 ```
 
 ### Probe runtime state
