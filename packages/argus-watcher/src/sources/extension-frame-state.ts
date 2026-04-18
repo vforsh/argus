@@ -41,6 +41,10 @@ export type RequestedFrameHint = {
 }
 
 export type RequestedTargetResolution = { kind: 'page' } | { kind: 'pending' } | { kind: 'frame'; frameId: string }
+export type SelectedFrameCommandState =
+	| { kind: 'page' }
+	| { kind: 'pending'; frameId: string | null; reason: 'frame_missing' | 'frame_not_ready' }
+	| { kind: 'frame'; frameId: string; sessionId: string | null; executionContextId: number | null }
 
 export type CdpFrameTreeNode = {
 	frame?: {
@@ -241,6 +245,45 @@ export const resolveRequestedTarget = (state: ExtensionFrameState): RequestedTar
 
 	return state.requestedFrameDetached ? { kind: 'page' } : { kind: 'pending' }
 }
+
+/**
+ * Selection stays sticky across reloads, but frame-scoped commands must not silently fall back to
+ * the page while the requested iframe is still rematching or booting a fresh execution context.
+ */
+export const resolveSelectedFrameCommandState = (state: ExtensionFrameState): SelectedFrameCommandState => {
+	if (state.requestedFrameId == null) {
+		return { kind: 'page' }
+	}
+
+	const resolution = resolveRequestedTarget(state)
+	if (resolution.kind !== 'frame') {
+		return {
+			kind: 'pending',
+			frameId: null,
+			reason: 'frame_missing',
+		}
+	}
+
+	const frame = state.frames.get(resolution.frameId)
+	const sessionId = frame?.sessionId ?? null
+	const executionContextId = state.executionContexts.get(resolution.frameId) ?? null
+	if (sessionId == null && executionContextId == null) {
+		return {
+			kind: 'pending',
+			frameId: resolution.frameId,
+			reason: 'frame_not_ready',
+		}
+	}
+
+	return {
+		kind: 'frame',
+		frameId: resolution.frameId,
+		sessionId,
+		executionContextId,
+	}
+}
+
+export const isSelectedTargetReady = (state: ExtensionFrameState): boolean => resolveSelectedFrameCommandState(state).kind !== 'pending'
 
 const findSingleMatchingFrameId = (state: ExtensionFrameState, predicate: (frame: ExtensionFrame) => boolean): string | null => {
 	let matchId: string | null = null

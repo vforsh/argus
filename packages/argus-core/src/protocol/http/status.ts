@@ -8,6 +8,8 @@ export type StatusResponse = {
 	id: string
 	pid: number
 	attached: boolean
+	/** Whether the currently selected target is ready for frame-scoped commands. */
+	targetReady?: boolean | null
 	target: {
 		title: string | null
 		url: string | null

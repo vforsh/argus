@@ -28,5 +28,6 @@ export const runWatcherStatus = async (id: string | undefined, options: WatcherS
 	}
 
 	const { watcher, data: status } = result
-	output.writeHuman(`ok ${watcher.id} ${watcher.host}:${watcher.port} pid=${status.pid} attached=${status.attached}`)
+	const readinessSuffix = status.targetReady === false ? ' targetReady=false' : ''
+	output.writeHuman(`ok ${watcher.id} ${watcher.host}:${watcher.port} pid=${status.pid} attached=${status.attached}${readinessSuffix}`)
 }

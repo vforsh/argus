@@ -7,7 +7,7 @@ import type { ElementRefRegistry } from '../cdp/elementRefs.js'
 import type { RuntimeEditor } from '../cdp/editor.js'
 import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
-import type { CdpSourceCookieQuery, CdpSourceHandle } from '../sources/types.js'
+import type { CdpSourceCookieQuery, CdpSourceHandle, CdpSourceStatus } from '../sources/types.js'
 import type { EmulationController } from '../emulation/EmulationController.js'
 import type { ThrottleController } from '../throttle/ThrottleController.js'
 import type { NetFilterContext, NetParty, NetScope } from '../net/filtering.js'
@@ -112,7 +112,7 @@ export type HttpServerOptions = {
 	/** Network buffer for /net endpoints. Null when net capture is disabled. */
 	netBuffer: NetBuffer | null
 	getWatcher: () => WatcherRecord
-	getCdpStatus: () => { attached: boolean; target: { title: string | null; url: string | null } | null }
+	getCdpStatus: () => Pick<CdpSourceStatus, 'attached' | 'target' | 'targetReady'>
 	getDialog: () => DialogStatus | null
 	elementRefs: ElementRefRegistry
 	/** Session for page-scoped commands that must always target the top-level page. */

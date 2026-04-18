@@ -1,5 +1,5 @@
 import type { ExtensionSession } from '../native-messaging/session-manager.js'
-import type { CdpSessionHandle, CdpTargetContext } from '../cdp/connection.js'
+import type { CdpSendOptions, CdpSessionHandle, CdpTargetContext } from '../cdp/connection.js'
 
 type DelegatingEventSubscription = {
 	method: string
@@ -17,7 +17,23 @@ type CreateDelegatingSessionOptions = {
 	getCurrentSession: () => ExtensionSession | null
 	requireCurrentSession: () => ExtensionSession
 	getTargetContext: () => CdpTargetContext
-	mapParams?: (method: string, params?: Record<string, unknown>) => Record<string, unknown> | undefined
+	prepareCommand?: (command: {
+		method: string
+		params?: Record<string, unknown>
+		commandOptions?: CdpSendOptions
+		targetContext: CdpTargetContext
+	}) =>
+		| {
+				params?: Record<string, unknown>
+				commandOptions?: CdpSendOptions
+				targetContext?: CdpTargetContext
+		  }
+		| Promise<{
+				params?: Record<string, unknown>
+				commandOptions?: CdpSendOptions
+				targetContext?: CdpTargetContext
+		  } | void>
+		| void
 }
 
 /**
@@ -56,12 +72,24 @@ export const createDelegatingSession = (
 		isAttached: () => options.getCurrentSession()?.handle.isAttached() ?? false,
 		sendAndWait: async (method, params, commandOptions) => {
 			const currentSession = options.requireCurrentSession()
-			const targetContext = options.getTargetContext()
-			const nextParams = options.mapParams ? options.mapParams(method, params) : params
+			let targetContext = options.getTargetContext()
+			let nextParams = params
+			let nextCommandOptions = commandOptions
+			if (options.prepareCommand) {
+				const prepared = await options.prepareCommand({
+					method,
+					params,
+					commandOptions,
+					targetContext,
+				})
+				nextParams = prepared?.params ?? params
+				nextCommandOptions = prepared?.commandOptions ?? commandOptions
+				targetContext = prepared?.targetContext ?? targetContext
+			}
 			const nextOptions =
 				targetContext.kind === 'frame' && targetContext.sessionId
-					? { ...(commandOptions ?? {}), sessionId: targetContext.sessionId }
-					: commandOptions
+					? { ...(nextCommandOptions ?? {}), sessionId: targetContext.sessionId }
+					: nextCommandOptions
 			return currentSession.handle.sendAndWait(method, nextParams, nextOptions)
 		},
 		onEvent: (method, handler) => {

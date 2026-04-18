@@ -58,6 +58,7 @@ argus extension setup <EXTENSION_ID>
 2. **Open Chrome with the extension loaded**. The extension creates a dedicated Native Messaging host + watcher process for each tab you attach.
 3. **Attach to tabs**: Click the Argus extension icon in Chrome toolbar, then click "Attach" on each tab you want to monitor. Every attached tab gets its own watcher id in the local registry.
 4. **Connect to a specific iframe (optional)**: Once a tab is attached, the popup shows the top page plus discovered iframe targets for that tab. Selecting an iframe keeps that tab's watcher attached but switches Argus commands (`eval`, `dom *`, selector-based screenshots, etc.) to that frame.
+   After a full reload, a remembered iframe selection may take a moment to become executable again. During that window `argus watcher status <id>` reports `targetReady=false`, and frame-scoped commands wait briefly for the iframe to finish rebinding before failing.
 5. **Use with Argus CLI**:
 
 ```bash

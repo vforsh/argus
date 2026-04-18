@@ -17,6 +17,7 @@ const buildStatus = (ctx: RouteContext): StatusResponse => {
 		id: watcher.id,
 		pid: watcher.pid,
 		attached: cdpStatus.attached,
+		targetReady: cdpStatus.targetReady ?? null,
 		target: cdpStatus.target,
 		dialog: ctx.getDialog(),
 		buffer,

@@ -3,9 +3,11 @@ import {
 	collectFrameTree,
 	createEmptyFrameState,
 	createRequestedFrameHint,
+	isSelectedTargetReady,
 	type ExtensionFrame,
 	parseExtensionTargetId,
 	resolveRequestedFrameId,
+	resolveSelectedFrameCommandState,
 	resolveRequestedTarget,
 } from '../src/sources/extension-frame-state.js'
 import { getSelectedExtensionTarget } from '../src/sources/extension-frame-runtime.js'
@@ -64,6 +66,49 @@ describe('extension-frame-state', () => {
 
 		state.requestedFrameDetached = true
 		expect(resolveRequestedTarget(state)).toEqual({ kind: 'page' })
+	})
+
+	it('keeps frame-scoped commands pending until the selected iframe becomes executable', () => {
+		const state = createEmptyFrameState()
+		state.requestedFrameId = 'frame-selected'
+		state.frames.set('frame-selected', createFrame({ frameId: 'frame-selected', url: 'https://example.com/frame' }))
+
+		expect(resolveSelectedFrameCommandState(state)).toEqual({
+			kind: 'pending',
+			frameId: 'frame-selected',
+			reason: 'frame_not_ready',
+		})
+		expect(isSelectedTargetReady(state)).toBe(false)
+
+		state.executionContexts.set('frame-selected', 17)
+		expect(resolveSelectedFrameCommandState(state)).toEqual({
+			kind: 'frame',
+			frameId: 'frame-selected',
+			sessionId: null,
+			executionContextId: 17,
+		})
+		expect(isSelectedTargetReady(state)).toBe(true)
+	})
+
+	it('treats a child CDP session as sufficient frame readiness for runtime commands', () => {
+		const state = createEmptyFrameState()
+		state.requestedFrameId = 'frame-selected'
+		state.frames.set(
+			'frame-selected',
+			createFrame({
+				frameId: 'frame-selected',
+				url: 'https://example.com/frame',
+				sessionId: 'child-session',
+			}),
+		)
+
+		expect(resolveSelectedFrameCommandState(state)).toEqual({
+			kind: 'frame',
+			frameId: 'frame-selected',
+			sessionId: 'child-session',
+			executionContextId: null,
+		})
+		expect(isSelectedTargetReady(state)).toBe(true)
 	})
 
 	it('parses virtual extension target ids', () => {

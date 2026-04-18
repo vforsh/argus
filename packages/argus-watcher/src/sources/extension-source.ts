@@ -7,7 +7,9 @@ import {
 	buildPageTarget,
 	createEmptyFrameState,
 	createNotAttachedError,
+	isSelectedTargetReady,
 	parseExtensionTargetId,
+	resolveSelectedFrameCommandState,
 	type ExtensionFrameState,
 } from './extension-frame-state.js'
 import { createDelegatingSession, type DelegatingSessionController } from './extension-delegating-session.js'
@@ -26,6 +28,8 @@ export type ExtensionSourceOptions = CdpSourceBaseOptions
 
 const TARGET_RECOVERY_INTERVAL_MS = 500
 const TARGET_RECOVERY_TIMEOUT_MS = 30_000
+const FRAME_COMMAND_READY_TIMEOUT_MS = 3_000
+const FRAME_COMMAND_READY_POLL_MS = 100
 type TargetRecovery = { timer: ReturnType<typeof setInterval>; deadline: number }
 
 /**
@@ -93,17 +97,22 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		getCurrentSession: () => currentSession,
 		requireCurrentSession: getCurrentExtensionSession,
 		getTargetContext: () => getCurrentTargetContext() ?? { kind: 'page' },
-		mapParams: (method, params) => {
-			const targetContext = getCurrentTargetContext()
-			if (method !== 'Runtime.evaluate' || targetContext?.kind !== 'frame' || params?.contextId != null) {
-				return params
+		prepareCommand: async ({ method, params, targetContext }) => {
+			if (targetContext.kind !== 'frame') {
+				return undefined
 			}
-			if (targetContext.executionContextId == null) {
-				throw new Error(`Selected frame is not ready yet: ${targetContext.frameId}`)
+
+			const readyTargetContext = await waitForSelectedFrameCommandTarget()
+			if (method !== 'Runtime.evaluate' || params?.contextId != null || readyTargetContext.sessionId) {
+				return { targetContext: readyTargetContext }
 			}
+
 			return {
-				...(params ?? {}),
-				contextId: targetContext.executionContextId,
+				targetContext: readyTargetContext,
+				params: {
+					...(params ?? {}),
+					contextId: readyTargetContext.executionContextId,
+				},
 			}
 		},
 	})
@@ -319,12 +328,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			return { kind: 'page' }
 		}
 
-		return {
-			kind: 'frame',
-			frameId: state.activeFrameId,
-			executionContextId: state.executionContexts.get(state.activeFrameId) ?? null,
-			sessionId: state.frames.get(state.activeFrameId)?.sessionId ?? null,
-		}
+		return buildFrameTargetContext(state, state.activeFrameId)
 	}
 
 	function getOrCreateFrameState(tabId: number): ExtensionFrameState {
@@ -344,8 +348,11 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	}
 
 	function emitStatus(target: CdpSourceTarget | null, reason: string | null): void {
+		const session = currentSession
+		const targetReady = target == null ? null : session ? isTargetReady(session.tabId) : true
 		events.onStatus({
 			attached: Boolean(target),
+			targetReady,
 			target: target
 				? {
 						title: target.title,
@@ -449,6 +456,16 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		})
 	}
 
+	async function kickTargetRecovery(session: ExtensionSession): Promise<void> {
+		const state = getOrCreateFrameState(session.tabId)
+		if (!needsTargetRecovery(state)) {
+			return
+		}
+
+		syncTargetRecovery(session, state)
+		await retryTargetRecovery(session.tabId)
+	}
+
 	function clearTargetRecovery(tabId: number): void {
 		const recovery = targetRecoveryByTabId.get(tabId)
 		if (!recovery) {
@@ -489,12 +506,65 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			clearTargetRecovery(tabId)
 		}
 	}
+
+	function buildFrameTargetContext(state: ExtensionFrameState, frameId: string): Extract<CdpTargetContext, { kind: 'frame' }> {
+		return {
+			kind: 'frame',
+			frameId,
+			executionContextId: state.executionContexts.get(frameId) ?? null,
+			sessionId: state.frames.get(frameId)?.sessionId ?? null,
+		}
+	}
+
+	function isTargetReady(tabId: number): boolean {
+		return isSelectedTargetReady(getOrCreateFrameState(tabId))
+	}
+
+	async function waitForSelectedFrameCommandTarget(): Promise<Extract<CdpTargetContext, { kind: 'frame' }>> {
+		const session = getCurrentExtensionSession()
+		const tabId = session.tabId
+		const immediate = resolveSelectedFrameCommandState(getOrCreateFrameState(tabId))
+		if (immediate.kind === 'frame') {
+			return buildFrameTargetContext(getOrCreateFrameState(tabId), immediate.frameId)
+		}
+
+		await kickTargetRecovery(session)
+
+		const deadline = Date.now() + FRAME_COMMAND_READY_TIMEOUT_MS
+		while (Date.now() < deadline) {
+			await delay(FRAME_COMMAND_READY_POLL_MS)
+
+			const current = currentSession
+			if (!current || current.tabId !== tabId) {
+				throw createNotAttachedError()
+			}
+
+			const commandState = resolveSelectedFrameCommandState(getOrCreateFrameState(tabId))
+			if (commandState.kind === 'frame') {
+				return buildFrameTargetContext(getOrCreateFrameState(tabId), commandState.frameId)
+			}
+		}
+
+		throw buildSelectedFrameNotReadyError(tabId)
+	}
 }
 
 function needsTargetRecovery(state: ExtensionFrameState): boolean {
-	return state.requestedFrameId != null && state.activeFrameId == null
+	return resolveSelectedFrameCommandState(state).kind === 'pending'
 }
 
 function hasTargetRecoveryExpired(recovery: TargetRecovery): boolean {
 	return Date.now() >= recovery.deadline
+}
+
+function buildSelectedFrameNotReadyError(tabId: number): Error {
+	const error = new Error(
+		`Selected iframe target on tab ${tabId} is not executable yet after reload. Try again in a few seconds or reattach the watcher if the problem persists.`,
+	)
+	;(error as Error & { code?: string }).code = 'extension_frame_not_ready'
+	return error
+}
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms))
 }

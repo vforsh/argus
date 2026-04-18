@@ -46,6 +46,8 @@ export type CdpSourceCookieQuery = {
  */
 export type CdpSourceStatus = {
 	attached: boolean
+	/** Whether the currently selected target is ready for frame-scoped commands. */
+	targetReady?: boolean | null
 	target: {
 		title: string | null
 		url: string | null

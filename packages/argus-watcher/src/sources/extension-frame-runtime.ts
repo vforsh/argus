@@ -45,9 +45,8 @@ export const getSelectedExtensionTarget = (session: ExtensionSession, state: Ext
 }
 
 export const setRequestedTargetSelection = (state: ExtensionFrameState, frameId: string | null): void => {
-	const frame = frameId ? state.frames.get(frameId) : null
 	state.requestedFrameId = frameId
-	state.requestedFrameHint = createRequestedFrameHint(frame)
+	state.requestedFrameHint = frameId ? createRequestedFrameHint(state.frames.get(frameId)) : null
 	state.requestedFrameDetached = false
 }
 
@@ -63,6 +62,7 @@ export const reconcileExtensionTargetSelection = (session: ExtensionSession, sta
 		return false
 	}
 
+	syncRequestedFrameSelection(state, resolution.frameId)
 	state.requestedFrameDetached = false
 	if (state.activeFrameId === resolution.frameId) {
 		return false
@@ -174,6 +174,16 @@ const activateFrameTarget = (state: ExtensionFrameState, frameId: string, onTarg
 	state.activeAttachedAt = Date.now()
 	onTargetChanged()
 	return true
+}
+
+const syncRequestedFrameSelection = (state: ExtensionFrameState, frameId: string): void => {
+	const frame = state.frames.get(frameId)
+	if (!frame) {
+		return
+	}
+
+	state.requestedFrameId = frameId
+	state.requestedFrameHint = createRequestedFrameHint(frame)
 }
 
 /**
