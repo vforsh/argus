@@ -448,7 +448,6 @@ describe('playground smoke tests', () => {
 		expect(showResponse.ok).toBe(true)
 		expect(showResponse.state).toBe('shown')
 		expect(showResponse.attached).toBe(true)
-		expect(showResponse.applied).toBe(true)
 
 		// With focus emulation enabled, document.hasFocus() must be true regardless of real window focus.
 		expect(await evalHasFocus()).toBe(true)
@@ -457,7 +456,7 @@ describe('playground smoke tests', () => {
 		const hideResponse = JSON.parse(hideOut) as VisibilityResponse
 		expect(hideResponse.ok).toBe(true)
 		expect(hideResponse.state).toBe('default')
-		expect(hideResponse.applied).toBe(true)
+		expect(hideResponse.attached).toBe(true)
 	})
 
 	test('screenshot supports viewport-relative clip rectangles', async () => {

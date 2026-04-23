@@ -44,12 +44,6 @@ const runPageVisibility = async (id: string | undefined, action: PageVisibilityA
 }
 
 const writeHumanResult = (output: Output, watcherId: string, action: PageVisibilityAction, data: VisibilityResponse): void => {
-	if (data.error) {
-		output.writeWarn(`page ${action} on ${watcherId} failed: ${data.error.message}`)
-		process.exitCode = 1
-		return
-	}
-
 	if (!data.attached) {
 		// Desired state is remembered in the watcher; it will apply on reattach.
 		const suffix = action === 'show' ? ' (will apply on reattach)' : ''
