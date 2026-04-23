@@ -247,6 +247,16 @@
 			<pre data-testid="dialog-output" id="dialog-output">—</pre>
 		</section>
 
+		<!-- ── Visibility / focus ── -->
+		<section data-testid="visibility-section">
+			<h2>Visibility / Focus</h2>
+			<p style="font-size: 0.85rem; color: #666; margin-top: 0">
+				Exercise <code>argus page show &lt;id&gt;</code> / <code>argus page hide &lt;id&gt;</code>. Background the Chrome window, then read
+				this pane — values reflect what the page sees via the visibility/focus APIs.
+			</p>
+			<pre data-testid="visibility-output" id="visibility-output">—</pre>
+		</section>
+
 		<!-- ── Scroll test ── -->
 		<section data-testid="scroll-section">
 			<h2>Scroll Test</h2>
@@ -495,6 +505,29 @@
 			// Port is injected by the server via /config.js, falling back to 3334.
 			const xOriginPort = window.__CROSS_ORIGIN_PORT ?? 3334
 			document.getElementById('cross-origin-iframe').src = `http://127.0.0.1:${xOriginPort}/iframe.html`
+
+			// ── Visibility/focus pulse ──
+			// Live snapshot of what the page believes about its visibility/focus.
+			// `argus page show` should flip hasFocus/visibilityState to truthy even
+			// when the Chrome window is backgrounded.
+			const visibilityOutput = document.getElementById('visibility-output')
+			function refreshVisibility() {
+				visibilityOutput.textContent = JSON.stringify(
+					{
+						visibilityState: document.visibilityState,
+						hidden: document.hidden,
+						hasFocus: document.hasFocus(),
+						ts: Date.now(),
+					},
+					null,
+					2,
+				)
+			}
+			setInterval(refreshVisibility, 500)
+			document.addEventListener('visibilitychange', refreshVisibility)
+			window.addEventListener('focus', refreshVisibility)
+			window.addEventListener('blur', refreshVisibility)
+			refreshVisibility()
 
 			// ── Seed storage on load ──
 			seedStorage()

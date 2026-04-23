@@ -2,6 +2,7 @@ import type { Command } from 'commander'
 import { runChromeTargets, runChromeOpen, runChromeActivate, runChromeClose } from '../../commands/chrome.js'
 import { runPageReload } from '../../commands/page.js'
 import { runPageEmulationSet, runPageEmulationClear, runPageEmulationStatus } from '../../commands/pageEmulation.js'
+import { runPageShow, runPageHide } from '../../commands/pageVisibility.js'
 import { listPresetNames } from '../../emulation/devices.js'
 import { collectParam } from '../validation.js'
 
@@ -65,6 +66,27 @@ export function registerPage(program: Command): void {
 		.addHelpText('after', '\nExamples:\n  $ argus page close ABCD1234\n  $ argus page close ABCD1234 --json\n')
 		.action(async (targetId, options) => {
 			await runChromeClose({ ...options, targetId })
+		})
+
+	page.command('show')
+		.description('Lock the attached page as shown+focused (unthrottles rAF/timers when window is covered)')
+		.argument('[id]', 'Watcher ID')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus page show app\n  $ argus page show app --json\n\nForces focus emulation on the attached page so boot/preview flows keep\nmaking progress even if the Chrome window is backgrounded or covered.\nLock persists until `argus page hide <id>`; survives watcher reattach.\n',
+		)
+		.action(async (id, options) => {
+			await runPageShow(id, options)
+		})
+
+	page.command('hide')
+		.description('Release the visibility lock (restore default Chrome throttling behavior)')
+		.argument('[id]', 'Watcher ID')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText('after', '\nExamples:\n  $ argus page hide app\n  $ argus page hide app --json\n')
+		.action(async (id, options) => {
+			await runPageHide(id, options)
 		})
 
 	page.command('reload')

@@ -367,6 +367,18 @@ argus page emulation status app --json
 
 Emulates device viewport (width/height/DPR/mobile), touch, and user-agent on the watcher-attached page. `--device` selects a preset; `--width`, `--height`, `--dpr`, `--mobile`/`--no-mobile`, `--touch`/`--no-touch`, `--ua` override individual fields. State persists until cleared (survives detach/reattach). Available presets: `iphone-14`, `iphone-15-pro-max`, `pixel-7`, `ipad-mini`, `desktop-1440`, `desktop-1600`.
 
+### Visibility (keep page unthrottled)
+
+```bash
+argus page show app
+argus page show app --json
+argus page hide app
+argus watcher show app     # alias (same behavior)
+argus watcher hide app     # alias (same behavior)
+```
+
+Locks the attached page into a shown+focused state via CDP (`Page.bringToFront` + `Emulation.setFocusEmulationEnabled`). Use this when preview/boot flows appear hung because the Chrome window is backgrounded or covered — `document.visibilityState`/`hasFocus()` stay truthy, so `requestAnimationFrame` and timers don't throttle. Lock is sticky: survives detach/reattach until `argus page hide <id>`. Safe to call repeatedly; no-ops on an unattached watcher but remembers the intent. `argus watcher show/hide <id>` are identical aliases — use whichever reads better in context.
+
 ### Throttle
 
 ```bash

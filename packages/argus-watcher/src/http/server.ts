@@ -10,6 +10,7 @@ import type { Screenshotter } from '../cdp/screenshot.js'
 import type { CdpSourceCookieQuery, CdpSourceHandle, CdpSourceStatus } from '../sources/types.js'
 import type { EmulationController } from '../emulation/EmulationController.js'
 import type { ThrottleController } from '../throttle/ThrottleController.js'
+import type { VisibilityController } from '../visibility/VisibilityController.js'
 import type { NetFilterContext, NetParty, NetScope } from '../net/filtering.js'
 import { dispatch } from './router.js'
 
@@ -60,6 +61,7 @@ export type HttpRequestEventMetadata = {
 		| 'throttle'
 		| 'dialog/status'
 		| 'dialog/handle'
+		| 'visibility'
 		| 'storage/local'
 		| 'storage/session'
 		| 'reload'
@@ -125,6 +127,8 @@ export type HttpServerOptions = {
 	emulationController: EmulationController
 	/** Throttle controller for GET/POST /throttle endpoints. */
 	throttleController: ThrottleController
+	/** Visibility controller for GET/POST /visibility endpoints. */
+	visibilityController: VisibilityController
 	/** Source handle for extension mode (enables /targets, /attach, /detach endpoints). */
 	sourceHandle?: CdpSourceHandle
 	/** Best-effort target metadata for resolving net scope filters. */

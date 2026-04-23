@@ -1,6 +1,7 @@
 import type { Command } from 'commander'
 import { runList } from '../../commands/list.js'
 import { runReload } from '../../commands/reload.js'
+import { runPageShow, runPageHide } from '../../commands/pageVisibility.js'
 import { runWatcherStart } from '../../commands/watcherStart.js'
 import { runWatcherStatus } from '../../commands/watcherStatus.js'
 import { runWatcherStop } from '../../commands/watcherStop.js'
@@ -110,6 +111,29 @@ export function registerWatcher(program: Command): void {
 		)
 		.action(async (id, options) => {
 			await runReload(id, options)
+		})
+
+	watcher
+		.command('show')
+		.argument('[id]', 'Watcher id whose page to lock as shown+focused')
+		.description("Lock the watcher's attached page as shown+focused (alias for `argus page show`)")
+		.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus watcher show app\n  $ argus watcher show app --json\n\nSame behavior as `argus page show <id>`. Unthrottles rAF/timers when the\nChrome window is backgrounded or covered; sticky until `watcher hide`.\n',
+		)
+		.action(async (id, options) => {
+			await runPageShow(id, options)
+		})
+
+	watcher
+		.command('hide')
+		.argument('[id]', 'Watcher id whose page to release from the visibility lock')
+		.description("Release the watcher's visibility lock (alias for `argus page hide`)")
+		.option('--json', 'Output JSON for automation')
+		.addHelpText('after', '\nExamples:\n  $ argus watcher hide app\n  $ argus watcher hide app --json\n')
+		.action(async (id, options) => {
+			await runPageHide(id, options)
 		})
 
 	watcher

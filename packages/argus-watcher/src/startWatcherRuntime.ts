@@ -15,8 +15,20 @@ import { createWatcherRuntimeServices } from './runtime/watcherServices.js'
  */
 export const createWatcherHandle = async (options: StartWatcherOptions, watcherId: string): Promise<WatcherHandle> => {
 	const setup = normalizeWatcherSetup(options, watcherId)
-	const { sourceMode, host, port, pageConsoleLogging, events, buffer, netBuffer, record, fileLogger, emulationController, throttleController } =
-		setup
+	const {
+		sourceMode,
+		host,
+		port,
+		pageConsoleLogging,
+		events,
+		buffer,
+		netBuffer,
+		record,
+		fileLogger,
+		emulationController,
+		throttleController,
+		visibilityController,
+	} = setup
 	let closing = false
 	let readyForShutdown = false
 	let shutdownRequested = false
@@ -212,6 +224,10 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		runtimeEditor?.rebind()
 		await emulationController.onAttach(session)
 		await throttleController.onAttach(session)
+		// Visibility lock is sticky across detaches; restore it before we
+		// forward the attach to other services so downstream flows (boot
+		// waits, indicator paints) benefit immediately.
+		await visibilityController.onAttach(sourceHandle.pageSession ?? session)
 		await networkCapture?.onAttached()
 		onIndicatorAttach(session, target)
 		await maybeInjectOnAttach(session, target)
@@ -285,6 +301,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		runtimeEditor,
 		emulationController,
 		throttleController,
+		visibilityController,
 		getNetFilterContext: sourceHandle.getNetFilterContext,
 		readBrowserCookies: sourceHandle.readBrowserCookies,
 		sourceHandle: sourceMode === 'extension' ? sourceHandle : undefined,

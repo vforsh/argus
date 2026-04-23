@@ -42,6 +42,8 @@ import { handle as getThrottle } from './getThrottle.js'
 import { handle as postThrottle } from './postThrottle.js'
 import { handle as getDialog } from './getDialog.js'
 import { handle as postDialog } from './postDialog.js'
+import { handle as getVisibility } from './getVisibility.js'
+import { handle as postVisibility } from './postVisibility.js'
 import { handle as postStorageLocal } from './postStorageLocal.js'
 import { handle as postStorageSession } from './postStorageSession.js'
 import { handle as postReload } from './postReload.js'
@@ -108,6 +110,8 @@ export const watcherRoutes = [
 	defineRoute({ method: 'POST', path: '/throttle', handler: postThrottle }),
 	defineRoute({ method: 'GET', path: '/dialog', handler: getDialog }),
 	defineRoute({ method: 'POST', path: '/dialog', handler: postDialog }),
+	defineRoute({ method: 'GET', path: '/visibility', handler: getVisibility }),
+	defineRoute({ method: 'POST', path: '/visibility', handler: postVisibility }),
 	defineRoute({ method: 'POST', path: '/storage/local', handler: postStorageLocal }),
 	defineRoute({ method: 'POST', path: '/storage/session', handler: postStorageSession }),
 	defineRoute({ method: 'POST', path: '/reload', handler: postReload }),

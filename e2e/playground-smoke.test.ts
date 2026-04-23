@@ -15,6 +15,7 @@ import type {
 	EvalResponse,
 	ScreenshotResponse,
 	StorageListResponse,
+	VisibilityResponse,
 } from '@vforsh/argus-core'
 import type { Page } from 'playwright'
 import type * as http from 'node:http'
@@ -423,6 +424,40 @@ describe('playground smoke tests', () => {
 		expect(response.outFile).toBeTruthy()
 		const stat = await fs.stat(response.outFile)
 		expect(stat.size).toBeGreaterThan(0)
+	})
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// page show / page hide (visibility lock)
+	// ─────────────────────────────────────────────────────────────────────────
+
+	test('page show locks hasFocus; page hide releases it', async () => {
+		const evalHasFocus = async (): Promise<boolean> => {
+			const { stdout } = await runCommand('bun', [BIN_PATH, 'eval', 'playground', 'document.hasFocus()', '--json'], { env })
+			const response = JSON.parse(stdout) as EvalResponse
+			expect(response.ok).toBe(true)
+			return response.result === true
+		}
+
+		// Move focus away from the page to create a realistic "covered window" state.
+		// In CDP-driven Chromium, a fresh target often reports hasFocus=false after
+		// opening a new blank tab; that's the baseline we exercise against.
+		await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+
+		const { stdout: showOut } = await runCommand('bun', [BIN_PATH, 'page', 'show', 'playground', '--json'], { env })
+		const showResponse = JSON.parse(showOut) as VisibilityResponse
+		expect(showResponse.ok).toBe(true)
+		expect(showResponse.state).toBe('shown')
+		expect(showResponse.attached).toBe(true)
+		expect(showResponse.applied).toBe(true)
+
+		// With focus emulation enabled, document.hasFocus() must be true regardless of real window focus.
+		expect(await evalHasFocus()).toBe(true)
+
+		const { stdout: hideOut } = await runCommand('bun', [BIN_PATH, 'page', 'hide', 'playground', '--json'], { env })
+		const hideResponse = JSON.parse(hideOut) as VisibilityResponse
+		expect(hideResponse.ok).toBe(true)
+		expect(hideResponse.state).toBe('default')
+		expect(hideResponse.applied).toBe(true)
 	})
 
 	test('screenshot supports viewport-relative clip rectangles', async () => {

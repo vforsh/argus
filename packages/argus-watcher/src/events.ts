@@ -132,6 +132,7 @@ export type HttpRequestEvent = {
 		| 'throttle'
 		| 'dialog/status'
 		| 'dialog/handle'
+		| 'visibility'
 		| 'storage/local'
 		| 'storage/session'
 		| 'reload'
