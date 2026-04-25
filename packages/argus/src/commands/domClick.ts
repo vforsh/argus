@@ -1,6 +1,9 @@
 import type { DomClickResponse } from '@vforsh/argus-core'
+import type { ArgusCommandDefinition } from '../cli/defineCommand.js'
+import { domClickRequestSchema, formatProtocolValidationIssues } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
 import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { resolveTestId } from './resolveTestId.js'
 import { describeElementTarget, parseWaitDuration, parseXY, requireElementTarget, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom click command. */
@@ -13,6 +16,38 @@ export type DomClickOptions = {
 	text?: string
 	wait?: string
 	json?: boolean
+}
+
+/** CLI definition for the top-level `argus click` command. */
+export const domClickCommandDefinition: ArgusCommandDefinition = {
+	name: 'click',
+	description: 'Click at coordinates or on element(s) matching a CSS selector',
+	arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
+	options: [
+		{ flags: '--selector <css>', description: 'CSS selector to match element(s)' },
+		{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
+		{ flags: '--ref <elementRef>', description: 'Stable element ref from snapshot/locate output' },
+		{ flags: '--pos <x,y>', description: 'Viewport coordinates or offset from element top-left' },
+		{ flags: '--button <type>', description: 'Mouse button: left, middle, right (default: left)' },
+		{ flags: '--all', description: 'Allow multiple matches (default: error if >1 match)' },
+		{ flags: '--text <string>', description: 'Filter by textContent (trimmed). Supports /regex/flags syntax' },
+		{ flags: '--wait <duration>', description: 'Wait for selector to appear (e.g. 5s, 500ms)' },
+		{ flags: '--json', description: 'Output JSON for automation' },
+	],
+	examples: [
+		'argus click app --pos 100,200',
+		'argus click app --selector "#btn"',
+		'argus click app --testid "submit-btn"',
+		'argus click app --ref e5',
+		'argus click app --selector "#btn" --pos 10,5',
+		'argus click app --selector ".item" --all',
+		'argus click app --selector "#btn" --button right',
+		'argus click app --pos 100,200 --button middle',
+	],
+	action: async (id, options) => {
+		if (!resolveTestId(options)) return
+		await runDomClick(id, options)
+	},
 }
 
 /** Execute the dom click command for a watcher id. */
@@ -51,14 +86,6 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 		return
 	}
 
-	const validButtons = ['left', 'middle', 'right']
-	const button = options.button ?? 'left'
-	if (!validButtons.includes(button)) {
-		output.writeWarn(`--button must be one of: ${validButtons.join(', ')}`)
-		process.exitCode = 2
-		return
-	}
-
 	const body: Record<string, unknown> = {}
 	if (target) {
 		if (target.selector) {
@@ -76,11 +103,18 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 		body.x = x
 		body.y = y
 	}
-	if (button !== 'left') {
-		body.button = button
+	if (options.button) {
+		body.button = options.button
 	}
 	if (waitMs > 0) {
 		body.wait = waitMs
+	}
+
+	const parsedBody = domClickRequestSchema.parse(body)
+	if (!parsedBody.ok) {
+		output.writeWarn(formatProtocolValidationIssues(parsedBody.issues))
+		process.exitCode = 2
+		return
 	}
 
 	const result = await requestWatcherAction<DomClickResponse>(
@@ -88,8 +122,8 @@ export const runDomClick = async (id: string | undefined, options: DomClickOptio
 			id,
 			path: '/dom/click',
 			method: 'POST',
-			body,
-			timeoutMs: Math.max(30_000, waitMs + 5_000),
+			body: parsedBody.value,
+			timeoutMs: Math.max(30_000, (parsedBody.value.wait ?? 0) + 5_000),
 		},
 		output,
 	)

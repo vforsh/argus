@@ -1,5 +1,6 @@
 export * from './protocol/logs.js'
 export * from './protocol/http.js'
+export * from './protocol/schema.js'
 export { AUTH_STATE_METADATA_SCHEMA_VERSION } from './protocol/http/auth.js'
 export * from './protocol/version.js'
 export * from './registry/registry.js'

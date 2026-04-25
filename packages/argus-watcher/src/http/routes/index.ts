@@ -1,4 +1,4 @@
-import type { RouteHandler } from './types.js'
+import type { WatcherRouteDefinition } from './defineRoute.js'
 
 import { handle as getStatus } from './getStatus.js'
 import { handle as getLogs } from './getLogs.js'
@@ -26,7 +26,7 @@ import { handle as postCodeEdit } from './postCodeEdit.js'
 import { handle as postDomTree } from './postDomTree.js'
 import { handle as postDomInfo } from './postDomInfo.js'
 import { handle as postDomHover } from './postDomHover.js'
-import { handle as postDomClick } from './postDomClick.js'
+import { route as postDomClickRoute } from './postDomClick.js'
 import { handle as postDomKeydown } from './postDomKeydown.js'
 import { handle as postDomAdd } from './postDomAdd.js'
 import { handle as postDomRemove } from './postDomRemove.js'
@@ -51,13 +51,6 @@ import { handle as getExtensionTabs } from './getExtensionTabs.js'
 import { handle as getTargets } from './getTargets.js'
 import { handle as postAttach } from './postAttach.js'
 import { handle as postDetach } from './postDetach.js'
-
-export type WatcherRouteDefinition = {
-	method: 'GET' | 'POST'
-	path: string
-	handler: RouteHandler
-	extensionOnly?: boolean
-}
 
 const defineRoute = (definition: WatcherRouteDefinition): WatcherRouteDefinition => definition
 
@@ -93,7 +86,7 @@ export const watcherRoutes = [
 	defineRoute({ method: 'POST', path: '/dom/tree', handler: postDomTree }),
 	defineRoute({ method: 'POST', path: '/dom/info', handler: postDomInfo }),
 	defineRoute({ method: 'POST', path: '/dom/hover', handler: postDomHover }),
-	defineRoute({ method: 'POST', path: '/dom/click', handler: postDomClick }),
+	postDomClickRoute,
 	defineRoute({ method: 'POST', path: '/dom/keydown', handler: postDomKeydown }),
 	defineRoute({ method: 'POST', path: '/dom/add', handler: postDomAdd }),
 	defineRoute({ method: 'POST', path: '/dom/remove', handler: postDomRemove }),

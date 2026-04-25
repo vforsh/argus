@@ -1,3 +1,5 @@
+import { defineProtocolSchema, invalidProtocolPayload, isProtocolObject, validProtocolPayload } from '../schema.js'
+
 /** Stable element ref emitted by `snapshot` / `locate` and accepted by ref-aware commands. */
 export type ElementRef = string
 
@@ -127,6 +129,9 @@ export type DomHoverResponse = {
 /** Mouse button for click commands. Default: 'left'. */
 export type MouseButton = 'left' | 'middle' | 'right'
 
+/** Runtime list of mouse buttons accepted by click commands. */
+export const MOUSE_BUTTONS = ['left', 'middle', 'right'] as const
+
 export type DomClickRequest = {
 	/** CSS selector to match element(s). */
 	selector?: string
@@ -146,6 +151,58 @@ export type DomClickRequest = {
 	wait?: number
 }
 
+/** Schema for POST /dom/click request payloads. */
+export const domClickRequestSchema = defineProtocolSchema<DomClickRequest>((value) => {
+	if (!isProtocolObject(value)) {
+		return invalidProtocolPayload('request body must be an object')
+	}
+
+	const selector = optionalString(value, 'selector')
+	const ref = optionalString(value, 'ref')
+	const hasSelector = selector != null && selector.length > 0
+	const hasRef = ref != null && ref.length > 0
+	const hasCoords = value.x != null || value.y != null
+
+	if (!hasSelector && !hasRef && !hasCoords) {
+		return invalidProtocolPayload('selector, ref, or x,y coordinates are required')
+	}
+	if (hasSelector && hasRef) {
+		return invalidProtocolPayload('selector and ref are mutually exclusive')
+	}
+	if (hasCoords && (!isFiniteNumber(value.x) || !isFiniteNumber(value.y))) {
+		return invalidProtocolPayload('both x and y must be finite numbers')
+	}
+	if (value.all != null && typeof value.all !== 'boolean') {
+		return invalidProtocolPayload('all must be a boolean')
+	}
+	if (value.button != null && !isMouseButton(value.button)) {
+		return invalidProtocolPayload(`button must be one of: ${MOUSE_BUTTONS.join(', ')}`)
+	}
+	if (value.wait != null && (!isFiniteNumber(value.wait) || value.wait < 0)) {
+		return invalidProtocolPayload('wait must be a non-negative number (ms)')
+	}
+	if (value.text != null && typeof value.text !== 'string') {
+		return invalidProtocolPayload('text must be a string')
+	}
+
+	const request: DomClickRequest = {
+		all: value.all ?? false,
+		button: value.button ?? 'left',
+		wait: value.wait ?? 0,
+	}
+	if (hasSelector) request.selector = selector
+	if (hasRef) request.ref = ref
+	if (hasCoords) {
+		request.x = value.x as number
+		request.y = value.y as number
+	}
+	if (typeof value.text === 'string') {
+		request.text = value.text
+	}
+
+	return validProtocolPayload(request)
+})
+
 /**
  * Response payload for POST /dom/click.
  */
@@ -156,6 +213,15 @@ export type DomClickResponse = {
 	/** Number of elements clicked. */
 	clicked: number
 }
+
+const optionalString = (value: Record<string, unknown>, key: string): string | undefined => {
+	const field = value[key]
+	return typeof field === 'string' ? field : undefined
+}
+
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+
+const isMouseButton = (value: unknown): value is MouseButton => typeof value === 'string' && MOUSE_BUTTONS.includes(value as MouseButton)
 
 /**
  * Request payload for POST /dom/keydown.

@@ -1,4 +1,6 @@
 import type { Command } from 'commander'
+import { domClickCommandDefinition } from '../../commands/domClick.js'
+import { defineCommands } from '../defineCommand.js'
 import { registerQuickAccess } from './registerQuickAccess.js'
 import { registerChrome } from './registerChrome.js'
 import { registerWatcher } from './registerWatcher.js'
@@ -9,7 +11,6 @@ import { registerNet } from './registerNet.js'
 import { registerAuth } from './registerAuth.js'
 import { registerEval } from './registerEval.js'
 import { registerDom } from './registerDom.js'
-import { registerClick } from './registerClick.js'
 import { registerKeydown } from './registerKeydown.js'
 import { registerFill } from './registerFill.js'
 import { registerHover } from './registerHover.js'
@@ -25,6 +26,10 @@ import { registerLocate } from './registerLocate.js'
 
 export type ProgramRegistrar = (program: Command) => void
 
+const registerDefinedCommands: ProgramRegistrar = (program) => {
+	defineCommands(program, [domClickCommandDefinition])
+}
+
 export const coreProgramRegistrars: readonly ProgramRegistrar[] = [
 	registerQuickAccess,
 	registerChrome,
@@ -38,7 +43,7 @@ export const coreProgramRegistrars: readonly ProgramRegistrar[] = [
 	registerLocate,
 	registerCode,
 	registerDom,
-	registerClick,
+	registerDefinedCommands,
 	registerKeydown,
 	registerFill,
 	registerHover,
