@@ -121,9 +121,10 @@ argus js app "location.href"
 argus eval app "await fetch('/ping').then(r => r.status)"
 argus eval app "document.title" --json
 argus eval app --file ./script.js
+argus eval app --file ./script.js --arg level=10 --arg mode=fast
 ```
 
-`js` is the short alias for `eval`.
+`js` is the short alias for `eval`. `--arg key=value` is repeatable and exposes string values as a frozen `args` object inside inline, file, or stdin scripts; duplicate keys use the last value.
 
 ### Runtime Code
 
@@ -151,9 +152,10 @@ argus eval-until app "document.querySelector('#loaded')"
 argus eval-until app "window.APP_READY" --interval 500
 argus eval-until app "document.title === 'Ready'" --total-timeout 30s
 argus eval-until app "window.data" --verbose --count 20
+argus wait app --file ./ready.js --arg level=10 --total-timeout 20s
 ```
 
-Exit codes: 0 = truthy found, 1 = error/exhausted, 2 = invalid args, 130 = SIGINT.
+`wait` is the short alias for `eval-until`, and supports the same `--arg key=value` script args. Exit codes: 0 = truthy found, 1 = error/exhausted, 2 = invalid args, 130 = SIGINT.
 
 Full eval docs (polling, flags, iframe, eval-until): [EVAL.md](./reference/EVAL.md)
 
