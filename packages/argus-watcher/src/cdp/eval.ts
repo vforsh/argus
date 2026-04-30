@@ -4,6 +4,7 @@ import { serializeRemoteObject } from './remoteObject.js'
 
 export type EvalRequestOptions = {
 	expression: string
+	args?: Record<string, string>
 	awaitPromise?: boolean
 	replMode?: boolean
 	returnByValue?: boolean
@@ -24,44 +25,117 @@ type RuntimeEvaluatePayload = {
 }
 
 export const evaluateExpression = async (session: CdpSessionHandle, options: EvalRequestOptions): Promise<EvalResponse> => {
-	const payload = await evaluateRawExpression(session, options)
-	if (payload.exceptionDetails) {
+	const args = hasEvalArgs(options.args) ? options.args : undefined
+	if (args) {
+		await installEvalArgs(session, args, options.timeoutMs)
+	}
+
+	try {
+		const recordResult = await evaluateAndAwaitRecord(session, options)
+		if (recordResult.exception) return recordResult.response
+
+		const record = recordResult.record
+		const value = await materializeRemoteObject(session, record, options)
+
 		return {
 			ok: true,
-			result: null,
-			type: payload.result?.type ?? null,
-			exception: {
-				text: payload.exceptionDetails.text ?? 'Exception',
-				details: payload.exceptionDetails.exception ?? null,
-			},
+			result: value ?? null,
+			type: record?.type ?? null,
+			exception: null,
+		}
+	} finally {
+		if (args) {
+			await restoreEvalArgs(session, options.timeoutMs)
 		}
 	}
+}
 
-	let record = payload.result
-	if ((options.awaitPromise ?? true) && record?.subtype === 'promise' && record.objectId) {
-		const awaitedPayload = await awaitPromiseResult(session, record.objectId, options.timeoutMs)
-		if (awaitedPayload.exceptionDetails) {
-			return {
-				ok: true,
-				result: null,
-				type: awaitedPayload.result?.type ?? null,
-				exception: {
-					text: awaitedPayload.exceptionDetails.text ?? 'Exception',
-					details: awaitedPayload.exceptionDetails.exception ?? null,
-				},
-			}
-		}
-		record = awaitedPayload.result
+type EvalRecordResult = { record: RuntimeRemoteObject | undefined; exception: false } | { response: EvalResponse; exception: true }
+
+const hasEvalArgs = (args: Record<string, string> | undefined): args is Record<string, string> => args != null && Object.keys(args).length > 0
+
+const evaluateAndAwaitRecord = async (session: CdpSessionHandle, options: EvalRequestOptions): Promise<EvalRecordResult> => {
+	const payload = await evaluateRawExpression(session, options)
+	if (payload.exceptionDetails) {
+		return { response: formatExceptionResponse(payload), exception: true }
 	}
 
-	const value = await materializeRemoteObject(session, record, options)
-
-	return {
-		ok: true,
-		result: value ?? null,
-		type: record?.type ?? null,
-		exception: null,
+	const record = payload.result
+	if (!(options.awaitPromise ?? true) || record?.subtype !== 'promise' || !record.objectId) {
+		return { record, exception: false }
 	}
+
+	const awaitedPayload = await awaitPromiseResult(session, record.objectId, options.timeoutMs)
+	if (awaitedPayload.exceptionDetails) {
+		return { response: formatExceptionResponse(awaitedPayload), exception: true }
+	}
+
+	return { record: awaitedPayload.result, exception: false }
+}
+
+const formatExceptionResponse = (payload: RuntimeEvaluatePayload): EvalResponse => ({
+	ok: true,
+	result: null,
+	type: payload.result?.type ?? null,
+	exception: {
+		text: payload.exceptionDetails?.text ?? 'Exception',
+		details: payload.exceptionDetails?.exception ?? null,
+	},
+})
+
+const EVAL_ARGS_STATE_KEY = '__argusEvalArgsPreviousDescriptor__'
+
+const installEvalArgs = async (session: CdpSessionHandle, args: Record<string, string>, timeoutMs?: number): Promise<void> => {
+	const payload = JSON.stringify(args)
+	await sendInternalEval(
+		session,
+		`(() => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'args');
+  Object.defineProperty(globalThis, ${JSON.stringify(EVAL_ARGS_STATE_KEY)}, { value: previous, configurable: true });
+  Object.defineProperty(globalThis, 'args', { value: Object.freeze(${payload}), configurable: true });
+})()`,
+		timeoutMs,
+	)
+}
+
+const restoreEvalArgs = async (session: CdpSessionHandle, timeoutMs?: number): Promise<void> => {
+	await sendInternalEval(
+		session,
+		`(() => {
+  const stateKey = ${JSON.stringify(EVAL_ARGS_STATE_KEY)};
+  const previous = Object.getOwnPropertyDescriptor(globalThis, stateKey)?.value;
+  delete globalThis[stateKey];
+  delete globalThis.args;
+  if (previous) Object.defineProperty(globalThis, 'args', previous);
+})()`,
+		timeoutMs,
+	)
+}
+
+const sendInternalEval = async (session: CdpSessionHandle, expression: string, timeoutMs?: number): Promise<void> => {
+	const payload = (await session.sendAndWait(
+		'Runtime.evaluate',
+		{
+			expression,
+			replMode: false,
+			awaitPromise: true,
+			returnByValue: true,
+		},
+		{ timeoutMs },
+	)) as RuntimeEvaluatePayload
+
+	if (payload.exceptionDetails) {
+		throw new Error(formatInternalEvalError(payload.exceptionDetails))
+	}
+}
+
+const formatInternalEvalError = (exceptionDetails: NonNullable<RuntimeEvaluatePayload['exceptionDetails']>): string => {
+	const exception = exceptionDetails.exception
+	if (exception != null && typeof exception === 'object' && 'description' in exception && typeof exception.description === 'string') {
+		return exception.description
+	}
+
+	return exceptionDetails.text ?? 'Failed to prepare eval args'
 }
 
 const evaluateRawExpression = async (session: CdpSessionHandle, options: EvalRequestOptions): Promise<RuntimeEvaluatePayload> =>

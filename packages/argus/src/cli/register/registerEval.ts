@@ -3,6 +3,8 @@ import { runEval } from '../../commands/eval.js'
 import { runEvalUntil } from '../../commands/evalUntil.js'
 import { runIframeHelper } from '../../commands/iframeHelper.js'
 
+const collectValue = (value: string, previous: string[] = []): string[] => [...previous, value]
+
 export function registerEval(program: Command): void {
 	const evalCmd = program
 		.command('eval')
@@ -25,6 +27,7 @@ export function registerEval(program: Command): void {
 		.option('--iframe <selector>', 'Eval in iframe via postMessage (requires helper script)')
 		.option('--iframe-namespace <name>', 'Message type prefix for iframe eval (default: argus)')
 		.option('--iframe-timeout <ms>', 'Timeout for iframe postMessage response (default: 5000)')
+		.option('--arg <key=value>', 'Argument exposed to eval scripts as args[key]', collectValue, [])
 		.addHelpText(
 			'after',
 			`
@@ -32,6 +35,7 @@ Examples:
   $ argus eval app "location.href"
   $ argus eval app "await fetch('/ping').then(r => r.status)"
   $ argus eval app --file ./script.js
+  $ argus eval app --file ./script.js --arg level=10 --arg mode=fast
   $ cat script.js | argus eval app --stdin
   $ argus eval app - < script.js
   $ argus eval app "document.title" --no-fail-on-exception
@@ -60,6 +64,7 @@ Examples:
 				iframe: options.iframe,
 				iframeNamespace: options.iframeNamespace,
 				iframeTimeout: options.iframeTimeout,
+				arg: options.arg,
 			})
 		})
 
@@ -106,6 +111,7 @@ Examples:
 		.option('--iframe <selector>', 'Eval in iframe via postMessage (requires helper script)')
 		.option('--iframe-namespace <name>', 'Message type prefix for iframe eval (default: argus)')
 		.option('--iframe-timeout <ms>', 'Timeout for iframe postMessage response (default: 5000)')
+		.option('--arg <key=value>', 'Argument exposed to eval scripts as args[key]', collectValue, [])
 		.addHelpText(
 			'after',
 			`
@@ -117,6 +123,7 @@ Examples:
   $ argus eval-until app "window.data" --verbose
   $ argus eval-until app "window.data" --count 20 --interval 1s
   $ argus eval-until app --file ./check.js --total-timeout 1m
+  $ argus wait app --file ./ready.js --arg level=10 --total-timeout 20s
 `,
 		)
 		.action(async (id, expression, options) => {
@@ -137,6 +144,7 @@ Examples:
 				iframe: options.iframe,
 				iframeNamespace: options.iframeNamespace,
 				iframeTimeout: options.iframeTimeout,
+				arg: options.arg,
 			})
 		})
 }

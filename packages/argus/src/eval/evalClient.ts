@@ -4,6 +4,7 @@ import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/reque
 export type EvalOnceInput = {
 	watcher: Pick<WatcherRecord, 'id' | 'host' | 'port'>
 	expression: string
+	args?: Record<string, string>
 	awaitPromise: boolean
 	replMode?: boolean
 	returnByValue: boolean
@@ -26,6 +27,7 @@ export type EvalAttemptResult =
 export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 	const body = {
 		expression: input.expression,
+		args: input.args,
 		awaitPromise: input.awaitPromise,
 		replMode: input.replMode,
 		returnByValue: input.returnByValue,
@@ -67,6 +69,7 @@ export const evalWithRetries = async (input: EvalWithRetriesInput): Promise<Eval
 		const outcome = await evalOnce({
 			watcher: input.watcher,
 			expression: input.expression,
+			args: input.args,
 			awaitPromise: input.awaitPromise,
 			replMode: input.replMode,
 			returnByValue: input.returnByValue,

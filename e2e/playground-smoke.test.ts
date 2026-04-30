@@ -138,6 +138,31 @@ describe('playground smoke tests', () => {
 		expect(response.result).toBe(42)
 	})
 
+	test('eval exposes --arg values to file scripts', async () => {
+		const scriptPath = path.join(tempDir, 'args.js')
+		await fs.writeFile(scriptPath, 'const level = await Promise.resolve(Number(args.level));\n`${args.mode}:${level + 1}`\n', 'utf8')
+
+		const { stdout } = await runCommand(
+			'bun',
+			[BIN_PATH, 'eval', 'playground', '--file', scriptPath, '--arg', 'level=41', '--arg', 'mode=fast', '--json'],
+			{ env },
+		)
+		const response = JSON.parse(stdout) as EvalResponse
+		expect(response.ok).toBe(true)
+		expect(response.result).toBe('fast:42')
+	})
+
+	test('eval-until exposes --arg values', async () => {
+		const { stdout } = await runCommand(
+			'bun',
+			[BIN_PATH, 'wait', 'playground', 'args.ready === "yes"', '--arg', 'ready=yes', '--json', '--total-timeout', '10000'],
+			{ env },
+		)
+		const response = JSON.parse(stdout) as EvalResponse
+		expect(response.ok).toBe(true)
+		expect(response.result).toBe(true)
+	})
+
 	test('eval preserves promise-resolved object values', async () => {
 		const { stdout } = await runCommand(
 			'bun',

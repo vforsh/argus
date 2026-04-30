@@ -19,6 +19,7 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 	try {
 		const response: EvalResponse = await evaluateExpression(ctx.cdpSession, {
 			expression: payload.expression,
+			args: normalizeEvalArgs(payload.args),
 			awaitPromise: normalizeBoolean(payload.awaitPromise, true),
 			replMode: normalizeBoolean(payload.replMode, true),
 			returnByValue: normalizeBoolean(payload.returnByValue, true),
@@ -28,4 +29,19 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 	} catch (error) {
 		respondError(res, error)
 	}
+}
+
+const normalizeEvalArgs = (args: EvalRequest['args']): Record<string, string> | undefined => {
+	if (args == null || typeof args !== 'object' || Array.isArray(args)) {
+		return undefined
+	}
+
+	const normalized: Record<string, string> = {}
+	for (const [key, value] of Object.entries(args)) {
+		if (typeof value === 'string') {
+			normalized[key] = value
+		}
+	}
+
+	return Object.keys(normalized).length > 0 ? normalized : undefined
 }

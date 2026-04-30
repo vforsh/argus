@@ -3,7 +3,9 @@ import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import {
+	hasEvalArgs,
 	parseCount,
+	parseEvalArgs,
 	parseIntervalMs,
 	parseNumber,
 	parseRetryCount,
@@ -11,6 +13,7 @@ import {
 	printSuccess,
 	resolveExpression,
 	sleep,
+	wrapExpressionWithArgs,
 	wrapForIframeEval,
 } from './evalShared.js'
 
@@ -37,11 +40,20 @@ export type EvalUntilOptions = {
 	iframeNamespace?: string
 	/** Timeout for iframe postMessage response in ms (default: 5000). */
 	iframeTimeout?: string
+	/** Repeated key=value arguments exposed to scripts as `args`. */
+	arg?: string[]
 }
 
 /** Execute the eval-until command: poll until the expression returns a truthy value. */
 export const runEvalUntil = async (id: string | undefined, rawExpression: string | undefined, options: EvalUntilOptions): Promise<void> => {
 	const output = createOutput(options)
+
+	const evalArgs = parseEvalArgs(options.arg)
+	if (evalArgs.error) {
+		output.writeWarn(evalArgs.error)
+		process.exitCode = 2
+		return
+	}
 
 	const resolvedExpression = await resolveExpression(rawExpression, options, output)
 	if (resolvedExpression == null) {
@@ -49,16 +61,15 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		return
 	}
 
-	let expression = resolvedExpression
+	const requestArgs = !options.iframe && hasEvalArgs(evalArgs.value) ? evalArgs.value : undefined
 
-	if (options.iframe) {
-		const iframeTimeoutMs = parseNumber(options.iframeTimeout) ?? 5000
-		expression = wrapForIframeEval(expression, {
-			selector: options.iframe,
-			namespace: options.iframeNamespace ?? 'argus',
-			timeoutMs: iframeTimeoutMs,
-		})
-	}
+	const expression = options.iframe
+		? wrapForIframeEval(wrapExpressionWithArgs(resolvedExpression, evalArgs.value), {
+				selector: options.iframe,
+				namespace: options.iframeNamespace ?? 'argus',
+				timeoutMs: parseNumber(options.iframeTimeout) ?? 5000,
+			})
+		: resolvedExpression
 
 	const retryCount = parseRetryCount(options.retry)
 	if (retryCount.error) {
@@ -124,6 +135,7 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		const iterationResult = await evalWithRetries({
 			watcher,
 			expression,
+			args: requestArgs,
 			awaitPromise: options.await ?? true,
 			returnByValue: options.returnByValue ?? true,
 			timeoutMs,

@@ -93,6 +93,8 @@ export type NetResult = {
 export type EvalOptions = {
 	/** JS expression to execute. */
 	expression: string
+	/** String-only values exposed to the expression as `args`. */
+	args?: Record<string, string>
 	/** Await promises before returning. Defaults to true. */
 	awaitPromise?: boolean
 	/**

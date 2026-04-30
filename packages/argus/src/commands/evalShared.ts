@@ -17,6 +17,9 @@ type ExpressionSourceOptions = {
 	stdin?: boolean
 }
 
+/** String-only argument map exposed to eval scripts as `args`. */
+export type EvalArgMap = Record<string, string>
+
 /**
  * Resolve the JS expression from inline argument, --file, or --stdin.
  * Returns `null` (and writes a warning) when the input is invalid.
@@ -149,6 +152,34 @@ export const parseCount = (value?: string): { value?: number; error?: string } =
 	}
 
 	return { value: parsed }
+}
+
+/** Parse repeated `--arg key=value` flags. Later values override earlier ones. */
+export const parseEvalArgs = (values?: string[]): { value: EvalArgMap; error?: string } => {
+	const args: EvalArgMap = {}
+
+	for (const value of values ?? []) {
+		const separatorIndex = value.indexOf('=')
+		if (separatorIndex < 0 || separatorIndex === 0) {
+			return { value: args, error: `Invalid --arg value ${JSON.stringify(value)}: expected key=value.` }
+		}
+
+		args[value.slice(0, separatorIndex)] = value.slice(separatorIndex + 1)
+	}
+
+	return { value: args }
+}
+
+/** True when the parsed arg map should be sent or injected. */
+export const hasEvalArgs = (args: EvalArgMap): boolean => Object.keys(args).length > 0
+
+/** Prepend the reserved `args` binding only when eval arguments were supplied. */
+export const wrapExpressionWithArgs = (source: string, args: EvalArgMap): string => {
+	if (!hasEvalArgs(args)) {
+		return source
+	}
+
+	return `const args = Object.freeze(${JSON.stringify(args)});\n${source}`
 }
 
 // ---------------------------------------------------------------------------
