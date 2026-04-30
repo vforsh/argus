@@ -25,14 +25,14 @@ import { handle as postCodeGrep } from './postCodeGrep.js'
 import { handle as postCodeEdit } from './postCodeEdit.js'
 import { handle as postDomTree } from './postDomTree.js'
 import { handle as postDomInfo } from './postDomInfo.js'
-import { handle as postDomHover } from './postDomHover.js'
+import { route as postDomHoverRoute } from './postDomHover.js'
 import { route as postDomClickRoute } from './postDomClick.js'
 import { handle as postDomKeydown } from './postDomKeydown.js'
 import { handle as postDomAdd } from './postDomAdd.js'
 import { handle as postDomRemove } from './postDomRemove.js'
 import { handle as postDomModify } from './postDomModify.js'
 import { handle as postDomSetFile } from './postDomSetFile.js'
-import { handle as postDomFocus } from './postDomFocus.js'
+import { route as postDomFocusRoute } from './postDomFocus.js'
 import { handle as postDomFill } from './postDomFill.js'
 import { handle as postDomScroll } from './postDomScroll.js'
 import { handle as postDomScrollTo } from './postDomScrollTo.js'
@@ -85,14 +85,14 @@ export const watcherRoutes = [
 	defineRoute({ method: 'POST', path: '/code/edit', handler: postCodeEdit }),
 	defineRoute({ method: 'POST', path: '/dom/tree', handler: postDomTree }),
 	defineRoute({ method: 'POST', path: '/dom/info', handler: postDomInfo }),
-	defineRoute({ method: 'POST', path: '/dom/hover', handler: postDomHover }),
+	postDomHoverRoute,
 	postDomClickRoute,
 	defineRoute({ method: 'POST', path: '/dom/keydown', handler: postDomKeydown }),
 	defineRoute({ method: 'POST', path: '/dom/add', handler: postDomAdd }),
 	defineRoute({ method: 'POST', path: '/dom/remove', handler: postDomRemove }),
 	defineRoute({ method: 'POST', path: '/dom/modify', handler: postDomModify }),
 	defineRoute({ method: 'POST', path: '/dom/set-file', handler: postDomSetFile }),
-	defineRoute({ method: 'POST', path: '/dom/focus', handler: postDomFocus }),
+	postDomFocusRoute,
 	defineRoute({ method: 'POST', path: '/dom/fill', handler: postDomFill }),
 	defineRoute({ method: 'POST', path: '/dom/scroll', handler: postDomScroll }),
 	defineRoute({ method: 'POST', path: '/dom/scroll-to', handler: postDomScrollTo }),

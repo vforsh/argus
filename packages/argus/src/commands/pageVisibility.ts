@@ -1,55 +1,32 @@
 import type { VisibilityResponse } from '@vforsh/argus-core'
-import { createOutput, type Output } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
 
 /** Shared flags for `argus page show` / `argus page hide`. */
 export type PageVisibilityOptions = { json?: boolean }
 
 type PageVisibilityAction = 'show' | 'hide'
 
+/** Internal runner — the public `runPageShow`/`runPageHide` wrappers thread the action through as a positional arg. */
+const visibilityRunner = defineWatcherCommand<PageVisibilityOptions, VisibilityResponse, unknown, [action: PageVisibilityAction]>({
+	build: ([action]) => ({
+		path: '/visibility',
+		method: 'POST',
+		body: { action },
+		timeoutMs: 5_000,
+	}),
+	formatHuman: (data, { output, watcher, args: [action] }) => {
+		if (!data.attached) {
+			// Desired state is remembered in the watcher; it will apply on reattach.
+			const suffix = action === 'show' ? ' (will apply on reattach)' : ''
+			output.writeHuman(`page ${action} queued for ${watcher.id}${suffix}`)
+			return
+		}
+		output.writeHuman(`${data.state === 'shown' ? 'shown' : 'hidden'} ${watcher.id}`)
+	},
+})
+
 /** `argus page show <id>` — lock the page into shown+focused state. */
-export const runPageShow = async (id: string | undefined, options: PageVisibilityOptions): Promise<void> => {
-	await runPageVisibility(id, 'show', options)
-}
+export const runPageShow = (id: string | undefined, options: PageVisibilityOptions): Promise<void> => visibilityRunner(id, 'show', options)
 
 /** `argus page hide <id>` — release the visibility lock. */
-export const runPageHide = async (id: string | undefined, options: PageVisibilityOptions): Promise<void> => {
-	await runPageVisibility(id, 'hide', options)
-}
-
-const runPageVisibility = async (id: string | undefined, action: PageVisibilityAction, options: PageVisibilityOptions): Promise<void> => {
-	const output = createOutput(options)
-
-	const result = await requestWatcherAction<VisibilityResponse>(
-		{
-			id,
-			path: '/visibility',
-			method: 'POST',
-			body: { action },
-			timeoutMs: 5_000,
-		},
-		output,
-	)
-
-	if (!result) {
-		return
-	}
-
-	if (options.json) {
-		output.writeJson(result.data)
-		return
-	}
-
-	writeHumanResult(output, result.watcher.id, action, result.data)
-}
-
-const writeHumanResult = (output: Output, watcherId: string, action: PageVisibilityAction, data: VisibilityResponse): void => {
-	if (!data.attached) {
-		// Desired state is remembered in the watcher; it will apply on reattach.
-		const suffix = action === 'show' ? ' (will apply on reattach)' : ''
-		output.writeHuman(`page ${action} queued for ${watcherId}${suffix}`)
-		return
-	}
-
-	output.writeHuman(`${data.state === 'shown' ? 'shown' : 'hidden'} ${watcherId}`)
-}
+export const runPageHide = (id: string | undefined, options: PageVisibilityOptions): Promise<void> => visibilityRunner(id, 'hide', options)

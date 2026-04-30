@@ -1,6 +1,5 @@
 import type { DomHoverResponse } from '@vforsh/argus-core'
-import { createOutput } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
 import { describeElementTarget, requireElementTarget, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom hover command. */
@@ -13,16 +12,12 @@ export type DomHoverOptions = {
 }
 
 /** Execute the dom hover command for a watcher id. */
-export const runDomHover = async (id: string | undefined, options: DomHoverOptions): Promise<void> => {
-	const output = createOutput(options)
-	const target = requireElementTarget({ selector: options.selector, ref: options.ref }, output)
-	if (!target) {
-		return
-	}
+export const runDomHover = defineWatcherCommand<DomHoverOptions, DomHoverResponse>({
+	build: (_args, options, output) => {
+		const target = requireElementTarget({ selector: options.selector, ref: options.ref }, output)
+		if (!target) return null
 
-	const result = await requestWatcherAction<DomHoverResponse>(
-		{
-			id,
+		return {
 			path: '/dom/hover',
 			method: 'POST',
 			body: {
@@ -31,25 +26,15 @@ export const runDomHover = async (id: string | undefined, options: DomHoverOptio
 				all: options.all ?? false,
 				text: options.text,
 			},
-			timeoutMs: 30_000,
-		},
-		output,
-	)
-	if (!result) {
-		return
-	}
-	const successResp = result.data
-
-	if (options.json) {
-		output.writeJson(successResp)
-		return
-	}
-
-	if (successResp.matches === 0) {
-		writeNoElementFound(target.selector ?? target.ref!, output)
-		return
-	}
-
-	const label = successResp.hovered === 1 ? 'element' : 'elements'
-	output.writeHuman(`Hovered ${successResp.hovered} ${label} for ${describeElementTarget(target)}`)
-}
+		}
+	},
+	formatHuman: (response, { output, options }) => {
+		const target = { selector: options.selector, ref: options.ref }
+		if (response.matches === 0) {
+			writeNoElementFound(target.selector ?? target.ref!, output)
+			return
+		}
+		const label = response.hovered === 1 ? 'element' : 'elements'
+		output.writeHuman(`Hovered ${response.hovered} ${label} for ${describeElementTarget(target)}`)
+	},
+})

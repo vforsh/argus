@@ -1,6 +1,5 @@
 import type { DomRemoveResponse } from '@vforsh/argus-core'
-import { createOutput } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
 import { requireSelector, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom remove command. */
@@ -12,16 +11,12 @@ export type DomRemoveOptions = {
 }
 
 /** Execute the dom remove command for a watcher id. */
-export const runDomRemove = async (id: string | undefined, options: DomRemoveOptions): Promise<void> => {
-	const output = createOutput(options)
-	const selector = requireSelector(options, output)
-	if (!selector) {
-		return
-	}
+export const runDomRemove = defineWatcherCommand<DomRemoveOptions, DomRemoveResponse>({
+	build: (_args, options, output) => {
+		const selector = requireSelector(options, output)
+		if (!selector) return null
 
-	const result = await requestWatcherAction<DomRemoveResponse>(
-		{
-			id,
+		return {
 			path: '/dom/remove',
 			method: 'POST',
 			body: {
@@ -29,25 +24,14 @@ export const runDomRemove = async (id: string | undefined, options: DomRemoveOpt
 				all: options.all ?? false,
 				text: options.text,
 			},
-			timeoutMs: 30_000,
-		},
-		output,
-	)
-	if (!result) {
-		return
-	}
-	const successResp = result.data
-
-	if (options.json) {
-		output.writeJson(successResp)
-		return
-	}
-
-	if (successResp.matches === 0) {
-		writeNoElementFound(selector, output)
-		return
-	}
-
-	const label = successResp.removed === 1 ? 'element' : 'elements'
-	output.writeHuman(`Removed ${successResp.removed} ${label}`)
-}
+		}
+	},
+	formatHuman: (response, { output, options }) => {
+		if (response.matches === 0) {
+			writeNoElementFound(options.selector, output)
+			return
+		}
+		const label = response.removed === 1 ? 'element' : 'elements'
+		output.writeHuman(`Removed ${response.removed} ${label}`)
+	},
+})

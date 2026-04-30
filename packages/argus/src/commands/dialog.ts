@@ -1,88 +1,61 @@
 import type { DialogHandleResponse, DialogStatusResponse } from '@vforsh/argus-core'
-import { createOutput } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { defineWatcherCommand, type WatcherCommandContext, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 
 /** Shared JSON output flag for dialog commands. */
 export type DialogCommandOptions = {
 	json?: boolean
 }
 
-/** Execute `argus dialog status`. */
-export const runDialogStatus = async (id: string | undefined, options: DialogCommandOptions): Promise<void> => {
-	const output = createOutput(options)
-	const result = await requestWatcherAction<DialogStatusResponse>(
-		{
-			id,
-			path: '/dialog',
-			timeoutMs: 2_000,
-		},
-		output,
-	)
-
-	if (!result) {
-		return
-	}
-
-	if (options.json) {
-		output.writeJson(result.data)
-		return
-	}
-
-	const { dialog } = result.data
-	if (!dialog) {
-		output.writeHuman(`no active dialog on ${result.watcher.id}`)
-		return
-	}
-
-	for (const line of formatDialogLines(result.watcher.id, dialog)) {
-		output.writeHuman(line)
-	}
-}
-
-/** Execute `argus dialog accept`. */
-export const runDialogAccept = async (id: string | undefined, options: DialogCommandOptions): Promise<void> => {
-	await runDialogHandle(id, { action: 'accept' }, options)
-}
-
-/** Execute `argus dialog dismiss`. */
-export const runDialogDismiss = async (id: string | undefined, options: DialogCommandOptions): Promise<void> => {
-	await runDialogHandle(id, { action: 'dismiss' }, options)
-}
-
-/** Execute `argus dialog prompt`. */
-export const runDialogPrompt = async (id: string | undefined, text: string, options: DialogCommandOptions): Promise<void> => {
-	await runDialogHandle(id, { action: 'accept', promptText: text }, options)
-}
-
-type DialogHandleInput = {
+type DialogHandleBody = {
 	action: 'accept' | 'dismiss'
 	promptText?: string
 }
 
-const runDialogHandle = async (id: string | undefined, body: DialogHandleInput, options: DialogCommandOptions): Promise<void> => {
-	const output = createOutput(options)
-	const result = await requestWatcherAction<DialogHandleResponse>(
-		{
-			id,
-			path: '/dialog',
-			method: 'POST',
-			body,
-			timeoutMs: 5_000,
-		},
-		output,
-	)
+/** Execute `argus dialog status`. */
+export const runDialogStatus = defineWatcherCommand<DialogCommandOptions, DialogStatusResponse>({
+	build: () => ({ path: '/dialog', timeoutMs: 2_000 }),
+	formatHuman: ({ dialog }, { output, watcher }) => {
+		if (!dialog) {
+			output.writeHuman(`no active dialog on ${watcher.id}`)
+			return
+		}
+		for (const line of formatDialogLines(watcher.id, dialog)) {
+			output.writeHuman(line)
+		}
+	},
+})
 
-	if (!result) {
-		return
-	}
+/** Execute `argus dialog accept`. */
+export const runDialogAccept = defineWatcherCommand<DialogCommandOptions, DialogHandleResponse>({
+	build: () => buildDialogHandlePlan({ action: 'accept' }),
+	formatHuman: formatDialogHandle,
+})
 
-	if (options.json) {
-		output.writeJson(result.data)
-		return
-	}
+/** Execute `argus dialog dismiss`. */
+export const runDialogDismiss = defineWatcherCommand<DialogCommandOptions, DialogHandleResponse>({
+	build: () => buildDialogHandlePlan({ action: 'dismiss' }),
+	formatHuman: formatDialogHandle,
+})
 
-	const verb = result.data.action === 'accept' ? 'accepted' : 'dismissed'
-	output.writeHuman(`${verb} ${result.data.dialog.type} on ${result.watcher.id}`)
+/** Execute `argus dialog prompt`. The prompt text is passed as a positional CLI argument. */
+export const runDialogPrompt = defineWatcherCommand<DialogCommandOptions, DialogHandleResponse, unknown, [text: string]>({
+	build: ([text]) => buildDialogHandlePlan({ action: 'accept', promptText: text }),
+	formatHuman: formatDialogHandle,
+})
+
+const buildDialogHandlePlan = (body: DialogHandleBody): WatcherRequestPlan => ({
+	path: '/dialog',
+	method: 'POST',
+	body,
+	timeoutMs: 5_000,
+})
+
+function formatDialogHandle(
+	response: DialogHandleResponse,
+	{ output, watcher }: WatcherCommandContext<readonly unknown[], DialogCommandOptions>,
+): void {
+	const verb = response.action === 'accept' ? 'accepted' : 'dismissed'
+	output.writeHuman(`${verb} ${response.dialog.type} on ${watcher.id}`)
 }
 
 const formatDialogLines = (watcherId: string, dialog: NonNullable<DialogStatusResponse['dialog']>): string[] => {
