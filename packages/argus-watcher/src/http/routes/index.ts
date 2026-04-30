@@ -8,6 +8,9 @@ import { handle as getNetRequests } from './getNetRequests.js'
 import { handle as getNetRequest } from './getNetRequest.js'
 import { handle as getNetRequestBody } from './getNetRequestBody.js'
 import { handle as getNetTail } from './getNetTail.js'
+import { handle as getNetWebSockets } from './getNetWebSockets.js'
+import { handle as getNetWebSocketConnection } from './getNetWebSocketConnection.js'
+import { handle as getNetSse } from './getNetSse.js'
 import { handle as postNetClear } from './postNetClear.js'
 import { handle as getAuthCookies } from './getAuthCookies.js'
 import { handle as getAuthState } from './getAuthState.js'
@@ -63,6 +66,9 @@ export const watcherRoutes = [
 	defineRoute({ method: 'GET', path: '/net/request', handler: getNetRequest }),
 	defineRoute({ method: 'GET', path: '/net/request/body', handler: getNetRequestBody }),
 	defineRoute({ method: 'GET', path: '/net/tail', handler: getNetTail }),
+	defineRoute({ method: 'GET', path: '/net/ws', handler: getNetWebSockets }),
+	defineRoute({ method: 'GET', path: '/net/ws/connection', handler: getNetWebSocketConnection }),
+	defineRoute({ method: 'GET', path: '/net/sse', handler: getNetSse }),
 	defineRoute({ method: 'POST', path: '/net/clear', handler: postNetClear }),
 	defineRoute({ method: 'GET', path: '/auth/cookies', handler: getAuthCookies }),
 	defineRoute({ method: 'POST', path: '/auth/cookies/get', handler: handleCookieGet }),

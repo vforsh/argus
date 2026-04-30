@@ -1,5 +1,9 @@
 import type {
 	NetRequestBodyResponse,
+	NetSseSummary,
+	NetWebSocketDetail,
+	NetWebSocketFramePreview,
+	NetWebSocketSummary,
 	NetworkInitiatorStackFrame,
 	NetworkRequestDetail,
 	NetworkRequestSummary,
@@ -134,6 +138,65 @@ export const renderNetworkBodyText = (response: NetRequestBodyResponse): string 
 	}
 }
 
+export const formatWebSocketSummary = (connection: NetWebSocketSummary): string => {
+	const frames = `${connection.sentFrames} sent ${connection.receivedFrames} recv`
+	const bytes = formatBytes(connection.sentBytes + connection.receivedBytes) ?? '0 B'
+	const status = connection.status != null ? String(connection.status) : 'n/a'
+	const duration = formatMs(connection.durationMs) ?? 'open'
+	const close = connection.closeCode != null ? ` close=${connection.closeCode}${connection.closeReason ? ` ${connection.closeReason}` : ''}` : ''
+	return `${connection.id} ${connection.state} ${status} ${duration} ${frames} ${bytes}${close} ${connection.url}`
+}
+
+export const formatWebSocketDetail = (connection: NetWebSocketDetail): string[] => {
+	const lines = [
+		`${connection.state.toUpperCase()} ${connection.url}`,
+		`Argus id: ${connection.id}  requestId: ${connection.requestId}`,
+		`Status: ${connection.status ?? 'n/a'}${connection.statusText ? ` ${connection.statusText}` : ''}`,
+		`Frames: ${connection.sentFrames} sent (${formatBytes(connection.sentBytes) ?? '0 B'})  ${connection.receivedFrames} received (${formatBytes(connection.receivedBytes) ?? '0 B'})`,
+		`Duration: ${formatMs(connection.durationMs) ?? 'open'}`,
+	]
+
+	if (connection.closeCode != null || connection.closeReason) {
+		lines.push(`Close: ${connection.closeCode ?? 'n/a'}${connection.closeReason ? ` ${connection.closeReason}` : ''}`)
+	}
+	if (connection.errorText) {
+		lines.push(`Error: ${connection.errorText}`)
+	}
+	if (connection.documentUrl) {
+		lines.push(`Document: ${connection.documentUrl}`)
+	}
+	if (connection.frameId) {
+		lines.push(`Frame: ${connection.frameId}`)
+	}
+
+	const requestHeaders = formatHeaders('Request headers', connection.requestHeaders)
+	if (requestHeaders) {
+		lines.push(...requestHeaders)
+	}
+	const responseHeaders = formatHeaders('Response headers', connection.responseHeaders)
+	if (responseHeaders) {
+		lines.push(...responseHeaders)
+	}
+
+	if (connection.recentFrames.length > 0) {
+		lines.push('Recent frames:')
+		for (const frame of connection.recentFrames) {
+			lines.push(`  ${formatWebSocketFrame(frame)}`)
+		}
+	}
+
+	return lines
+}
+
+export const formatSseSummary = (stream: NetSseSummary): string => {
+	const status = stream.status != null ? String(stream.status) : 'n/a'
+	const duration = formatMs(stream.durationMs) ?? 'open'
+	const size = formatBytes(stream.encodedDataLength) ?? ''
+	const mime = stream.mimeType ?? ''
+	const events = `${stream.eventCount} events`
+	return [stream.id, stream.state, status, duration, size, events, mime, stream.url].filter(Boolean).join(' ')
+}
+
 const formatStatus = (request: NetworkRequestDetail): string => {
 	if (request.errorText) {
 		return request.status != null ? `${request.status} ERR` : 'ERR'
@@ -142,6 +205,14 @@ const formatStatus = (request: NetworkRequestDetail): string => {
 		return 'unknown'
 	}
 	return request.statusText ? `${request.status} ${request.statusText}` : String(request.status)
+}
+
+const formatWebSocketFrame = (frame: NetWebSocketFramePreview): string => {
+	const opcode = frame.opcode != null ? `opcode=${frame.opcode}` : 'opcode=n/a'
+	const size = formatBytes(frame.payloadLength) ?? '0 B'
+	const payload = frame.preview ? ` ${JSON.stringify(frame.preview)}` : ''
+	const encoding = frame.base64Encoded ? ' base64' : ''
+	return `${frame.direction} ${opcode} ${size}${encoding}${payload}`
 }
 
 const formatRemote = (address: string | null, port: number | null): string | null => {

@@ -131,3 +131,93 @@ export type NetRequestBodyResponse = {
 	body: string
 	base64Encoded: boolean
 }
+
+/** Direction for a captured WebSocket frame preview. */
+export type NetWebSocketFrameDirection = 'sent' | 'received'
+
+/** Bounded preview of a WebSocket frame payload. */
+export type NetWebSocketFramePreview = {
+	ts: number
+	direction: NetWebSocketFrameDirection
+	opcode: number | null
+	mask: boolean | null
+	payloadLength: number
+	preview: string | null
+	base64Encoded: boolean
+	error: string | null
+}
+
+/** Compact WebSocket connection record for `net ws`. */
+export type NetWebSocketSummary = {
+	id: number
+	ts: number
+	requestId: string
+	url: string
+	documentUrl: string | null
+	frameId: string | null
+	state: 'created' | 'open' | 'closed' | 'error'
+	status: number | null
+	statusText: string | null
+	createdAt: number
+	openedAt: number | null
+	closedAt: number | null
+	durationMs: number | null
+	sentFrames: number
+	receivedFrames: number
+	sentBytes: number
+	receivedBytes: number
+	closeCode: number | null
+	closeReason: string | null
+	errorText: string | null
+}
+
+/** Detailed WebSocket connection record for `net ws show`. */
+export type NetWebSocketDetail = NetWebSocketSummary & {
+	requestHeaders?: Record<string, string>
+	responseHeaders?: Record<string, string>
+	recentFrames: NetWebSocketFramePreview[]
+}
+
+/** Request-level SSE/EventSource visibility record. */
+export type NetSseSummary = {
+	id: number
+	ts: number
+	requestId: string
+	url: string
+	method: string
+	documentUrl: string | null
+	frameId: string | null
+	status: number | null
+	statusText: string | null
+	mimeType: string | null
+	state: 'open' | 'closed' | 'error'
+	openedAt: number
+	closedAt: number | null
+	durationMs: number | null
+	encodedDataLength: number | null
+	eventCount: number
+	lastEventId: string | null
+	lastEventName: string | null
+	lastDataPreview: string | null
+	errorText: string | null
+}
+
+/** Response payload for GET /net/ws. */
+export type NetWebSocketsResponse = {
+	ok: true
+	connections: NetWebSocketSummary[]
+	nextAfter: number
+}
+
+/** Response payload for GET /net/ws/connection. */
+export type NetWebSocketResponse = {
+	ok: true
+	connection: NetWebSocketDetail
+}
+
+/** Response payload for GET /net/sse. */
+export type NetSseResponse = {
+	ok: true
+	streams: NetSseSummary[]
+	nextAfter: number
+}

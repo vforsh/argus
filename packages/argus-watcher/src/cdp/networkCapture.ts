@@ -7,8 +7,10 @@ import type {
 	NetworkTimingPhases,
 } from '@vforsh/argus-core'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
+import type { RealtimeNetBuffer } from '../buffer/RealtimeNetBuffer.js'
 import type { CdpSessionHandle } from './connection.js'
 import { captureHeaders, mergeCapturedAuthHeaders, mergeCapturedHeaders, pickCapturedAuthHeaders, redactUrl } from './redaction.js'
+import { finalizeSseRequest, openSseRequest, registerRealtimeNetworkCapture } from './networkRealtimeCapture.js'
 
 type ResponseTimingPayload = {
 	dnsStart?: number
@@ -72,7 +74,11 @@ export type NetworkCaptureHandle = {
  * Subscribe to CDP network events and keep a compact summary plus a richer request record.
  * `/net` stays cheap, while `/net/request` can expose the high-signal debugging fields.
  */
-export const createNetworkCapture = (options: { session: CdpSessionHandle; buffer: NetBuffer }): NetworkCaptureHandle => {
+export const createNetworkCapture = (options: {
+	session: CdpSessionHandle
+	buffer: NetBuffer
+	realtimeBuffer?: RealtimeNetBuffer | null
+}): NetworkCaptureHandle => {
 	const inflight = new Map<string, InflightRequest>()
 
 	const getOrCreate = (requestId: string): InflightRequest => {
@@ -145,6 +151,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		}
 
 		options.buffer.add({ summary, detail, bodySessionId: record.bodySessionId })
+		finalizeSseRequest(options.realtimeBuffer, record)
 	}
 
 	options.session.onEvent('Network.requestWillBeSent', (params, meta) => {
@@ -253,6 +260,7 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		entry.fromServiceWorker = Boolean(payload.response?.fromServiceWorker) || entry.fromServiceWorker
 		entry.serviceWorkerResponseSource = normalizeString(payload.response?.serviceWorkerResponseSource) ?? entry.serviceWorkerResponseSource
 		entry.responseTiming = payload.response?.timing ?? entry.responseTiming
+		openSseRequest(options.realtimeBuffer, entry)
 	})
 
 	options.session.onEvent('Network.responseReceivedExtraInfo', (params, meta) => {
@@ -310,6 +318,12 @@ export const createNetworkCapture = (options: { session: CdpSessionHandle; buffe
 		entry.errorText = payload.errorText ?? entry.errorText
 		entry.endTime = pickNumber(payload.timestamp) ?? entry.endTime
 		finalize(requestId)
+	})
+
+	registerRealtimeNetworkCapture({
+		session: options.session,
+		buffer: options.realtimeBuffer,
+		getInflight: (requestId) => inflight.get(requestId) ?? null,
 	})
 
 	return {

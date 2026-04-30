@@ -33,6 +33,7 @@ const main = async (): Promise<void> => {
 
   Server:         ${serverUrl}
   Cross-origin:   ${servers.crossOriginUrl}
+  WebSocket:      ${servers.webSocketUrl}
   Watcher:        ${watcherResult.id} (port ${watcherResult.port})
   Chrome:         pid ${chromeResult.chromePid}, CDP port ${chromeResult.cdpPort}
 
@@ -45,6 +46,8 @@ const main = async (): Promise<void> => {
     argus dom info playground --selector '[data-testid="article-1"]'
     argus storage local list playground
     argus storage session list playground
+    argus net ws playground
+    argus net sse playground
     argus eval playground "window.iframeState" --iframe "#playground-iframe"
     argus eval playground "window.iframeState" --iframe "#cross-origin-iframe"
     argus screenshot playground

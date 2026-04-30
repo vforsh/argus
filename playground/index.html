@@ -105,6 +105,19 @@
 			<pre data-testid="network-output" id="network-output">—</pre>
 		</section>
 
+		<!-- ── Realtime Network ── -->
+		<section data-testid="realtime-network-section">
+			<h2>Realtime Network</h2>
+			<div class="btn-row">
+				<button data-testid="btn-ws-connect" onclick="connectWebSocket()">Connect WS</button>
+				<button data-testid="btn-ws-send" onclick="sendWebSocketMessage()">Send WS message</button>
+				<button data-testid="btn-ws-disconnect" onclick="disconnectWebSocket()">Disconnect WS</button>
+				<button data-testid="btn-sse-start" onclick="startSse()">Start SSE</button>
+				<button data-testid="btn-sse-stop" onclick="stopSse()">Stop SSE</button>
+			</div>
+			<pre data-testid="realtime-output" id="realtime-output">—</pre>
+		</section>
+
 		<!-- ── DOM ── -->
 		<section data-testid="dom-section">
 			<h2>DOM</h2>
@@ -392,6 +405,97 @@
 				} catch (err) {
 					output.textContent = `Error: ${err.message}`
 				}
+			}
+
+			// ── Realtime network helpers ──
+			let playgroundSocket = null
+			let playgroundSse = null
+			const realtimeState = {
+				ws: 'closed',
+				wsMessages: [],
+				sse: 'closed',
+				sseMessages: [],
+			}
+
+			function refreshRealtimeOutput() {
+				document.getElementById('realtime-output').textContent = JSON.stringify(realtimeState, null, 2)
+			}
+
+			function connectWebSocket() {
+				if (playgroundSocket && playgroundSocket.readyState <= WebSocket.OPEN) {
+					return
+				}
+				const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+				const wsHost = window.__WS_PORT ? `${location.hostname}:${window.__WS_PORT}` : location.host
+				playgroundSocket = new WebSocket(`${protocol}//${wsHost}/ws/echo?token=playground-secret`)
+				realtimeState.ws = 'connecting'
+				refreshRealtimeOutput()
+
+				playgroundSocket.addEventListener('open', () => {
+					realtimeState.ws = 'open'
+					refreshRealtimeOutput()
+				})
+				playgroundSocket.addEventListener('message', (event) => {
+					realtimeState.wsMessages.push({ direction: 'received', data: event.data, ts: Date.now() })
+					realtimeState.wsMessages = realtimeState.wsMessages.slice(-5)
+					refreshRealtimeOutput()
+				})
+				playgroundSocket.addEventListener('close', (event) => {
+					realtimeState.ws = `closed ${event.code}`
+					refreshRealtimeOutput()
+				})
+				playgroundSocket.addEventListener('error', () => {
+					realtimeState.ws = 'error'
+					refreshRealtimeOutput()
+				})
+			}
+
+			function sendWebSocketMessage() {
+				if (!playgroundSocket || playgroundSocket.readyState !== WebSocket.OPEN) {
+					connectWebSocket()
+					setTimeout(sendWebSocketMessage, 250)
+					return
+				}
+				const message = `playground-ws-${Date.now()}`
+				playgroundSocket.send(message)
+				realtimeState.wsMessages.push({ direction: 'sent', data: message, ts: Date.now() })
+				realtimeState.wsMessages = realtimeState.wsMessages.slice(-5)
+				refreshRealtimeOutput()
+			}
+
+			function disconnectWebSocket() {
+				playgroundSocket?.close(1000, 'playground done')
+				playgroundSocket = null
+			}
+
+			function startSse() {
+				if (playgroundSse) {
+					return
+				}
+				playgroundSse = new EventSource('/events?token=playground-secret')
+				realtimeState.sse = 'connecting'
+				refreshRealtimeOutput()
+
+				playgroundSse.addEventListener('open', () => {
+					realtimeState.sse = 'open'
+					refreshRealtimeOutput()
+				})
+				playgroundSse.addEventListener('playground', (event) => {
+					realtimeState.sseMessages.push({ event: 'playground', data: event.data, lastEventId: event.lastEventId, ts: Date.now() })
+					realtimeState.sseMessages = realtimeState.sseMessages.slice(-5)
+					refreshRealtimeOutput()
+				})
+				playgroundSse.addEventListener('error', () => {
+					realtimeState.sse = playgroundSse ? 'retrying' : 'closed'
+					refreshRealtimeOutput()
+				})
+			}
+
+			function stopSse() {
+				playgroundSse?.close()
+				playgroundSse = null
+				realtimeState.sse = 'closed'
+				refreshRealtimeOutput()
 			}
 
 			// ── Storage helpers ──

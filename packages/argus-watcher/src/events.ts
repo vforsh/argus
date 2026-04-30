@@ -68,6 +68,17 @@ export type NetRequestQuery = {
 	grep?: string
 	ignoreHosts?: string[]
 	ignorePatterns?: string[]
+	hosts?: string[]
+	methods?: string[]
+	statuses?: string[]
+	resourceTypes?: string[]
+	mimeTypes?: string[]
+	scope?: string
+	frame?: string
+	party?: string
+	failedOnly?: boolean
+	minDurationMs?: number
+	minTransferBytes?: number
 	origin?: string
 	domain?: string
 	includeValues?: boolean
@@ -96,6 +107,9 @@ export type HttpRequestEvent = {
 		| 'net/request/body'
 		| 'net/tail'
 		| 'net/clear'
+		| 'net/ws'
+		| 'net/ws/connection'
+		| 'net/sse'
 		| 'auth/cookies'
 		| 'auth/cookies/get'
 		| 'auth/cookies/set'

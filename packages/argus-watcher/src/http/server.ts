@@ -2,6 +2,7 @@ import http from 'node:http'
 import type { AuthStateCookie, DialogStatus, LogLevel, NetRequestBodyPart, WatcherRecord } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
+import type { RealtimeNetBuffer } from '../buffer/RealtimeNetBuffer.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 import type { ElementRefRegistry } from '../cdp/elementRefs.js'
 import type { RuntimeEditor } from '../cdp/editor.js'
@@ -25,6 +26,9 @@ export type HttpRequestEventMetadata = {
 		| 'net/request/body'
 		| 'net/tail'
 		| 'net/clear'
+		| 'net/ws'
+		| 'net/ws/connection'
+		| 'net/sse'
 		| 'auth/cookies'
 		| 'auth/cookies/get'
 		| 'auth/cookies/set'
@@ -113,6 +117,8 @@ export type HttpServerOptions = {
 	buffer: LogBuffer
 	/** Network buffer for /net endpoints. Null when net capture is disabled. */
 	netBuffer: NetBuffer | null
+	/** Realtime network buffer for WebSocket/SSE endpoints. Null when net capture is disabled. */
+	realtimeNetBuffer: RealtimeNetBuffer | null
 	getWatcher: () => WatcherRecord
 	getCdpStatus: () => Pick<CdpSourceStatus, 'attached' | 'target' | 'targetReady'>
 	getDialog: () => DialogStatus | null

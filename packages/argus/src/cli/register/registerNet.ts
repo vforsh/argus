@@ -6,8 +6,10 @@ import { runNet } from '../../commands/net.js'
 import { runNetBody } from '../../commands/netBody.js'
 import { runNetShow } from '../../commands/netShow.js'
 import { runNetSummary } from '../../commands/netSummary.js'
+import { runNetSse } from '../../commands/netSse.js'
 import { runNetTail } from '../../commands/netTail.js'
 import { runNetWatch } from '../../commands/netWatch.js'
+import { runNetWebSocket, runNetWebSocketShow } from '../../commands/netWebSocket.js'
 import { collectValues } from '../validation.js'
 
 const RELOAD_SELECTED_SCOPE_NOTE = '\n\nNote:\n  --reload does not support --scope selected or --frame selected.\n'
@@ -156,6 +158,37 @@ export function registerNet(program: Command): void {
 		)
 		.action(async (id, options) => {
 			await runNetSummary(id, resolveCommandOptions(options))
+		})
+
+	const ws = net.command('ws').argument('[id]', 'Watcher id to query').description('List WebSocket connections captured by a watcher')
+	ws.option('--after <id>', 'Only return connections after this id').option('--limit <count>', 'Maximum number of connections')
+	applyNetFilterOptions(ws, { includeSince: true })
+	ws.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus net ws app\n  $ argus net ws app --grep socket\n  $ argus net ws app --json\n  $ argus net ws show 1 app\n',
+		)
+		.action(async (id, options) => {
+			await runNetWebSocket(id, resolveCommandOptions(options))
+		})
+
+	ws.command('show')
+		.argument('<connection>', 'Argus WebSocket connection id or raw CDP requestId')
+		.argument('[id]', 'Watcher id to query')
+		.description('Show detailed information for one WebSocket connection')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText('after', '\nExamples:\n  $ argus net ws show 1 app\n  $ argus net ws show 90829.42 app --json\n')
+		.action(async (connection, id, options) => {
+			await runNetWebSocketShow(id, connection, resolveCommandOptions(options))
+		})
+
+	const sse = net.command('sse').argument('[id]', 'Watcher id to query').description('List SSE/EventSource streams captured by a watcher')
+	sse.option('--after <id>', 'Only return streams after this id').option('--limit <count>', 'Maximum number of streams')
+	applyNetFilterOptions(sse, { includeSince: true })
+	sse.option('--json', 'Output JSON for automation')
+		.addHelpText('after', '\nExamples:\n  $ argus net sse app\n  $ argus net sse app --mime text/event-stream\n  $ argus net sse app --json\n')
+		.action(async (id, options) => {
+			await runNetSse(id, resolveCommandOptions(options))
 		})
 }
 

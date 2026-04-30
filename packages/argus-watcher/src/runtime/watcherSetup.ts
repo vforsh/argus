@@ -4,6 +4,7 @@ import path from 'node:path'
 import Emittery from 'emittery'
 import { LogBuffer } from '../buffer/LogBuffer.js'
 import { NetBuffer } from '../buffer/NetBuffer.js'
+import { RealtimeNetBuffer } from '../buffer/RealtimeNetBuffer.js'
 import { WatcherFileLogger } from '../fileLogs/WatcherFileLogger.js'
 import { buildIgnoreMatcher } from '../cdp/ignoreList.js'
 import { createCdpSessionHandle } from '../cdp/connection.js'
@@ -29,6 +30,7 @@ export type NormalizedWatcherSetup = {
 	events: Emittery<ArgusWatcherEventMap>
 	buffer: LogBuffer
 	netBuffer: NetBuffer | null
+	realtimeNetBuffer: RealtimeNetBuffer | null
 	record: WatcherRecord
 	fileLogger: WatcherFileLogger | null
 	sessionHandle: ReturnType<typeof createCdpSessionHandle>
@@ -56,6 +58,7 @@ export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: s
 	const events = new Emittery<ArgusWatcherEventMap>()
 	const buffer = new LogBuffer(bufferSize)
 	const netBuffer = netEnabled ? new NetBuffer(bufferSize) : null
+	const realtimeNetBuffer = netEnabled ? new RealtimeNetBuffer(bufferSize) : null
 	const fileLogger = logsEnabled
 		? new WatcherFileLogger({
 				watcherId,
@@ -98,6 +101,7 @@ export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: s
 		events,
 		buffer,
 		netBuffer,
+		realtimeNetBuffer,
 		record,
 		fileLogger,
 		sessionHandle: createCdpSessionHandle(),

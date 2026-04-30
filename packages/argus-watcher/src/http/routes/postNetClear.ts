@@ -10,9 +10,10 @@ export const handle: RouteHandler = (_req, res, _url, ctx) => {
 
 	emitRequest(ctx, res, 'net/clear')
 
+	const realtimeCleared = ctx.realtimeNetBuffer?.clear() ?? 0
 	const response: NetClearResponse = {
 		ok: true,
-		cleared: ctx.netBuffer.clear(),
+		cleared: ctx.netBuffer.clear() + realtimeCleared,
 	}
 	respondJson(res, response)
 }

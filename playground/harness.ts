@@ -2,7 +2,7 @@ import path from 'node:path'
 import type { ChildProcess } from 'node:child_process'
 import type * as http from 'node:http'
 import { spawn } from 'node:child_process'
-import { startServer } from './serve.ts'
+import { startServer, startWebSocketServer } from './serve.ts'
 
 const ARGUS_BIN = path.resolve(import.meta.dirname!, '..', 'packages', 'argus', 'src', 'bin.ts')
 
@@ -14,8 +14,10 @@ export type SpawnedJsonResult<T> = {
 export type PlaygroundServers = {
 	mainServer: http.Server
 	crossOriginServer: http.Server
+	webSocketServer: ReturnType<typeof startWebSocketServer>
 	mainUrl: string
 	crossOriginUrl: string
+	webSocketUrl: string
 	close: () => Promise<void>
 }
 
@@ -24,17 +26,22 @@ export type PlaygroundServers = {
  * The returned `close()` shuts both down cleanly.
  */
 export const startPlaygroundServers = ({ port, crossOriginPort }: { port: number; crossOriginPort: number }): PlaygroundServers => {
-	const mainServer = startServer({ port, crossOriginPort })
+	const webSocketPort = crossOriginPort + 1
+	const mainServer = startServer({ port, crossOriginPort, webSocketPort })
 	const crossOriginServer = startServer({ port: crossOriginPort })
+	const webSocketServer = startWebSocketServer(webSocketPort)
 
 	return {
 		mainServer,
 		crossOriginServer,
+		webSocketServer,
 		mainUrl: `http://127.0.0.1:${port}`,
 		crossOriginUrl: `http://127.0.0.1:${crossOriginPort}`,
+		webSocketUrl: `ws://127.0.0.1:${webSocketPort}/ws/echo`,
 		close: async () => {
 			await closeServer(mainServer)
 			await closeServer(crossOriginServer)
+			await closeServer(webSocketServer)
 		},
 	}
 }

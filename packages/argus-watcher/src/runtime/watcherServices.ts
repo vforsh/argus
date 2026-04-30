@@ -32,7 +32,19 @@ export const createWatcherRuntimeServices = (
 	setup: NormalizedWatcherSetup,
 	callbacks: WatcherSourceCallbacks,
 ): WatcherRuntimeServices => {
-	const { sourceMode, chrome, artifactsBaseDir, netBuffer, sessionHandle, ignoreMatcher, stripUrlPrefixes, watcherId, host, record } = setup
+	const {
+		sourceMode,
+		chrome,
+		artifactsBaseDir,
+		netBuffer,
+		realtimeNetBuffer,
+		sessionHandle,
+		ignoreMatcher,
+		stripUrlPrefixes,
+		watcherId,
+		host,
+		record,
+	} = setup
 
 	if (sourceMode === 'extension') {
 		const sourceHandle = createExtensionSource({
@@ -57,7 +69,13 @@ export const createWatcherRuntimeServices = (
 
 		return {
 			sourceHandle,
-			networkCapture: netBuffer ? createNetworkCapture({ session: sourceHandle.pageSession ?? sourceHandle.session, buffer: netBuffer }) : null,
+			networkCapture: netBuffer
+				? createNetworkCapture({
+						session: sourceHandle.pageSession ?? sourceHandle.session,
+						buffer: netBuffer,
+						realtimeBuffer: realtimeNetBuffer,
+					})
+				: null,
 			traceRecorder: createTraceRecorder({ session: sourceHandle.session, artifactsDir: artifactsBaseDir }),
 			screenshotter: createScreenshotter({
 				session: sourceHandle.session,
@@ -90,7 +108,9 @@ export const createWatcherRuntimeServices = (
 
 	return {
 		sourceHandle,
-		networkCapture: netBuffer ? createNetworkCapture({ session: sessionHandle.session, buffer: netBuffer }) : null,
+		networkCapture: netBuffer
+			? createNetworkCapture({ session: sessionHandle.session, buffer: netBuffer, realtimeBuffer: realtimeNetBuffer })
+			: null,
 		traceRecorder: createTraceRecorder({ session: sessionHandle.session, artifactsDir: artifactsBaseDir }),
 		screenshotter: createScreenshotter({ session: sessionHandle.session, artifactsDir: artifactsBaseDir }),
 		runtimeEditor: createRuntimeEditor(sessionHandle.session),

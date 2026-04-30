@@ -75,8 +75,8 @@ export const parseNetRequestFilters = (searchParams: URLSearchParams, options: P
 			frameId: resolvedFrameId,
 			documentUrlKey: resolveDocumentUrlKey({ frame: frame.value ?? null, scope: resolvedScope, context }),
 			failedOnly: hasTruthyFlag(searchParams, 'failedOnly'),
-			minDurationMs: clampNumber(searchParams.get('minDurationMs'), undefined, 1),
-			minTransferBytes: clampNumber(searchParams.get('minTransferBytes'), undefined, 1),
+			minDurationMs: optionalClampNumber(searchParams.get('minDurationMs'), 1),
+			minTransferBytes: optionalClampNumber(searchParams.get('minTransferBytes'), 1),
 			scope: resolvedScope,
 			frame: frame.value ?? null,
 		},
@@ -218,3 +218,6 @@ const hasTruthyFlag = (searchParams: URLSearchParams, key: string): boolean => {
 	const normalized = value.trim().toLowerCase()
 	return normalized !== '' && normalized !== '0' && normalized !== 'false'
 }
+
+const optionalClampNumber = (value: string | null, min: number): number | undefined =>
+	value == null ? undefined : clampNumber(value, undefined, min)
