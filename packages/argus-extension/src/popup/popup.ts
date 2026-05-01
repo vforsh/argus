@@ -3,57 +3,13 @@
  * Displays tabs, target selection, and bridge/debugger health.
  */
 
-import { isLowInterestTarget } from './classify-target.js'
-
-type PopupTarget = {
-	type: 'page' | 'iframe'
-	frameId: string | null
-	parentFrameId: string | null
-	title: string
-	url: string
-}
-
-type TabInfo = {
-	tabId: number
-	url: string
-	title: string
-	faviconUrl?: string
-	attached: boolean
-	selectedFrameId?: string | null
-	targets?: PopupTarget[]
-	watcher: PopupWatcherStatus | null
-}
-
-type CurrentTargetSummary = {
-	tabId: number
-	type: 'page' | 'iframe'
-	title: string | null
-	url: string | null
-	targetId: string
-	frameId: string | null
-	attachedAt: number
-	targetReady: boolean | null
-}
+import { renderTargetList } from './target-list.js'
+import type { CurrentTargetSummary, PopupWatcherStatus, TabInfo } from './types.js'
 
 type StatusPayload = {
 	bridgeConnected: boolean
 	attachedTabs: Array<{ tabId: number; url: string; title: string }>
 	watchers: PopupWatcherStatus[]
-}
-
-type PopupWatcherStatus = {
-	tabId: number
-	bridgeConnected: boolean
-	nativeHostConnected: boolean
-	watcherReady: boolean
-	targetReady: boolean | null
-	targetState: 'ready' | 'rebinding' | 'not-selected'
-	watcherId: string | null
-	watcherHost: string | null
-	watcherPort: number | null
-	nativeHostPid: number | null
-	lastMessageAt: number | null
-	currentTarget: CurrentTargetSummary | null
 }
 
 type StatusResponse = {
@@ -73,7 +29,7 @@ type ActionResponse = {
 	error?: string
 }
 
-type PopupAction = 'attach' | 'detach' | 'focusTab' | 'selectTarget'
+type PopupAction = 'attach' | 'detach' | 'focusTab' | 'selectTarget' | 'hideTarget' | 'showTarget'
 type TabButtonAction = 'attach' | 'detach' | 'copy-info'
 
 const COPY_ICON = `
@@ -296,6 +252,9 @@ function bindTabInteractions(root: ParentNode): void {
 	root.querySelectorAll('[data-action="select-target"]').forEach((button) => {
 		button.addEventListener('click', handleTargetSelection)
 	})
+	root.querySelectorAll('[data-action="hide-target"], [data-action="show-target"]').forEach((button) => {
+		button.addEventListener('click', handleTargetVisibility)
+	})
 	root.querySelectorAll('.tab-item').forEach((item) => {
 		item.addEventListener('click', handleTabItemClick)
 	})
@@ -327,71 +286,6 @@ function renderIconActionButton(tabId: number, action: Exclude<TabButtonAction, 
 			<span class="tab-action-icon" aria-hidden="true">${icon}</span>
 		</button>
 	`
-}
-
-function renderTargetList(tab: TabInfo): string {
-	const targets = tab.targets ?? []
-	if (targets.length <= 1) return ''
-
-	const interesting: PopupTarget[] = []
-	const lowInterest: PopupTarget[] = []
-	for (const target of targets) {
-		if (isLowInterestTarget(target)) {
-			lowInterest.push(target)
-		} else {
-			interesting.push(target)
-		}
-	}
-
-	const interestingHtml = interesting.map((t) => renderTargetItem(tab, t)).join('')
-
-	if (lowInterest.length === 0) {
-		return `<div class="target-list">${interestingHtml}</div>`
-	}
-
-	const hasSelectedLowInterest = lowInterest.some((t) => isTargetSelected(tab.selectedFrameId, t.frameId))
-	const expanded = hasSelectedLowInterest ? 'open' : ''
-	const lowInterestHtml = lowInterest.map((t) => renderTargetItem(tab, t)).join('')
-
-	return `
-    <div class="target-list">
-      ${interestingHtml}
-      <details class="target-collapsed" ${expanded}>
-        <summary class="target-collapsed-toggle">
-          ${lowInterest.length} other iframe${lowInterest.length === 1 ? '' : 's'}
-        </summary>
-        <div class="target-collapsed-list">
-          ${lowInterestHtml}
-        </div>
-      </details>
-    </div>
-  `
-}
-
-function renderTargetItem(tab: TabInfo, target: PopupTarget): string {
-	const isSelected = isTargetSelected(tab.selectedFrameId, target.frameId)
-	const kindLabel = target.type === 'page' ? 'Page' : 'Iframe'
-	const title = target.title || kindLabel
-	const url = target.url || '(no url)'
-	return `
-    <button
-      class="target-item ${isSelected ? 'selected' : ''}"
-      data-action="select-target"
-      data-tab-id="${tab.tabId}"
-      data-frame-id="${escapeHtml(target.frameId ?? '')}"
-      type="button"
-    >
-      <span class="target-kind">${kindLabel}</span>
-      <span class="target-meta">
-        <span class="target-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
-        <span class="target-url" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
-      </span>
-    </button>
-  `
-}
-
-function isTargetSelected(selectedFrameId: string | null | undefined, targetFrameId: string | null): boolean {
-	return selectedFrameId !== undefined && (selectedFrameId ?? null) === (targetFrameId ?? null)
 }
 
 async function handleTabItemClick(event: Event): Promise<void> {
@@ -467,6 +361,24 @@ async function handleTargetSelection(event: Event): Promise<void> {
 		await refreshTabs(true)
 	} catch (error) {
 		showError(error instanceof Error ? error.message : 'Target selection failed')
+		button.disabled = false
+	}
+}
+
+async function handleTargetVisibility(event: Event): Promise<void> {
+	event.stopPropagation()
+	const button = event.currentTarget as HTMLButtonElement
+	const tabId = getTabId(button)
+	const frameId = button.dataset.frameId || null
+	const action = button.dataset.action === 'show-target' ? 'showTarget' : 'hideTarget'
+
+	button.disabled = true
+
+	try {
+		await runPopupAction(action, { tabId, frameId })
+		await refreshTabs(true)
+	} catch (error) {
+		showError(error instanceof Error ? error.message : action === 'hideTarget' ? 'Target hide failed' : 'Target restore failed')
 		button.disabled = false
 	}
 }

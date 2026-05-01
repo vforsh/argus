@@ -11,6 +11,7 @@ import {
 	TargetSelectionHistoryStore,
 	matchRememberedIframeTarget,
 } from './target-selection-history.js'
+import { TargetVisibilityHistoryStore, matchesHiddenTarget } from './target-visibility-history.js'
 import { listBrowserTabs } from './tab-list.js'
 
 const debuggerManager = new DebuggerManager()
@@ -19,6 +20,7 @@ const selectedFrameByTabId = new Map<number, string | null>()
 // Re-try a remembered iframe while Chrome is still populating frame metadata for a fresh attach.
 const pendingRememberedTargetByTabId = new Map<number, RememberedTargetSelection>()
 const targetSelectionHistory = new TargetSelectionHistoryStore()
+const targetVisibilityHistory = new TargetVisibilityHistoryStore()
 const recentEvents: PopupEvent[] = []
 const MAX_RECENT_EVENTS = 8
 const REMEMBERED_TARGET_RETRY_EVENTS = new Set(['Page.frameAttached', 'Page.frameDetached', 'Page.frameNavigated'])
@@ -76,6 +78,7 @@ type PopupStatusPayload = {
 
 type PopupTabWithTargets = Awaited<ReturnType<typeof getTabsForPopup>>[number] & {
 	targets: PopupTarget[]
+	hiddenTargets: PopupTarget[]
 	selectedFrameId?: string | null
 	watcher: PopupWatcherStatus | null
 }
@@ -217,6 +220,22 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 				setSelectedFrame(tabId, frameId)
 				await rememberTargetSelection(tabId, target)
 				recordEvent('info', 'popup', `Selected ${frameId ? `iframe ${frameId}` : 'page'} on tab ${tabId}`)
+				return { success: true }
+			}
+
+			case 'hideTarget': {
+				const tabId = requireTabId(message)
+				const target = getRequiredIframeTarget(tabId, message.frameId ?? null)
+				await hideTarget(tabId, target)
+				recordEvent('info', 'popup', `Hid iframe ${target.frameId} on tab ${tabId}`)
+				return { success: true }
+			}
+
+			case 'showTarget': {
+				const tabId = requireTabId(message)
+				const target = getRequiredIframeTarget(tabId, message.frameId ?? null)
+				await showTarget(tabId, target)
+				recordEvent('info', 'popup', `Restored iframe ${target.frameId} on tab ${tabId}`)
 				return { success: true }
 			}
 
@@ -384,15 +403,37 @@ function buildWatcherStatus(tabId: number, session: TabBridgeSession): PopupWatc
 
 async function getTabsWithTargets(): Promise<PopupTabWithTargets[]> {
 	const tabs = await getTabsForPopup()
-	return tabs.map((tab) => {
-		const session = bridgeSessions.get(tab.tabId)
-		return {
-			...tab,
-			targets: tab.attached ? getPopupTargets(tab.tabId) : [],
-			selectedFrameId: getSelectedFrameId(tab.tabId),
-			watcher: session ? buildWatcherStatus(tab.tabId, session) : null,
-		}
-	})
+	return await Promise.all(
+		tabs.map(async (tab) => {
+			const session = bridgeSessions.get(tab.tabId)
+			const { visibleTargets, hiddenTargets } = await getPopupTargetVisibility(tab.tabId, tab.attached)
+			return {
+				...tab,
+				targets: visibleTargets,
+				hiddenTargets,
+				selectedFrameId: getSelectedFrameId(tab.tabId),
+				watcher: session ? buildWatcherStatus(tab.tabId, session) : null,
+			}
+		}),
+	)
+}
+
+async function getPopupTargetVisibility(tabId: number, attached: boolean): Promise<{ visibleTargets: PopupTarget[]; hiddenTargets: PopupTarget[] }> {
+	const targets = attached ? getPopupTargets(tabId) : []
+	const pageUrl = getPageUrlForTab(tabId)
+	if (!pageUrl) {
+		return { visibleTargets: targets, hiddenTargets: [] }
+	}
+
+	const hiddenTargets = await filterHiddenTargets(pageUrl, targets)
+	if (hiddenTargets.length === 0) {
+		return { visibleTargets: targets, hiddenTargets }
+	}
+
+	return {
+		visibleTargets: targets.filter((target) => !hiddenTargets.includes(target)),
+		hiddenTargets,
+	}
 }
 
 function createWatcherStatus(
@@ -531,6 +572,15 @@ function getPopupTarget(tabId: number, frameId: string | null): PopupTarget | nu
 	return getPopupTargets(tabId).find((target) => (target.frameId ?? null) === frameId) ?? null
 }
 
+function getRequiredIframeTarget(tabId: number, frameId: string | null): PopupTarget {
+	const target = getPopupTarget(tabId, frameId)
+	if (!target || target.type !== 'iframe' || !target.frameId) {
+		throw new Error(`Unknown iframe target for tab ${tabId}`)
+	}
+
+	return target
+}
+
 function getPageUrlForTab(tabId: number): string | null {
 	return getPopupTarget(tabId, null)?.url ?? debuggerManager.getTarget(tabId)?.url ?? null
 }
@@ -542,6 +592,44 @@ async function rememberTargetSelection(tabId: number, target: PopupTarget): Prom
 	}
 
 	await targetSelectionHistory.remember(pageUrl, toSelectionTarget(target))
+}
+
+async function hideTarget(tabId: number, target: PopupTarget): Promise<void> {
+	const pageUrl = getPageUrlForTab(tabId)
+	if (!pageUrl) {
+		return
+	}
+
+	await targetVisibilityHistory.hide(pageUrl, toSelectionTarget(target))
+	if (getSelectedFrameId(tabId) !== target.frameId) {
+		return
+	}
+
+	const session = bridgeSessions.get(tabId)
+	session?.selectTarget(null)
+	setSelectedFrame(tabId, null)
+	const pageTarget = getPopupTarget(tabId, null)
+	if (pageTarget) {
+		await rememberTargetSelection(tabId, pageTarget)
+	}
+}
+
+async function showTarget(tabId: number, target: PopupTarget): Promise<void> {
+	const pageUrl = getPageUrlForTab(tabId)
+	if (!pageUrl) {
+		return
+	}
+
+	await targetVisibilityHistory.show(pageUrl, toSelectionTarget(target))
+}
+
+async function filterHiddenTargets(pageUrl: string, targets: PopupTarget[]): Promise<PopupTarget[]> {
+	const hiddenTargets = await targetVisibilityHistory.getHiddenTargets(pageUrl)
+	if (hiddenTargets.length === 0) {
+		return []
+	}
+
+	return targets.filter((target) => hiddenTargets.some((hiddenTarget) => matchesHiddenTarget(hiddenTarget, toSelectionTarget(target))))
 }
 
 async function prepareRememberedTargetSelection(tabId: number): Promise<void> {

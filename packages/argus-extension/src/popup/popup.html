@@ -424,21 +424,74 @@
 				align-items: flex-start;
 				gap: 10px;
 				width: 100%;
-				padding: 8px 10px;
+				padding: 0;
 				border: 1px solid #dce3ea;
 				border-radius: 6px;
 				background: #fff;
-				cursor: pointer;
 				text-align: left;
+				min-width: 0;
+				overflow: hidden;
 			}
 
-			.target-item:hover {
+			.target-item:hover,
+			.target-item:focus-within {
 				border-color: #90caf9;
 			}
 
 			.target-item.selected {
 				background: #e3f2fd;
 				border-color: #64b5f6;
+			}
+
+			.target-select-action {
+				display: flex;
+				align-items: flex-start;
+				gap: 10px;
+				flex: 1;
+				min-width: 0;
+				padding: 8px 10px;
+				border: 0;
+				background: transparent;
+				color: inherit;
+				cursor: pointer;
+				text-align: left;
+			}
+
+			.target-select-action:disabled {
+				cursor: default;
+			}
+
+			.target-visibility-action {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				align-self: stretch;
+				width: 34px;
+				min-width: 34px;
+				border: 0;
+				border-left: 1px solid transparent;
+				border-radius: 0;
+				background: transparent;
+				color: #71808f;
+				cursor: pointer;
+			}
+
+			.target-visibility-action:hover:not(:disabled),
+			.target-visibility-action:focus-visible:not(:disabled) {
+				background: #eef4fb;
+				border-left-color: #d2e1f2;
+				color: #1b5e92;
+			}
+
+			.target-visibility-action:disabled {
+				cursor: default;
+				opacity: 0.45;
+			}
+
+			.target-visibility-action svg {
+				width: 15px;
+				height: 15px;
+				stroke: currentColor;
 			}
 
 			.target-kind {
@@ -524,6 +577,20 @@
 			.target-collapsed-list .target-item:hover,
 			.target-collapsed-list .target-item.selected {
 				opacity: 1;
+			}
+
+			.target-hidden-list .target-collapsed-list .target-item {
+				opacity: 0.72;
+			}
+
+			.target-hidden-list .target-collapsed-list .target-item:hover,
+			.target-hidden-list .target-collapsed-list .target-item:focus-within {
+				opacity: 1;
+			}
+
+			.target-hidden-list .target-item {
+				background: #f8fafc;
+				border-style: dashed;
 			}
 
 			.empty-state {
