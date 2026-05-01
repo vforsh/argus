@@ -138,6 +138,7 @@ export async function stopProcess(proc: ChildProcess | undefined, options: StopP
 
 		forceTimer = setTimeout(() => {
 			if (proc.exitCode !== null) {
+				settle(resolve)
 				return
 			}
 
