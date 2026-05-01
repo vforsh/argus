@@ -41,19 +41,26 @@ type PopupTarget = {
 type PopupWatcherStatus = {
 	tabId: number
 	bridgeConnected: boolean
+	nativeHostConnected: boolean
+	watcherReady: boolean
+	targetReady: boolean | null
+	targetState: 'ready' | 'rebinding' | 'not-selected'
 	watcherId: string | null
 	watcherHost: string | null
 	watcherPort: number | null
 	nativeHostPid: number | null
 	lastMessageAt: number | null
-	currentTarget: {
-		type: 'page' | 'iframe'
-		title: string | null
-		url: string | null
-		targetId: string
-		frameId: string | null
-		attachedAt: number
-	} | null
+	currentTarget: PopupCurrentTarget | null
+}
+
+type PopupCurrentTarget = {
+	type: 'page' | 'iframe'
+	title: string | null
+	url: string | null
+	targetId: string
+	frameId: string | null
+	attachedAt: number
+	targetReady: boolean | null
 }
 
 type PopupStatusPayload = {
@@ -369,6 +376,7 @@ function buildWatcherStatus(tabId: number, session: TabBridgeSession): PopupWatc
 					targetId: targetInfo.targetId,
 					frameId: parsedTarget.frameId,
 					attachedAt: targetInfo.attachedAt,
+					targetReady: targetInfo.targetReady,
 				}
 			: null,
 	)
@@ -393,9 +401,14 @@ function createWatcherStatus(
 	watcherInfo: ReturnType<TabBridgeSession['getWatcherInfo']>,
 	currentTarget: PopupWatcherStatus['currentTarget'],
 ): PopupWatcherStatus {
+	const readiness = buildWatcherReadiness(tabId, session, watcherInfo, currentTarget)
 	return {
 		tabId,
-		bridgeConnected: session.isConnected(),
+		bridgeConnected: readiness.nativeHostConnected,
+		nativeHostConnected: readiness.nativeHostConnected,
+		watcherReady: readiness.watcherReady,
+		targetReady: readiness.targetReady,
+		targetState: readiness.targetState,
 		watcherId: watcherInfo?.watcherId ?? null,
 		watcherHost: watcherInfo?.watcherHost ?? null,
 		watcherPort: watcherInfo?.watcherPort ?? null,
@@ -403,6 +416,42 @@ function createWatcherStatus(
 		lastMessageAt: session.getLastMessageAt(),
 		currentTarget,
 	}
+}
+
+function buildWatcherReadiness(
+	tabId: number,
+	session: TabBridgeSession,
+	watcherInfo: ReturnType<TabBridgeSession['getWatcherInfo']>,
+	currentTarget: PopupWatcherStatus['currentTarget'],
+): Pick<PopupWatcherStatus, 'nativeHostConnected' | 'watcherReady' | 'targetReady' | 'targetState'> {
+	const nativeHostConnected = session.isConnected()
+	const watcherReady = nativeHostConnected && Boolean(watcherInfo?.watcherId && watcherInfo.watcherHost && watcherInfo.watcherPort != null)
+	const targetReady = currentTarget?.targetReady ?? getTargetReadiness(tabId, currentTarget)
+
+	return {
+		nativeHostConnected,
+		watcherReady,
+		targetReady,
+		targetState: targetReady == null ? 'not-selected' : targetReady ? 'ready' : 'rebinding',
+	}
+}
+
+/**
+ * The watcher can be connected while a remembered iframe is still rebinding after reload.
+ * Treat the extension's live frame map as the source of truth for whether frame-scoped
+ * commands have a concrete execution target again.
+ */
+function getTargetReadiness(tabId: number, target: PopupWatcherStatus['currentTarget']): boolean | null {
+	if (!target) {
+		return null
+	}
+
+	if (!target.frameId) {
+		return debuggerManager.isAttached(tabId)
+	}
+
+	const frame = debuggerManager.getFrames(tabId).find((candidate) => candidate.frameId === target.frameId)
+	return Boolean(frame?.sessionId)
 }
 
 async function getTabsForPopup(): Promise<

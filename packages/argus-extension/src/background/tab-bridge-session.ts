@@ -15,6 +15,7 @@ export type TabTargetInfo = {
 	title: string | null
 	url: string | null
 	attachedAt: number
+	targetReady: boolean | null
 }
 
 export type TabBridgeSessionEvents = {
@@ -134,6 +135,7 @@ export class TabBridgeSession {
 				title: message.title,
 				url: message.url,
 				attachedAt: message.attachedAt,
+				targetReady: message.targetReady ?? null,
 			}
 			this.events.onTargetInfo?.(this.targetInfo)
 		}

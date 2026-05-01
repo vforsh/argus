@@ -32,6 +32,7 @@ type CurrentTargetSummary = {
 	targetId: string
 	frameId: string | null
 	attachedAt: number
+	targetReady: boolean | null
 }
 
 type StatusPayload = {
@@ -43,6 +44,10 @@ type StatusPayload = {
 type PopupWatcherStatus = {
 	tabId: number
 	bridgeConnected: boolean
+	nativeHostConnected: boolean
+	watcherReady: boolean
+	targetReady: boolean | null
+	targetState: 'ready' | 'rebinding' | 'not-selected'
 	watcherId: string | null
 	watcherHost: string | null
 	watcherPort: number | null
@@ -102,7 +107,8 @@ const availableContent = document.getElementById('availableContent') as HTMLDivE
 const attachedCount = document.getElementById('attachedCount') as HTMLSpanElement
 const errorBanner = document.getElementById('errorBanner') as HTMLDivElement
 const healthSummary = document.getElementById('healthSummary') as HTMLSpanElement
-const healthBridge = document.getElementById('healthBridge') as HTMLDivElement
+const healthNativeHost = document.getElementById('healthNativeHost') as HTMLDivElement
+const healthWatcherReady = document.getElementById('healthWatcherReady') as HTMLDivElement
 const healthWatcherId = document.getElementById('healthWatcherId') as HTMLDivElement
 const healthAttachedCount = document.getElementById('healthAttachedCount') as HTMLDivElement
 const healthSelectedTarget = document.getElementById('healthSelectedTarget') as HTMLDivElement
@@ -162,30 +168,71 @@ function showError(message: string | null): void {
 }
 
 function updateHealth(status: StatusPayload | undefined, watcher: PopupWatcherStatus | null): void {
-	const connected = watcher?.bridgeConnected ?? status?.bridgeConnected ?? false
 	const target = watcher?.currentTarget ?? null
 	const tabCount = status?.attachedTabs.length ?? 0
+	const nativeHostConnected = watcher?.nativeHostConnected ?? status?.bridgeConnected ?? false
+	const watcherReady = watcher?.watcherReady ?? false
+	const targetState = watcher?.targetState ?? 'not-selected'
 
-	healthSummary.textContent = buildHealthSummaryText(connected, watcher?.watcherId ?? null, tabCount)
-	healthBridge.textContent = connected ? 'Connected' : 'Disconnected'
-	healthBridge.classList.toggle('connected', connected)
-	healthBridge.classList.toggle('disconnected', !connected)
+	healthSummary.textContent = buildHealthSummaryText({
+		nativeHostConnected,
+		watcherReady,
+		targetState,
+		watcherId: watcher?.watcherId ?? null,
+		tabCount,
+	})
+	setHealthValueState(healthNativeHost, nativeHostConnected ? 'Connected' : 'Disconnected', nativeHostConnected ? 'connected' : 'disconnected')
+	setHealthValueState(healthWatcherReady, watcherReady ? 'Ready' : 'Not ready', watcherReady ? 'connected' : 'disconnected')
 	healthWatcherId.textContent = watcher?.watcherId ?? '-'
 	healthAttachedCount.textContent = String(tabCount)
-	healthSelectedTarget.textContent = target ? `${target.type === 'page' ? 'Page' : 'Iframe'} ${target.targetId}` : '-'
-	healthLastMessage.textContent = formatTimestamp(watcher?.lastMessageAt ?? null)
+	setHealthValueState(healthSelectedTarget, formatTargetState(target, targetState), getTargetStateClass(targetState))
+	healthLastMessage.textContent = formatRelativeTimestamp(watcher?.lastMessageAt ?? null)
 	healthPid.textContent = watcher?.nativeHostPid ? String(watcher.nativeHostPid) : '-'
 	const hasWatchers = latestWatchers.length > 0
 	copyAllButton.disabled = !hasWatchers
 	detachAllButton.disabled = !hasWatchers
 }
 
-function buildHealthSummaryText(connected: boolean, watcherId: string | null, tabCount: number): string {
+function buildHealthSummaryText(input: {
+	nativeHostConnected: boolean
+	watcherReady: boolean
+	targetState: PopupWatcherStatus['targetState']
+	watcherId: string | null
+	tabCount: number
+}): string {
 	const parts: string[] = []
-	if (watcherId) parts.push(watcherId)
-	parts.push(connected ? 'Connected' : 'Disconnected')
-	if (tabCount > 0) parts.push(`${tabCount} tab${tabCount === 1 ? '' : 's'}`)
+	if (input.watcherId) parts.push(input.watcherId)
+	parts.push(input.nativeHostConnected ? 'Host connected' : 'Host disconnected')
+	parts.push(input.watcherReady ? 'Watcher ready' : 'Watcher not ready')
+	if (input.targetState === 'rebinding') parts.push('Target rebinding')
+	if (input.tabCount > 0) parts.push(`${input.tabCount} tab${input.tabCount === 1 ? '' : 's'}`)
 	return parts.join(' · ')
+}
+
+function setHealthValueState(element: HTMLElement, text: string, stateClass: 'connected' | 'disconnected' | 'warning' | null): void {
+	element.textContent = text
+	element.classList.toggle('connected', stateClass === 'connected')
+	element.classList.toggle('disconnected', stateClass === 'disconnected')
+	element.classList.toggle('warning', stateClass === 'warning')
+}
+
+function formatTargetState(target: CurrentTargetSummary | null, state: PopupWatcherStatus['targetState']): string {
+	if (!target || state === 'not-selected') {
+		return '-'
+	}
+
+	const label = target.type === 'page' ? 'Page' : 'Iframe'
+	return state === 'ready' ? `${label} ready` : `${label} rebinding`
+}
+
+function getTargetStateClass(state: PopupWatcherStatus['targetState']): 'connected' | 'disconnected' | 'warning' | null {
+	if (state === 'ready') {
+		return 'connected'
+	}
+	if (state === 'rebinding') {
+		return 'warning'
+	}
+	return null
 }
 
 function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
@@ -483,16 +530,28 @@ async function refreshTabs(forceRender = false): Promise<void> {
 	}
 }
 
-function formatTimestamp(timestamp: number | null): string {
+function formatRelativeTimestamp(timestamp: number | null): string {
 	if (!timestamp) {
 		return '-'
 	}
 
-	return new Date(timestamp).toLocaleTimeString([], {
-		hour: '2-digit',
-		minute: '2-digit',
-		second: '2-digit',
-	})
+	const elapsedMs = Math.max(0, Date.now() - timestamp)
+	if (elapsedMs < 1000) {
+		return 'Just now'
+	}
+
+	const elapsedSeconds = Math.floor(elapsedMs / 1000)
+	if (elapsedSeconds < 60) {
+		return `${elapsedSeconds}s ago`
+	}
+
+	const elapsedMinutes = Math.floor(elapsedSeconds / 60)
+	if (elapsedMinutes < 60) {
+		return `${elapsedMinutes}m ago`
+	}
+
+	const elapsedHours = Math.floor(elapsedMinutes / 60)
+	return `${elapsedHours}h ago`
 }
 
 async function copyWatcherInfo(tabId: number, button: HTMLButtonElement): Promise<void> {

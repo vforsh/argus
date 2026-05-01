@@ -374,6 +374,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		if (state.activeAttachedAt == null) {
 			state.activeAttachedAt = Date.now()
 		}
+		const targetReady = isTargetReady(session.tabId)
 		emitStatus(target, null)
 		messaging.send({
 			type: 'target_info',
@@ -381,6 +382,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			title: target.title,
 			url: target.url,
 			attachedAt: state.activeAttachedAt,
+			targetReady,
 		})
 		events.onTargetChanged?.(session.handle, target)
 	}

@@ -201,6 +201,10 @@
 				color: #c62828;
 			}
 
+			.health-value.warning {
+				color: #b26a00;
+			}
+
 			.health-panel {
 				border: none;
 			}
@@ -630,7 +634,11 @@
 					<div class="health-grid">
 						<div class="health-item">
 							<div class="health-label">Native Host</div>
-							<div class="health-value" id="healthBridge">Unknown</div>
+							<div class="health-value" id="healthNativeHost">Unknown</div>
+						</div>
+						<div class="health-item">
+							<div class="health-label">Watcher HTTP</div>
+							<div class="health-value" id="healthWatcherReady">Unknown</div>
 						</div>
 						<div class="health-item">
 							<div class="health-label">Watcher ID</div>

@@ -70,6 +70,7 @@ export type TargetInfoMessage = {
 	title: string | null
 	url: string | null
 	attachedAt: number
+	targetReady?: boolean | null
 }
 
 export type TabInfo = {
