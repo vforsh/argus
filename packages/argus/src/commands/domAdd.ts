@@ -1,9 +1,9 @@
 import type { DomAddResponse, DomInsertPosition } from '@vforsh/argus-core'
 import { readFile } from 'node:fs/promises'
-import { createOutput } from '../output/io.js'
 import { formatError } from '../cli/parse.js'
+import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import type { Output } from '../output/io.js'
 import { resolvePath } from '../utils/paths.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
 import { requireSelector, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom add command. */
@@ -22,92 +22,85 @@ export type DomAddOptions = {
 }
 
 /** Execute the dom add command for a watcher id. */
-export const runDomAdd = async (id: string | undefined, options: DomAddOptions): Promise<void> => {
-	const output = createOutput(options)
+export const runDomAdd = defineWatcherCommand<DomAddOptions, DomAddResponse>({
+	build: (_args, options, output) => buildDomAddPlan(options, output),
+	formatHuman: (successResp, { output, options, watcher }) => {
+		const selector = options.selector
+		const position = normalizePosition(options.position)
+		if (successResp.matches === 0) {
+			writeNoElementFound(selector, output, `Hint: run \`argus dom tree ${watcher.id} --selector "${selector}" --all\``)
+			return
+		}
+
+		const label = successResp.inserted === 1 ? 'element' : 'elements'
+		const prefix = watcher.id ? `${watcher.id}: ` : ''
+		output.writeHuman(`${prefix}Inserted at ${successResp.inserted}/${successResp.matches} ${label} (${position}) for selector: ${selector}`)
+	},
+})
+
+const buildDomAddPlan = async (options: DomAddOptions, output: Output): Promise<WatcherRequestPlan | null> => {
 	const selector = requireSelector(options, output)
 	if (!selector) {
-		return
+		return null
 	}
 
 	const position = normalizePosition(options.position)
 	if (!position) {
 		output.writeWarn('--position must be one of: beforebegin, afterbegin, beforeend, afterend (aliases: before, after, prepend, append)')
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	if (options.all && (options.nth != null || options.first)) {
 		output.writeWarn('Cannot combine --all with --nth or --first')
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	if (options.nth != null && options.first) {
 		output.writeWarn('Cannot combine --nth with --first')
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	const nth = options.first ? 0 : parseNonNegativeInt(options.nth, '--nth', output)
 	if (options.nth != null && nth == null) {
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	const expect = parseNonNegativeInt(options.expect, '--expect', output)
 	if (options.expect != null && expect == null) {
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	const html = await resolveHtmlInput(options, output)
 	if (html == null) {
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	if (!html) {
 		output.writeWarn('HTML content is empty. Provide non-empty --html, --html-file, or --html-stdin input.')
 		process.exitCode = 2
-		return
+		return null
 	}
 
-	const result = await requestWatcherAction<DomAddResponse>(
-		{
-			id,
-			path: '/dom/add',
-			method: 'POST',
-			body: {
-				selector,
-				html,
-				position,
-				all: options.all ?? false,
-				nth,
-				expect,
-				text: options.text ?? false,
-			},
-			timeoutMs: 30_000,
+	return {
+		path: '/dom/add',
+		method: 'POST',
+		body: {
+			selector,
+			html,
+			position,
+			all: options.all ?? false,
+			nth,
+			expect,
+			text: options.text ?? false,
 		},
-		output,
-	)
-	if (!result) {
-		return
+		timeoutMs: 30_000,
 	}
-	const successResp = result.data
-
-	if (options.json) {
-		output.writeJson(successResp)
-		return
-	}
-
-	if (successResp.matches === 0) {
-		writeNoElementFound(selector, output, `Hint: run \`argus dom tree${id ? ` ${id}` : ''} --selector "${selector}" --all\``)
-		return
-	}
-
-	const label = successResp.inserted === 1 ? 'element' : 'elements'
-	const prefix = result.watcher.id ? `${result.watcher.id}: ` : ''
-	output.writeHuman(`${prefix}Inserted at ${successResp.inserted}/${successResp.matches} ${label} (${position}) for selector: ${selector}`)
 }
 
 const normalizePosition = (value?: string): DomInsertPosition | null => {
@@ -139,7 +132,7 @@ const normalizePosition = (value?: string): DomInsertPosition | null => {
 	return null
 }
 
-const parseNonNegativeInt = (value: string | undefined, label: string, output: ReturnType<typeof createOutput>): number | undefined | null => {
+const parseNonNegativeInt = (value: string | undefined, label: string, output: Output): number | undefined | null => {
 	if (value == null) {
 		return undefined
 	}
@@ -153,7 +146,7 @@ const parseNonNegativeInt = (value: string | undefined, label: string, output: R
 	return parsed
 }
 
-const resolveHtmlInput = async (options: DomAddOptions, output: ReturnType<typeof createOutput>): Promise<string | null> => {
+const resolveHtmlInput = async (options: DomAddOptions, output: Output): Promise<string | null> => {
 	const wantsStdin = options.htmlStdin === true || options.html === '-'
 	const hasHtmlValue = options.html != null && options.html !== '-'
 	const hasFile = options.htmlFile != null

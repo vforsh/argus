@@ -1,6 +1,6 @@
 import type { DomScrollResponse } from '@vforsh/argus-core'
-import { createOutput } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { defineWatcherCommand, type WatcherCommandContext, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import type { Output } from '../output/io.js'
 import { parseXY, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom scroll command. */
@@ -14,20 +14,23 @@ export type DomScrollOptions = {
 }
 
 /** Execute the dom scroll command (dispatch mouse wheel input) for a watcher id. */
-export const runDomScroll = async (id: string | undefined, options: DomScrollOptions): Promise<void> => {
-	const output = createOutput(options)
+export const runDomScroll = defineWatcherCommand<DomScrollOptions, DomScrollResponse>({
+	build: (_args, options, output) => buildDomScrollPlan(options, output),
+	formatHuman: formatDomScrollHuman,
+})
 
+const buildDomScrollPlan = (options: DomScrollOptions, output: Output): WatcherRequestPlan | null => {
 	if (options.by == null) {
 		output.writeWarn('--by is required (e.g. --by 0,300)')
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	const delta = parseXY(options.by)
 	if (!delta) {
 		output.writeWarn('--by must be in the format "x,y" (e.g. --by 0,300)')
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	const hasSelector = options.selector != null && options.selector.trim() !== ''
@@ -36,7 +39,7 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 	if (hasSelector && hasPos) {
 		output.writeWarn('--selector and --pos are mutually exclusive')
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	let x: number | undefined
@@ -46,7 +49,7 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 		if (!parsed) {
 			output.writeWarn('--pos must be in the format "x,y" (e.g. --pos 400,300)')
 			process.exitCode = 2
-			return
+			return null
 		}
 		x = parsed.x
 		y = parsed.y
@@ -65,26 +68,13 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 		body.y = y
 	}
 
-	const result = await requestWatcherAction<DomScrollResponse>(
-		{
-			id,
-			path: '/dom/scroll',
-			method: 'POST',
-			body,
-			timeoutMs: 30_000,
-		},
-		output,
-	)
-	if (!result) {
-		return
-	}
-	const successResp = result.data
+	return { path: '/dom/scroll', method: 'POST', body, timeoutMs: 30_000 }
+}
 
-	if (options.json) {
-		output.writeJson(successResp)
-		return
-	}
-
+function formatDomScrollHuman(successResp: DomScrollResponse, { output, options }: WatcherCommandContext<[], DomScrollOptions>): void {
+	const delta = parseXY(options.by!)!
+	const hasSelector = options.selector != null && options.selector.trim() !== ''
+	const hasPos = options.pos != null
 	if (hasSelector) {
 		if (successResp.matches === 0) {
 			writeNoElementFound(options.selector!, output)
@@ -93,6 +83,7 @@ export const runDomScroll = async (id: string | undefined, options: DomScrollOpt
 		const label = successResp.scrolled === 1 ? 'element' : 'elements'
 		output.writeHuman(`Emulated scroll on ${successResp.scrolled} ${label} by (${delta.x}, ${delta.y})`)
 	} else if (hasPos) {
+		const { x, y } = parseXY(options.pos!)!
 		output.writeHuman(`Emulated scroll at (${x}, ${y}) by (${delta.x}, ${delta.y})`)
 	} else {
 		output.writeHuman(`Emulated scroll at viewport center by (${delta.x}, ${delta.y})`)

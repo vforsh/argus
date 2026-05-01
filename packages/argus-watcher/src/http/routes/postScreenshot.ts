@@ -1,28 +1,22 @@
 import type { ScreenshotClipRegion, ScreenshotRequest, ScreenshotResponse } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
+import { defineJsonRoute } from './defineRoute.js'
 import { emitRequest } from './types.js'
-import { respondJson, respondError, readJsonBody, respondInvalidBody } from '../httpUtils.js'
+import { respondInvalidBody } from '../httpUtils.js'
 
-export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const payload = await readJsonBody<ScreenshotRequest>(req, res)
-	if (!payload) {
-		return
-	}
+export const handle = defineJsonRoute<ScreenshotRequest, ScreenshotResponse>({
+	method: 'POST',
+	path: '/screenshot',
+	parseBody: true,
+	handle: async ({ res, ctx, body: payload }) => {
+		const validationError = validateScreenshotRequest(payload)
+		if (validationError) {
+			return respondInvalidBody(res, validationError)
+		}
 
-	const validationError = validateScreenshotRequest(payload)
-	if (validationError) {
-		return respondInvalidBody(res, validationError)
-	}
-
-	emitRequest(ctx, res, 'screenshot')
-
-	try {
-		const response: ScreenshotResponse = await ctx.screenshotter.capture(payload)
-		respondJson(res, response)
-	} catch (error) {
-		respondError(res, error)
-	}
-}
+		emitRequest(ctx, res, 'screenshot')
+		return ctx.screenshotter.capture(payload)
+	},
+}).handler
 
 const validateScreenshotRequest = (payload: ScreenshotRequest): string | null => {
 	if (payload.selector != null && (typeof payload.selector !== 'string' || !payload.selector.trim())) {

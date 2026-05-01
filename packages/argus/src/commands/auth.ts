@@ -1,10 +1,10 @@
 import { parseAuthStateSnapshot, type AuthStateLoadResponse, type AuthStateSnapshot, type WatcherRecord } from '@vforsh/argus-core'
 import { readFile, writeFile } from 'node:fs/promises'
 import { normalizeUrl } from './chrome/shared.js'
+import { requestWatcherCommandAction, requestWatcherCommandJson } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
 import { createOutput } from '../output/io.js'
 import type { WatcherRequestSuccess } from '../watchers/requestWatcher.js'
-import { requestWatcherAction, requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 export type AuthExportStateOptions = {
 	domain?: string
@@ -106,19 +106,15 @@ export const requestAuthStateSnapshot = async (
 	input: { domain?: string },
 	output: AuthOutput,
 ): Promise<AuthStateSnapshotResult | null> => {
-	const result = await requestWatcherJson<AuthStateSnapshot>({
-		id,
-		path: '/auth/state',
-		query: buildStateQuery(input),
-		timeoutMs: 10_000,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
-		return null
-	}
-
-	return result
+	return requestWatcherCommandJson<AuthStateSnapshot>(
+		{
+			id,
+			path: '/auth/state',
+			query: buildStateQuery(input),
+			timeoutMs: 10_000,
+		},
+		output,
+	)
 }
 
 /** Load an auth-state snapshot into a target watcher. */
@@ -128,7 +124,7 @@ export const loadAuthStateIntoWatcher = async (
 	input: { url?: string },
 	output: AuthOutput,
 ): Promise<AuthStateLoadResult | null> => {
-	const result = await requestWatcherAction<AuthStateLoadResponse>(
+	const result = await requestWatcherCommandAction<AuthStateLoadResponse>(
 		{
 			id,
 			path: '/auth/state/load',

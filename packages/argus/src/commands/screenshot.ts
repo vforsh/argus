@@ -1,6 +1,6 @@
 import type { ScreenshotClipRegion, ScreenshotResponse } from '@vforsh/argus-core'
-import { createOutput, type Output } from '../output/io.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import type { Output } from '../output/io.js'
 
 const SCREENSHOT_REQUEST_TIMEOUT_MS = 45_000
 
@@ -13,21 +13,26 @@ export type ScreenshotOptions = {
 }
 
 /** Execute the screenshot command for a watcher id. */
-export const runScreenshot = async (id: string | undefined, options: ScreenshotOptions): Promise<void> => {
-	const output = createOutput(options)
+export const runScreenshot = defineWatcherCommand<ScreenshotOptions, ScreenshotResponse>({
+	build: (_args, options, output) => buildScreenshotPlan(options, output),
+	formatHuman: (response, { output }) => {
+		output.writeHuman(`Screenshot saved: ${response.outFile}`)
+	},
+})
+
+const buildScreenshotPlan = (options: ScreenshotOptions, output: Output): WatcherRequestPlan | null => {
 	const clip = parseScreenshotClip(options.clip, output)
 	if (clip === null) {
-		return
+		return null
 	}
 
 	const selector = normalizeSelector(options.selector)
 	if (selector && clip) {
 		writeScreenshotOptionError(output, 'Cannot use both --selector and --clip')
-		return
+		return null
 	}
 
-	const result = await requestWatcherJson<ScreenshotResponse>({
-		id,
+	return {
 		path: '/screenshot',
 		method: 'POST',
 		body: {
@@ -37,19 +42,7 @@ export const runScreenshot = async (id: string | undefined, options: ScreenshotO
 			format: 'png',
 		},
 		timeoutMs: SCREENSHOT_REQUEST_TIMEOUT_MS,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
-		return
 	}
-
-	if (options.json) {
-		output.writeJson(result.data)
-		return
-	}
-
-	output.writeHuman(`Screenshot saved: ${result.data.outFile}`)
 }
 
 const normalizeSelector = (selector?: string): string | undefined => {

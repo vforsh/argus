@@ -1,6 +1,5 @@
 import type { StatusResponse } from '@vforsh/argus-core'
-import { createOutput } from '../output/io.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
 
 /** Options for the watcher status command. */
 export type WatcherStatusOptions = {
@@ -8,26 +7,10 @@ export type WatcherStatusOptions = {
 }
 
 /** Execute the watcher status command. */
-export const runWatcherStatus = async (id: string | undefined, options: WatcherStatusOptions): Promise<void> => {
-	const output = createOutput(options)
-
-	const result = await requestWatcherJson<StatusResponse>({
-		id,
-		path: '/status',
-		timeoutMs: 2_000,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
-		return
-	}
-
-	if (options.json) {
-		output.writeJson(result.data)
-		return
-	}
-
-	const { watcher, data: status } = result
-	const readinessSuffix = status.targetReady === false ? ' targetReady=false' : ''
-	output.writeHuman(`ok ${watcher.id} ${watcher.host}:${watcher.port} pid=${status.pid} attached=${status.attached}${readinessSuffix}`)
-}
+export const runWatcherStatus = defineWatcherCommand<WatcherStatusOptions, StatusResponse>({
+	build: () => ({ path: '/status', timeoutMs: 2_000 }),
+	formatHuman: (status, { output, watcher }) => {
+		const readinessSuffix = status.targetReady === false ? ' targetReady=false' : ''
+		output.writeHuman(`ok ${watcher.id} ${watcher.host}:${watcher.port} pid=${status.pid} attached=${status.attached}${readinessSuffix}`)
+	},
+})

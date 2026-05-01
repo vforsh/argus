@@ -1,6 +1,6 @@
 import type { DomScrollToResponse } from '@vforsh/argus-core'
-import { createOutput } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import { defineWatcherCommand, type WatcherCommandContext, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import type { Output } from '../output/io.js'
 import { parseXY, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom scroll-to command. */
@@ -14,9 +14,12 @@ export type DomScrollToOptions = {
 }
 
 /** Execute the dom scroll-to command for a watcher id. */
-export const runDomScrollTo = async (id: string | undefined, options: DomScrollToOptions): Promise<void> => {
-	const output = createOutput(options)
+export const runDomScrollTo = defineWatcherCommand<DomScrollToOptions, DomScrollToResponse>({
+	build: (_args, options, output) => buildDomScrollToPlan(options, output),
+	formatHuman: formatDomScrollToHuman,
+})
 
+const buildDomScrollToPlan = (options: DomScrollToOptions, output: Output): WatcherRequestPlan | null => {
 	const hasSelector = options.selector != null && options.selector.trim() !== ''
 	const hasTo = options.to != null
 	const hasBy = options.by != null
@@ -24,13 +27,13 @@ export const runDomScrollTo = async (id: string | undefined, options: DomScrollT
 	if (!hasSelector && !hasTo && !hasBy) {
 		output.writeWarn('--selector, --to, or --by is required')
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	if (hasTo && hasBy) {
 		output.writeWarn('--to and --by are mutually exclusive')
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	let to: { x: number; y: number } | undefined
@@ -41,7 +44,7 @@ export const runDomScrollTo = async (id: string | undefined, options: DomScrollT
 		if (!parsed) {
 			output.writeWarn('--to must be in the format "x,y" (e.g. --to 0,1000)')
 			process.exitCode = 2
-			return
+			return null
 		}
 		to = parsed
 	}
@@ -51,7 +54,7 @@ export const runDomScrollTo = async (id: string | undefined, options: DomScrollT
 		if (!parsed) {
 			output.writeWarn('--by must be in the format "x,y" (e.g. --by 0,500)')
 			process.exitCode = 2
-			return
+			return null
 		}
 		by = parsed
 	}
@@ -71,26 +74,11 @@ export const runDomScrollTo = async (id: string | undefined, options: DomScrollT
 		body.by = by
 	}
 
-	const result = await requestWatcherAction<DomScrollToResponse>(
-		{
-			id,
-			path: '/dom/scroll-to',
-			method: 'POST',
-			body,
-			timeoutMs: 30_000,
-		},
-		output,
-	)
-	if (!result) {
-		return
-	}
-	const successResp = result.data
+	return { path: '/dom/scroll-to', method: 'POST', body, timeoutMs: 30_000 }
+}
 
-	if (options.json) {
-		output.writeJson(successResp)
-		return
-	}
-
+function formatDomScrollToHuman(successResp: DomScrollToResponse, { output, options }: WatcherCommandContext<[], DomScrollToOptions>): void {
+	const hasSelector = options.selector != null && options.selector.trim() !== ''
 	if (hasSelector && successResp.matches === 0) {
 		writeNoElementFound(options.selector!, output)
 		return

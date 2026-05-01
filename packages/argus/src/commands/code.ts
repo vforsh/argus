@@ -1,4 +1,4 @@
-import type { CodeGrepResponse, CodeListResponse, CodeReadResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { CodeGrepResponse, CodeListResponse, CodeReadResponse } from '@vforsh/argus-core'
 import { parseTextPattern } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
 import {
@@ -11,7 +11,7 @@ import {
 import { buildPrettyCodeMatches, formatRuntimeSource } from '../runtime-code/format.js'
 import { extractCodeStrings } from '../runtime-code/strings.js'
 import type { CodeStringFilters, CodeStringKind, CodeStringMatch, LoadedCodeResource } from '../runtime-code/types.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
+import { requestWatcherCommandAction } from '../cli/defineWatcherCommand.js'
 
 const FULL_RESOURCE_CHUNK_LINES = 5_000
 const DEFAULT_CODE_STRINGS_LIMIT = 200
@@ -410,15 +410,6 @@ const writeCodeGrepWarnings = (skippedResources: CodeGrepResponse['skippedResour
 	output.writeWarn(warning)
 }
 
-const writeErrorResponse = (response: ErrorResponse, output: CodeOutput): void => {
-	if (output.json) {
-		output.writeJson(response)
-	} else {
-		output.writeWarn(`Error: ${response.error.message}`)
-	}
-	process.exitCode = 1
-}
-
 const requestCodeResponse = async <T extends { ok: true }>(
 	id: string | undefined,
 	output: CodeOutput,
@@ -429,22 +420,6 @@ const requestCodeResponse = async <T extends { ok: true }>(
 		body: unknown
 	},
 ): Promise<T | null> => {
-	const result = await requestWatcherJson<T | ErrorResponse>({
-		...input,
-		id,
-		timeoutMs: 30_000,
-		returnErrorResponse: true,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
-		return null
-	}
-
-	if (!result.data.ok) {
-		writeErrorResponse(result.data as ErrorResponse, output)
-		return null
-	}
-
-	return result.data as T
+	const result = await requestWatcherCommandAction<T>({ ...input, id, timeoutMs: 30_000 }, output)
+	return result?.data ?? null
 }

@@ -1,8 +1,8 @@
 import type { LogsResponse } from '@vforsh/argus-core'
+import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import { formatLogEvent } from '../output/format.js'
-import { createOutput } from '../output/io.js'
+import type { Output } from '../output/io.js'
 import { previewLogEvent } from '../output/preview.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 import { appendAfterLimitParams, appendLogFilterParams, appendSinceParam } from '../watchers/queryParams.js'
 
 /** Options for the logs command. */
@@ -20,52 +20,40 @@ export type LogsOptions = {
 }
 
 /** Execute the logs command for a watcher id. */
-export const runLogs = async (id: string | undefined, options: LogsOptions): Promise<void> => {
-	const output = createOutput(options)
+export const runLogs = defineWatcherCommand<LogsOptions, LogsResponse>({
+	isJson: (options) => options.jsonFull === true,
+	build: (_args, options, output) => buildLogsPlan(options, output),
+	formatJson: (response, { options }) => (options.jsonFull ? response.events : response.events.map((event) => previewLogEvent(event))),
+	formatHuman: (response, { output, watcher }) => {
+		for (const event of response.events) {
+			output.writeHuman(
+				formatLogEvent(event, {
+					includeTimestamps: watcher.includeTimestamps,
+				}),
+			)
+		}
+	},
+})
 
+const buildLogsPlan = (options: LogsOptions, output: Output): WatcherRequestPlan | null => {
 	const params = new URLSearchParams()
 	appendAfterLimitParams(params, options)
 	const filters = appendLogFilterParams(params, options)
 	if (filters.error) {
 		output.writeWarn(filters.error)
 		process.exitCode = 2
-		return
+		return null
 	}
 	const since = appendSinceParam(params, options.since)
 	if (since.error) {
 		output.writeWarn(since.error)
 		process.exitCode = 2
-		return
+		return null
 	}
 
-	const result = await requestWatcherJson<LogsResponse>({
-		id,
+	return {
 		path: '/logs',
 		query: params,
 		timeoutMs: 5_000,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
-		return
-	}
-
-	if (options.jsonFull) {
-		output.writeJson(result.data.events)
-		return
-	}
-
-	if (options.json) {
-		const previewEvents = result.data.events.map((event) => previewLogEvent(event))
-		output.writeJson(previewEvents)
-		return
-	}
-
-	for (const event of result.data.events) {
-		output.writeHuman(
-			formatLogEvent(event, {
-				includeTimestamps: result.watcher.includeTimestamps,
-			}),
-		)
 	}
 }

@@ -1,15 +1,15 @@
 import type { DialogStatusResponse } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
-import { emitRequest } from './types.js'
-import { respondJson } from '../httpUtils.js'
+import { defineJsonRoute } from './defineRoute.js'
 
-export const handle: RouteHandler = (_req, res, _url, ctx) => {
-	emitRequest(ctx, res, 'dialog/status')
-
-	const response: DialogStatusResponse = {
-		ok: true,
-		dialog: ctx.getDialog(),
-	}
-
-	respondJson(res, response)
-}
+export const handle = defineJsonRoute<undefined, DialogStatusResponse>({
+	method: 'GET',
+	path: '/dialog',
+	endpoint: 'dialog/status',
+	handle: ({ ctx }) => {
+		const response: DialogStatusResponse = {
+			ok: true,
+			dialog: ctx.getDialog(),
+		}
+		return response
+	},
+}).handler

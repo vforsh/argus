@@ -2,7 +2,13 @@ import type { ProtocolSchema, WatcherRecord } from '@vforsh/argus-core'
 import { formatProtocolValidationIssues } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
 import { createOutput } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
+import {
+	requestWatcherAction,
+	requestWatcherJson,
+	writeRequestError,
+	type WatcherRequestInput,
+	type WatcherRequestSuccess,
+} from '../watchers/requestWatcher.js'
 
 /**
  * Plan for a single watcher HTTP request, produced by a command's `build` step.
@@ -27,6 +33,25 @@ export type WatcherRequestPlan = {
 
 /** Default request timeout when a plan does not specify one. */
 const DEFAULT_TIMEOUT_MS = 30_000
+
+/**
+ * Shared one-shot request helper for commands that need the watcher metadata
+ * for additional local work instead of a direct JSON/human render pipeline.
+ */
+export const requestWatcherCommandJson = async <T>(input: WatcherRequestInput, output: Output): Promise<WatcherRequestSuccess<T> | null> => {
+	const result = await requestWatcherJson<T>(input)
+	if (!result.ok) {
+		writeRequestError(result, output)
+		return null
+	}
+	return result
+}
+
+/**
+ * Shared API-action request helper for command support modules that cannot use
+ * `defineWatcherCommand` directly because they compose multiple watcher calls.
+ */
+export const requestWatcherCommandAction = requestWatcherAction
 
 /** Context passed to `formatHuman` / `formatJson` after a successful request. */
 export type WatcherCommandContext<TArgs extends readonly unknown[], TOptions> = {
@@ -55,6 +80,13 @@ export type WatcherCommandSpec<TArgs extends readonly unknown[], TOptions extend
 	 * already written a warning and set `process.exitCode`).
 	 */
 	build: (args: TArgs, options: TOptions, output: Output) => Promise<WatcherRequestPlan | null> | WatcherRequestPlan | null
+
+	/**
+	 * Treat non-standard flags as JSON mode. Use sparingly for legacy commands
+	 * such as `logs --json-full` where JSON output predates the shared `--json`
+	 * flag contract.
+	 */
+	isJson?: (options: TOptions) => boolean
 
 	/**
 	 * Optional protocol schema applied to `plan.body` before sending. When the
@@ -110,7 +142,7 @@ export const defineWatcherCommand =
 		const options = rest[tail] as TOptions
 		const args = rest.slice(0, tail) as unknown as TArgs
 
-		const output = createOutput(options)
+		const output = createOutput({ ...options, json: options.json === true || spec.isJson?.(options) === true })
 
 		const plan = await spec.build(args, options, output)
 		if (plan == null) return

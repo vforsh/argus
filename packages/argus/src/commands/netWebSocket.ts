@@ -1,9 +1,9 @@
 import type { NetWebSocketResponse, NetWebSocketsResponse } from '@vforsh/argus-core'
 import type { NetCliListOptions } from './netShared.js'
 import { appendNetCommandParams } from './netShared.js'
+import { requestWatcherCommandAction } from '../cli/defineWatcherCommand.js'
 import { formatWebSocketDetail, formatWebSocketSummary } from '../output/net.js'
 import { createOutput } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
 
 export type NetWebSocketOptions = NetCliListOptions & {
 	json?: boolean
@@ -23,7 +23,7 @@ export const runNetWebSocket = async (id: string | undefined, options: NetWebSoc
 		return
 	}
 
-	const result = await requestWatcherAction<NetWebSocketsResponse>({ id, path: '/net/ws', query: params, timeoutMs: 5_000 }, output)
+	const result = await requestWatcherCommandAction<NetWebSocketsResponse>({ id, path: '/net/ws', query: params, timeoutMs: 5_000 }, output)
 	if (!result) {
 		return
 	}
@@ -45,7 +45,7 @@ export const runNetWebSocketShow = async (id: string | undefined, connection: st
 		return
 	}
 
-	const result = await requestWatcherAction<NetWebSocketResponse>({ id, path: '/net/ws/connection', query, timeoutMs: 5_000 }, output)
+	const result = await requestWatcherCommandAction<NetWebSocketResponse>({ id, path: '/net/ws/connection', query, timeoutMs: 5_000 }, output)
 	if (!result) {
 		return
 	}

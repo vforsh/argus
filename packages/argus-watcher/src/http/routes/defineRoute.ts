@@ -17,6 +17,7 @@ type JsonRouteInput<TBody, TResponse extends object> = {
 	method: 'GET' | 'POST'
 	path: string
 	bodySchema?: ProtocolSchema<TBody>
+	parseBody?: boolean
 	endpoint?: HttpRequestEventMetadata['endpoint']
 	extensionOnly?: boolean
 	handle: (input: JsonRouteHandlerInput<TBody>) => Promise<TResponse | void> | TResponse | void
@@ -39,8 +40,9 @@ export const defineJsonRoute = <TBody = undefined, TResponse extends object = ob
 	path: input.path,
 	extensionOnly: input.extensionOnly,
 	handler: async (req, res, url, ctx) => {
-		const rawBody = input.bodySchema ? await readJsonBody<unknown>(req, res) : undefined
-		if (input.bodySchema && rawBody == null) {
+		const shouldReadBody = input.bodySchema != null || input.parseBody === true
+		const rawBody = shouldReadBody ? await readJsonBody<unknown>(req, res) : undefined
+		if (shouldReadBody && rawBody == null) {
 			return
 		}
 
@@ -59,7 +61,7 @@ export const defineJsonRoute = <TBody = undefined, TResponse extends object = ob
 				res,
 				url,
 				ctx,
-				body: parsedBody?.value as TBody,
+				body: (parsedBody?.value ?? rawBody) as TBody,
 			})
 			if (response) {
 				respondJson(res, response)

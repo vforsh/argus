@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { parseTextPattern, type CodeEditResponse, type CodeReadResponse, type TextPattern } from '@vforsh/argus-core'
+import { requestWatcherCommandAction } from '../cli/defineWatcherCommand.js'
 import { createOutput, type Output } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
 
 const FULL_RESOURCE_CHUNK_LINES = 5_000
 
@@ -27,7 +27,7 @@ export const runCodeEdit = async (id: string | undefined, url: string, options: 
 		return
 	}
 
-	const result = await requestWatcherAction<CodeEditResponse>(
+	const result = await requestWatcherCommandAction<CodeEditResponse>(
 		{
 			id,
 			path: '/code/edit',
@@ -180,7 +180,7 @@ async function loadFullSource(id: string | undefined, url: string, output: Outpu
 	let offset = 0
 
 	for (;;) {
-		const result = await requestWatcherAction<CodeReadResponse>(
+		const result = await requestWatcherCommandAction<CodeReadResponse>(
 			{
 				id,
 				path: '/code/read',

@@ -1,6 +1,6 @@
 import type { AuthCookieClearResponse, AuthCookieDeleteResponse, AuthCookieGetResponse, AuthCookieSetResponse } from '@vforsh/argus-core'
+import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
 import { createOutput } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
 import {
 	fetchAuthCookies,
 	filterCookies,
@@ -112,116 +112,84 @@ export const runAuthExportCookies = async (id: string | undefined, options: Auth
 }
 
 /** Execute `argus auth cookies get`. */
-export const runAuthCookieGet = async (id: string | undefined, name: string, options: AuthCookieGetOptions): Promise<void> => {
-	const output = createOutput(options)
-	const identity = normalizeCookieIdentityInput({ name, domain: options.domain, path: options.path }, output)
-	if (!identity) {
-		return
-	}
+export const runAuthCookieGet = defineWatcherCommand<AuthCookieGetOptions, AuthCookieGetResponse, unknown, [name: string]>({
+	build: ([name], options, output) => {
+		const identity = normalizeCookieIdentityInput({ name, domain: options.domain, path: options.path }, output)
+		if (!identity) {
+			return null
+		}
 
-	const result = await requestWatcherAction<AuthCookieGetResponse>(
-		{
-			id,
+		return {
 			path: '/auth/cookies/get',
 			method: 'POST',
 			body: {
 				...identity,
 				includeValue: options.showValue === true,
 			},
-		},
-		output,
-	)
-	if (!result) {
-		return
-	}
+		}
+	},
+	formatHuman: (response, { output, options }) => {
+		if (!response.cookie) {
+			output.writeHuman('No cookie matched exact identity.')
+			return
+		}
 
-	if (options.json) {
-		output.writeJson(result.data)
-		return
-	}
-
-	if (!result.data.cookie) {
-		output.writeHuman('No cookie matched exact identity.')
-		return
-	}
-
-	output.writeHuman(formatCookieLine(result.data.cookie, options.showValue === true))
-}
+		output.writeHuman(formatCookieLine(response.cookie, options.showValue === true))
+	},
+})
 
 /** Execute `argus auth cookies set`. */
-export const runAuthCookieSet = async (id: string | undefined, name: string, value: string, options: AuthCookieSetOptions): Promise<void> => {
-	const output = createOutput(options)
-	const cookie = parseCookieSetInput({ name, value, ...options }, output)
-	if (!cookie) {
-		return
-	}
+export const runAuthCookieSet = defineWatcherCommand<AuthCookieSetOptions, AuthCookieSetResponse, unknown, [name: string, value: string]>({
+	build: ([name, value], options, output) => {
+		const cookie = parseCookieSetInput({ name, value, ...options }, output)
+		if (!cookie) {
+			return null
+		}
 
-	const result = await requestWatcherAction<AuthCookieSetResponse>(
-		{
-			id,
+		return {
 			path: '/auth/cookies/set',
 			method: 'POST',
 			body: { cookie },
-		},
-		output,
-	)
-	if (!result) {
-		return
-	}
-
-	if (options.json) {
-		output.writeJson(result.data)
-		return
-	}
-
-	output.writeHuman(`Set ${formatCookieLine(result.data.cookie, false)}`)
-}
+		}
+	},
+	formatHuman: (response, { output }) => {
+		output.writeHuman(`Set ${formatCookieLine(response.cookie, false)}`)
+	},
+})
 
 /** Execute `argus auth cookies delete`. */
-export const runAuthCookieDelete = async (id: string | undefined, name: string, options: AuthCookieDeleteOptions): Promise<void> => {
-	const output = createOutput(options)
-	const identity = normalizeCookieIdentityInput({ name, domain: options.domain, path: options.path }, output)
-	if (!identity) {
-		return
-	}
+export const runAuthCookieDelete = defineWatcherCommand<AuthCookieDeleteOptions, AuthCookieDeleteResponse, unknown, [name: string]>({
+	build: ([name], options, output) => {
+		const identity = normalizeCookieIdentityInput({ name, domain: options.domain, path: options.path }, output)
+		if (!identity) {
+			return null
+		}
 
-	const result = await requestWatcherAction<AuthCookieDeleteResponse>(
-		{
-			id,
+		return {
 			path: '/auth/cookies/delete',
 			method: 'POST',
 			body: identity,
-		},
-		output,
-	)
-	if (!result) {
-		return
-	}
+		}
+	},
+	formatHuman: (response, { output }) => {
+		if (!response.deleted) {
+			output.writeHuman('No cookie matched exact identity.')
+			return
+		}
 
-	if (options.json) {
-		output.writeJson(result.data)
-		return
-	}
-
-	if (!result.data.deleted) {
-		output.writeHuman('No cookie matched exact identity.')
-		return
-	}
-
-	output.writeHuman(`Deleted ${formatCookieIdentityLine(result.data.cookie)}`)
-}
+		output.writeHuman(`Deleted ${formatCookieIdentityLine(response.cookie)}`)
+	},
+})
 
 /** Execute `argus auth cookies clear`. */
-export const runAuthCookieClear = async (id: string | undefined, options: AuthCookieClearOptions): Promise<void> => {
-	const output = createOutput(options)
-	const scope = resolveCookieClearScope(options, output)
-	if (!scope) {
-		return
-	}
+export const runAuthCookieClear = defineWatcherCommand<AuthCookieClearOptions, AuthCookieClearResponse>({
+	build: (_args, options, output) => {
+		const scope = resolveCookieClearScope(options, output)
+		if (!scope) {
+			return null
+		}
 
-	const result = await requestWatcherAction<AuthCookieClearResponse>(
-		{
-			id,
+		return {
 			path: '/auth/cookies/clear',
 			method: 'POST',
 			body: {
@@ -230,21 +198,13 @@ export const runAuthCookieClear = async (id: string | undefined, options: AuthCo
 				sessionOnly: options.sessionOnly === true,
 				authOnly: options.authOnly === true,
 			},
-		},
-		output,
-	)
-	if (!result) {
-		return
-	}
-
-	if (options.json) {
-		output.writeJson(result.data)
-		return
-	}
-
-	const scopeSuffix = result.data.scopeValue ? ` (${result.data.scopeValue})` : ''
-	output.writeHuman(`Cleared ${result.data.cleared} cookie(s) from ${result.data.scope}${scopeSuffix}`)
-	for (const cookie of result.data.cookies) {
-		output.writeHuman(formatCookieIdentityLine(cookie))
-	}
-}
+		}
+	},
+	formatHuman: (response, { output }) => {
+		const scopeSuffix = response.scopeValue ? ` (${response.scopeValue})` : ''
+		output.writeHuman(`Cleared ${response.cleared} cookie(s) from ${response.scope}${scopeSuffix}`)
+		for (const cookie of response.cookies) {
+			output.writeHuman(formatCookieIdentityLine(cookie))
+		}
+	},
+})

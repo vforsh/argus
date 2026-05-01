@@ -1,7 +1,7 @@
 import type { LocateResponse, LocateRoleRequest, LocateTextRequest, LocateLabelRequest } from '@vforsh/argus-core'
+import { requestWatcherCommandAction } from '../cli/defineWatcherCommand.js'
 import { createOutput } from '../output/io.js'
 import { formatLocatedElements } from '../output/locate.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
 import { runDomClick, type DomClickOptions } from './domClick.js'
 import { runDomFill, type DomFillOptions } from './domFill.js'
 import { runDomFocus, type DomFocusOptions } from './domFocus.js'
@@ -99,7 +99,7 @@ const runLocateRequest = async (id: string | undefined, path: LocatePath, body: 
 		return
 	}
 
-	const result = await requestWatcherAction<LocateResponse>(
+	const result = await requestWatcherCommandAction<LocateResponse>(
 		{
 			id,
 			path,

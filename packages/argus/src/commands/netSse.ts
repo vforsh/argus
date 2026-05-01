@@ -1,9 +1,9 @@
 import type { NetSseResponse } from '@vforsh/argus-core'
 import type { NetCliListOptions } from './netShared.js'
 import { appendNetCommandParams } from './netShared.js'
+import { requestWatcherCommandAction } from '../cli/defineWatcherCommand.js'
 import { formatSseSummary } from '../output/net.js'
 import { createOutput } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
 
 export type NetSseOptions = NetCliListOptions & {
 	json?: boolean
@@ -19,7 +19,7 @@ export const runNetSse = async (id: string | undefined, options: NetSseOptions):
 		return
 	}
 
-	const result = await requestWatcherAction<NetSseResponse>({ id, path: '/net/sse', query: params, timeoutMs: 5_000 }, output)
+	const result = await requestWatcherCommandAction<NetSseResponse>({ id, path: '/net/sse', query: params, timeoutMs: 5_000 }, output)
 	if (!result) {
 		return
 	}

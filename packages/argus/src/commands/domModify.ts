@@ -1,6 +1,6 @@
 import type { DomModifyResponse } from '@vforsh/argus-core'
+import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
 import { createOutput } from '../output/io.js'
-import { requestWatcherAction } from '../watchers/requestWatcher.js'
 import { requireSelector, writeNoElementFound } from './dom/shared.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,21 +21,30 @@ type ModifyPayload = {
 	[key: string]: unknown
 }
 
+type ModifySuccessMessage = (resp: DomModifyResponse) => string
+
 const executeModify = async (
 	id: string | undefined,
 	options: BaseModifyOptions,
 	payload: ModifyPayload,
-	successMessage: (resp: DomModifyResponse) => string,
+	successMessage: ModifySuccessMessage,
 ): Promise<void> => {
-	const output = createOutput(options)
-	const selector = requireSelector(options, output)
-	if (!selector) {
-		return
-	}
+	await runDomModifyRequest(id, payload, successMessage, options)
+}
 
-	const result = await requestWatcherAction<DomModifyResponse>(
-		{
-			id,
+const runDomModifyRequest = defineWatcherCommand<
+	BaseModifyOptions,
+	DomModifyResponse,
+	unknown,
+	[payload: ModifyPayload, successMessage: ModifySuccessMessage]
+>({
+	build: ([payload], options, output) => {
+		const selector = requireSelector(options, output)
+		if (!selector) {
+			return null
+		}
+
+		return {
 			path: '/dom/modify',
 			method: 'POST',
 			body: {
@@ -44,26 +53,17 @@ const executeModify = async (
 				...(options.text != null ? { text: options.text } : {}),
 			},
 			timeoutMs: 30_000,
-		},
-		output,
-	)
-	if (!result) {
-		return
-	}
-	const successResp = result.data
+		}
+	},
+	formatHuman: (successResp, { output, options, args }) => {
+		if (successResp.matches === 0) {
+			writeNoElementFound(options.selector, output)
+			return
+		}
 
-	if (options.json) {
-		output.writeJson(successResp)
-		return
-	}
-
-	if (successResp.matches === 0) {
-		writeNoElementFound(selector, output)
-		return
-	}
-
-	output.writeHuman(successMessage(successResp))
-}
+		output.writeHuman(args[1](successResp))
+	},
+})
 
 // ─────────────────────────────────────────────────────────────────────────────
 // dom modify attr

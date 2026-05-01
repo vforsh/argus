@@ -8,8 +8,8 @@ import {
 	type AuthStateCookie,
 } from '@vforsh/argus-core'
 import { writeFile } from 'node:fs/promises'
+import { requestWatcherCommandJson } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
-import { requestWatcherJson, writeRequestError } from '../watchers/requestWatcher.js'
 
 type CookieFetchInput = {
 	domain?: string
@@ -41,17 +41,16 @@ type CookieSetInput = {
 const COOKIE_EXPORT_FORMATS = new Set(['netscape', 'json', 'header'])
 
 export const fetchAuthCookies = async (id: string | undefined, input: CookieFetchInput, output: Output): Promise<AuthCookiesResponse | null> => {
-	const result = await requestWatcherJson<AuthCookiesResponse>({
-		id,
-		path: '/auth/cookies',
-		query: buildCookieQuery(input),
-		timeoutMs: 10_000,
-	})
-
-	if (!result.ok) {
-		writeRequestError(result, output)
-		return null
-	}
+	const result = await requestWatcherCommandJson<AuthCookiesResponse>(
+		{
+			id,
+			path: '/auth/cookies',
+			query: buildCookieQuery(input),
+			timeoutMs: 10_000,
+		},
+		output,
+	)
+	if (!result) return null
 
 	return result.data
 }

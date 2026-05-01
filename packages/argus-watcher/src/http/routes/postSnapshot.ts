@@ -1,27 +1,24 @@
 import type { SnapshotRequest, SnapshotResponse } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
+import { defineJsonRoute } from './defineRoute.js'
 import { emitRequest } from './types.js'
 import { fetchAccessibilitySnapshot } from '../../cdp/accessibility.js'
-import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
+import { respondInvalidBody } from '../httpUtils.js'
 
-export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const payload = await readJsonBody<SnapshotRequest>(req, res)
-	if (!payload) {
-		return
-	}
+export const handle = defineJsonRoute<SnapshotRequest, SnapshotResponse>({
+	method: 'POST',
+	path: '/snapshot',
+	parseBody: true,
+	handle: async ({ res, ctx, body: payload }) => {
+		if (payload.selector != null && (typeof payload.selector !== 'string' || payload.selector.trim() === '')) {
+			return respondInvalidBody(res, 'selector must be a non-empty string')
+		}
 
-	if (payload.selector != null && (typeof payload.selector !== 'string' || payload.selector.trim() === '')) {
-		return respondInvalidBody(res, 'selector must be a non-empty string')
-	}
+		if (payload.depth != null && (!Number.isFinite(payload.depth) || payload.depth < 0 || !Number.isInteger(payload.depth))) {
+			return respondInvalidBody(res, 'depth must be a non-negative integer')
+		}
 
-	if (payload.depth != null && (!Number.isFinite(payload.depth) || payload.depth < 0 || !Number.isInteger(payload.depth))) {
-		return respondInvalidBody(res, 'depth must be a non-negative integer')
-	}
-
-	emitRequest(ctx, res, 'snapshot')
-
-	try {
-		const response: SnapshotResponse = await fetchAccessibilitySnapshot(
+		emitRequest(ctx, res, 'snapshot')
+		return fetchAccessibilitySnapshot(
 			ctx.cdpSession,
 			{
 				selector: payload.selector,
@@ -30,8 +27,5 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 			},
 			ctx.elementRefs,
 		)
-		respondJson(res, response)
-	} catch (error) {
-		respondError(res, error)
-	}
-}
+	},
+}).handler
