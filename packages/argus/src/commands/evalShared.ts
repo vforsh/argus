@@ -15,10 +15,57 @@ export { formatError, parseNumber } from '../cli/parse.js'
 type ExpressionSourceOptions = {
 	file?: string
 	stdin?: boolean
+	inject?: string
 }
 
 /** String-only argument map exposed to eval scripts as `args`. */
 export type EvalArgMap = Record<string, string>
+
+type EvalExpressionOptions = ExpressionSourceOptions & {
+	iframe?: string
+	iframeNamespace?: string
+	iframeTimeout?: string
+	arg?: string[]
+}
+
+export type PreparedEvalExpression = {
+	expression: string
+	args?: EvalArgMap
+}
+
+/** Resolve script input, eval args, and iframe wrapping into the payload sent to the watcher. */
+export const prepareEvalExpression = async (
+	inline: string | undefined,
+	options: EvalExpressionOptions,
+	output: Output,
+): Promise<PreparedEvalExpression | null> => {
+	const evalArgs = parseEvalArgs(options.arg)
+	if (evalArgs.error) {
+		output.writeWarn(evalArgs.error)
+		return null
+	}
+
+	const resolvedExpression = await resolveExpression(inline, options, output)
+	if (resolvedExpression == null) {
+		return null
+	}
+
+	const args = evalArgs.value
+	if (!options.iframe) {
+		return {
+			expression: resolvedExpression,
+			args: hasEvalArgs(args) ? args : undefined,
+		}
+	}
+
+	return {
+		expression: wrapForIframeEval(wrapExpressionWithArgs(resolvedExpression, args), {
+			selector: options.iframe,
+			namespace: options.iframeNamespace ?? 'argus',
+			timeoutMs: parseNumber(options.iframeTimeout) ?? 5000,
+		}),
+	}
+}
 
 /**
  * Resolve the JS expression from inline argument, --file, or --stdin.
@@ -44,6 +91,7 @@ export const resolveExpression = async (inline: string | undefined, options: Exp
 		return null
 	}
 
+	let expression: string
 	if (hasFile) {
 		try {
 			const content = await readFile(options.file ?? '', 'utf8')
@@ -51,37 +99,54 @@ export const resolveExpression = async (inline: string | undefined, options: Exp
 				output.writeWarn(`File is empty: ${options.file}`)
 				return null
 			}
-			return content
+			expression = content
 		} catch (error) {
 			output.writeWarn(`Failed to read --file: ${formatError(error)}`)
 			return null
 		}
-	}
-
-	if (wantsStdin) {
+	} else if (wantsStdin) {
 		try {
 			const content = await readStdin()
 			if (!content.trim()) {
 				output.writeWarn('Stdin input is empty')
 				return null
 			}
-			return content
+			expression = content
 		} catch (error) {
 			output.writeWarn(`Failed to read stdin: ${formatError(error)}`)
 			return null
 		}
-	}
-
-	if (hasInline) {
+	} else if (hasInline) {
 		if (!inline.trim()) {
 			output.writeWarn('Expression is empty')
 			return null
 		}
-		return inline
+		expression = inline
+	} else {
+		output.writeWarn('Expression is required. Provide an inline expression, --file, or --stdin (or pass - as expression).')
+		return null
 	}
 
-	output.writeWarn('Expression is required. Provide an inline expression, --file, or --stdin (or pass - as expression).')
-	return null
+	return await prependInjectSource(expression, options.inject, output)
+}
+
+const prependInjectSource = async (expression: string, injectPath: string | undefined, output: Output): Promise<string | null> => {
+	if (injectPath == null) {
+		return expression
+	}
+
+	try {
+		const injectSource = await readFile(injectPath, 'utf8')
+		if (!injectSource.trim()) {
+			output.writeWarn(`Inject file is empty: ${injectPath}`)
+			return null
+		}
+
+		return `${injectSource}\n${expression}`
+	} catch (error) {
+		output.writeWarn(`Failed to read --inject: ${formatError(error)}`)
+		return null
+	}
 }
 
 /** Read all of stdin into a string. */

@@ -152,6 +152,46 @@ describe('playground smoke tests', () => {
 		expect(response.result).toBe('fast:42')
 	})
 
+	test('eval runs injected setup before the expression', async () => {
+		const injectPath = path.join(tempDir, 'inject.js')
+		await fs.writeFile(injectPath, 'window.__argusInjectedValue = Number(args.base) + 1', 'utf8')
+
+		const { stdout } = await runCommand(
+			'bun',
+			[BIN_PATH, 'eval', 'playground', 'window.__argusInjectedValue + 1', '--inject', injectPath, '--arg', 'base=40', '--json'],
+			{ env },
+		)
+		const response = JSON.parse(stdout) as EvalResponse
+		expect(response.ok).toBe(true)
+		expect(response.result).toBe(42)
+	})
+
+	test('eval interval polling stops on --until', async () => {
+		const { stdout } = await runCommand(
+			'bun',
+			[
+				BIN_PATH,
+				'eval',
+				'playground',
+				'window.__argusPollCount = (window.__argusPollCount ?? 0) + 1',
+				'--interval',
+				'50',
+				'--until',
+				'result >= 2',
+				'--json',
+			],
+			{ env },
+		)
+		const responses = stdout
+			.trim()
+			.split('\n')
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as EvalResponse)
+
+		expect(responses.length).toBe(2)
+		expect(responses.at(-1)?.result).toBe(2)
+	})
+
 	test('eval-until exposes --arg values', async () => {
 		const { stdout } = await runCommand(
 			'bun',

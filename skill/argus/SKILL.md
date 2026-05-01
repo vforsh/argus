@@ -120,11 +120,12 @@ argus logs tail app --levels error --json
 argus js app "location.href"
 argus eval app "await fetch('/ping').then(r => r.status)"
 argus eval app "document.title" --json
+argus eval app "window.store.getState()" --inject ./debug-hooks.js
 argus eval app --file ./script.js
 argus eval app --file ./script.js --arg level=10 --arg mode=fast
 ```
 
-`js` is the short alias for `eval`. `--arg key=value` is repeatable and exposes string values as a frozen `args` object inside inline, file, or stdin scripts; duplicate keys use the last value.
+`js` is the short alias for `eval`. `--inject <file>` runs setup code before the expression. `--arg key=value` is repeatable and exposes string values as a frozen `args` object inside inline, file, stdin, or injected scripts; duplicate keys use the last value.
 
 ### Runtime Code
 

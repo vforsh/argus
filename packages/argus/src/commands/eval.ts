@@ -2,20 +2,16 @@ import type { EvalResponse } from '@vforsh/argus-core'
 import { evalWithRetries } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { pollEval } from './evalPolling.js'
 import {
 	formatError,
-	hasEvalArgs,
 	parseCount,
-	parseEvalArgs,
 	parseIntervalMs,
 	parseNumber,
 	parseRetryCount,
+	prepareEvalExpression,
 	printError,
 	printSuccess,
-	resolveExpression,
-	sleep,
-	wrapExpressionWithArgs,
-	wrapForIframeEval,
 } from './evalShared.js'
 
 /** Options for the eval command. */
@@ -34,6 +30,8 @@ export type EvalOptions = {
 	file?: string
 	/** Read expression from stdin. Also activated when expression is `-`. */
 	stdin?: boolean
+	/** Read setup code from a file and run it before the expression. */
+	inject?: string
 	/** CSS selector for iframe to eval in via postMessage (extension mode). */
 	iframe?: string
 	/** Message type prefix for iframe eval (default: argus). */
@@ -48,28 +46,11 @@ export type EvalOptions = {
 export const runEval = async (id: string | undefined, rawExpression: string | undefined, options: EvalOptions): Promise<void> => {
 	const output = createOutput(options)
 
-	const evalArgs = parseEvalArgs(options.arg)
-	if (evalArgs.error) {
-		output.writeWarn(evalArgs.error)
+	const prepared = await prepareEvalExpression(rawExpression, options, output)
+	if (prepared == null) {
 		process.exitCode = 2
 		return
 	}
-
-	const resolvedExpression = await resolveExpression(rawExpression, options, output)
-	if (resolvedExpression == null) {
-		process.exitCode = 2
-		return
-	}
-
-	const requestArgs = !options.iframe && hasEvalArgs(evalArgs.value) ? evalArgs.value : undefined
-
-	const expression = options.iframe
-		? wrapForIframeEval(wrapExpressionWithArgs(resolvedExpression, evalArgs.value), {
-				selector: options.iframe,
-				namespace: options.iframeNamespace ?? 'argus',
-				timeoutMs: parseNumber(options.iframeTimeout) ?? 5000,
-			})
-		: resolvedExpression
 
 	const retryCount = parseRetryCount(options.retry)
 	if (retryCount.error) {
@@ -120,8 +101,8 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 	if (intervalMs.value == null) {
 		const singleResult = await evalWithRetries({
 			watcher,
-			expression,
-			args: requestArgs,
+			expression: prepared.expression,
+			args: prepared.args,
 			awaitPromise: options.await ?? true,
 			returnByValue: options.returnByValue ?? true,
 			timeoutMs,
@@ -139,58 +120,50 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		return
 	}
 
-	let running = true
-	const stop = (): void => {
-		running = false
+	const pollResult = await pollEval({
+		watcher,
+		expression: prepared.expression,
+		args: prepared.args,
+		awaitPromise: options.await ?? true,
+		returnByValue: options.returnByValue ?? true,
+		timeoutMs,
+		failOnException: options.failOnException ?? true,
+		retryCount: retryCount.value,
+		intervalMs: intervalMs.value,
+		count: countValue.value,
+		onResult: (response) => {
+			printSuccess(response, options, output, true)
+		},
+		shouldStop: (context) => {
+			if (!untilEvaluator.evaluator) {
+				return { ok: true, matched: false }
+			}
+
+			const untilResult = untilEvaluator.evaluator({
+				result: context.response.result,
+				exception: context.response.exception ?? null,
+				iteration: context.iteration,
+				attempt: context.attempt,
+			})
+
+			return untilResult.ok ? { ok: true, matched: untilResult.matched } : { ok: false, error: untilResult.error }
+		},
+	})
+
+	if (pollResult.kind === 'eval-error') {
+		printError(pollResult.failure, options, output)
+		process.exitCode = 1
+		return
 	}
 
-	process.on('SIGINT', stop)
-	process.on('SIGTERM', stop)
+	if (pollResult.kind === 'condition-error') {
+		printError({ kind: 'until', error: pollResult.error }, options, output)
+		process.exitCode = 1
+		return
+	}
 
-	let iteration = 0
-	while (running) {
-		iteration += 1
-		const iterationResult = await evalWithRetries({
-			watcher,
-			expression,
-			args: requestArgs,
-			awaitPromise: options.await ?? true,
-			returnByValue: options.returnByValue ?? true,
-			timeoutMs,
-			failOnException: options.failOnException ?? true,
-			retryCount: retryCount.value,
-		})
-
-		if (!iterationResult.ok) {
-			printError(iterationResult, options, output)
-			process.exitCode = 1
-			return
-		}
-
-		printSuccess(iterationResult.response, options, output, true)
-
-		if (untilEvaluator.evaluator) {
-			const untilResult = untilEvaluator.evaluator({
-				result: iterationResult.response.result,
-				exception: iterationResult.response.exception ?? null,
-				iteration,
-				attempt: iterationResult.attempt,
-			})
-			if (!untilResult.ok) {
-				printError({ kind: 'until', error: untilResult.error }, options, output)
-				process.exitCode = 1
-				return
-			}
-			if (untilResult.matched) {
-				return
-			}
-		}
-
-		if (countValue.value != null && iteration >= countValue.value) {
-			return
-		}
-
-		await sleep(intervalMs.value)
+	if (pollResult.kind === 'interrupted') {
+		process.exitCode = 130
 	}
 }
 

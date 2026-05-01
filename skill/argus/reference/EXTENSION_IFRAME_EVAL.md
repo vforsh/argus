@@ -6,9 +6,9 @@ Extension mode can't eval directly in cross-origin iframes. Use postMessage brid
 
 ```bash
 # Generate helper
-argus iframe-helper --out src/argus-helper.js
-argus iframe-helper --iife --out dist/argus-helper.js  # Wrap in IIFE
-argus iframe-helper --namespace myapp                   # Custom namespace
+argus eval iframe-helper --out src/argus-helper.js
+argus eval iframe-helper --iife --out dist/argus-helper.js  # Wrap in IIFE
+argus eval iframe-helper --namespace myapp                   # Custom namespace
 ```
 
 Include in iframe HTML:

@@ -17,6 +17,7 @@ argus js [id] "<expression>" [flags]
 argus eval app "location.href"
 argus eval app "document.title"
 argus eval app "await fetch('/ping').then(r => r.status)"
+argus eval app "window.store.getState()" --inject ./debug-hooks.js
 argus eval app --file ./script.js --arg level=10 --arg mode=fast
 ```
 
@@ -41,6 +42,7 @@ argus eval app "document.title" --interval 250ms --until 'result === "ready"'
 | `--no-fail-on-exception` | Don't exit 1 on throw            |
 | `--retry <n>`            | Retry failed evals               |
 | `--silent` / `-q`        | Suppress success output          |
+| `--inject <file>`        | Run setup code before expression |
 | `--arg <key=value>`      | Expose string arg as `args[key]` |
 
 ## Script Args
@@ -49,6 +51,7 @@ argus eval app "document.title" --interval 250ms --until 'result === "ready"'
 
 ```bash
 argus js app --file ./open-level.js --arg level=10 --arg variant=arrows
+argus js app "window.store.getState()" --inject ./debug-hooks.js --arg user=qa
 cat ./click-test-id.js | argus js app --stdin --arg testId=arrows.boosters.button.ruler
 argus wait app --file ./ready.js --arg level=10 --total-timeout 20s
 ```
@@ -108,7 +111,7 @@ Also supports `--arg <key=value>`.
 Cross-origin iframes need helper script:
 
 ```bash
-argus iframe-helper --out src/argus-helper.js
+argus eval iframe-helper --out src/argus-helper.js
 argus eval app "window.gameState" --iframe "iframe#game"
 ```
 
