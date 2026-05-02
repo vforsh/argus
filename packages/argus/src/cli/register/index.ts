@@ -23,6 +23,7 @@ import { registerConfig } from './registerConfig.js'
 import { registerExtension } from './registerExtension.js'
 import { registerCode } from './registerCode.js'
 import { registerLocate } from './registerLocate.js'
+import { registerPlugin } from './registerPlugin.js'
 
 export type ProgramRegistrar = (program: Command) => void
 
@@ -53,5 +54,6 @@ export const coreProgramRegistrars: readonly ProgramRegistrar[] = [
 	registerSnapshot,
 	registerTrace,
 	registerConfig,
+	registerPlugin,
 	registerExtension,
 ]

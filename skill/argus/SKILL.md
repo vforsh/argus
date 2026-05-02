@@ -453,8 +453,15 @@ Argus can load optional CLI plugins that register extra top-level commands.
 
 - Config: add `"plugins": ["<module-or-path>"]` to Argus config.
 - Env: set `ARGUS_PLUGINS` to comma-separated specifiers/paths.
-- Module contract: default export `{ apiVersion: 1, name, register(ctx) }`.
-- TypeScript: import plugin types from `@vforsh/argus-plugin-api`.
+- Dynamic: pass `--plugin <module-or-path>` before the command for one invocation.
+- Inspect: `argus plugin list` shows loaded plugins and load failures.
+
+```bash
+argus --plugin ./packages/argus-plugin-google-sheets/dist/index.js plugin list
+ARGUS_PLUGINS=./packages/argus-plugin-google-sheets/dist/index.js argus sheets read extension-3 --range A1:C5
+```
+
+See [PLUGINS.md](./reference/PLUGINS.md).
 
 ---
 

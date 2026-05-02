@@ -8,6 +8,7 @@ export function createProgram(): Command {
 		.name('argus')
 		.description('Argus CLI for local watcher servers')
 		.version(packageJson.version)
+		.option('--plugin <specifier>', 'Load an extra CLI plugin for this invocation', collectPluginOption, [])
 		.configureOutput({
 			outputError: (str, write) => write(str),
 		})
@@ -22,3 +23,5 @@ export function createProgram(): Command {
 
 	return program
 }
+
+const collectPluginOption = (value: string, previous: string[]): string[] => [...previous, value]

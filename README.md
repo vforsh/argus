@@ -401,6 +401,8 @@ Argus can load optional CLI plugins that register additional top-level commands.
 
 - Config: add `"plugins": [...]` to an Argus config file
 - Env: set `ARGUS_PLUGINS` to a comma-separated list of module specifiers or resolvable paths
+- Dynamic: pass `--plugin <module-or-path>` before the command for a single invocation
+- Inspect: run `argus plugin list` to see discovered plugins and load failures
 
 Plugin modules must default-export:
 
@@ -419,6 +421,18 @@ export default plugin
 ```
 
 TypeScript plugin authors should import from `@vforsh/argus-plugin-api`.
+
+### Google Sheets plugin
+
+`@vforsh/argus-plugin-google-sheets` adds `argus sheets` / `argus gs` commands for the Google Sheets tab attached through Argus.
+
+```bash
+argus --plugin @vforsh/argus-plugin-google-sheets plugin list
+argus sheets read extension-3 --range A1:C5
+argus sheets export extension-3 --range A1:C5 --format tsv
+argus sheets find extension-3 "needle" --ignore-case
+argus sheets write extension-3 B12 --value "Новое значение"
+```
 
 ## Troubleshooting
 

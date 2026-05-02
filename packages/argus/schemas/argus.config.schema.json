@@ -8,6 +8,14 @@
 			"type": "string",
 			"description": "Path or URL to the Argus config schema."
 		},
+		"plugins": {
+			"type": "array",
+			"description": "Optional Argus CLI plugins to load at startup (module specifiers or resolvable paths).",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
 		"chrome": {
 			"type": "object",
 			"additionalProperties": false,
