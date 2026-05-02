@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"composite": true,
+		"declaration": true,
+		"declarationMap": true,
+		"lib": ["ES2022", "DOM"],
+		"sourceMap": true,
+		"rootDir": "./src",
+		"outDir": "./dist",
+		"tsBuildInfoFile": "./dist/.tsbuildinfo",
+		"types": ["bun-types"]
+	},
+	"references": [{ "path": "../argus-plugin-api" }],
+	"include": ["src"]
+}

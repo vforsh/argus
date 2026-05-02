@@ -19,7 +19,7 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.1.12",
+      "version": "0.1.14",
       "bin": {
         "argus": "dist/argus.js",
       },
@@ -38,7 +38,7 @@
     },
     "packages/argus-core": {
       "name": "@vforsh/argus-core",
-      "version": "0.1.5",
+      "version": "0.1.7",
       "devDependencies": {
         "commander": "^14.0.2",
       },
@@ -62,9 +62,16 @@
         "commander": "14.0.2",
       },
     },
+    "packages/argus-plugin-google-sheets": {
+      "name": "@vforsh/argus-plugin-google-sheets",
+      "version": "0.1.0",
+      "dependencies": {
+        "@vforsh/argus-plugin-api": "workspace:*",
+      },
+    },
     "packages/argus-watcher": {
       "name": "@vforsh/argus-watcher",
-      "version": "0.1.9",
+      "version": "0.1.11",
       "dependencies": {
         "@jridgewell/trace-mapping": "^0.3.31",
         "@vforsh/argus-core": "workspace:*",
@@ -204,6 +211,8 @@
     "@vforsh/argus-extension": ["@vforsh/argus-extension@workspace:packages/argus-extension"],
 
     "@vforsh/argus-plugin-api": ["@vforsh/argus-plugin-api@workspace:packages/argus-plugin-api"],
+
+    "@vforsh/argus-plugin-google-sheets": ["@vforsh/argus-plugin-google-sheets@workspace:packages/argus-plugin-google-sheets"],
 
     "@vforsh/argus-watcher": ["@vforsh/argus-watcher@workspace:packages/argus-watcher"],
 

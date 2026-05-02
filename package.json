@@ -17,7 +17,7 @@
 		"typecheck:packages": "tsc -b tsconfig.packages.json --pretty false",
 		"typecheck:extension": "bun run --cwd packages/argus-extension typecheck",
 		"build": "tsc -b",
-		"clean:packages": "node scripts/clean-dist.mjs packages/argus-core packages/argus-client packages/argus-plugin-api packages/argus-watcher packages/argus",
+		"clean:packages": "node scripts/clean-dist.mjs packages/argus-core packages/argus-client packages/argus-plugin-api packages/argus-plugin-google-sheets packages/argus-watcher packages/argus",
 		"build:packages": "npm run clean:packages && tsc -b tsconfig.json && bun run --filter @vforsh/argus bundle",
 		"chrome:start": "bun packages/argus/src/bin.ts chrome start",
 		"test:e2e": "bun run build:packages && bun test e2e/",
