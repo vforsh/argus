@@ -1,4 +1,4 @@
-import type { ArgusPluginContextV1, ArgusWatcherRequestResult } from '@vforsh/argus-plugin-api'
+import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { parseCsv, parseTsv, toTsv } from './csv.js'
 import {
 	buildClipboardExpression,
@@ -8,13 +8,6 @@ import {
 	type SheetCsvResult,
 	type SheetSelectResult,
 } from './pageScripts.js'
-
-type EvalResponse<T> = {
-	ok: true
-	result: T
-	type: string | null
-	exception: { text: string; details?: unknown } | null
-}
 
 type Output = ReturnType<ArgusPluginContextV1['host']['createOutput']>
 
@@ -201,11 +194,7 @@ const dispatchKey = async (
 	output: Output,
 	body: { key: string; selector?: string; modifiers?: string },
 ): Promise<boolean> => {
-	const response = await ctx.host.requestWatcherJson<{ ok: true; key: string }>({
-		id,
-		path: '/dom/keydown',
-		method: 'POST',
-		body,
+	const response = await ctx.host.argus.dom.keydown(id, body, {
 		timeoutMs: 30_000,
 	})
 	if (response.ok) return true
@@ -216,13 +205,18 @@ const dispatchKey = async (
 }
 
 const evalInWatcher = async <T>(ctx: ArgusPluginContextV1, id: string | undefined, expression: string, output: Output): Promise<T | null> => {
-	const response: ArgusWatcherRequestResult<EvalResponse<T>> = await ctx.host.requestWatcherJson({
+	const response = await ctx.host.argus.eval(
 		id,
-		path: '/eval',
-		method: 'POST',
-		body: { expression, awaitPromise: true, returnByValue: true, timeoutMs: 30_000 },
-		timeoutMs: 35_000,
-	})
+		{
+			expression,
+			awaitPromise: true,
+			returnByValue: true,
+			timeoutMs: 30_000,
+		},
+		{
+			timeoutMs: 35_000,
+		},
+	)
 	if (!response.ok) {
 		ctx.host.writeRequestError(response, output)
 		process.exitCode = response.exitCode
@@ -233,7 +227,7 @@ const evalInWatcher = async <T>(ctx: ArgusPluginContextV1, id: string | undefine
 		process.exitCode = 1
 		return null
 	}
-	return response.data.result
+	return response.data.result as T
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

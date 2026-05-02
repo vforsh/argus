@@ -6,27 +6,38 @@ import type { Command } from 'commander'
 
 import { resolveArgusConfigPath, loadArgusConfig } from '../../config/argusConfig.js'
 import { createOutput } from '../../output/io.js'
-import { requestWatcherJson, writeRequestError } from '../../watchers/requestWatcher.js'
-import { runChromeOpen } from '../../commands/chrome.js'
+import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from './pluginAliases.js'
+import { createPluginHost } from './pluginHost.js'
 
 type PluginSource = 'config' | 'env' | 'cli'
 
 type PluginInput = {
 	source: PluginSource
 	spec: string
+	resolvedSpec: string
+	alias: string | null
 }
 
 export type PluginLoadEntry =
 	| {
 			source: PluginSource
 			spec: string
+			resolvedSpec: string
+			alias: string | null
 			status: 'loaded'
 			name: string
+			version: string | null
+			description: string | null
+			commands: string[]
+			homepage: string | null
+			minArgusVersion: string | null
 			url: string
 	  }
 	| {
 			source: PluginSource
 			spec: string
+			resolvedSpec: string
+			alias: string | null
 			status: 'failed'
 			error: string
 			url?: string
@@ -58,6 +69,11 @@ const parseEnvPlugins = (): string[] => {
 }
 
 const uniq = (values: string[]): string[] => Array.from(new Set(values))
+
+const createPluginInput = (source: PluginSource, spec: string, aliases: Record<string, string>): PluginInput => {
+	const resolved = resolvePluginAlias(spec, aliases)
+	return { source, spec, resolvedSpec: resolved.spec, alias: resolved.alias }
+}
 
 /** Plugins must be loaded before Commander parses commands, so scan raw argv for dynamic loads. */
 const parseCliPlugins = (argv: readonly string[]): string[] => {
@@ -159,30 +175,57 @@ const extractPlugin = (mod: unknown): ArgusPluginV1 | null => {
 	return plugin as ArgusPluginV1
 }
 
+const normalizeOptionalString = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null)
+
+const normalizeCommands = (value: unknown): string[] => {
+	if (!Array.isArray(value)) return []
+	const commands = value
+		.filter((item): item is string => typeof item === 'string')
+		.map((item) => item.trim())
+		.filter(Boolean)
+	return Array.from(new Set(commands))
+}
+
 const warnPluginLoad = (source: PluginSource, spec: string, message: string): void => {
 	const output = createOutput({ json: false })
 	output.writeWarn(`[plugins] Failed to load (${source}) "${spec}": ${message}`)
 }
 
 const recordPluginFailure = (entries: PluginLoadEntry[], entry: PluginInput, error: string, url?: string): void => {
-	entries.push({ source: entry.source, spec: entry.spec, status: 'failed', url, error })
+	entries.push({ source: entry.source, spec: entry.spec, resolvedSpec: entry.resolvedSpec, alias: entry.alias, status: 'failed', url, error })
 	warnPluginLoad(entry.source, entry.spec, error)
 }
+
+const createLoadedEntry = (entry: PluginInput, plugin: ArgusPluginV1, url: string): PluginLoadEntry => ({
+	source: entry.source,
+	spec: entry.spec,
+	resolvedSpec: entry.resolvedSpec,
+	alias: entry.alias,
+	status: 'loaded',
+	name: plugin.name,
+	version: normalizeOptionalString(plugin.version),
+	description: normalizeOptionalString(plugin.description),
+	commands: normalizeCommands(plugin.commands),
+	homepage: normalizeOptionalString(plugin.homepage),
+	minArgusVersion: normalizeOptionalString(plugin.minArgusVersion),
+	url,
+})
 
 export const registerPlugins = async (program: Command, argv: readonly string[] = process.argv.slice(2)): Promise<void> => {
 	const cwd = process.cwd()
 
 	const configPath = resolveArgusConfigPath({ cwd })
 	const configResult = configPath ? loadArgusConfig(configPath) : null
+	const aliases = { ...BUILTIN_PLUGIN_ALIASES, ...(configResult?.config.pluginAliases ?? {}) }
 
 	const configPlugins = configResult?.config.plugins ?? []
 	const envPlugins = parseEnvPlugins()
 	const cliPlugins = parseCliPlugins(argv)
 
 	const all: PluginInput[] = []
-	for (const spec of configPlugins) all.push({ source: 'config', spec })
-	for (const spec of envPlugins) all.push({ source: 'env', spec })
-	for (const spec of cliPlugins) all.push({ source: 'cli', spec })
+	for (const spec of configPlugins) all.push(createPluginInput('config', spec, aliases))
+	for (const spec of envPlugins) all.push(createPluginInput('env', spec, aliases))
+	for (const spec of cliPlugins) all.push(createPluginInput('cli', spec, aliases))
 
 	const entries: PluginLoadEntry[] = []
 	lastPluginLoadReport = {
@@ -197,7 +240,7 @@ export const registerPlugins = async (program: Command, argv: readonly string[] 
 	// Preserve original order, but avoid duplicate loads.
 	const seen = new Set<string>()
 	const ordered = all.filter((p) => {
-		const key = p.spec.trim()
+		const key = p.resolvedSpec.trim()
 		if (!key) return false
 		if (seen.has(key)) return false
 		seen.add(key)
@@ -208,14 +251,14 @@ export const registerPlugins = async (program: Command, argv: readonly string[] 
 
 	const ctxBase: Omit<ArgusPluginContextV1, 'program'> = {
 		apiVersion: ARGUS_PLUGIN_API_VERSION,
-		host: { createOutput, requestWatcherJson, writeRequestError, runChromeOpen },
+		host: createPluginHost(),
 		cwd,
 		configPath,
 		configDir: configResult?.configDir ?? null,
 	}
 
 	for (const entry of ordered) {
-		const resolved = resolvePluginModuleUrl(entry.spec, baseDirs)
+		const resolved = resolvePluginModuleUrl(entry.resolvedSpec, baseDirs)
 		if (!resolved.ok) {
 			recordPluginFailure(entries, entry, resolved.error)
 			continue
@@ -242,7 +285,7 @@ export const registerPlugins = async (program: Command, argv: readonly string[] 
 
 		try {
 			await plugin.register({ ...ctxBase, program })
-			entries.push({ source: entry.source, spec: entry.spec, status: 'loaded', name: plugin.name, url: resolved.url })
+			entries.push(createLoadedEntry(entry, plugin, resolved.url))
 		} catch (error) {
 			recordPluginFailure(entries, entry, error instanceof Error ? error.message : String(error), resolved.url)
 		}

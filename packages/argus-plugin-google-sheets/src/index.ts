@@ -5,6 +5,9 @@ import { registerSheetCommands } from './commands.js'
 const plugin: ArgusPluginV1 = {
 	apiVersion: ARGUS_PLUGIN_API_VERSION,
 	name: 'google-sheets',
+	version: '0.1.0',
+	description: 'Read, search, select, and write the Google Sheets tab attached through Argus.',
+	commands: ['sheets', 'gs'],
 	register(ctx) {
 		registerSheetCommands(ctx)
 	},

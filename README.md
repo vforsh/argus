@@ -400,9 +400,11 @@ Example:
 Argus can load optional CLI plugins that register additional top-level commands.
 
 - Config: add `"plugins": [...]` to an Argus config file
-- Env: set `ARGUS_PLUGINS` to a comma-separated list of module specifiers or resolvable paths
-- Dynamic: pass `--plugin <module-or-path>` before the command for a single invocation
-- Inspect: run `argus plugin list` to see discovered plugins and load failures
+- Alias config: add `"pluginAliases": { "name": "<module-or-path>" }`
+- Manage config: run `argus plugin add <module-or-path|alias=specifier>` or `argus plugin remove <specifier-or-name>`
+- Env: set `ARGUS_PLUGINS` to a comma-separated list of module specifiers, aliases, or resolvable paths
+- Dynamic: pass `--plugin <module-or-path-or-alias>` before the command for a single invocation
+- Inspect: run `argus plugin list` to see metadata, commands, discovered plugins, and load failures
 
 Plugin modules must default-export:
 
@@ -412,8 +414,18 @@ import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginV1 } from '@vforsh/argus-plug
 const plugin: ArgusPluginV1 = {
 	apiVersion: ARGUS_PLUGIN_API_VERSION,
 	name: 'my-plugin',
+	description: 'Short human description',
+	commands: ['mycmd'],
 	register(ctx) {
-		ctx.program.command('mycmd').action(() => {})
+		ctx.program
+			.command('title [id]')
+			.option('--json')
+			.action(
+				ctx.host.defineWatcherCommand({
+					build: () => ({ path: '/eval', method: 'POST', body: { expression: 'document.title', returnByValue: true } }),
+					formatHuman: (response: { ok: true; result: unknown }, { output }) => output.writeHuman(String(response.result ?? '')),
+				}),
+			)
 	},
 }
 
@@ -427,7 +439,8 @@ TypeScript plugin authors should import from `@vforsh/argus-plugin-api`.
 `@vforsh/argus-plugin-google-sheets` adds `argus sheets` / `argus gs` commands for the Google Sheets tab attached through Argus.
 
 ```bash
-argus --plugin @vforsh/argus-plugin-google-sheets plugin list
+argus plugin add gsheets
+argus --plugin gs plugin list
 argus sheets read extension-3 --range A1:C5
 argus sheets export extension-3 --range A1:C5 --format tsv
 argus sheets find extension-3 "needle" --ignore-case

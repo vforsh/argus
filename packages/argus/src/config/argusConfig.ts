@@ -39,6 +39,11 @@ export type ArgusConfig = {
 	 * or a path resolvable from the config directory / cwd (e.g. "./plugins/yagames.js").
 	 */
 	plugins?: string[]
+	/**
+	 * Optional aliases for plugin specifiers. Aliases are resolved before normal
+	 * module resolution, so `argus --plugin sheets ...` can point at a full package.
+	 */
+	pluginAliases?: Record<string, string>
 }
 
 export type ArgusConfigLoadResult = {
@@ -52,7 +57,7 @@ type OptionSourceProvider = {
 
 const AUTO_CONFIG_CANDIDATES = ['.argus/config.json', '.config/argus.json', 'argus.config.json', 'argus/config.json']
 const EXPECTED_SHAPE_HINT =
-	'Expected shape: { chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean, headless?: boolean } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full", inject?: { file: string, exposeArgus?: boolean } } } }.'
+	'Expected shape: { plugins?: string[], pluginAliases?: Record<string, string>, chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean, headless?: boolean } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full", inject?: { file: string, exposeArgus?: boolean } } } }.'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -138,6 +143,27 @@ const validateOptionalStringArray = (value: unknown, label: string): { ok: true;
 		}
 	}
 	return { ok: true, value }
+}
+
+const validateOptionalStringMap = (value: unknown, label: string): { ok: true; value?: Record<string, string> } | { ok: false; error: string } => {
+	if (value === undefined) {
+		return { ok: true }
+	}
+	if (!isRecord(value)) {
+		return { ok: false, error: `${label} must be an object with string values.` }
+	}
+
+	const entries: Array<[string, string]> = []
+	for (const [key, item] of Object.entries(value)) {
+		if (key.trim() === '') {
+			return { ok: false, error: `${label} keys must be non-empty strings.` }
+		}
+		if (typeof item !== 'string' || item.trim() === '') {
+			return { ok: false, error: `${label}.${key} must be a non-empty string.` }
+		}
+		entries.push([key, item])
+	}
+	return { ok: true, value: Object.fromEntries(entries) }
 }
 
 const validateOptionalSection = <T>(
@@ -288,6 +314,10 @@ const validateArgusConfig = (value: unknown): { ok: true; value: ArgusConfig } |
 	if (!pluginsResult.ok) {
 		return pluginsResult
 	}
+	const pluginAliasesResult = validateOptionalStringMap(value.pluginAliases, '"pluginAliases"')
+	if (!pluginAliasesResult.ok) {
+		return pluginAliasesResult
+	}
 
 	const chromeResult = validateOptionalSection<ArgusConfig['chrome']>(value.chrome, '"chrome"', (section) => {
 		if (section.start === undefined) {
@@ -317,7 +347,15 @@ const validateArgusConfig = (value: unknown): { ok: true; value: ArgusConfig } |
 		return watcherResult
 	}
 
-	return { ok: true, value: { chrome: chromeResult.value, watcher: watcherResult.value, plugins: pluginsResult.value } }
+	return {
+		ok: true,
+		value: {
+			chrome: chromeResult.value,
+			watcher: watcherResult.value,
+			plugins: pluginsResult.value,
+			pluginAliases: pluginAliasesResult.value,
+		},
+	}
 }
 
 export const resolveArgusConfigPath = ({ cliPath, cwd }: { cliPath?: string; cwd: string }): string | null => {

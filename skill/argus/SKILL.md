@@ -452,11 +452,15 @@ Script injection runs custom JS on attach and page navigation. See [INJECT.md](.
 Argus can load optional CLI plugins that register extra top-level commands.
 
 - Config: add `"plugins": ["<module-or-path>"]` to Argus config.
-- Env: set `ARGUS_PLUGINS` to comma-separated specifiers/paths.
-- Dynamic: pass `--plugin <module-or-path>` before the command for one invocation.
-- Inspect: `argus plugin list` shows loaded plugins and load failures.
+- Aliases: `gsheets` and `gs` load `@vforsh/argus-plugin-google-sheets`; config can add `pluginAliases`.
+- Manage config: `argus plugin add <module-or-path-or-alias>` / `argus plugin add <alias>=<module-or-path>` / `argus plugin remove <specifier-or-name>`.
+- Env: set `ARGUS_PLUGINS` to comma-separated specifiers/aliases/paths.
+- Dynamic: pass `--plugin <module-or-path-or-alias>` before the command for one invocation.
+- Inspect: `argus plugin list` shows loaded plugin metadata, commands, and load failures.
 
 ```bash
+argus plugin add gsheets
+argus --plugin gs plugin list
 argus --plugin ./packages/argus-plugin-google-sheets/dist/index.js plugin list
 ARGUS_PLUGINS=./packages/argus-plugin-google-sheets/dist/index.js argus sheets read extension-3 --range A1:C5
 ```

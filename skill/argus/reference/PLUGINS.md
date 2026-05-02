@@ -9,17 +9,22 @@ Argus plugins are normal ESM modules loaded before Commander parses the CLI comm
 argus plugin list
 
 # Env: useful for shells/scripts
-ARGUS_PLUGINS=./plugins/foo.js argus plugin list
+ARGUS_PLUGINS=foo argus plugin list
 
 # Dynamic: one invocation only
-argus --plugin ./plugins/foo.js plugin list
+argus --plugin foo plugin list
+
+# Config mutation
+argus plugin add gsheets
+argus plugin add foo=./plugins/foo.js
+argus plugin remove google-sheets
 ```
 
 Load order:
 
 1. `plugins` from Argus config
 2. `ARGUS_PLUGINS` comma-separated entries
-3. `--plugin <module-or-path>` entries
+3. `--plugin <module-or-path-or-alias>` entries
 
 Duplicate specifiers are loaded once, preserving first occurrence.
 
@@ -38,9 +43,16 @@ argus --plugin ./plugins/foo.js plugin list --json
 	"entries": [
 		{
 			"source": "cli",
-			"spec": "./plugins/foo.js",
+			"spec": "foo",
+			"resolvedSpec": "./plugins/foo.js",
+			"alias": "foo",
 			"status": "loaded",
 			"name": "foo",
+			"version": "1.2.3",
+			"description": "Foo commands for Argus",
+			"commands": ["foo"],
+			"homepage": null,
+			"minArgusVersion": null,
 			"url": "file:///repo/plugins/foo.js"
 		}
 	]
@@ -49,8 +61,21 @@ argus --plugin ./plugins/foo.js plugin list --json
 
 Failures are non-fatal: Argus prints a warning and keeps registering the rest.
 
+## Manage Config
+
+```bash
+argus plugin add <module-or-path-or-alias>
+argus plugin add <alias>=<module-or-path>
+argus plugin remove <specifier-or-name>
+argus plugin add ./plugins/foo.js --path argus.config.json
+```
+
+`plugin add` creates `.argus/config.json` when no config exists, appends the specifier once, and preserves the rest of the config. `plugin add foo=./plugins/foo.js` writes both `plugins: ["foo"]` and `pluginAliases.foo`. `plugin remove` accepts the full specifier, alias, or package shorthand (`google-sheets` removes `gsheets` / `@vforsh/argus-plugin-google-sheets`).
+
 ## Resolution
 
+- Built-in aliases resolve first: `gsheets` and `gs` point at `@vforsh/argus-plugin-google-sheets`.
+- Config aliases in `pluginAliases` override built-ins.
 - `file:` URLs load directly.
 - Relative and absolute paths resolve from config directory first, then cwd.
 - Package specifiers resolve next to Argus first, then from config directory / cwd.
@@ -60,6 +85,7 @@ Use dynamic loading for local development:
 ```bash
 npm run build --workspace @vforsh/argus-plugin-google-sheets
 argus --plugin ./packages/argus-plugin-google-sheets/dist/index.js sheets read extension-3 --range A1:C5
+argus --plugin gs sheets read extension-3 --range A1:C5
 ```
 
 ## Plugin Contract
@@ -70,6 +96,9 @@ import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginV1 } from '@vforsh/argus-plug
 const plugin: ArgusPluginV1 = {
 	apiVersion: ARGUS_PLUGIN_API_VERSION,
 	name: 'my-plugin',
+	version: '1.0.0',
+	description: 'Short human description.',
+	commands: ['mycmd'],
 	register(ctx) {
 		ctx.program.command('mycmd').action(() => {})
 	},
@@ -88,6 +117,22 @@ Plugins may also export the plugin as `argusPlugin`.
 - `requestWatcherJson(input)` for watcher HTTP calls
 - `writeRequestError(result, output)` for standard watcher errors
 - `runChromeOpen(options)` for opening tabs through Argus Chrome resolution
+- `defineWatcherCommand(spec)` for stable watcher-backed command runners with JSON/human formatting
+- `argus.eval`, `argus.dom.click/info/keydown`, and `argus.screenshot` for common watcher calls without raw paths
+
+Minimal watcher command:
+
+```ts
+ctx.program
+	.command('title [id]')
+	.option('--json')
+	.action(
+		ctx.host.defineWatcherCommand({
+			build: () => ({ path: '/eval', method: 'POST', body: { expression: 'document.title', returnByValue: true } }),
+			formatHuman: (response: { ok: true; result: unknown }, { output }) => output.writeHuman(String(response.result ?? '')),
+		}),
+	)
+```
 
 ## Google Sheets Plugin
 

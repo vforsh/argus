@@ -20,8 +20,15 @@ export const runPluginList = (options: PluginListOptions): void => {
 	}
 
 	for (const entry of report.entries) {
-		const label = entry.status === 'loaded' ? `${entry.name} loaded` : 'failed'
-		const detail = entry.status === 'loaded' ? entry.url : entry.error
-		output.writeHuman(`${entry.source}\t${entry.spec}\t${label}\t${detail}`)
+		const spec = entry.alias ? `${entry.alias} -> ${entry.resolvedSpec}` : entry.spec
+		if (entry.status === 'failed') {
+			output.writeHuman(`${entry.source}\t${spec}\tfailed\t${entry.error}`)
+			continue
+		}
+
+		const version = entry.version ? ` v${entry.version}` : ''
+		const commands = entry.commands.length > 0 ? ` commands: ${entry.commands.join(', ')}` : ''
+		const description = entry.description ? ` — ${entry.description}` : ''
+		output.writeHuman(`${entry.source}\t${entry.name}${version}\t${spec}\tloaded${commands}${description}`)
 	}
 }

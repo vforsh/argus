@@ -16,6 +16,14 @@
 				"minLength": 1
 			}
 		},
+		"pluginAliases": {
+			"type": "object",
+			"description": "Optional aliases for plugin module specifiers. Aliases can be used in `plugins` and `argus --plugin <alias>`.",
+			"additionalProperties": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
 		"chrome": {
 			"type": "object",
 			"additionalProperties": false,

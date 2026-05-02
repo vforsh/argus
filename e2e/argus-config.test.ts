@@ -225,3 +225,18 @@ process.stdout.write(JSON.stringify({ result, exitCode: process.exitCode ?? null
 		await fs.rm(tempDir, { recursive: true, force: true })
 	}
 })
+
+test('config loads plugin aliases', async () => {
+	resetExitCode()
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-config-'))
+	try {
+		const configPath = path.join(tempDir, 'argus.config.json')
+		await fs.writeFile(configPath, JSON.stringify({ plugins: ['sample'], pluginAliases: { sample: './plugin.mjs' } }))
+
+		const configResult = loadArgusConfig(configPath)
+		expect(configResult).toBeTruthy()
+		expect(configResult?.config.pluginAliases).toEqual({ sample: './plugin.mjs' })
+	} finally {
+		await fs.rm(tempDir, { recursive: true, force: true })
+	}
+})
