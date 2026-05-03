@@ -2,26 +2,28 @@ import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { parseCsv, parseTsv, toTsv } from './csv.js'
 import {
 	buildAddSheetExpression,
-	buildClipboardExpression,
 	buildInfoSheetsExpression,
 	buildListSheetsExpression,
 	buildMoveSheetExpression,
+	buildPrepareWriteExpression,
 	buildReadCsvExpression,
 	buildRenameSheetExpression,
 	buildRemoveSheetExpression,
 	buildSelectRangeExpression,
 	buildSwitchSheetExpression,
+	buildVerifyWriteExpression,
 	type SheetAddResult,
-	type SheetClipboardResult,
 	type SheetCsvResult,
 	type SheetInfoResult,
 	type SheetListResult,
 	type SheetMoveResult,
+	type SheetPreparedWriteResult,
 	type SheetRenameResult,
 	type SheetRemoveResult,
 	type SheetSelectResult,
 	type SheetSwitchResult,
 	type SheetTab,
+	type SheetWriteVerificationResult,
 } from './pageScripts.js'
 
 type Output = ReturnType<ArgusPluginContextV1['host']['createOutput']>
@@ -334,17 +336,32 @@ const runWrite = async (ctx: ArgusPluginContextV1, id: string | undefined, range
 		return
 	}
 
-	const selected = await selectRange(ctx, id, range, output)
+	const values = parseTsv(tsv)
+	const prepared = await prepareUiWrite(ctx, id, range, tsv, values, output)
+	if (!prepared) return
+
+	const selected = await dispatchKey(ctx, id, output, { key: 'Enter', selector: '#t-name-box' })
 	if (!selected) return
-	const copied = await evalInWatcher<SheetClipboardResult>(ctx, id, buildClipboardExpression(tsv), output)
-	if (!copied) return
 
 	const pasted = await dispatchKey(ctx, id, output, { key: 'v', modifiers: 'ctrl' })
 	if (!pasted) return
 
-	await sleep(1_500)
-	if (options.json) output.writeJson({ ok: true, range: selected.range, clipboard: copied.method })
-	else output.writeHuman(`Pasted ${parseTsv(tsv).length} row(s) into ${selected.range}`)
+	const verification = await evalInWatcher<SheetWriteVerificationResult>(
+		ctx,
+		id,
+		buildVerifyWriteExpression({ range: prepared.verificationRange, expectedValues: values, timeoutMs: 1_500 }),
+		output,
+	)
+	if (!verification) return
+
+	writeWriteResult(output, options, {
+		ok: true,
+		range: prepared.range,
+		method: prepared.method,
+		rows: values.length,
+		verified: verification.verified,
+		verificationRange: verification.range,
+	})
 }
 
 const readSheet = async (ctx: ArgusPluginContextV1, id: string | undefined, options: ReadOptions): Promise<SheetCsvResult | null> => {
@@ -361,6 +378,23 @@ const selectRange = async (ctx: ArgusPluginContextV1, id: string | undefined, ra
 
 	await sleep(200)
 	return result
+}
+
+const prepareUiWrite = async (
+	ctx: ArgusPluginContextV1,
+	id: string | undefined,
+	range: string,
+	tsv: string,
+	values: string[][],
+	output: Output,
+): Promise<SheetPreparedWriteResult | null> => {
+	const columnCount = Math.max(1, ...values.map((row) => row.length))
+	return await evalInWatcher<SheetPreparedWriteResult>(
+		ctx,
+		id,
+		buildPrepareWriteExpression({ range, text: tsv, rowCount: values.length, columnCount }),
+		output,
+	)
 }
 
 const dispatchKey = async (
@@ -413,6 +447,20 @@ const resolveWriteTsv = async (options: WriteOptions): Promise<string | null> =>
 	if (options.value != null) return toTsv([[options.value]])
 	if (options.tsv != null) return options.tsv
 	return await readStdin()
+}
+
+const writeWriteResult = (
+	output: Output,
+	options: WriteOptions,
+	result: { ok: true; range: string; method: string; rows: number; verified: boolean; verificationRange?: string },
+): void => {
+	if (options.json) {
+		output.writeJson(result)
+		return
+	}
+
+	const suffix = result.verified ? '' : ' (verification timed out)'
+	output.writeHuman(`Wrote ${result.rows} row(s) into ${result.range} via ${result.method}${suffix}`)
 }
 
 const readStdin = async (): Promise<string> =>

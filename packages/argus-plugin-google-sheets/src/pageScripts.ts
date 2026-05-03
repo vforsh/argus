@@ -64,6 +64,21 @@ export type SheetClipboardResult = {
 	method: string
 }
 
+export type SheetPreparedWriteResult = {
+	ok: true
+	method: 'ui-paste'
+	range: string
+	verificationRange: string
+	clipboard: string
+}
+
+export type SheetWriteVerificationResult = {
+	ok: true
+	range: string
+	verified: boolean
+	attempts: number
+}
+
 export const buildReadCsvExpression = (input: { range?: string; gid?: string }): string =>
 	`(() => {
 ${getSpreadsheetId.toString()}
@@ -87,6 +102,18 @@ export const buildMoveSheetExpression = (target: string, index: string): string 
 export const buildSelectRangeExpression = (range: string): string => `(${selectSheetRangeInPage.toString()})(${JSON.stringify({ range })})`
 
 export const buildClipboardExpression = (text: string): string => `(${writeClipboardInPage.toString()})(${JSON.stringify({ text })})`
+
+export const buildPrepareWriteExpression = (input: { range: string; text: string; rowCount: number; columnCount: number }): string => `(() => {
+${[selectSheetRangeInPage, writeClipboardInPage, expandA1RangeForShape, parseA1Cell, columnLettersToIndex, indexToColumnLetters].map((helper) => helper.toString()).join('\n')}
+${prepareUiWriteInPage.toString()}
+return prepareUiWriteInPage(${JSON.stringify(input)})
+})()`
+
+export const buildVerifyWriteExpression = (input: { range: string; expectedValues: string[][]; timeoutMs: number }): string => `(() => {
+${[getSpreadsheetId, getCurrentGid, findVisibleGridGid, isRenderedElement, readSheetCsvInPage, parseCsvInPage, valuesMatch, delay].map((helper) => helper.toString()).join('\n')}
+${verifyWriteInPage.toString()}
+return verifyWriteInPage(${JSON.stringify(input)})
+})()`
 
 const sheetTabHelpers = [
 	listSheetsInPage,
@@ -228,6 +255,130 @@ async function selectSheetRangeInPage(input: { range: string }): Promise<SheetSe
 	nameBox.dispatchEvent(new Event('change', { bubbles: true }))
 
 	return { ok: true, range: input.range, nameBoxValue: nameBox.value }
+}
+
+async function prepareUiWriteInPage(input: {
+	range: string
+	text: string
+	rowCount: number
+	columnCount: number
+}): Promise<SheetPreparedWriteResult> {
+	const selected = await selectSheetRangeInPage({ range: input.range })
+	const copied = await writeClipboardInPage({ text: input.text })
+	return {
+		ok: true,
+		method: 'ui-paste',
+		range: selected.range,
+		verificationRange: expandA1RangeForShape(input.range, input.rowCount, input.columnCount),
+		clipboard: copied.method,
+	}
+}
+
+async function verifyWriteInPage(input: { range: string; expectedValues: string[][]; timeoutMs: number }): Promise<SheetWriteVerificationResult> {
+	const deadline = Date.now() + input.timeoutMs
+	let attempts = 0
+	while (Date.now() < deadline) {
+		attempts++
+		const result = await readSheetCsvInPage({ range: input.range })
+		if (valuesMatch(parseCsvInPage(result.csv), input.expectedValues)) {
+			return { ok: true, range: input.range, verified: true, attempts }
+		}
+		await delay(100)
+	}
+	return { ok: true, range: input.range, verified: false, attempts }
+}
+
+function valuesMatch(actual: string[][], expected: string[][]): boolean {
+	for (let row = 0; row < expected.length; row++) {
+		for (let column = 0; column < (expected[row]?.length ?? 0); column++) {
+			if ((actual[row]?.[column] ?? '') !== (expected[row]?.[column] ?? '')) return false
+		}
+	}
+	return true
+}
+
+function parseCsvInPage(input: string): string[][] {
+	const rows: string[][] = []
+	let row: string[] = []
+	let cell = ''
+	let quoted = false
+
+	for (let i = 0; i < input.length; i++) {
+		const char = input[i]
+		const next = input[i + 1]
+
+		if (quoted) {
+			if (char === '"' && next === '"') {
+				cell += '"'
+				i++
+			} else if (char === '"') {
+				quoted = false
+			} else {
+				cell += char
+			}
+			continue
+		}
+
+		if (char === '"') {
+			quoted = true
+		} else if (char === ',') {
+			row.push(cell)
+			cell = ''
+		} else if (char === '\n') {
+			row.push(cell)
+			rows.push(row)
+			row = []
+			cell = ''
+		} else if (char !== '\r') {
+			cell += char
+		}
+	}
+
+	row.push(cell)
+	if (row.length > 1 || row[0] !== '' || input.endsWith(',')) rows.push(row)
+	return rows
+}
+
+function expandA1RangeForShape(range: string, rowCount: number, columnCount: number): string {
+	const [start] = range.split(':', 1)
+	const cell = parseA1Cell(start)
+	if (!cell || rowCount <= 0 || columnCount <= 0) return range
+
+	const endColumn = indexToColumnLetters(cell.column + columnCount - 1)
+	const endRow = cell.row + rowCount
+	const sheetPrefix = cell.sheet ? `${cell.sheet}!` : ''
+	return rowCount === 1 && columnCount === 1
+		? `${sheetPrefix}${start.replace(/^.*!/, '')}`
+		: `${sheetPrefix}${cell.columnLetters}${cell.row + 1}:${endColumn}${endRow}`
+}
+
+function parseA1Cell(value: string): { sheet: string | null; columnLetters: string; column: number; row: number } | null {
+	const bangIndex = value.lastIndexOf('!')
+	const sheet = bangIndex >= 0 ? value.slice(0, bangIndex) : null
+	const cell = (bangIndex >= 0 ? value.slice(bangIndex + 1) : value).replace(/\$/g, '').trim()
+	const match = cell.match(/^([A-Za-z]+)(\d+)$/)
+	if (!match) return null
+	const columnLetters = match[1].toUpperCase()
+	return { sheet, columnLetters, column: columnLettersToIndex(columnLetters), row: Number(match[2]) - 1 }
+}
+
+function columnLettersToIndex(letters: string): number {
+	let index = 0
+	for (const char of letters.toUpperCase()) {
+		index = index * 26 + (char.charCodeAt(0) - 64)
+	}
+	return index - 1
+}
+
+function indexToColumnLetters(index: number): string {
+	let value = index + 1
+	let letters = ''
+	while (value > 0) {
+		const rem = (value - 1) % 26
+		letters = String.fromCharCode(65 + rem) + letters
+		value = Math.floor((value - 1) / 26)
+	}
+	return letters
 }
 
 type SheetTabElement = SheetTab & {
