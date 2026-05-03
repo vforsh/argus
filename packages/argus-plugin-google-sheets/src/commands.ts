@@ -2,11 +2,16 @@ import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { parseCsv, parseTsv, toTsv } from './csv.js'
 import {
 	buildClipboardExpression,
+	buildListSheetsExpression,
 	buildReadCsvExpression,
 	buildSelectRangeExpression,
+	buildSwitchSheetExpression,
 	type SheetClipboardResult,
 	type SheetCsvResult,
+	type SheetListResult,
 	type SheetSelectResult,
+	type SheetSwitchResult,
+	type SheetTab,
 } from './pageScripts.js'
 
 type Output = ReturnType<ArgusPluginContextV1['host']['createOutput']>
@@ -14,6 +19,11 @@ type Output = ReturnType<ArgusPluginContextV1['host']['createOutput']>
 type CommonOptions = {
 	json?: boolean
 	gid?: string
+}
+
+type ListOptions = {
+	json?: boolean
+	withGid?: boolean
 }
 
 type ReadOptions = CommonOptions & {
@@ -36,6 +46,22 @@ type WriteOptions = CommonOptions & {
 
 export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 	const sheets = ctx.program.command('sheets').alias('gs').description('Read and change the open Google Sheets tab')
+
+	sheets
+		.command('list')
+		.argument('[id]', 'Watcher id for an attached Google Sheets tab')
+		.description('List visible sheets in the current Google Sheets document')
+		.option('--with-gid', 'Collect gid for every visible sheet by briefly switching through the tab bar')
+		.option('--json', 'Output JSON for automation')
+		.action(async (id: string | undefined, options: ListOptions) => runList(ctx, id, options))
+
+	sheets
+		.command('switch')
+		.argument('[id]', 'Watcher id for an attached Google Sheets tab')
+		.argument('<sheet>', 'Visible sheet name, 1-based visible index, or gid')
+		.description('Switch the open Google Sheets tab to a visible sheet')
+		.option('--json', 'Output JSON for automation')
+		.action(async (id: string | undefined, sheet: string, options: CommonOptions) => runSwitch(ctx, id, sheet, options))
 
 	sheets
 		.command('read')
@@ -88,6 +114,28 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 		.option('--stdin', 'Read TSV from stdin')
 		.option('--json', 'Output JSON for automation')
 		.action(async (id: string | undefined, range: string, options: WriteOptions) => runWrite(ctx, id, range, options))
+}
+
+const runList = async (ctx: ArgusPluginContextV1, id: string | undefined, options: ListOptions): Promise<void> => {
+	const output = ctx.host.createOutput(options)
+	const result = await evalInWatcher<SheetListResult>(ctx, id, buildListSheetsExpression({ withGid: options.withGid }), output)
+	if (!result) return
+
+	if (options.json) {
+		output.writeJson(result)
+		return
+	}
+
+	output.writeHuman(formatSheetList(result.sheets))
+}
+
+const runSwitch = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, options: CommonOptions): Promise<void> => {
+	const output = ctx.host.createOutput(options)
+	const result = await evalInWatcher<SheetSwitchResult>(ctx, id, buildSwitchSheetExpression(sheet), output)
+	if (!result) return
+
+	if (options.json) output.writeJson(result)
+	else output.writeHuman(`Switched to ${formatSheetLabel(result.sheet)}`)
 }
 
 const runRead = async (ctx: ArgusPluginContextV1, id: string | undefined, options: ReadOptions): Promise<void> => {
@@ -259,6 +307,14 @@ const withoutCsv = (data: SheetCsvResult): Omit<SheetCsvResult, 'csv'> => ({
 	gid: data.gid,
 	range: data.range,
 })
+
+const formatSheetList = (sheets: SheetTab[]): string => {
+	if (sheets.length === 0) return 'No visible sheets'
+	const rows = sheets.map((sheet) => [sheet.active ? '*' : ' ', String(sheet.index), sheet.name, sheet.gid ?? ''])
+	return formatTable([['', '#', 'Name', 'gid'], ...rows])
+}
+
+const formatSheetLabel = (sheet: SheetTab): string => (sheet.gid ? `${sheet.name} (${sheet.gid})` : sheet.name)
 
 const formatTable = (rows: string[][]): string => {
 	if (rows.length === 0) return ''

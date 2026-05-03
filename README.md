@@ -441,6 +441,8 @@ TypeScript plugin authors should import from `@vforsh/argus-plugin-api`.
 ```bash
 argus plugin add gsheets
 argus --plugin gs plugin list
+argus sheets list extension-3
+argus sheets switch extension-3 "Sheet 2"
 argus sheets read extension-3 --range A1:C5
 argus sheets export extension-3 --range A1:C5 --format tsv
 argus sheets find extension-3 "needle" --ignore-case

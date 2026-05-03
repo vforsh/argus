@@ -23,6 +23,10 @@ ARGUS_PLUGINS=./packages/argus-plugin-google-sheets/dist/index.js argus sheets r
 ## Commands
 
 ```bash
+argus sheets list extension-2
+argus sheets list extension-2 --with-gid
+argus sheets switch extension-2 "Burn rate"
+argus sheets switch extension-2 2
 argus sheets read extension-2 --range A1:C5
 argus sheets export extension-2 --range A1:C5 --format tsv
 argus sheets find extension-2 "Play" --column ru --ignore-case
@@ -36,5 +40,7 @@ cat rows.tsv | argus sheets write extension-2 B12 --stdin
 ## Notes
 
 - The watcher must point at a Google Sheets tab that the current browser session can access.
+- `list` reports visible sheet tabs. `--with-gid` briefly switches through those tabs, then restores the originally active sheet.
+- `switch` accepts a visible sheet name, 1-based visible index, or gid.
 - `read`, `export`, and `find` can read ranges that are not visible because they use the CSV export endpoint.
 - `write` changes the live sheet through the browser UI; keep the tab focused on the intended document and range.
