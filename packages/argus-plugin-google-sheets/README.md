@@ -2,7 +2,7 @@
 
 Argus CLI plugin for working with the Google Sheets document already open in an attached browser tab.
 
-Reads use Google Sheets CSV export from inside the authenticated tab. Writes select a range in the live UI, copy TSV to the browser clipboard, then paste with the platform shortcut.
+Reads use Google Sheets CSV export from inside the authenticated tab. Writes select a range in the live UI, copy TSV to the browser clipboard, then paste with the platform shortcut. In extension mode, `--api` can use Chrome OAuth plus the official Google Sheets API for faster batch reads/writes.
 
 ## Enable
 
@@ -38,10 +38,12 @@ argus sheets rows remove extension-2 5 --count 2 --force
 argus sheets columns add extension-2 3 --after
 argus sheets columns remove extension-2 3 --force
 argus sheets read extension-2 --range A1:C5
+argus sheets read extension-2 --range A1:C5 --api
 argus sheets export extension-2 --range A1:C5 --format tsv
 argus sheets find extension-2 "Play" --column ru --ignore-case
 argus sheets select extension-2 B12
 argus sheets write extension-2 B12 --value "Новое значение"
+argus sheets write extension-2 B12 --value "Новое значение" --api
 cat rows.tsv | argus sheets write extension-2 B12 --stdin
 ```
 
@@ -58,3 +60,4 @@ cat rows.tsv | argus sheets write extension-2 B12 --stdin
 - `rows add/remove` and `columns add/remove` operate on the active sheet. Targets are 1-based indexes; add commands require exactly one of `--before` or `--after`; remove commands require `--force`.
 - `read`, `export`, and `find` can read ranges that are not visible because they use the CSV export endpoint.
 - `write` changes the live sheet through the browser UI; keep the tab focused on the intended document and range.
+- `--api` requires an extension-backed watcher plus Chrome extension OAuth config (`identity` permission and a Google OAuth client in `manifest.oauth2`). It maps the active tab gid to a sheet title through the official Sheets API, so it can target the current sheet without UI paste.

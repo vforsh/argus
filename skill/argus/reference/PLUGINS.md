@@ -152,12 +152,14 @@ argus sheets rows remove extension-3 5 --count 2 --force
 argus sheets columns add extension-3 3 --after
 argus sheets columns remove extension-3 3 --force
 argus sheets read extension-3 --range A1:C5
+argus sheets read extension-3 --range A1:C5 --api
 argus sheets export extension-3 --range A1:C5 --format tsv
 argus sheets find extension-3 "needle" --column ru --ignore-case
 argus sheets write extension-3 B12 --value "Новое значение"
+argus sheets write extension-3 B12 --value "Новое значение" --api
 ```
 
-`sheets`/`gs` works against an attached Google Sheets tab. `list` reports visible sheet tabs; `--with-gid` briefly switches through them and restores the original sheet. `switch`/`open`, `rename`, `move`, and `remove` accept a visible sheet name, 1-based visible index, or gid. `add` creates a sheet through the live UI; `remove` requires `--force`. `rows add/remove` and `columns add/remove` mutate the active sheet by 1-based index; add commands require `--before` or `--after`, and remove commands require `--force`. Reads use authenticated CSV export from inside the tab; writes select a range in the live UI and paste TSV.
+`sheets`/`gs` works against an attached Google Sheets tab. `list` reports visible sheet tabs; `--with-gid` briefly switches through them and restores the original sheet. `switch`/`open`, `rename`, `move`, and `remove` accept a visible sheet name, 1-based visible index, or gid. `add` creates a sheet through the live UI; `remove` requires `--force`. `rows add/remove` and `columns add/remove` mutate the active sheet by 1-based index; add commands require `--before` or `--after`, and remove commands require `--force`. Reads use authenticated CSV export from inside the tab; writes select a range in the live UI and paste TSV. `--api` uses extension OAuth + the official Sheets API when the extension manifest has a Google OAuth client configured.
 
 ## No Unload
 

@@ -36,6 +36,11 @@ export type SheetInfoResult = SheetListResult & {
 	active: SheetTab | null
 }
 
+export type SheetContextResult = SheetPageResult & {
+	spreadsheetId: string
+	gid: string
+}
+
 export type SheetSwitchResult = SheetPageResult & {
 	sheet: SheetTab
 }
@@ -83,6 +88,14 @@ export const buildReadCsvExpression = (input: { range?: string; gid?: string }):
 	`(() => {
 ${getSpreadsheetId.toString()}
 return (${readSheetCsvInPage.toString()})(${JSON.stringify(input)})
+})()`
+
+export const buildSheetContextExpression = (): string => `(() => {
+${getSpreadsheetId.toString()}
+${getCurrentGid.toString()}
+${findVisibleGridGid.toString()}
+${isRenderedElement.toString()}
+return { ok: true, title: document.title, url: location.href, spreadsheetId: getSpreadsheetId(), gid: getCurrentGid() }
 })()`
 
 export const buildListSheetsExpression = (input: { withGid?: boolean }): string => buildSheetTabsExpression(listSheetsInPage, input)

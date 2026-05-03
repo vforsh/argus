@@ -48,6 +48,19 @@ export const parseCsv = (input: string): string[][] => {
 export const toTsv = (rows: readonly (readonly string[])[]): string =>
 	rows.map((row) => row.map((value) => value.replace(/\r?\n/g, ' ')).join('\t')).join('\n')
 
+/** Convert a rectangular string table to RFC4180-style CSV. */
+export const toCsv = (rows: readonly (readonly string[])[]): string =>
+	rows
+		.map((row) =>
+			row
+				.map((value) => {
+					const normalized = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+					return /[",\n]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized
+				})
+				.join(','),
+		)
+		.join('\n')
+
 /** Parse TSV into rows of strings. */
 export const parseTsv = (input: string): string[][] =>
 	input

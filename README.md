@@ -453,9 +453,11 @@ argus sheets rows remove extension-3 5 --count 2 --force
 argus sheets columns add extension-3 3 --after
 argus sheets columns remove extension-3 3 --force
 argus sheets read extension-3 --range A1:C5
+argus sheets read extension-3 --range A1:C5 --api
 argus sheets export extension-3 --range A1:C5 --format tsv
 argus sheets find extension-3 "needle" --ignore-case
 argus sheets write extension-3 B12 --value "Новое значение"
+argus sheets write extension-3 B12 --value "Новое значение" --api
 ```
 
 ## Troubleshooting

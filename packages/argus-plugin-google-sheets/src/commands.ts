@@ -1,5 +1,5 @@
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
-import { parseCsv, parseTsv, toTsv } from './csv.js'
+import { parseCsv, parseTsv, toCsv, toTsv } from './csv.js'
 import { registerSheetDimensionCommands } from './dimensionCommands.js'
 import {
 	buildAddSheetExpression,
@@ -11,9 +11,11 @@ import {
 	buildRenameSheetExpression,
 	buildRemoveSheetExpression,
 	buildSelectRangeExpression,
+	buildSheetContextExpression,
 	buildSwitchSheetExpression,
 	buildVerifyWriteExpression,
 	type SheetAddResult,
+	type SheetContextResult,
 	type SheetCsvResult,
 	type SheetInfoResult,
 	type SheetListResult,
@@ -26,6 +28,7 @@ import {
 	type SheetTab,
 	type SheetWriteVerificationResult,
 } from './pageScripts.js'
+import { createSheetApiClient } from './sheetsApi.js'
 
 type Output = ReturnType<ArgusPluginContextV1['host']['createOutput']>
 
@@ -52,6 +55,8 @@ type RemoveOptions = {
 type ReadOptions = CommonOptions & {
 	range?: string
 	format?: string
+	api?: boolean
+	authPrompt?: boolean
 }
 
 type FindOptions = CommonOptions & {
@@ -65,6 +70,8 @@ type WriteOptions = CommonOptions & {
 	value?: string
 	tsv?: string
 	stdin?: boolean
+	api?: boolean
+	authPrompt?: boolean
 }
 
 export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
@@ -145,6 +152,8 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 		.option('--range <a1>', 'A1 range to read (default: exported sheet)')
 		.option('--gid <gid>', 'Sheet gid (default: current tab gid)')
 		.option('--format <type>', 'Output format: table, tsv, csv, json (default: table)')
+		.option('--api', 'Use Chrome extension OAuth and the official Google Sheets API')
+		.option('--no-auth-prompt', 'Do not open the Chrome OAuth consent prompt in --api mode')
 		.option('--json', 'Output JSON for automation')
 		.action(async (id: string | undefined, options: ReadOptions) => runRead(ctx, id, options))
 
@@ -155,6 +164,8 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 		.option('--range <a1>', 'A1 range to export')
 		.option('--gid <gid>', 'Sheet gid (default: current tab gid)')
 		.option('--format <type>', 'Output format: tsv, csv, json (default: tsv)')
+		.option('--api', 'Use Chrome extension OAuth and the official Google Sheets API')
+		.option('--no-auth-prompt', 'Do not open the Chrome OAuth consent prompt in --api mode')
 		.option('--json', 'Output JSON for automation')
 		.action(async (id: string | undefined, options: ReadOptions) => runRead(ctx, id, { ...options, format: options.format ?? 'tsv' }))
 
@@ -187,6 +198,9 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 		.option('--value <text>', 'Single-cell value to paste')
 		.option('--tsv <text>', 'TSV block to paste')
 		.option('--stdin', 'Read TSV from stdin')
+		.option('--gid <gid>', 'Sheet gid in --api mode (default: current tab gid)')
+		.option('--api', 'Use Chrome extension OAuth and the official Google Sheets API instead of UI paste')
+		.option('--no-auth-prompt', 'Do not open the Chrome OAuth consent prompt in --api mode')
 		.option('--json', 'Output JSON for automation')
 		.action(async (id: string | undefined, range: string, options: WriteOptions) => runWrite(ctx, id, range, options))
 
@@ -272,15 +286,36 @@ const runMove = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet:
 
 const runRead = async (ctx: ArgusPluginContextV1, id: string | undefined, options: ReadOptions): Promise<void> => {
 	const output = ctx.host.createOutput(options)
+	const format = options.json ? 'json' : (options.format ?? 'table')
+	if (options.api) {
+		const data = await readSheetViaApi(ctx, id, options, output)
+		if (!data) return
+		writeRows(output, format, data.rows, data)
+		return
+	}
+
 	const data = await readSheet(ctx, id, options)
 	if (!data) return
 
+	if (format === 'csv') {
+		output.writeHuman(data.csv)
+		return
+	}
+
 	const rows = parseCsv(data.csv)
-	const format = options.json ? 'json' : (options.format ?? 'table')
+	writeRows(output, format, rows, data)
+}
+
+const writeRows = (
+	output: Output,
+	format: string,
+	rows: string[][],
+	data: Omit<SheetCsvResult, 'csv'> & { api?: boolean; apiRange?: string },
+): void => {
 	if (format === 'json') {
 		output.writeJson({ ...withoutCsv(data), rows })
 	} else if (format === 'csv') {
-		output.writeHuman(data.csv)
+		output.writeHuman(toCsv(rows))
 	} else if (format === 'tsv') {
 		output.writeHuman(toTsv(rows))
 	} else {
@@ -340,6 +375,27 @@ const runWrite = async (ctx: ArgusPluginContextV1, id: string | undefined, range
 	}
 
 	const values = parseTsv(tsv)
+	if (options.api) {
+		const result = await writeSheetViaApi(ctx, id, range, values, options, output)
+		if (!result) return
+		writeWriteResult(output, options, {
+			ok: true,
+			range: result.range,
+			method: 'sheets.values.update',
+			rows: values.length,
+			verified: true,
+			updatedRows: result.updatedRows,
+			updatedCells: result.updatedCells,
+		})
+		return
+	}
+
+	if (options.gid) {
+		output.writeWarn('--gid is only supported with --api; UI paste uses the current sheet.')
+		process.exitCode = 2
+		return
+	}
+
 	const prepared = await prepareUiWrite(ctx, id, range, tsv, values, output)
 	if (!prepared) return
 
@@ -371,6 +427,59 @@ const readSheet = async (ctx: ArgusPluginContextV1, id: string | undefined, opti
 	const output = ctx.host.createOutput(options)
 	return await evalInWatcher<SheetCsvResult>(ctx, id, buildReadCsvExpression({ range: options.range, gid: options.gid }), output)
 }
+
+const readSheetViaApi = async (
+	ctx: ArgusPluginContextV1,
+	id: string | undefined,
+	options: ReadOptions,
+	output: Output,
+): Promise<(Omit<SheetCsvResult, 'csv'> & { rows: string[][]; api: true; apiRange: string }) | null> => {
+	const context = await getSheetContext(ctx, id, output)
+	if (!context) return null
+
+	try {
+		const client = await createSheetApiClient(ctx, id, context, { interactiveAuth: options.authPrompt !== false })
+		const result = await client.readRows({ range: options.range, gid: options.gid })
+		return {
+			ok: true,
+			title: context.title,
+			url: context.url,
+			gid: options.gid ?? context.gid,
+			range: options.range ?? null,
+			rows: result.rows,
+			api: true,
+			apiRange: result.range,
+		}
+	} catch (error) {
+		output.writeWarn(formatError(error))
+		process.exitCode = 1
+		return null
+	}
+}
+
+const writeSheetViaApi = async (
+	ctx: ArgusPluginContextV1,
+	id: string | undefined,
+	range: string,
+	rows: string[][],
+	options: WriteOptions,
+	output: Output,
+): Promise<{ range: string; updatedRows?: number; updatedCells?: number } | null> => {
+	const context = await getSheetContext(ctx, id, output)
+	if (!context) return null
+
+	try {
+		const client = await createSheetApiClient(ctx, id, context, { interactiveAuth: options.authPrompt !== false })
+		return await client.writeRows({ range, gid: options.gid, rows })
+	} catch (error) {
+		output.writeWarn(formatError(error))
+		process.exitCode = 1
+		return null
+	}
+}
+
+const getSheetContext = async (ctx: ArgusPluginContextV1, id: string | undefined, output: Output): Promise<SheetContextResult | null> =>
+	await evalInWatcher<SheetContextResult>(ctx, id, buildSheetContextExpression(), output)
 
 const selectRange = async (ctx: ArgusPluginContextV1, id: string | undefined, range: string, output: Output): Promise<SheetSelectResult | null> => {
 	const result = await evalInWatcher<SheetSelectResult>(ctx, id, buildSelectRangeExpression(range), output)
@@ -455,7 +564,16 @@ const resolveWriteTsv = async (options: WriteOptions): Promise<string | null> =>
 const writeWriteResult = (
 	output: Output,
 	options: WriteOptions,
-	result: { ok: true; range: string; method: string; rows: number; verified: boolean; verificationRange?: string },
+	result: {
+		ok: true
+		range: string
+		method: string
+		rows: number
+		verified: boolean
+		verificationRange?: string
+		updatedRows?: number
+		updatedCells?: number
+	},
 ): void => {
 	if (options.json) {
 		output.writeJson(result)
@@ -478,7 +596,9 @@ const readStdin = async (): Promise<string> =>
 		process.stdin.resume()
 	})
 
-const withoutCsv = (data: SheetCsvResult): Omit<SheetCsvResult, 'csv'> => ({
+const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+const withoutCsv = (data: Omit<SheetCsvResult, 'csv'>): Omit<SheetCsvResult, 'csv'> => ({
 	ok: data.ok,
 	title: data.title,
 	url: data.url,

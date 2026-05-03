@@ -474,6 +474,8 @@ argus sheets rows remove extension-3 5 --count 2 --force
 argus sheets columns add extension-3 3 --after
 argus sheets columns remove extension-3 3 --force
 ARGUS_PLUGINS=./packages/argus-plugin-google-sheets/dist/index.js argus sheets read extension-3 --range A1:C5
+ARGUS_PLUGINS=./packages/argus-plugin-google-sheets/dist/index.js argus sheets read extension-3 --range A1:C5 --api
+ARGUS_PLUGINS=./packages/argus-plugin-google-sheets/dist/index.js argus sheets write extension-3 B12 --value "Новое значение" --api
 ```
 
 See [PLUGINS.md](./reference/PLUGINS.md).
