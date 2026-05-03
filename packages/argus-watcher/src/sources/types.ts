@@ -41,6 +41,12 @@ export type CdpSourceCookieQuery = {
 	url?: string | null
 }
 
+/** Google OAuth token request routed through extension mode's chrome.identity API. */
+export type CdpSourceOAuthTokenRequest = {
+	scopes: string[]
+	interactive?: boolean
+}
+
 /**
  * CDP attachment status.
  */
@@ -92,6 +98,8 @@ export type CdpSourceHandle = {
 	syncWatcherInfo?: (info: { watcherId: string; watcherHost: string; watcherPort: number; watcherPid: number }) => void
 	/** Read browser-level cookies for the attached session's site, when the source can do better than page-scoped CDP. */
 	readBrowserCookies?: (query: CdpSourceCookieQuery) => Promise<AuthStateCookie[]>
+	/** Read an OAuth token from the browser profile, when the source supports browser identity. */
+	readOAuthToken?: (request: CdpSourceOAuthTokenRequest) => Promise<{ token: string; grantedScopes?: string[] }>
 	/** Best-effort target metadata used to resolve network filter scope in HTTP routes. */
 	getNetFilterContext?: () => NetFilterContext | null
 	/** Resolve the child CDP session that owns a given frame (extension mode only). */

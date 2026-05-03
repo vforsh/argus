@@ -117,6 +117,7 @@ export type HttpRequestEvent = {
 		| 'auth/cookies/clear'
 		| 'auth/state'
 		| 'auth/state/load'
+		| 'oauth/token'
 		| 'eval'
 		| 'trace/start'
 		| 'trace/stop'

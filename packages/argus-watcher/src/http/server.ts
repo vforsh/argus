@@ -8,7 +8,7 @@ import type { ElementRefRegistry } from '../cdp/elementRefs.js'
 import type { RuntimeEditor } from '../cdp/editor.js'
 import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
-import type { CdpSourceCookieQuery, CdpSourceHandle, CdpSourceStatus } from '../sources/types.js'
+import type { CdpSourceCookieQuery, CdpSourceHandle, CdpSourceOAuthTokenRequest, CdpSourceStatus } from '../sources/types.js'
 import type { EmulationController } from '../emulation/EmulationController.js'
 import type { ThrottleController } from '../throttle/ThrottleController.js'
 import type { VisibilityController } from '../visibility/VisibilityController.js'
@@ -36,6 +36,7 @@ export type HttpRequestEventMetadata = {
 		| 'auth/cookies/clear'
 		| 'auth/state'
 		| 'auth/state/load'
+		| 'oauth/token'
 		| 'eval'
 		| 'trace/start'
 		| 'trace/stop'
@@ -141,6 +142,8 @@ export type HttpServerOptions = {
 	getNetFilterContext?: () => NetFilterContext | null
 	/** Optional browser-cookie reader when the source can access cookies outside the page's request scope. */
 	readBrowserCookies?: (query: CdpSourceCookieQuery) => Promise<AuthStateCookie[]>
+	/** Optional OAuth token reader when the source can access browser identity. */
+	readOAuthToken?: (request: CdpSourceOAuthTokenRequest) => Promise<{ token: string; grantedScopes?: string[] }>
 	/** Optional callback invoked when logs or tail are requested. */
 	onRequest?: (event: HttpRequestEventMetadata) => void
 	/** Optional callback invoked when a shutdown request is received. */

@@ -110,6 +110,7 @@ Run `argus list` to see which watcher id belongs to which attached tab. `argus e
 - **Debugging bar**: Chrome shows "Argus started debugging this browser" bar when attached. This cannot be disabled (security feature).
 - **Tab must stay open**: Closing a tab detaches the debugger.
 - **One debugger per tab**: Only one extension/DevTools can debug a tab at a time.
+- **OAuth API calls require setup**: Extension-backed OAuth routes use `chrome.identity.getAuthToken`. Add a Chrome Extension OAuth client to `manifest.oauth2.client_id`, include the needed scopes (for Google Sheets, `https://www.googleapis.com/auth/spreadsheets`), reload the unpacked extension, and reattach the tab.
 
 ## Uninstall
 

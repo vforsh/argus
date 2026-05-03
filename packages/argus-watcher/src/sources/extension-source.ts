@@ -184,6 +184,10 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				url: url ?? undefined,
 			})
 		},
+		readOAuthToken: async ({ scopes, interactive }) => {
+			const session = getCurrentExtensionSession()
+			return await sessionManager.getOAuthToken(session.tabId, { scopes, interactive })
+		},
 		getNetFilterContext: () => {
 			const session = currentSession
 			if (!session) {

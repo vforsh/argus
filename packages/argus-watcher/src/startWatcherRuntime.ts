@@ -306,6 +306,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		visibilityController,
 		getNetFilterContext: sourceHandle.getNetFilterContext,
 		readBrowserCookies: sourceHandle.readBrowserCookies,
+		readOAuthToken: sourceHandle.readOAuthToken,
 		sourceHandle: sourceMode === 'extension' ? sourceHandle : undefined,
 		onRequest: (event) => {
 			if (pageConsoleLogging === 'full') {

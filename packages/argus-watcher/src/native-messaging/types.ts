@@ -45,6 +45,14 @@ export type CookieQueryResponseMessage = {
 	error?: { message: string }
 }
 
+export type OAuthTokenResponseMessage = {
+	type: 'oauth_token_response'
+	requestId: number
+	token?: string
+	grantedScopes?: string[]
+	error?: { message: string }
+}
+
 export type ListTabsResponseMessage = {
 	type: 'list_tabs_response'
 	tabs: TabInfo[]
@@ -107,6 +115,7 @@ export type ExtensionToHost =
 	| CdpEventMessage
 	| CdpResponseMessage
 	| CookieQueryResponseMessage
+	| OAuthTokenResponseMessage
 	| ListTabsResponseMessage
 	| TargetSelectedMessage
 
@@ -155,11 +164,20 @@ export type CookieQueryMessage = {
 	url?: string
 }
 
+export type OAuthTokenRequestMessage = {
+	type: 'oauth_token_request'
+	requestId: number
+	tabId: number
+	scopes: string[]
+	interactive?: boolean
+}
+
 export type HostToExtension =
 	| AttachTabMessage
 	| DetachTabMessage
 	| CdpCommandMessage
 	| CookieQueryMessage
+	| OAuthTokenRequestMessage
 	| ListTabsMessage
 	| EnableDomainMessage
 	| HostInfoMessage

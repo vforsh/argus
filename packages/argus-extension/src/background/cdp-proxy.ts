@@ -13,6 +13,7 @@ import type {
 	EnableDomainMessage,
 	TabInfo,
 	CookieQueryMessage,
+	OAuthTokenRequestMessage,
 } from '../types/messages.js'
 import { listBrowserTabs } from './tab-list.js'
 
@@ -88,6 +89,10 @@ export class CdpProxy {
 
 			case 'cookie_query':
 				await this.handleCookieQuery(message)
+				break
+
+			case 'oauth_token_request':
+				await this.handleOAuthTokenRequest(message)
 				break
 
 			case 'list_tabs':
@@ -190,6 +195,38 @@ export class CdpProxy {
 	}
 
 	/**
+	 * Request a Google OAuth access token for the signed-in Chrome profile.
+	 * Chrome requires a matching `oauth2.client_id` in the extension manifest.
+	 */
+	private async handleOAuthTokenRequest(message: OAuthTokenRequestMessage): Promise<void> {
+		try {
+			if (!this.debuggerManager.isAttached(message.tabId)) {
+				throw new Error(`Tab ${message.tabId} is not attached`)
+			}
+
+			const result = await getChromeOAuthToken({
+				interactive: message.interactive ?? false,
+				scopes: message.scopes,
+			})
+
+			this.bridgeClient.send({
+				type: 'oauth_token_response',
+				requestId: message.requestId,
+				token: result.token,
+				grantedScopes: result.grantedScopes,
+			})
+		} catch (err) {
+			this.bridgeClient.send({
+				type: 'oauth_token_response',
+				requestId: message.requestId,
+				error: {
+					message: err instanceof Error ? err.message : 'Unknown error',
+				},
+			})
+		}
+	}
+
+	/**
 	 * List available tabs.
 	 */
 	private async handleListTabs(message: { filter?: { url?: string; title?: string } }): Promise<void> {
@@ -237,4 +274,23 @@ export class CdpProxy {
 	async getTabsForPopup(): Promise<TabInfo[]> {
 		return await listBrowserTabs(this.debuggerManager)
 	}
+}
+
+type ChromeOAuthTokenResult = {
+	token: string
+	grantedScopes?: string[]
+}
+
+const getChromeOAuthToken = async (details: { interactive: boolean; scopes: string[] }): Promise<ChromeOAuthTokenResult> => {
+	const identity = chrome.identity as unknown as {
+		getAuthToken: (details: { interactive?: boolean; scopes?: string[] }) => Promise<string | { token?: string; grantedScopes?: string[] }>
+	}
+	const result = await identity.getAuthToken(details)
+	if (typeof result === 'string') {
+		return { token: result }
+	}
+	if (result.token) {
+		return { token: result.token, grantedScopes: result.grantedScopes }
+	}
+	throw new Error('Chrome identity did not return an OAuth token')
 }

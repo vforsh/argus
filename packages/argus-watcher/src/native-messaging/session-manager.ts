@@ -92,6 +92,10 @@ export class SessionManager {
 				this.handleCookieQueryResponse(message)
 				break
 
+			case 'oauth_token_response':
+				this.handleOAuthTokenResponse(message)
+				break
+
 			case 'list_tabs_response':
 				this.handleListTabsResponse(message)
 				break
@@ -158,6 +162,17 @@ export class SessionManager {
 	 */
 	private handleCookieQueryResponse(message: ExtensionToHost & { type: 'cookie_query_response' }): void {
 		this.resolvePendingRequest(message.requestId, message.cookies ?? [], message.error)
+	}
+
+	private handleOAuthTokenResponse(message: ExtensionToHost & { type: 'oauth_token_response' }): void {
+		this.resolvePendingRequest(
+			message.requestId,
+			{
+				token: message.token,
+				grantedScopes: message.grantedScopes,
+			},
+			message.error,
+		)
 	}
 
 	private resolvePendingRequest(requestId: number, result: unknown, error?: { message: string }): void {
@@ -267,6 +282,35 @@ export class SessionManager {
 				}) satisfies HostToExtension,
 			timeoutMs,
 		)
+	}
+
+	/**
+	 * Request a Chrome identity OAuth token through the attached extension session.
+	 */
+	async getOAuthToken(
+		tabId: number,
+		options: { scopes: string[]; interactive?: boolean },
+		timeoutMs = 30000,
+	): Promise<{ token: string; grantedScopes?: string[] }> {
+		if (!this.sessions.has(tabId)) {
+			throw this.createNotAttachedError()
+		}
+
+		const result = await this.sendBridgeRequest<{ token?: string; grantedScopes?: string[] }>(
+			(requestId) =>
+				({
+					type: 'oauth_token_request',
+					requestId,
+					tabId,
+					scopes: options.scopes,
+					interactive: options.interactive,
+				}) satisfies HostToExtension,
+			timeoutMs,
+		)
+		if (!result.token) {
+			throw new Error('Extension did not return an OAuth token')
+		}
+		return { token: result.token, grantedScopes: result.grantedScopes }
 	}
 
 	/**
