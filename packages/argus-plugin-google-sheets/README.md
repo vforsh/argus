@@ -33,6 +33,10 @@ argus sheets add extension-2
 argus sheets rename extension-2 "Sheet 3" "Archive"
 argus sheets move extension-2 "Archive" 1
 argus sheets remove extension-2 "Sheet 3" --force
+argus sheets rows add extension-2 5 --count 2 --before
+argus sheets rows remove extension-2 5 --count 2 --force
+argus sheets columns add extension-2 3 --after
+argus sheets columns remove extension-2 3 --force
 argus sheets read extension-2 --range A1:C5
 argus sheets export extension-2 --range A1:C5 --format tsv
 argus sheets find extension-2 "Play" --column ru --ignore-case
@@ -51,5 +55,6 @@ cat rows.tsv | argus sheets write extension-2 B12 --stdin
 - `add`/`create` uses the live Google Sheets UI and switches to the new sheet.
 - `move` uses a 1-based visible sheet index as its destination.
 - `remove`/`delete` requires `--force`.
+- `rows add/remove` and `columns add/remove` operate on the active sheet. Targets are 1-based indexes; add commands require exactly one of `--before` or `--after`; remove commands require `--force`.
 - `read`, `export`, and `find` can read ranges that are not visible because they use the CSV export endpoint.
 - `write` changes the live sheet through the browser UI; keep the tab focused on the intended document and range.

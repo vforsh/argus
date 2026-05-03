@@ -64,7 +64,7 @@
     },
     "packages/argus-plugin-google-sheets": {
       "name": "@vforsh/argus-plugin-google-sheets",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@vforsh/argus-plugin-api": "workspace:*",
       },

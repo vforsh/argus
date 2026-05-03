@@ -1,5 +1,6 @@
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { parseCsv, parseTsv, toTsv } from './csv.js'
+import { registerSheetDimensionCommands } from './dimensionCommands.js'
 import {
 	buildAddSheetExpression,
 	buildInfoSheetsExpression,
@@ -188,6 +189,8 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 		.option('--stdin', 'Read TSV from stdin')
 		.option('--json', 'Output JSON for automation')
 		.action(async (id: string | undefined, range: string, options: WriteOptions) => runWrite(ctx, id, range, options))
+
+	registerSheetDimensionCommands(ctx, sheets)
 }
 
 const runList = async (ctx: ArgusPluginContextV1, id: string | undefined, options: ListOptions): Promise<void> => {
