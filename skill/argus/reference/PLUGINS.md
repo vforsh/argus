@@ -140,14 +140,20 @@ ctx.program
 argus --plugin ./packages/argus-plugin-google-sheets/dist/index.js plugin list
 argus sheets list extension-3
 argus sheets list extension-3 --with-gid
+argus sheets info extension-3
 argus sheets switch extension-3 "Sheet 2"
+argus sheets open extension-3 2
+argus sheets add extension-3
+argus sheets rename extension-3 "Sheet 2" "Archive"
+argus sheets move extension-3 "Archive" 1
+argus sheets remove extension-3 "Sheet 3" --force
 argus sheets read extension-3 --range A1:C5
 argus sheets export extension-3 --range A1:C5 --format tsv
 argus sheets find extension-3 "needle" --column ru --ignore-case
 argus sheets write extension-3 B12 --value "Новое значение"
 ```
 
-`sheets`/`gs` works against an attached Google Sheets tab. `list` reports visible sheet tabs; `--with-gid` briefly switches through them and restores the original sheet. Reads use authenticated CSV export from inside the tab; writes select a range in the live UI and paste TSV.
+`sheets`/`gs` works against an attached Google Sheets tab. `list` reports visible sheet tabs; `--with-gid` briefly switches through them and restores the original sheet. `switch`/`open`, `rename`, `move`, and `remove` accept a visible sheet name, 1-based visible index, or gid. `add` creates a sheet through the live UI; `remove` requires `--force`. Reads use authenticated CSV export from inside the tab; writes select a range in the live UI and paste TSV.
 
 ## No Unload
 

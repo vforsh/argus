@@ -1,14 +1,24 @@
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { parseCsv, parseTsv, toTsv } from './csv.js'
 import {
+	buildAddSheetExpression,
 	buildClipboardExpression,
+	buildInfoSheetsExpression,
 	buildListSheetsExpression,
+	buildMoveSheetExpression,
 	buildReadCsvExpression,
+	buildRenameSheetExpression,
+	buildRemoveSheetExpression,
 	buildSelectRangeExpression,
 	buildSwitchSheetExpression,
+	type SheetAddResult,
 	type SheetClipboardResult,
 	type SheetCsvResult,
+	type SheetInfoResult,
 	type SheetListResult,
+	type SheetMoveResult,
+	type SheetRenameResult,
+	type SheetRemoveResult,
 	type SheetSelectResult,
 	type SheetSwitchResult,
 	type SheetTab,
@@ -24,6 +34,16 @@ type CommonOptions = {
 type ListOptions = {
 	json?: boolean
 	withGid?: boolean
+}
+
+type InfoOptions = {
+	json?: boolean
+	withGid?: boolean
+}
+
+type RemoveOptions = {
+	json?: boolean
+	force?: boolean
 }
 
 type ReadOptions = CommonOptions & {
@@ -56,12 +76,64 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 		.action(async (id: string | undefined, options: ListOptions) => runList(ctx, id, options))
 
 	sheets
+		.command('info')
+		.argument('[id]', 'Watcher id for an attached Google Sheets tab')
+		.description('Show metadata for the current Google Sheets document')
+		.option('--with-gid', 'Collect gid for every visible sheet by briefly switching through the tab bar')
+		.option('--json', 'Output JSON for automation')
+		.action(async (id: string | undefined, options: InfoOptions) => runInfo(ctx, id, options))
+
+	sheets
 		.command('switch')
 		.argument('[id]', 'Watcher id for an attached Google Sheets tab')
 		.argument('<sheet>', 'Visible sheet name, 1-based visible index, or gid')
 		.description('Switch the open Google Sheets tab to a visible sheet')
 		.option('--json', 'Output JSON for automation')
 		.action(async (id: string | undefined, sheet: string, options: CommonOptions) => runSwitch(ctx, id, sheet, options))
+
+	sheets
+		.command('open')
+		.argument('[id]', 'Watcher id for an attached Google Sheets tab')
+		.argument('<sheet>', 'Visible sheet name, 1-based visible index, or gid')
+		.description('Open a visible sheet in the current Google Sheets document')
+		.option('--json', 'Output JSON for automation')
+		.action(async (id: string | undefined, sheet: string, options: CommonOptions) => runSwitch(ctx, id, sheet, options))
+
+	sheets
+		.command('add')
+		.alias('create')
+		.argument('[id]', 'Watcher id for an attached Google Sheets tab')
+		.description('Add a new sheet to the current Google Sheets document')
+		.option('--json', 'Output JSON for automation')
+		.action(async (id: string | undefined, options: CommonOptions) => runAdd(ctx, id, options))
+
+	sheets
+		.command('remove')
+		.alias('delete')
+		.argument('[id]', 'Watcher id for an attached Google Sheets tab')
+		.argument('<sheet>', 'Visible sheet name, 1-based visible index, or gid')
+		.description('Remove a visible sheet from the current Google Sheets document')
+		.option('--force', 'Actually remove the sheet')
+		.option('--json', 'Output JSON for automation')
+		.action(async (id: string | undefined, sheet: string, options: RemoveOptions) => runRemove(ctx, id, sheet, options))
+
+	sheets
+		.command('rename')
+		.argument('[id]', 'Watcher id for an attached Google Sheets tab')
+		.argument('<sheet>', 'Visible sheet name, 1-based visible index, or gid')
+		.argument('<name>', 'New sheet name')
+		.description('Rename a visible sheet in the current Google Sheets document')
+		.option('--json', 'Output JSON for automation')
+		.action(async (id: string | undefined, sheet: string, name: string, options: CommonOptions) => runRename(ctx, id, sheet, name, options))
+
+	sheets
+		.command('move')
+		.argument('[id]', 'Watcher id for an attached Google Sheets tab')
+		.argument('<sheet>', 'Visible sheet name, 1-based visible index, or gid')
+		.argument('<index>', 'Target 1-based visible sheet index')
+		.description('Move a visible sheet to a visible index')
+		.option('--json', 'Output JSON for automation')
+		.action(async (id: string | undefined, sheet: string, index: string, options: CommonOptions) => runMove(ctx, id, sheet, index, options))
 
 	sheets
 		.command('read')
@@ -129,6 +201,19 @@ const runList = async (ctx: ArgusPluginContextV1, id: string | undefined, option
 	output.writeHuman(formatSheetList(result.sheets))
 }
 
+const runInfo = async (ctx: ArgusPluginContextV1, id: string | undefined, options: InfoOptions): Promise<void> => {
+	const output = ctx.host.createOutput(options)
+	const result = await evalInWatcher<SheetInfoResult>(ctx, id, buildInfoSheetsExpression({ withGid: options.withGid }), output)
+	if (!result) return
+
+	if (options.json) {
+		output.writeJson(result)
+		return
+	}
+
+	output.writeHuman(formatSheetInfo(result))
+}
+
 const runSwitch = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, options: CommonOptions): Promise<void> => {
 	const output = ctx.host.createOutput(options)
 	const result = await evalInWatcher<SheetSwitchResult>(ctx, id, buildSwitchSheetExpression(sheet), output)
@@ -136,6 +221,48 @@ const runSwitch = async (ctx: ArgusPluginContextV1, id: string | undefined, shee
 
 	if (options.json) output.writeJson(result)
 	else output.writeHuman(`Switched to ${formatSheetLabel(result.sheet)}`)
+}
+
+const runAdd = async (ctx: ArgusPluginContextV1, id: string | undefined, options: CommonOptions): Promise<void> => {
+	const output = ctx.host.createOutput(options)
+	const result = await evalInWatcher<SheetAddResult>(ctx, id, buildAddSheetExpression(), output)
+	if (!result) return
+
+	if (options.json) output.writeJson(result)
+	else output.writeHuman(`Added ${formatSheetLabel(result.sheet)}`)
+}
+
+const runRemove = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, options: RemoveOptions): Promise<void> => {
+	const output = ctx.host.createOutput(options)
+	if (!options.force) {
+		output.writeWarn('Refusing to remove a sheet without --force')
+		process.exitCode = 2
+		return
+	}
+
+	const result = await evalInWatcher<SheetRemoveResult>(ctx, id, buildRemoveSheetExpression(sheet), output)
+	if (!result) return
+
+	if (options.json) output.writeJson(result)
+	else output.writeHuman(`Removed ${formatSheetLabel(result.removed)}`)
+}
+
+const runRename = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, name: string, options: CommonOptions): Promise<void> => {
+	const output = ctx.host.createOutput(options)
+	const result = await evalInWatcher<SheetRenameResult>(ctx, id, buildRenameSheetExpression(sheet, name), output)
+	if (!result) return
+
+	if (options.json) output.writeJson(result)
+	else output.writeHuman(`Renamed ${formatSheetLabel(result.before)} to ${formatSheetLabel(result.sheet)}`)
+}
+
+const runMove = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, index: string, options: CommonOptions): Promise<void> => {
+	const output = ctx.host.createOutput(options)
+	const result = await evalInWatcher<SheetMoveResult>(ctx, id, buildMoveSheetExpression(sheet, index), output)
+	if (!result) return
+
+	if (options.json) output.writeJson(result)
+	else output.writeHuman(`Moved ${formatSheetLabel(result.sheet)} to #${result.sheet.index}`)
 }
 
 const runRead = async (ctx: ArgusPluginContextV1, id: string | undefined, options: ReadOptions): Promise<void> => {
@@ -313,6 +440,15 @@ const formatSheetList = (sheets: SheetTab[]): string => {
 	const rows = sheets.map((sheet) => [sheet.active ? '*' : ' ', String(sheet.index), sheet.name, sheet.gid ?? ''])
 	return formatTable([['', '#', 'Name', 'gid'], ...rows])
 }
+
+const formatSheetInfo = (info: SheetInfoResult): string =>
+	[
+		`Title: ${info.title}`,
+		`Spreadsheet: ${info.spreadsheetId}`,
+		`Active: ${info.active ? formatSheetLabel(info.active) : 'none'}`,
+		'',
+		formatSheetList(info.sheets),
+	].join('\n')
 
 const formatSheetLabel = (sheet: SheetTab): string => (sheet.gid ? `${sheet.name} (${sheet.gid})` : sheet.name)
 
