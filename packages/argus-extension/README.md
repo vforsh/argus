@@ -43,8 +43,8 @@ Replace `<EXTENSION_ID>` with the ID from step 5 above.
 
 This creates:
 
-- **macOS**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json`
-- **Linux**: `~/.config/google-chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json`
+- **macOS**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json` and `com.vforsh.argus.control.json`
+- **Linux**: `~/.config/google-chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json` and `com.vforsh.argus.control.json`
 - **Windows**: Manifest in AppData + registry key (see console output)
 
 ## Usage
@@ -55,8 +55,8 @@ This creates:
 argus extension setup <EXTENSION_ID>
 ```
 
-2. **Open Chrome with the extension loaded**. The extension creates a dedicated Native Messaging host + watcher process for each tab you attach.
-3. **Attach to tabs**: Click the Argus extension icon in Chrome toolbar, then click "Attach" on each tab you want to monitor. Every attached tab gets its own watcher id in the local registry.
+2. **Open Chrome with the extension loaded**. The extension starts an `extension-control` Native Messaging host for browser-level commands such as tab listing, without attaching the debugger to any tab. It also creates a dedicated Native Messaging host + watcher process for each tab you attach.
+3. **Attach to tabs**: Run `argus ext attach --tab <tabId>` / `argus ext attach --url <substring>`, or click "Attach" in the extension popup. Every attached tab gets its own watcher id in the local registry.
 4. **Connect to a specific iframe (optional)**: Once a tab is attached, the popup shows the top page plus discovered iframe targets for that tab. Selecting an iframe keeps that tab's watcher attached but switches Argus commands (`eval`, `dom *`, selector-based screenshots, etc.) to that frame.
    After a full reload, a remembered iframe selection may take a moment to become executable again. During that window `argus watcher status <id>` reports `targetReady=false`, and frame-scoped commands wait briefly for the iframe to finish rebinding before failing.
    Use the hide/show controls beside iframe targets to keep noisy targets out of the picker. Hidden iframes are remembered per top-level page path and can be restored from the collapsed hidden-targets section.
@@ -66,9 +66,13 @@ argus extension setup <EXTENSION_ID>
   # List watchers
   argus list
 
-  # List browser tabs through any attached extension watcher
+  # List browser tabs through the extension-control watcher
   argus ext tabs
   argus ext tabs --url localhost
+
+  # Attach/detach browser tabs through the extension-control watcher
+  argus ext attach --url localhost
+  argus ext detach --tab 123
 
   # View logs from a specific attached extension tab watcher
   argus logs extension
@@ -81,7 +85,7 @@ argus extension setup <EXTENSION_ID>
   argus page ls --id extension-2 --tree
 ```
 
-Run `argus list` to see which watcher id belongs to which attached tab. `argus ext tabs` reuses any attached extension watcher as its transport, so at least one tab must already be attached in the popup.
+Run `argus list` to see the `extension-control` watcher plus any attached tab watchers.
 
 ## How It Works
 
@@ -99,11 +103,12 @@ Run `argus list` to see which watcher id belongs to which attached tab. `argus e
 ```
 
 1. The extension service worker stays loaded in Chrome and owns the shared `chrome.debugger` lifecycle.
-2. When you click "Attach" in the popup, the extension launches a dedicated Native Messaging host for that tab.
-3. That host starts one `argus-watcher` in `source: 'extension'` mode and announces its own watcher id in the local registry.
-4. CDP commands/events for that tab flow between the extension and that tab-scoped watcher over Native Messaging.
-5. Each watcher exposes the standard Argus HTTP API (`/logs`, `/eval`, `/dom/*`, `/targets`, `/attach`, `/detach`, etc.) for its own tab plus that tab's iframe targets.
-6. Argus CLI connects to any attached tab watcher just like CDP mode.
+2. On service worker startup, the extension launches a control Native Messaging host for browser-level commands that do not need `chrome.debugger.attach()`.
+3. When you click "Attach" in the popup, the extension launches a dedicated Native Messaging host for that tab.
+4. Each host starts one `argus-watcher` in `source: 'extension'` mode and announces its own watcher id in the local registry.
+5. CDP commands/events for an attached tab flow between the extension and that tab-scoped watcher over Native Messaging.
+6. Each tab watcher exposes the standard Argus HTTP API (`/logs`, `/eval`, `/dom/*`, `/targets`, `/attach`, `/detach`, etc.) for its own tab plus that tab's iframe targets.
+7. Argus CLI connects to the control watcher for `argus ext tabs`, `argus ext attach`, and `argus ext detach`; it connects to attached tab watchers for page debugging commands.
 
 ## Limitations
 
