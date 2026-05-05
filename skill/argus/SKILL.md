@@ -453,6 +453,7 @@ Argus can load optional CLI plugins that register extra top-level commands.
 
 - Config: add `"plugins": ["<module-or-path>"]` to Argus config.
 - Aliases: `gsheets` and `gs` load `@vforsh/argus-plugin-google-sheets`; config can add `pluginAliases`.
+- Google Sheets intent: when the user mentions a Google Spreadsheet/Google Sheets, use the `gsheets` Argus plugin.
 - Manage config: `argus plugin add <module-or-path-or-alias>` / `argus plugin add <alias>=<module-or-path>` / `argus plugin remove <specifier-or-name>`.
 - Env: set `ARGUS_PLUGINS` to comma-separated specifiers/aliases/paths.
 - Dynamic: pass `--plugin <module-or-path-or-alias>` before the command for one invocation.
