@@ -1,6 +1,5 @@
-import fs from 'node:fs'
 import { createOutput } from '../../output/io.js'
-import { HOST_NAME, getPlatform, getManifestPath, getWrapperPath, readManifest, shortenPath } from './nativeHost.js'
+import { getPlatform, inspectNativeHosts, shortenPath } from './nativeHost.js'
 
 export type ExtensionInfoOptions = {
 	json?: boolean
@@ -22,40 +21,14 @@ export const runExtensionInfo = async (options: ExtensionInfoOptions): Promise<v
 		return
 	}
 
-	const manifestPath = getManifestPath(platform)
-	const wrapperPath = getWrapperPath(platform)
-
-	const manifestExists = fs.existsSync(manifestPath)
-	const wrapperExists = fs.existsSync(wrapperPath)
-
-	let extensionId: string | null = null
-	let argusPath: string | null = null
-
-	if (manifestExists) {
-		const manifest = readManifest(manifestPath)
-		if (manifest) {
-			argusPath = manifest.path
-			const origin = manifest.allowed_origins?.[0]
-			if (origin) {
-				const match = origin.match(/^chrome-extension:\/\/([^/]+)\/$/)
-				if (match) {
-					extensionId = match[1]
-				}
-			}
-		}
-	}
-
-	const installed = manifestExists && wrapperExists
+	const hosts = inspectNativeHosts(platform)
+	const installed = hosts.every((host) => host.installed)
 
 	if (options.json) {
 		output.writeJson({
-			hostName: HOST_NAME,
 			platform,
-			manifestPath,
-			wrapperPath,
 			installed,
-			extensionId,
-			argusPath,
+			hosts,
 		})
 		return
 	}
@@ -63,16 +36,19 @@ export const runExtensionInfo = async (options: ExtensionInfoOptions): Promise<v
 	output.writeHuman('')
 	output.writeHuman('Native Messaging Host Info')
 	output.writeHuman('')
-	output.writeHuman(`  Host name:     ${HOST_NAME}`)
 	output.writeHuman(`  Platform:      ${platform}`)
-	output.writeHuman(`  Manifest path: ${shortenPath(manifestPath)}`)
-	output.writeHuman(`  Wrapper path:  ${shortenPath(wrapperPath)}`)
+	for (const host of hosts) {
+		output.writeHuman(`  Host name:     ${host.hostName}`)
+		output.writeHuman(`  Manifest path: ${shortenPath(host.manifestPath)}`)
+		output.writeHuman(`  Wrapper path:  ${shortenPath(host.wrapperPath)}`)
+	}
 	output.writeHuman('')
 	output.writeHuman('Current configuration:')
 	output.writeHuman(`  Installed:     ${installed ? 'yes' : 'no'}`)
-	if (installed) {
-		output.writeHuman(`  Extension ID:  ${extensionId ?? '(unknown)'}`)
-		output.writeHuman(`  Argus path:    ${argusPath ?? '(unknown)'}`)
+	for (const host of hosts.filter((entry) => entry.installed)) {
+		output.writeHuman(`  ${host.hostName}`)
+		output.writeHuman(`    Extension ID: ${host.extensionId ?? '(unknown)'}`)
+		output.writeHuman(`    Argus path:   ${host.argusPath ?? '(unknown)'}`)
 	}
 	output.writeHuman('')
 }

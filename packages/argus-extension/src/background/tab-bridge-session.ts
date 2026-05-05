@@ -1,7 +1,8 @@
-import type { HostToExtension } from '../types/messages.js'
+import type { ExtensionToTabHost, TabHostToExtension } from '../types/messages.js'
 import { BridgeClient } from './bridge-client.js'
 import { CdpProxy } from './cdp-proxy.js'
 import type { DebuggerManager } from './debugger-manager.js'
+import { BRIDGE_HOST_NAME } from './native-hosts.js'
 
 export type TabWatcherInfo = {
 	watcherId: string
@@ -30,18 +31,20 @@ export type TabBridgeSessionEvents = {
  */
 export class TabBridgeSession {
 	private readonly tabId: number
-	private readonly bridgeClient: BridgeClient
+	private readonly bridgeClient: BridgeClient<TabHostToExtension, ExtensionToTabHost>
 	private readonly cdpProxy: CdpProxy
 	private readonly events: TabBridgeSessionEvents
 	private watcherInfo: TabWatcherInfo | null = null
 	private targetInfo: TabTargetInfo | null = null
 	private lastMessageAt: number | null = null
+	private ready = false
+	private readyWaiters: Array<() => void> = []
 	private disposed = false
 
 	constructor(tabId: number, debuggerManager: DebuggerManager, events: TabBridgeSessionEvents = {}) {
 		this.tabId = tabId
 		this.events = events
-		this.bridgeClient = new BridgeClient('com.vforsh.argus.bridge', { autoReconnect: false })
+		this.bridgeClient = new BridgeClient(BRIDGE_HOST_NAME, { autoReconnect: false })
 		this.cdpProxy = new CdpProxy(debuggerManager, this.bridgeClient)
 
 		this.bridgeClient.onMessage((message) => {
@@ -62,7 +65,27 @@ export class TabBridgeSession {
 			throw new Error(`Failed to connect native host for tab ${this.tabId}`)
 		}
 
+		await this.waitUntilReady()
 		await this.cdpProxy.attachTab(this.tabId)
+	}
+
+	async waitUntilReady(timeoutMs = 3_000): Promise<void> {
+		this.assertOpen()
+		if (this.ready) {
+			return
+		}
+
+		await new Promise<void>((resolve, reject) => {
+			const timer = setTimeout(() => {
+				this.readyWaiters = this.readyWaiters.filter((waiter) => waiter !== onReady)
+				reject(new Error(`Native host session for tab ${this.tabId} did not become ready`))
+			}, timeoutMs)
+			const onReady = (): void => {
+				clearTimeout(timer)
+				resolve()
+			}
+			this.readyWaiters.push(onReady)
+		})
 	}
 
 	async detach(): Promise<void> {
@@ -115,29 +138,42 @@ export class TabBridgeSession {
 		return this.lastMessageAt
 	}
 
-	private handleMessage(message: HostToExtension): void {
+	private handleMessage(message: TabHostToExtension): void {
 		this.lastMessageAt = Date.now()
 
-		if (message.type === 'host_info') {
-			this.watcherInfo = {
-				watcherId: message.watcherId,
-				watcherHost: message.watcherHost,
-				watcherPort: message.watcherPort,
-				pid: message.pid,
-			}
-			this.events.onWatcherInfo?.(this.watcherInfo)
-			return
-		}
+		switch (message.type) {
+			case 'host_info':
+				this.watcherInfo = {
+					watcherId: message.watcherId,
+					watcherHost: message.watcherHost,
+					watcherPort: message.watcherPort,
+					pid: message.pid,
+				}
+				this.events.onWatcherInfo?.(this.watcherInfo)
+				return
 
-		if (message.type === 'target_info') {
-			this.targetInfo = {
-				targetId: message.targetId,
-				title: message.title,
-				url: message.url,
-				attachedAt: message.attachedAt,
-				targetReady: message.targetReady ?? null,
-			}
-			this.events.onTargetInfo?.(this.targetInfo)
+			case 'host_ready':
+				this.resolveReadyWaiters()
+				return
+
+			case 'target_info':
+				this.targetInfo = {
+					targetId: message.targetId,
+					title: message.title,
+					url: message.url,
+					attachedAt: message.attachedAt,
+					targetReady: message.targetReady ?? null,
+				}
+				this.events.onTargetInfo?.(this.targetInfo)
+		}
+	}
+
+	private resolveReadyWaiters(): void {
+		this.ready = true
+		const waiters = this.readyWaiters
+		this.readyWaiters = []
+		for (const waiter of waiters) {
+			waiter()
 		}
 	}
 

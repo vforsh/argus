@@ -60,6 +60,9 @@ export type PageConsoleLogging = 'none' | 'minimal' | 'full'
 /** Source mode for CDP connection. */
 export type WatcherSourceMode = 'cdp' | 'extension'
 
+/** Native Messaging role used by extension-backed watchers. */
+export type ExtensionWatcherRole = 'tab' | 'control'
+
 /** Options to start a watcher server. */
 export type StartWatcherOptions = {
 	/** Unique watcher identifier (used for registry presence and removal on shutdown). */
@@ -70,6 +73,8 @@ export type StartWatcherOptions = {
 	 * - `extension`: Connect via Chrome extension Native Messaging.
 	 */
 	source?: WatcherSourceMode
+	/** Extension Native Messaging role. Only used when source is `extension`. Defaults to `tab`. */
+	extensionRole?: ExtensionWatcherRole
 	/** Host/interface to bind the watcher HTTP server to. Defaults to `127.0.0.1`. */
 	host?: string
 	/** Port to bind the watcher HTTP server to. Defaults to `0` (ephemeral). */

@@ -13,7 +13,11 @@ import os from 'node:os'
 import { execSync } from 'node:child_process'
 const __dirname = import.meta.dirname!
 
-const HOST_NAME = 'com.vforsh.argus.bridge'
+const BRIDGE_HOST_NAME = 'com.vforsh.argus.bridge'
+const CONTROL_HOST_NAME = 'com.vforsh.argus.control'
+const CONTROL_WATCHER_ID = 'extension-control'
+const HOST_NAMES = [BRIDGE_HOST_NAME, CONTROL_HOST_NAME] as const
+type HostName = (typeof HOST_NAMES)[number]
 
 type Platform = 'darwin' | 'linux' | 'win32'
 
@@ -30,8 +34,13 @@ const getManifestDir = (platform: Platform): string => {
 	}
 }
 
-const getManifestPath = (platform: Platform): string => {
-	return path.join(getManifestDir(platform), `${HOST_NAME}.json`)
+const getManifestPath = (platform: Platform, hostName: HostName): string => {
+	return path.join(getManifestDir(platform), `${hostName}.json`)
+}
+
+const getWrapperPath = (platform: Platform, hostName: HostName): string => {
+	const filename = hostName === CONTROL_HOST_NAME ? 'argus-native-control-host.sh' : 'argus-native-host.sh'
+	return path.join(getManifestDir(platform), filename)
 }
 
 const findArgusExecutable = (): string => {
@@ -68,10 +77,10 @@ const findArgusExecutable = (): string => {
 	)
 }
 
-const createManifest = (extensionId: string, executablePath: string): object => {
+const createManifest = (extensionId: string, executablePath: string, hostName: HostName): object => {
 	return {
-		name: HOST_NAME,
-		description: 'Argus Watcher Native Messaging Host',
+		name: hostName,
+		description: hostName === CONTROL_HOST_NAME ? 'Argus Extension Control Native Messaging Host' : 'Argus Watcher Native Messaging Host',
 		path: executablePath,
 		type: 'stdio',
 		allowed_origins: [`chrome-extension://${extensionId}/`],
@@ -84,15 +93,15 @@ const findNodePath = (): string => {
 	return fs.realpathSync(process.execPath)
 }
 
-const createWrapperScript = (platform: Platform, executablePath: string): string => {
-	const wrapperDir = getManifestDir(platform)
-	const wrapperPath = path.join(wrapperDir, 'argus-native-host.sh')
+const createWrapperScript = (platform: Platform, executablePath: string, hostName: HostName): string => {
+	const wrapperPath = getWrapperPath(platform, hostName)
 	const nodePath = findNodePath()
+	const args = hostName === CONTROL_HOST_NAME ? `watcher native-host --role control --id ${CONTROL_WATCHER_ID}` : 'watcher native-host --role tab'
 
 	// Create a wrapper script that launches argus in native-host mode
 	// Use absolute path to node since Chrome spawns without shell profile
 	const script = `#!/bin/bash
-exec "${nodePath}" "${executablePath}" watcher native-host
+exec "${nodePath}" "${executablePath}" ${args}
 `
 
 	fs.writeFileSync(wrapperPath, script, { mode: 0o755 })
@@ -107,8 +116,6 @@ const install = (extensionId: string): void => {
 	}
 
 	const manifestDir = getManifestDir(platform)
-	const manifestPath = getManifestPath(platform)
-
 	// Ensure directory exists
 	fs.mkdirSync(manifestDir, { recursive: true })
 
@@ -121,29 +128,28 @@ const install = (extensionId: string): void => {
 		process.exit(1)
 	}
 
-	// Create wrapper script (Native Messaging requires a native executable, not node)
-	const wrapperPath = createWrapperScript(platform, executablePath)
-	console.log(`Created wrapper script: ${wrapperPath}`)
+	for (const hostName of HOST_NAMES) {
+		const wrapperPath = createWrapperScript(platform, executablePath, hostName)
+		console.log(`Created wrapper script: ${wrapperPath}`)
 
-	// Create manifest
-	const manifest = createManifest(extensionId, wrapperPath)
-	fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
-	console.log(`Created manifest: ${manifestPath}`)
+		const manifestPath = getManifestPath(platform, hostName)
+		const manifest = createManifest(extensionId, wrapperPath, hostName)
+		fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
+		console.log(`Created manifest: ${manifestPath}`)
 
-	// Windows: Add registry key
-	if (platform === 'win32') {
-		const regKey = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`
-		try {
-			execSync(`reg add "${regKey}" /ve /t REG_SZ /d "${manifestPath}" /f`, { stdio: 'inherit' })
-			console.log(`Added registry key: ${regKey}`)
-		} catch (err) {
-			console.error('Failed to add registry key:', err)
-			process.exit(1)
+		if (platform === 'win32') {
+			const regKey = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${hostName}`
+			try {
+				execSync(`reg add "${regKey}" /ve /t REG_SZ /d "${manifestPath}" /f`, { stdio: 'inherit' })
+				console.log(`Added registry key: ${regKey}`)
+			} catch (err) {
+				console.error('Failed to add registry key:', err)
+				process.exit(1)
+			}
 		}
 	}
 
-	console.log('\nNative Messaging host installed successfully!')
-	console.log(`Host name: ${HOST_NAME}`)
+	console.log('\nNative Messaging hosts installed successfully!')
 	console.log(`Extension ID: ${extensionId}`)
 }
 
@@ -154,35 +160,34 @@ const uninstall = (): void => {
 		process.exit(1)
 	}
 
-	const manifestPath = getManifestPath(platform)
-	const wrapperPath = path.join(getManifestDir(platform), 'argus-native-host.sh')
+	for (const hostName of HOST_NAMES) {
+		const manifestPath = getManifestPath(platform, hostName)
+		const wrapperPath = getWrapperPath(platform, hostName)
 
-	// Remove manifest
-	if (fs.existsSync(manifestPath)) {
-		fs.unlinkSync(manifestPath)
-		console.log(`Removed manifest: ${manifestPath}`)
-	} else {
-		console.log(`Manifest not found: ${manifestPath}`)
-	}
+		if (fs.existsSync(manifestPath)) {
+			fs.unlinkSync(manifestPath)
+			console.log(`Removed manifest: ${manifestPath}`)
+		} else {
+			console.log(`Manifest not found: ${manifestPath}`)
+		}
 
-	// Remove wrapper script
-	if (fs.existsSync(wrapperPath)) {
-		fs.unlinkSync(wrapperPath)
-		console.log(`Removed wrapper script: ${wrapperPath}`)
-	}
+		if (fs.existsSync(wrapperPath)) {
+			fs.unlinkSync(wrapperPath)
+			console.log(`Removed wrapper script: ${wrapperPath}`)
+		}
 
-	// Windows: Remove registry key
-	if (platform === 'win32') {
-		const regKey = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`
-		try {
-			execSync(`reg delete "${regKey}" /f`, { stdio: 'inherit' })
-			console.log(`Removed registry key: ${regKey}`)
-		} catch {
-			// Key might not exist
+		if (platform === 'win32') {
+			const regKey = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${hostName}`
+			try {
+				execSync(`reg delete "${regKey}" /f`, { stdio: 'inherit' })
+				console.log(`Removed registry key: ${regKey}`)
+			} catch {
+				// Key might not exist
+			}
 		}
 	}
 
-	console.log('\nNative Messaging host uninstalled.')
+	console.log('\nNative Messaging hosts uninstalled.')
 }
 
 const main = (): void => {

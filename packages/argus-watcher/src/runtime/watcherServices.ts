@@ -44,6 +44,7 @@ export const createWatcherRuntimeServices = (
 		watcherId,
 		host,
 		record,
+		extensionRole,
 	} = setup
 
 	if (sourceMode === 'extension') {
@@ -63,6 +64,7 @@ export const createWatcherRuntimeServices = (
 			watcherId,
 			watcherHost: host,
 			watcherPort: record.port,
+			role: extensionRole,
 			ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
 			stripUrlPrefixes,
 		})

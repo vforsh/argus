@@ -10,21 +10,28 @@ import { startWatcher, type WatcherHandle } from '@vforsh/argus-watcher'
 
 export type NativeHostOptions = {
 	id?: string
+	role?: string
 	json?: boolean
 }
 
 export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<void> => {
 	const watcherId = options.id?.trim() || 'extension'
+	const role = options.role?.trim() || 'tab'
+	if (role !== 'tab' && role !== 'control') {
+		console.error(`Invalid native host role: ${role}. Expected "tab" or "control".`)
+		process.exit(2)
+	}
 
 	let handle: WatcherHandle
 	try {
 		handle = await startWatcher({
 			id: watcherId,
 			source: 'extension',
+			extensionRole: role,
 			host: '127.0.0.1',
 			port: 0,
 			net: { enabled: true },
-			pageIndicator: { enabled: true },
+			pageIndicator: { enabled: role === 'tab' },
 		})
 	} catch (error) {
 		// Write error to stderr (Native Messaging reads stdout only)
@@ -33,7 +40,7 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 	}
 
 	// Log to stderr for debugging (stdout is reserved for Native Messaging)
-	console.error(`[NativeHost] Watcher started: id=${handle.watcher.id} port=${handle.watcher.port}`)
+	console.error(`[NativeHost] Watcher started: id=${handle.watcher.id} role=${role} port=${handle.watcher.port}`)
 
 	const cleanup = async (): Promise<void> => {
 		try {

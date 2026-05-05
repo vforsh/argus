@@ -16,6 +16,7 @@ import type { StartWatcherOptions } from '../index.js'
 
 export type NormalizedWatcherSetup = {
 	sourceMode: NonNullable<StartWatcherOptions['source']>
+	extensionRole: NonNullable<StartWatcherOptions['extensionRole']>
 	host: string
 	port: number
 	chrome: WatcherChrome
@@ -41,6 +42,7 @@ export type NormalizedWatcherSetup = {
 
 export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: string): NormalizedWatcherSetup => {
 	const sourceMode = options.source ?? 'cdp'
+	const extensionRole = options.extensionRole ?? 'tab'
 	const host = options.host ?? '127.0.0.1'
 	const port = options.port ?? 0
 	const chrome = options.chrome ?? { host: '127.0.0.1', port: 9222 }
@@ -87,6 +89,7 @@ export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: s
 
 	return {
 		sourceMode,
+		extensionRole,
 		host,
 		port,
 		chrome,

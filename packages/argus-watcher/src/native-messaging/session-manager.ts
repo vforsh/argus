@@ -5,15 +5,14 @@
 
 import type { NativeMessagingHandler } from './messaging.js'
 import type {
-	ExtensionToHost,
-	HostToExtension,
-	TabInfo,
 	PendingRequest,
 	CdpEventHandler,
 	CdpEventMeta,
 	FrameSnapshot,
 	TabAttachedMessage,
 	NativeCookie,
+	ExtensionToTabHost,
+	TabHostToExtension,
 } from './types.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 
@@ -32,7 +31,6 @@ export type ExtensionSession = {
 export type SessionManagerEvents = {
 	onAttach: (session: ExtensionSession) => void
 	onDetach: (tabId: number, reason: string) => void
-	onTabsUpdated: (tabs: TabInfo[]) => void
 	onTargetSelected: (tabId: number, frameId: string | null) => void
 }
 
@@ -42,17 +40,13 @@ let nextRequestId = 1
  * Manages CDP sessions with tabs attached via the Chrome extension.
  */
 export class SessionManager {
-	private messaging: NativeMessagingHandler
+	private messaging: NativeMessagingHandler<ExtensionToTabHost, TabHostToExtension>
 	private sessions = new Map<number, ExtensionSession>()
 	private pendingRequests = new Map<number, PendingRequest>()
 	private eventHandlers = new Map<number, Map<string, Set<CdpEventHandler>>>()
 	private events: SessionManagerEvents
-	private pendingTabsRequest: {
-		resolve: (tabs: TabInfo[]) => void
-		reject: (error: Error) => void
-	} | null = null
 
-	constructor(messaging: NativeMessagingHandler, events: SessionManagerEvents) {
+	constructor(messaging: NativeMessagingHandler<ExtensionToTabHost, TabHostToExtension>, events: SessionManagerEvents) {
 		this.messaging = messaging
 		this.events = events
 		this.setupMessageHandling()
@@ -62,7 +56,7 @@ export class SessionManager {
 	 * Set up message handling from the extension.
 	 */
 	private setupMessageHandling(): void {
-		this.messaging.onMessage((message: ExtensionToHost) => {
+		this.messaging.onMessage((message: ExtensionToTabHost) => {
 			this.handleMessage(message)
 		})
 	}
@@ -70,7 +64,7 @@ export class SessionManager {
 	/**
 	 * Handle a message from the extension.
 	 */
-	private handleMessage(message: ExtensionToHost): void {
+	private handleMessage(message: ExtensionToTabHost): void {
 		switch (message.type) {
 			case 'tab_attached':
 				this.handleTabAttached(message)
@@ -92,10 +86,6 @@ export class SessionManager {
 				this.handleCookieQueryResponse(message)
 				break
 
-			case 'list_tabs_response':
-				this.handleListTabsResponse(message)
-				break
-
 			case 'target_selected':
 				this.events.onTargetSelected(message.tabId, message.frameId ?? null)
 				break
@@ -113,7 +103,7 @@ export class SessionManager {
 	/**
 	 * Handle tab detachment notification.
 	 */
-	private handleTabDetached(message: ExtensionToHost & { type: 'tab_detached' }): void {
+	private handleTabDetached(message: ExtensionToTabHost & { type: 'tab_detached' }): void {
 		const session = this.sessions.get(message.tabId)
 		if (session) {
 			this.sessions.delete(message.tabId)
@@ -125,7 +115,7 @@ export class SessionManager {
 	/**
 	 * Handle CDP event from the extension.
 	 */
-	private handleCdpEvent(message: ExtensionToHost & { type: 'cdp_event' }): void {
+	private handleCdpEvent(message: ExtensionToTabHost & { type: 'cdp_event' }): void {
 		const tabHandlers = this.eventHandlers.get(message.tabId)
 		if (!tabHandlers) {
 			return
@@ -149,14 +139,14 @@ export class SessionManager {
 	/**
 	 * Handle CDP response from the extension.
 	 */
-	private handleCdpResponse(message: ExtensionToHost & { type: 'cdp_response' }): void {
+	private handleCdpResponse(message: ExtensionToTabHost & { type: 'cdp_response' }): void {
 		this.resolvePendingRequest(message.requestId, message.result, message.error)
 	}
 
 	/**
 	 * Handle cookie query response from the extension.
 	 */
-	private handleCookieQueryResponse(message: ExtensionToHost & { type: 'cookie_query_response' }): void {
+	private handleCookieQueryResponse(message: ExtensionToTabHost & { type: 'cookie_query_response' }): void {
 		this.resolvePendingRequest(message.requestId, message.cookies ?? [], message.error)
 	}
 
@@ -174,17 +164,6 @@ export class SessionManager {
 		} else {
 			pending.resolve(result)
 		}
-	}
-
-	/**
-	 * Handle list tabs response from the extension.
-	 */
-	private handleListTabsResponse(message: ExtensionToHost & { type: 'list_tabs_response' }): void {
-		if (this.pendingTabsRequest) {
-			this.pendingTabsRequest.resolve(message.tabs)
-			this.pendingTabsRequest = null
-		}
-		this.events.onTabsUpdated(message.tabs)
 	}
 
 	/**
@@ -213,7 +192,7 @@ export class SessionManager {
 							method,
 							params,
 							sessionId: options?.sessionId,
-						}) satisfies HostToExtension,
+						}) satisfies TabHostToExtension,
 					options?.timeoutMs ?? 30000,
 				)
 			},
@@ -264,7 +243,7 @@ export class SessionManager {
 					tabId,
 					domain: query?.domain,
 					url: query?.url,
-				}) satisfies HostToExtension,
+				}) satisfies TabHostToExtension,
 			timeoutMs,
 		)
 	}
@@ -273,7 +252,7 @@ export class SessionManager {
 	 * Request to attach to a tab.
 	 */
 	attachTab(tabId: number): void {
-		const message: HostToExtension = {
+		const message: TabHostToExtension = {
 			type: 'attach_tab',
 			tabId,
 		}
@@ -284,7 +263,7 @@ export class SessionManager {
 	 * Request to detach from a tab.
 	 */
 	detachTab(tabId: number): void {
-		const message: HostToExtension = {
+		const message: TabHostToExtension = {
 			type: 'detach_tab',
 			tabId,
 		}
@@ -295,35 +274,12 @@ export class SessionManager {
 	 * Request to enable a CDP domain for a tab.
 	 */
 	enableDomain(tabId: number, domain: string): void {
-		const message: HostToExtension = {
+		const message: TabHostToExtension = {
 			type: 'enable_domain',
 			tabId,
 			domain,
 		}
 		this.messaging.send(message)
-	}
-
-	/**
-	 * Request list of available tabs.
-	 */
-	async listTabs(filter?: { url?: string; title?: string }): Promise<TabInfo[]> {
-		return new Promise((resolve, reject) => {
-			this.pendingTabsRequest = { resolve, reject }
-
-			const message: HostToExtension = {
-				type: 'list_tabs',
-				filter,
-			}
-			this.messaging.send(message)
-
-			// Timeout after 5 seconds
-			setTimeout(() => {
-				if (this.pendingTabsRequest) {
-					this.pendingTabsRequest.reject(new Error('List tabs request timed out'))
-					this.pendingTabsRequest = null
-				}
-			}, 5000)
-		})
 	}
 
 	/**
@@ -366,7 +322,7 @@ export class SessionManager {
 		return error
 	}
 
-	private sendBridgeRequest<T>(buildMessage: (requestId: number) => HostToExtension, timeoutMs: number): Promise<T> {
+	private sendBridgeRequest<T>(buildMessage: (requestId: number) => TabHostToExtension, timeoutMs: number): Promise<T> {
 		const requestId = nextRequestId++
 
 		return new Promise((resolve, reject) => {

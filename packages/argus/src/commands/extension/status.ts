@@ -1,6 +1,5 @@
-import fs from 'node:fs'
 import { createOutput } from '../../output/io.js'
-import { HOST_NAME, getPlatform, getManifestPath, getWrapperPath, readManifest, isWrapperExecutable } from './nativeHost.js'
+import { getPlatform, inspectNativeHosts } from './nativeHost.js'
 
 export type ExtensionStatusOptions = {
 	json?: boolean
@@ -22,45 +21,15 @@ export const runExtensionStatus = async (options: ExtensionStatusOptions): Promi
 		return
 	}
 
-	const manifestPath = getManifestPath(platform)
-	const wrapperPath = getWrapperPath(platform)
-
-	const manifestExists = fs.existsSync(manifestPath)
-	const wrapperExists = fs.existsSync(wrapperPath)
-	const wrapperExecutable = wrapperExists && isWrapperExecutable(wrapperPath)
-
-	let manifest = null
-	let manifestValid = false
-	let extensionId: string | null = null
-
-	if (manifestExists) {
-		manifest = readManifest(manifestPath)
-		if (manifest && manifest.name === HOST_NAME && manifest.type === 'stdio' && Array.isArray(manifest.allowed_origins)) {
-			manifestValid = true
-			const origin = manifest.allowed_origins[0]
-			if (origin) {
-				const match = origin.match(/^chrome-extension:\/\/([^/]+)\/$/)
-				if (match) {
-					extensionId = match[1]
-				}
-			}
-		}
-	}
-
-	const configured = manifestExists && manifestValid && wrapperExists && wrapperExecutable
+	const hosts = inspectNativeHosts(platform)
+	const configured = hosts.every((host) => host.configured)
+	const extensionId = hosts.find((host) => host.extensionId)?.extensionId ?? null
 
 	if (options.json) {
 		output.writeJson({
 			configured,
-			hostName: HOST_NAME,
-			manifestPath,
-			wrapperPath,
-			manifestExists,
-			manifestValid,
-			wrapperExists,
-			wrapperExecutable,
+			hosts,
 			extensionId,
-			argusPath: manifest?.path ?? null,
 		})
 		if (!configured) {
 			process.exitCode = 1
@@ -70,16 +39,19 @@ export const runExtensionStatus = async (options: ExtensionStatusOptions): Promi
 
 	output.writeHuman('')
 	if (configured) {
-		output.writeHuman('Native messaging host is configured')
+		output.writeHuman('Native messaging hosts are configured')
 		output.writeHuman('')
-		output.writeHuman(`  Manifest:     exists`)
-		output.writeHuman(`  Wrapper:      exists, executable`)
 		output.writeHuman(`  Extension ID: ${extensionId}`)
 	} else {
-		output.writeHuman('Native messaging host not configured')
+		output.writeHuman('Native messaging hosts not configured')
 		output.writeHuman('')
-		output.writeHuman(`  Manifest:     ${manifestExists ? (manifestValid ? 'exists' : 'exists, invalid') : 'not found'}`)
-		output.writeHuman(`  Wrapper:      ${wrapperExists ? (wrapperExecutable ? 'exists, executable' : 'exists, not executable') : 'not found'}`)
+		for (const host of hosts) {
+			output.writeHuman(`  ${host.hostName}`)
+			output.writeHuman(`    Manifest: ${host.manifestExists ? (host.manifestValid ? 'exists' : 'exists, invalid') : 'not found'}`)
+			output.writeHuman(
+				`    Wrapper:  ${host.wrapperExists ? (host.wrapperExecutable ? 'exists, executable' : 'exists, not executable') : 'not found'}`,
+			)
+		}
 		if (extensionId) {
 			output.writeHuman(`  Extension ID: ${extensionId}`)
 		}

@@ -5,6 +5,7 @@
 
 import { DebuggerManager } from './debugger-manager.js'
 import { TabBridgeSession } from './tab-bridge-session.js'
+import { ControlBridgeSession } from './control-bridge-session.js'
 import {
 	type RememberedTargetSelection,
 	type SelectionTarget,
@@ -15,6 +16,16 @@ import { TargetVisibilityHistoryStore, matchesHiddenTarget } from './target-visi
 import { listBrowserTabs } from './tab-list.js'
 
 const debuggerManager = new DebuggerManager()
+const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
+	onWatcherInfo: (info) => {
+		recordEvent('info', 'bridge', `Control watcher ready: ${info.watcherId} (pid ${info.pid})`)
+	},
+	onAttachTabWatcher: attachTabFromControl,
+	onDetachTabWatcher: detachTabFromControl,
+	onDisconnect: () => {
+		recordEvent('error', 'bridge', 'Control native host disconnected')
+	},
+})
 const bridgeSessions = new Map<number, TabBridgeSession>()
 const selectedFrameByTabId = new Map<number, string | null>()
 // Re-try a remembered iframe while Chrome is still populating frame metadata for a fresh attach.
@@ -167,10 +178,34 @@ chrome.runtime.onMessage.addListener(
 )
 
 async function handlePopupMessage(message: PopupActionMessage, sendResponse: (response: unknown) => void): Promise<void> {
+	ensureControlBridgeSession()
 	pruneStaleBridgeSessions()
 	const response = await buildPopupResponse(message)
 	await syncActionBadge()
 	sendResponse(response)
+}
+
+function ensureControlBridgeSession(): void {
+	if (controlBridgeSession.isConnected()) {
+		return
+	}
+	controlBridgeSession.connect()
+}
+
+ensureControlBridgeSession()
+
+async function attachTabFromControl(tabId: number): Promise<void> {
+	await attachBridgeSession(tabId)
+	setSelectedFrame(tabId, null)
+	await prepareRememberedTargetSelection(tabId)
+	recordEvent('info', 'bridge', `Control attached tab ${tabId}`)
+	void syncActionBadge()
+}
+
+async function detachTabFromControl(tabId: number): Promise<void> {
+	await detachTab(tabId)
+	recordEvent('info', 'bridge', `Control detached tab ${tabId}`)
+	void syncActionBadge()
 }
 
 async function buildPopupResponse(message: PopupActionMessage): Promise<PopupResponse> {

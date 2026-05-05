@@ -5,16 +5,16 @@
 
 import type { ExtensionToHost, HostToExtension } from '../types/messages.js'
 
-export type MessageHandler = (message: HostToExtension) => void
+export type MessageHandler<Inbound> = (message: Inbound) => void
 export type ConnectionHandler = () => void
 export type BridgeClientOptions = {
 	autoReconnect?: boolean
 }
 
-export class BridgeClient {
+export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost> {
 	private port: chrome.runtime.Port | null = null
 	private hostName: string
-	private messageHandlers = new Set<MessageHandler>()
+	private messageHandlers = new Set<MessageHandler<Inbound>>()
 	private connectHandler: ConnectionHandler | null = null
 	private disconnectHandler: ConnectionHandler | null = null
 	private reconnectAttempts = 0
@@ -31,7 +31,7 @@ export class BridgeClient {
 	/**
 	 * Set handler for incoming messages from the host.
 	 */
-	onMessage(handler: MessageHandler): void {
+	onMessage(handler: MessageHandler<Inbound>): void {
 		this.messageHandlers.add(handler)
 	}
 
@@ -62,7 +62,7 @@ export class BridgeClient {
 		try {
 			this.port = chrome.runtime.connectNative(this.hostName)
 
-			this.port.onMessage.addListener((message: HostToExtension) => {
+			this.port.onMessage.addListener((message: Inbound) => {
 				this.reconnectAttempts = 0 // Reset on successful message
 				for (const handler of this.messageHandlers) {
 					handler(message)
@@ -112,7 +112,7 @@ export class BridgeClient {
 	/**
 	 * Send a message to the Native Messaging host.
 	 */
-	send(message: ExtensionToHost): boolean {
+	send(message: Outbound): boolean {
 		if (!this.port) {
 			console.warn('[BridgeClient] Cannot send, not connected')
 			return false

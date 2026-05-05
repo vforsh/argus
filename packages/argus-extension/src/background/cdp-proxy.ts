@@ -6,23 +6,24 @@
 import type { DebuggerManager } from './debugger-manager.js'
 import type { BridgeClient } from './bridge-client.js'
 import type {
-	HostToExtension,
 	CdpCommandMessage,
 	AttachTabMessage,
 	DetachTabMessage,
 	EnableDomainMessage,
-	TabInfo,
 	CookieQueryMessage,
+	ExtensionToTabHost,
+	TabInfo,
+	TabHostToExtension,
 } from '../types/messages.js'
 import { listBrowserTabs } from './tab-list.js'
 
 export class CdpProxy {
 	private debuggerManager: DebuggerManager
-	private bridgeClient: BridgeClient
+	private bridgeClient: BridgeClient<TabHostToExtension, ExtensionToTabHost>
 	private removeDebuggerEventForwarding: (() => void) | null = null
 	private removeDebuggerDetachForwarding: (() => void) | null = null
 
-	constructor(debuggerManager: DebuggerManager, bridgeClient: BridgeClient) {
+	constructor(debuggerManager: DebuggerManager, bridgeClient: BridgeClient<TabHostToExtension, ExtensionToTabHost>) {
 		this.debuggerManager = debuggerManager
 		this.bridgeClient = bridgeClient
 
@@ -64,7 +65,7 @@ export class CdpProxy {
 	 * Handle messages from the bridge.
 	 */
 	private setupMessageHandling(): void {
-		this.bridgeClient.onMessage((message: HostToExtension) => {
+		this.bridgeClient.onMessage((message) => {
 			this.handleMessage(message)
 		})
 	}
@@ -72,7 +73,7 @@ export class CdpProxy {
 	/**
 	 * Process a message from the bridge.
 	 */
-	private async handleMessage(message: HostToExtension): Promise<void> {
+	private async handleMessage(message: TabHostToExtension): Promise<void> {
 		switch (message.type) {
 			case 'attach_tab':
 				await this.handleAttachTab(message)
@@ -90,15 +91,12 @@ export class CdpProxy {
 				await this.handleCookieQuery(message)
 				break
 
-			case 'list_tabs':
-				await this.handleListTabs(message)
-				break
-
 			case 'enable_domain':
 				await this.handleEnableDomain(message)
 				break
 
 			case 'host_info':
+			case 'host_ready':
 			case 'target_info':
 				break
 
@@ -190,18 +188,6 @@ export class CdpProxy {
 	}
 
 	/**
-	 * List available tabs.
-	 */
-	private async handleListTabs(message: { filter?: { url?: string; title?: string } }): Promise<void> {
-		const tabs: TabInfo[] = await listBrowserTabs(this.debuggerManager, message.filter)
-
-		this.bridgeClient.send({
-			type: 'list_tabs_response',
-			tabs,
-		})
-	}
-
-	/**
 	 * Enable a CDP domain for a tab.
 	 */
 	private async handleEnableDomain(message: EnableDomainMessage): Promise<void> {
@@ -223,12 +209,12 @@ export class CdpProxy {
 	 * Manually detach from a tab (called from popup).
 	 */
 	async detachTab(tabId: number): Promise<void> {
-		await this.debuggerManager.detach(tabId)
 		this.bridgeClient.send({
 			type: 'tab_detached',
 			tabId,
 			reason: 'user_requested',
 		})
+		await this.debuggerManager.detach(tabId)
 	}
 
 	/**

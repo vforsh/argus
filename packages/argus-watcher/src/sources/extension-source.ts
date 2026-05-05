@@ -1,7 +1,9 @@
 import { createNativeMessaging } from '../native-messaging/messaging.js'
+import { ControlSessionManager } from '../native-messaging/control-session-manager.js'
 import { SessionManager, type ExtensionSession } from '../native-messaging/session-manager.js'
+import type { ControlHostToExtension, ExtensionToControlHost, ExtensionToTabHost, TabHostToExtension } from '../native-messaging/types.js'
 import type { CdpSourceHandle, CdpSourceTarget, CdpSourceBaseOptions } from './types.js'
-import type { CdpTargetContext } from '../cdp/connection.js'
+import type { CdpSessionHandle, CdpTargetContext } from '../cdp/connection.js'
 import {
 	buildFrameTargets,
 	buildPageTarget,
@@ -24,7 +26,9 @@ import {
 	setRequestedTargetSelection,
 } from './extension-frame-runtime.js'
 
-export type ExtensionSourceOptions = CdpSourceBaseOptions
+export type ExtensionSourceOptions = CdpSourceBaseOptions & {
+	role?: 'tab' | 'control'
+}
 
 const TARGET_RECOVERY_INTERVAL_MS = 500
 const TARGET_RECOVERY_TIMEOUT_MS = 30_000
@@ -32,14 +36,101 @@ const FRAME_COMMAND_READY_TIMEOUT_MS = 3_000
 const FRAME_COMMAND_READY_POLL_MS = 100
 type TargetRecovery = { timer: ReturnType<typeof setInterval>; deadline: number }
 
+const createDetachedSession = (message: string): CdpSessionHandle => ({
+	isAttached: () => false,
+	sendAndWait: async () => {
+		const error = new Error(message)
+		;(error as Error & { code?: string }).code = 'cdp_not_attached'
+		throw error
+	},
+	onEvent: () => () => {},
+})
+
+const createControlExtensionSource = (options: ExtensionSourceOptions): CdpSourceHandle => {
+	const { events, watcherId, watcherHost, watcherPort } = options
+	const messaging = createNativeMessaging<ExtensionToControlHost, ControlHostToExtension>()
+	const controlSession = new ControlSessionManager(messaging)
+	const hostInfo = {
+		watcherId: watcherId ?? 'extension-control',
+		watcherHost: watcherHost ?? '127.0.0.1',
+		watcherPort: watcherPort ?? 0,
+		watcherPid: process.pid,
+	}
+	let stopping = false
+
+	messaging.start()
+	messaging.send({ type: 'host_ready' })
+	sendHostInfo()
+	events.onStatus({
+		attached: false,
+		target: null,
+		reason: 'control_watcher',
+	})
+	messaging.onDisconnect(() => {
+		console.error('[ExtensionControlSource] Extension disconnected')
+		if (!stopping) {
+			events.onStatus({ attached: false, target: null, reason: 'extension_disconnected' })
+			events.onDetach?.('extension_disconnected')
+		}
+	})
+
+	return {
+		session: createDetachedSession('Extension control watcher does not expose a CDP tab session'),
+		syncWatcherInfo: (info) => {
+			hostInfo.watcherId = info.watcherId
+			hostInfo.watcherHost = info.watcherHost
+			hostInfo.watcherPort = info.watcherPort
+			hostInfo.watcherPid = info.watcherPid
+			sendHostInfo()
+		},
+		stop: async () => {
+			stopping = true
+			messaging.stop()
+		},
+		listTargets: async () => [],
+		listTabs: async (filter) => await controlSession.listTabs(filter),
+		attachTarget: (targetId) => {
+			controlSession.attachTabWatcher(parseControlTabTarget(targetId, 'attach'))
+		},
+		detachTarget: (targetId) => {
+			controlSession.detachTabWatcher(parseControlTabTarget(targetId, 'detach'))
+		},
+	}
+
+	function sendHostInfo(): void {
+		messaging.send({
+			type: 'host_info',
+			watcherId: hostInfo.watcherId,
+			watcherHost: hostInfo.watcherHost,
+			watcherPort: hostInfo.watcherPort,
+			pid: hostInfo.watcherPid,
+		})
+	}
+}
+
+const parseControlTabTarget = (targetId: string, action: 'attach' | 'detach'): number => {
+	const target = parseExtensionTargetId(targetId)
+	if (!target.frameId) {
+		return target.tabId
+	}
+	if (action === 'attach') {
+		throw new Error(`Cannot attach iframe ${target.frameId} from extension-control before tab ${target.tabId} has a tab watcher`)
+	}
+	throw new Error(`Cannot detach iframe ${target.frameId} from extension-control. Detach tab ${target.tabId} instead.`)
+}
+
 /**
  * Create an extension source that connects to Chrome via Native Messaging.
  * Returns a handle that can be used to control the source and access CDP session.
  */
 export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourceHandle => {
+	if (options.role === 'control') {
+		return createControlExtensionSource(options)
+	}
+
 	const { events, ignoreMatcher, stripUrlPrefixes, watcherId, watcherHost, watcherPort } = options
 
-	const messaging = createNativeMessaging()
+	const messaging = createNativeMessaging<ExtensionToTabHost, TabHostToExtension>()
 	const hostInfo = {
 		watcherId: watcherId ?? 'extension',
 		watcherHost: watcherHost ?? '127.0.0.1',
@@ -78,8 +169,6 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			emitStatus(null, reason)
 			events.onDetach?.(reason)
 		},
-
-		onTabsUpdated: () => {},
 
 		onTargetSelected: (tabId, frameId) => {
 			const session = currentSession
@@ -127,6 +216,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	delegatingSessions.add(pageController)
 
 	messaging.start()
+	messaging.send({ type: 'host_ready' })
 	sendHostInfo()
 	messaging.onDisconnect(() => {
 		console.error('[ExtensionSource] Extension disconnected')
@@ -164,14 +254,27 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 	const attachTarget = (targetId: string): void => {
 		const target = parseExtensionTargetId(targetId)
-		const session = requireOwnedSession(target.tabId)
+		const session = currentSession
+		if (!session) {
+			if (target.frameId) {
+				throw new Error(`Cannot attach iframe ${target.frameId} before tab ${target.tabId} is attached`)
+			}
+			throw new Error(`Watcher ${hostInfo.watcherId} is a tab watcher. Use extension-control to attach tab ${target.tabId}.`)
+		}
+		if (session.tabId !== target.tabId) {
+			throw new Error(`Watcher ${hostInfo.watcherId} is pinned to tab ${session.tabId}, not tab ${target.tabId}`)
+		}
 		requestTargetSelection(session, target.frameId)
 	}
 
 	const detachTarget = (targetId: string): void => {
 		const target = parseExtensionTargetId(targetId)
-		const session = requireOwnedSession(target.tabId)
-		sessionManager.detachTab(session.tabId)
+		const session = currentSession
+		if (!session || session.tabId === target.tabId) {
+			sessionManager.detachTab(target.tabId)
+			return
+		}
+		throw new Error(`Watcher ${hostInfo.watcherId} is pinned to tab ${session.tabId}, not tab ${target.tabId}`)
 	}
 
 	return {
@@ -218,9 +321,6 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		},
 		stop,
 		listTargets,
-		listTabs: async (filter) => {
-			return await sessionManager.listTabs(filter)
-		},
 		attachTarget,
 		detachTarget,
 	}
@@ -233,17 +333,6 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			watcherPort: hostInfo.watcherPort,
 			pid: hostInfo.watcherPid,
 		})
-	}
-
-	function requireOwnedSession(tabId: number): ExtensionSession {
-		const session = currentSession
-		if (!session) {
-			throw createNotAttachedError()
-		}
-		if (session.tabId !== tabId) {
-			throw new Error(`Watcher ${hostInfo.watcherId} is pinned to tab ${session.tabId}, not tab ${tabId}`)
-		}
-		return session
 	}
 
 	function rebindDelegatingSessions(): void {

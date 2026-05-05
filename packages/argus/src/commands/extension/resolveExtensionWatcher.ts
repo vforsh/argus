@@ -1,6 +1,7 @@
 import type { StatusResponse, RegistryV1, WatcherRecord } from '@vforsh/argus-core'
 import { pruneRegistry } from '../../registry.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
+import { CONTROL_WATCHER_ID } from './nativeHost.js'
 
 export type ResolveExtensionWatcherInput = {
 	id?: string
@@ -12,7 +13,7 @@ export type ResolveExtensionWatcherResult =
 
 /**
  * Resolve a watcher that is known to be backed by the Chrome extension transport.
- * When id is omitted, mirror the generic watcher heuristics but only across extension watchers.
+ * When id is omitted, use the browser-level control watcher.
  */
 export const resolveExtensionWatcher = async (input: ResolveExtensionWatcherInput): Promise<ResolveExtensionWatcherResult> => {
 	let registry: RegistryV1
@@ -39,46 +40,25 @@ export const resolveExtensionWatcher = async (input: ResolveExtensionWatcherInpu
 	if (extensionWatchers.length === 0) {
 		return {
 			ok: false,
-			error: 'No extension-backed watchers found. Attach a tab in the extension popup first.',
+			error: 'No extension-backed watchers found. Reload the extension after `argus extension setup`, or attach a tab in the extension popup.',
 			exitCode: 2,
 		}
 	}
 
-	const reachability = await Promise.all(
-		extensionWatchers.map(async (watcher) => ({
-			watcher,
-			status: await checkWatcherStatus(watcher),
-		})),
-	)
-
-	const attached = reachability.filter((entry) => entry.status.ok && entry.status.status.attached)
-	if (attached.length === 1) {
-		return { ok: true, watcher: attached[0].watcher, registry }
+	const controlWatcher = registry.watchers[CONTROL_WATCHER_ID]
+	if (controlWatcher?.source === 'extension') {
+		const status = await checkWatcherStatus(controlWatcher)
+		if (status.ok) {
+			return { ok: true, watcher: controlWatcher, registry }
+		}
 	}
 
-	const cwd = process.cwd()
-	const cwdMatches = extensionWatchers.filter((watcher) => watcher.cwd === cwd)
-	const attachedCwdMatches = attached.filter((entry) => entry.watcher.cwd === cwd)
-	if (attachedCwdMatches.length === 1) {
-		return { ok: true, watcher: attachedCwdMatches[0].watcher, registry }
+	return {
+		ok: false,
+		error: 'extension-control watcher is unavailable. Reload the extension after `argus extension setup`.',
+		exitCode: 2,
+		candidates: extensionWatchers,
 	}
-	if (attached.length > 1) {
-		return { ok: false, error: 'Watcher id required.', exitCode: 2, candidates: attached.map((entry) => entry.watcher) }
-	}
-
-	if (cwdMatches.length === 1) {
-		return { ok: true, watcher: cwdMatches[0], registry }
-	}
-	if (cwdMatches.length > 1) {
-		return { ok: false, error: 'Watcher id required.', exitCode: 2, candidates: cwdMatches }
-	}
-
-	const reachable = reachability.filter((entry) => entry.status.ok)
-	if (reachable.length === 1) {
-		return { ok: true, watcher: reachable[0].watcher, registry }
-	}
-
-	return { ok: false, error: 'Watcher id required.', exitCode: 2, candidates: extensionWatchers }
 }
 
 const getExtensionWatchers = (watchers: WatcherRecord[]): WatcherRecord[] => watchers.filter((watcher) => watcher.source === 'extension')

@@ -5,10 +5,10 @@
 
 import type { ExtensionToHost, HostToExtension } from './types.js'
 
-export type NativeMessagingHandler = {
-	onMessage: (callback: (message: ExtensionToHost) => void) => void
+export type NativeMessagingHandler<Inbound = ExtensionToHost, Outbound = HostToExtension> = {
+	onMessage: (callback: (message: Inbound) => void) => void
 	onDisconnect: (callback: () => void) => void
-	send: (message: HostToExtension) => void
+	send: (message: Outbound) => void
 	start: () => void
 	stop: () => void
 }
@@ -17,8 +17,8 @@ export type NativeMessagingHandler = {
  * Create a Native Messaging handler for stdin/stdout communication.
  * Messages are length-prefixed with a 32-bit little-endian integer.
  */
-export const createNativeMessaging = (): NativeMessagingHandler => {
-	let messageCallback: ((message: ExtensionToHost) => void) | null = null
+export const createNativeMessaging = <Inbound = ExtensionToHost, Outbound = HostToExtension>(): NativeMessagingHandler<Inbound, Outbound> => {
+	let messageCallback: ((message: Inbound) => void) | null = null
 	let disconnectCallback: (() => void) | null = null
 	let buffer = Buffer.alloc(0)
 	let running = false
@@ -38,7 +38,7 @@ export const createNativeMessaging = (): NativeMessagingHandler => {
 			buffer = buffer.subarray(4 + messageLength)
 
 			try {
-				const message = JSON.parse(messageBytes.toString('utf8')) as ExtensionToHost
+				const message = JSON.parse(messageBytes.toString('utf8')) as Inbound
 				if (messageCallback) {
 					messageCallback(message)
 				}

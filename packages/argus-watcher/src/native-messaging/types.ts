@@ -64,6 +64,10 @@ export type HostInfoMessage = {
 	pid: number
 }
 
+export type HostReadyMessage = {
+	type: 'host_ready'
+}
+
 export type TargetInfoMessage = {
 	type: 'target_info'
 	targetId: string
@@ -107,8 +111,11 @@ export type ExtensionToHost =
 	| CdpEventMessage
 	| CdpResponseMessage
 	| CookieQueryResponseMessage
-	| ListTabsResponseMessage
 	| TargetSelectedMessage
+
+export type ExtensionToControlHost = ListTabsResponseMessage
+
+export type ExtensionToTabHost = ExtensionToHost
 
 // ============================================================
 // Host -> Extension messages
@@ -116,6 +123,16 @@ export type ExtensionToHost =
 
 export type AttachTabMessage = {
 	type: 'attach_tab'
+	tabId: number
+}
+
+export type AttachTabWatcherMessage = {
+	type: 'attach_tab_watcher'
+	tabId: number
+}
+
+export type DetachTabWatcherMessage = {
+	type: 'detach_tab_watcher'
 	tabId: number
 }
 
@@ -160,10 +177,14 @@ export type HostToExtension =
 	| DetachTabMessage
 	| CdpCommandMessage
 	| CookieQueryMessage
-	| ListTabsMessage
 	| EnableDomainMessage
 	| HostInfoMessage
+	| HostReadyMessage
 	| TargetInfoMessage
+
+export type ControlHostToExtension = AttachTabWatcherMessage | DetachTabWatcherMessage | ListTabsMessage | HostInfoMessage | HostReadyMessage
+
+export type TabHostToExtension = HostToExtension
 
 // ============================================================
 // CDP Session types

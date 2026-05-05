@@ -155,6 +155,7 @@ export function registerWatcher(program: Command): void {
 		.command('native-host')
 		.description('[internal] Start as Native Messaging host for Chrome extension')
 		.option('--id <watcherId>', 'Watcher id (default: extension)')
+		.option('--role <role>', 'Native host role: tab or control (default: tab)')
 		.option('--json', 'Output JSON for automation')
 		.action(async (options) => {
 			await runWatcherNativeHost(options)
