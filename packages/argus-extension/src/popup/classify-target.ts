@@ -28,6 +28,7 @@ const LOW_INTEREST_URL_SUBSTRINGS: string[] = [
 	'adnxs.com',
 	'adsrvr.org',
 	'criteo.com',
+	'inmobi.com',
 	'rubiconproject.com',
 	'pubmatic.com',
 ]
