@@ -177,6 +177,14 @@ chrome.runtime.onMessage.addListener(
 	},
 )
 
+chrome.runtime.onStartup.addListener(() => {
+	ensureControlBridgeSession()
+})
+
+chrome.runtime.onInstalled.addListener(() => {
+	ensureControlBridgeSession()
+})
+
 async function handlePopupMessage(message: PopupActionMessage, sendResponse: (response: unknown) => void): Promise<void> {
 	ensureControlBridgeSession()
 	pruneStaleBridgeSessions()
