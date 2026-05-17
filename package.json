@@ -44,5 +44,5 @@
 		"typescript": "5.9.3"
 	},
 	"packageManager": "bun",
-	"version": "0.1.2"
+	"version": "0.1.3"
 }
