@@ -23,6 +23,18 @@ By default this writes `dist/release/argus-extension.zip`.
 
 ## Install Extension in Chrome
 
+### From GitHub Release
+
+1. Download `argus-extension-<tag>.zip` from the GitHub release assets
+2. Unzip it somewhere stable
+3. Open Chrome and navigate to `chrome://extensions`
+4. Enable **Developer mode** (toggle in top-right)
+5. Click **Load unpacked**
+6. Select the unzipped extension directory
+7. Note the **Extension ID** shown on the card (you'll need this for the Native Messaging host)
+
+### From Repository Checkout
+
 1. Open Chrome and navigate to `chrome://extensions`
 2. Enable **Developer mode** (toggle in top-right)
 3. Click **Load unpacked**
@@ -39,7 +51,7 @@ bun run build
 argus extension setup <EXTENSION_ID>
 ```
 
-Replace `<EXTENSION_ID>` with the ID from step 5 above.
+Replace `<EXTENSION_ID>` with the ID shown on the extension card.
 
 This creates:
 

@@ -44,6 +44,8 @@ function copyReleaseFiles(archiveRoot) {
 		mkdirSync(path.dirname(destinationPath), { recursive: true })
 		cpSync(sourcePath, destinationPath, { recursive: true })
 	}
+
+	rmSync(path.join(archiveRoot, 'dist', 'release'), { recursive: true, force: true })
 }
 
 function createZipArchive(archiveRoot, archivePath) {
