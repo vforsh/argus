@@ -125,10 +125,11 @@ argus eval app "document.title" --json
 argus eval app "window.store.getState()" --inject ./debug-hooks.js
 argus eval app --file ./script.js
 argus eval app --file ./script.js --bundle
+argus eval app --file ./script.js --no-bundle
 argus eval app --file ./script.js --arg level=10 --arg mode=fast
 ```
 
-`js` is the short alias for `eval`. `--inject <file>` runs setup code before the expression. `--bundle` requires `--file` and bundles relative local imports from that directory (no `node_modules`/package imports; entry file must not use top-level `export`). `--arg key=value` is repeatable and exposes string values as a frozen `args` object inside inline, file, stdin, or injected scripts; duplicate keys use the last value.
+`js` is the short alias for `eval`. `--inject <file>` runs setup code before the expression. `--file` scripts with leading `import`/`export` are bundled automatically (stderr note); use `--bundle` to force bundling or `--no-bundle` to read the file as-is. Bundling resolves imports from the current working directory (including `node_modules`; `node:` built-ins are rejected; entry file must not use top-level `export`). `--arg key=value` is repeatable and exposes string values as a frozen `args` object inside inline, file, stdin, or injected scripts; duplicate keys use the last value.
 
 ### Runtime Code
 

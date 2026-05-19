@@ -20,9 +20,10 @@ argus eval app "await fetch('/ping').then(r => r.status)"
 argus eval app "window.store.getState()" --inject ./debug-hooks.js
 argus eval app --file ./script.js --arg level=10 --arg mode=fast
 argus eval app --file ./script.js --bundle
+argus eval app --file ./script.js --no-bundle
 ```
 
-`--bundle` requires `--file`. It bundles relative local imports from the entry file directory into one script before eval. Package imports, `node_modules`, and Node built-ins are rejected. TypeScript entry/helpers are transpiled without typechecking. Helpers may `export` symbols; the entry file must not emit top-level `export` into the bundle. Static and dynamic `import()` of local files are inlined into one script.
+`--file` with leading `import`/`export` auto-enables bundling (one-line stderr note). `--bundle` forces bundling; `--no-bundle` reads the file as-is. Bundling resolves the entry and any import graph esbuild can resolve from the current working directory (including paths outside the entry directory and packages under `node_modules`). Node built-ins (`node:fs`, etc.) are rejected. TypeScript is transpiled without typechecking. Helpers may `export` symbols; the entry file must not emit top-level `export` into the bundle.
 
 Poll until condition:
 
@@ -37,17 +38,18 @@ argus eval app "document.title" --interval 250ms --until 'result === "ready"'
 
 ## Behavior Flags
 
-| Flag                     | Effect                             |
-| ------------------------ | ---------------------------------- |
-| `--no-await`             | Don't await promises               |
-| `--timeout <ms>`         | Eval timeout                       |
-| `--no-return-by-value`   | Preview-style results              |
-| `--no-fail-on-exception` | Don't exit 1 on throw              |
-| `--retry <n>`            | Retry failed evals                 |
-| `--silent` / `-q`        | Suppress success output            |
-| `--inject <file>`        | Run setup code before expression   |
-| `--bundle`               | Bundle local imports from `--file` |
-| `--arg <key=value>`      | Expose string arg as `args[key]`   |
+| Flag                     | Effect                           |
+| ------------------------ | -------------------------------- |
+| `--no-await`             | Don't await promises             |
+| `--timeout <ms>`         | Eval timeout                     |
+| `--no-return-by-value`   | Preview-style results            |
+| `--no-fail-on-exception` | Don't exit 1 on throw            |
+| `--retry <n>`            | Retry failed evals               |
+| `--silent` / `-q`        | Suppress success output          |
+| `--inject <file>`        | Run setup code before expression |
+| `--bundle`               | Force bundling for `--file`      |
+| `--no-bundle`            | Skip bundling (disables auto)    |
+| `--arg <key=value>`      | Expose string arg as `args[key]` |
 
 ## Script Args
 
