@@ -138,6 +138,26 @@ describe('playground smoke tests', () => {
 		expect(response.result).toBe(42)
 	})
 
+	test('eval bundles local imports from --file', async () => {
+		const scriptDir = path.join(tempDir, 'bundle-fixture')
+		await fs.mkdir(scriptDir, { recursive: true })
+		await fs.writeFile(path.join(scriptDir, 'helper.js'), 'export const value = 41\n', 'utf8')
+		await fs.writeFile(
+			path.join(scriptDir, 'main.js'),
+			'import { value } from "./helper.js"\nconst next = await Promise.resolve(value)\nnext + 1\n',
+			'utf8',
+		)
+
+		const { stdout } = await runCommand(
+			'bun',
+			[BIN_PATH, 'eval', 'playground', '--file', path.join(scriptDir, 'main.js'), '--bundle', '--json'],
+			{ env },
+		)
+		const response = JSON.parse(stdout) as EvalResponse
+		expect(response.ok).toBe(true)
+		expect(response.result).toBe(42)
+	})
+
 	test('eval exposes --arg values to file scripts', async () => {
 		const scriptPath = path.join(tempDir, 'args.js')
 		await fs.writeFile(scriptPath, 'const level = await Promise.resolve(Number(args.level));\n`${args.mode}:${level + 1}`\n', 'utf8')

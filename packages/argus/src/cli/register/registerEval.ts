@@ -23,6 +23,7 @@ export function registerEval(program: Command): void {
 		.option('--count <n>', 'Stop after N iterations (requires --interval)')
 		.option('--until <condition>', 'Stop when local condition becomes truthy (requires --interval)')
 		.option('-f, --file <path>', 'Read expression from a file')
+		.option('--bundle', 'Bundle local imports from --file into one script before eval')
 		.option('--stdin', 'Read expression from stdin')
 		.option('--inject <path>', 'Read setup code from a file and run it before the expression')
 		.option('--iframe <selector>', 'Eval in iframe via postMessage (requires helper script)')
@@ -36,6 +37,7 @@ Examples:
   $ argus eval app "location.href"
   $ argus eval app "await fetch('/ping').then(r => r.status)"
   $ argus eval app --file ./script.js
+  $ argus eval app --file ./script.js --bundle
   $ argus eval app "window.store.getState()" --inject ./debug-hooks.js
   $ argus eval app --file ./script.js --arg level=10 --arg mode=fast
   $ cat script.js | argus eval app --stdin
@@ -62,6 +64,7 @@ Examples:
 				count: options.count,
 				until: options.until,
 				file: options.file,
+				bundle: options.bundle,
 				stdin: options.stdin,
 				inject: options.inject,
 				iframe: options.iframe,
@@ -110,6 +113,7 @@ Examples:
 		.option('--total-timeout <duration>', 'Max wall-clock time (e.g. 30s, 2m)')
 		.option('--verbose', 'Print intermediate (falsy) results')
 		.option('-f, --file <path>', 'Read expression from a file')
+		.option('--bundle', 'Bundle local imports from --file into one script before eval')
 		.option('--stdin', 'Read expression from stdin')
 		.option('--inject <path>', 'Read setup code from a file and run it before the expression')
 		.option('--iframe <selector>', 'Eval in iframe via postMessage (requires helper script)')
@@ -127,6 +131,7 @@ Examples:
   $ argus eval-until app "window.data" --verbose
   $ argus eval-until app "window.data" --count 20 --interval 1s
   $ argus eval-until app --file ./check.js --total-timeout 1m
+  $ argus eval-until app --file ./check.js --bundle --total-timeout 1m
   $ argus wait app "window.appReady" --inject ./debug-hooks.js --total-timeout 20s
   $ argus wait app --file ./ready.js --arg level=10 --total-timeout 20s
 `,
@@ -145,6 +150,7 @@ Examples:
 				totalTimeout: options.totalTimeout,
 				verbose: options.verbose,
 				file: options.file,
+				bundle: options.bundle,
 				stdin: options.stdin,
 				inject: options.inject,
 				iframe: options.iframe,

@@ -28,6 +28,8 @@ export type EvalOptions = {
 	until?: string
 	/** Read expression from a file path. */
 	file?: string
+	/** Bundle local imports from `--file` before eval. */
+	bundle?: boolean
 	/** Read expression from stdin. Also activated when expression is `-`. */
 	stdin?: boolean
 	/** Read setup code from a file and run it before the expression. */

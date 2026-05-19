@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { formatError, parseNumber } from '../cli/parse.js'
 import type { Output } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
+import { bundleEvalEntry } from './evalBundle.js'
 
 // Re-export shared parsers so existing eval imports keep working
 export { formatError, parseNumber } from '../cli/parse.js'
@@ -16,6 +17,7 @@ type ExpressionSourceOptions = {
 	file?: string
 	stdin?: boolean
 	inject?: string
+	bundle?: boolean
 }
 
 /** String-only argument map exposed to eval scripts as `args`. */
@@ -74,7 +76,8 @@ export const prepareEvalExpression = async (
 export const resolveExpression = async (inline: string | undefined, options: ExpressionSourceOptions, output: Output): Promise<string | null> => {
 	const wantsStdin = options.stdin === true || inline === '-'
 	const hasInline = inline != null && inline !== '-'
-	const hasFile = options.file != null
+	const filePath = options.file
+	const hasFile = filePath != null
 
 	if (hasInline && hasFile) {
 		output.writeWarn('Cannot combine an inline expression with --file')
@@ -91,10 +94,28 @@ export const resolveExpression = async (inline: string | undefined, options: Exp
 		return null
 	}
 
+	if (options.bundle && !hasFile) {
+		output.writeWarn('--bundle requires --file')
+		return null
+	}
+
 	let expression: string
-	if (hasFile) {
+	if (hasFile && options.bundle) {
+		const bundled = await bundleEvalEntry(filePath)
+		if (!bundled.ok) {
+			output.writeWarn(`Failed to bundle --file: ${bundled.error}`)
+			return null
+		}
+
+		if (!bundled.code.trim()) {
+			output.writeWarn(`Bundled file is empty: ${options.file}`)
+			return null
+		}
+
+		expression = bundled.code
+	} else if (hasFile) {
 		try {
-			const content = await readFile(options.file ?? '', 'utf8')
+			const content = await readFile(filePath, 'utf8')
 			if (!content.trim()) {
 				output.writeWarn(`File is empty: ${options.file}`)
 				return null
