@@ -5,6 +5,7 @@ import { formatError, parseNumber } from '../cli/parse.js'
 import type { Output } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
 import { bundleEvalEntry } from './evalBundle.js'
+import { fileUsesModuleSyntax } from './evalModuleSyntax.js'
 
 // Re-export shared parsers so existing eval imports keep working
 export { formatError, parseNumber } from '../cli/parse.js'
@@ -17,7 +18,10 @@ type ExpressionSourceOptions = {
 	file?: string
 	stdin?: boolean
 	inject?: string
+	/** Force bundling for `--file`. */
 	bundle?: boolean
+	/** Skip bundling; disables auto-bundle when the file uses import/export. */
+	noBundle?: boolean
 }
 
 /** String-only argument map exposed to eval scripts as `args`. */
@@ -94,36 +98,38 @@ export const resolveExpression = async (inline: string | undefined, options: Exp
 		return null
 	}
 
-	if (options.bundle && !hasFile) {
-		output.writeWarn('--bundle requires --file')
+	if ((options.bundle || options.noBundle) && !hasFile) {
+		output.writeWarn('--bundle and --no-bundle require --file')
 		return null
 	}
 
 	let expression: string
-	if (hasFile && options.bundle) {
-		const bundled = await bundleEvalEntry(filePath)
-		if (!bundled.ok) {
-			output.writeWarn(`Failed to bundle --file: ${bundled.error}`)
+	if (hasFile) {
+		const fileContent = await readFileContent(filePath, options.file, output)
+		if (fileContent == null) {
 			return null
 		}
 
-		if (!bundled.code.trim()) {
-			output.writeWarn(`Bundled file is empty: ${options.file}`)
-			return null
+		const bundleDecision = resolveBundleDecision(options, fileContent)
+		if (bundleDecision.autoEnabled) {
+			output.writeWarn('Detected import/export in --file; bundling automatically. Pass --no-bundle to read the file as-is.')
 		}
 
-		expression = bundled.code
-	} else if (hasFile) {
-		try {
-			const content = await readFile(filePath, 'utf8')
-			if (!content.trim()) {
-				output.writeWarn(`File is empty: ${options.file}`)
+		if (bundleDecision.shouldBundle) {
+			const bundled = await bundleEvalEntry(filePath)
+			if (!bundled.ok) {
+				output.writeWarn(`Failed to bundle --file: ${bundled.error}`)
 				return null
 			}
-			expression = content
-		} catch (error) {
-			output.writeWarn(`Failed to read --file: ${formatError(error)}`)
-			return null
+
+			if (!bundled.code.trim()) {
+				output.writeWarn(`Bundled file is empty: ${options.file}`)
+				return null
+			}
+
+			expression = bundled.code
+		} else {
+			expression = fileContent
 		}
 	} else if (wantsStdin) {
 		try {
@@ -149,6 +155,43 @@ export const resolveExpression = async (inline: string | undefined, options: Exp
 	}
 
 	return await prependInjectSource(expression, options.inject, output)
+}
+
+type BundleDecision = { shouldBundle: boolean; autoEnabled: boolean }
+
+/**
+ * `--no-bundle` wins over `--bundle` and auto-detection.
+ * Auto-bundle applies when leading script text uses import/export.
+ */
+export const resolveBundleDecision = (options: ExpressionSourceOptions, fileContent: string): BundleDecision => {
+	if (options.noBundle) {
+		return { shouldBundle: false, autoEnabled: false }
+	}
+
+	if (options.bundle) {
+		return { shouldBundle: true, autoEnabled: false }
+	}
+
+	if (!fileUsesModuleSyntax(fileContent)) {
+		return { shouldBundle: false, autoEnabled: false }
+	}
+
+	return { shouldBundle: true, autoEnabled: true }
+}
+
+const readFileContent = async (filePath: string, displayPath: string | undefined, output: Output): Promise<string | null> => {
+	try {
+		const content = await readFile(filePath, 'utf8')
+		if (!content.trim()) {
+			output.writeWarn(`File is empty: ${displayPath}`)
+			return null
+		}
+
+		return content
+	} catch (error) {
+		output.writeWarn(`Failed to read --file: ${formatError(error)}`)
+		return null
+	}
 }
 
 const prependInjectSource = async (expression: string, injectPath: string | undefined, output: Output): Promise<string | null> => {

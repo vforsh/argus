@@ -3,7 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { bundleEvalEntry, type BundleEvalEntryResult } from '../packages/argus/src/commands/evalBundle.js'
-import { resolveExpression } from '../packages/argus/src/commands/evalShared.js'
+import { fileUsesModuleSyntax } from '../packages/argus/src/commands/evalModuleSyntax.js'
+import { resolveBundleDecision, resolveExpression } from '../packages/argus/src/commands/evalShared.js'
 import type { Output } from '../packages/argus/src/output/io.js'
 
 const tempDirs: string[] = []
@@ -52,6 +53,11 @@ const expectBundleError = async (root: string, relativePath: string, needle: str
 	expect(result.error).toMatch(needle)
 }
 
+const runExpression = (source: string): unknown => {
+	const runScript = globalThis['eval' as keyof typeof globalThis] as (code: string) => unknown
+	return runScript(source)
+}
+
 const createTestOutput = (): Output & { warnings: string[] } => {
 	const warnings: string[] = []
 	return {
@@ -79,8 +85,7 @@ describe('bundleEvalEntry', () => {
 		expect(code).not.toMatch(/\bimport\b/)
 		expect(code).toContain('//# sourceURL=argus-file://')
 
-		const runScript = globalThis['eval' as keyof typeof globalThis] as (source: string) => unknown
-		expect(runScript(code)).toBe(42)
+		expect(runExpression(code)).toBe(42)
 	})
 
 	test('supports TypeScript helpers and top-level await', async () => {
@@ -113,43 +118,115 @@ describe('bundleEvalEntry', () => {
 		await expectBundleError(root, 'main.js', 'top-level export')
 	})
 
-	test('rejects package imports', async () => {
+	test('rejects node built-in imports', async () => {
 		const root = await createFixtureDir()
 		await writeFixture(root, { 'main.js': 'import fs from "node:fs"\nfs\n' })
-		await expectBundleError(root, 'main.js', 'not allowed')
+		await expectBundleError(root, 'main.js', 'Node built-in')
 	})
 
-	test('rejects bare package specifiers', async () => {
-		const root = await createFixtureDir()
-		await writeFixture(root, { 'main.js': 'import "lodash"\n' })
-		await expectBundleError(root, 'main.js', 'not allowed')
-	})
-
-	test('rejects imports outside the entry directory', async () => {
+	test('bundles imports outside the entry directory', async () => {
 		const root = await createFixtureDir()
 		await writeFixture(root, {
-			'outside/outside.js': 'export const value = 1\n',
-			'entry/main.js': 'import { value } from "../outside/outside.js"\nvalue\n',
+			'outside/outside.js': 'export const value = 41\n',
+			'entry/main.js': 'import { value } from "../outside/outside.js"\nvalue + 1\n',
 		})
-		await expectBundleError(root, 'entry/main.js', /escapes|not allowed/i)
+
+		const code = await expectBundleOk(root, 'entry/main.js')
+		expect(runExpression(code)).toBe(42)
 	})
 
-	test('rejects node_modules imports', async () => {
+	test('bundles packages from node_modules', async () => {
 		const root = await createFixtureDir()
 		await writeFixture(root, {
-			'node_modules/pkg/index.js': 'export const value = 1\n',
-			'main.js': 'import { value } from "./node_modules/pkg/index.js"\nvalue\n',
+			'node_modules/pkg/package.json': '{"name":"pkg","type":"module","main":"index.js"}\n',
+			'node_modules/pkg/index.js': 'export const value = 41\n',
+			'sub/main.js': 'import { value } from "pkg"\nvalue + 1\n',
 		})
-		await expectBundleError(root, 'main.js', 'node_modules')
+
+		const previousCwd = process.cwd()
+		process.chdir(root)
+		try {
+			const code = await expectBundleOk(root, 'sub/main.js')
+			expect(runExpression(code)).toBe(42)
+		} finally {
+			process.chdir(previousCwd)
+		}
+	})
+})
+
+describe('fileUsesModuleSyntax', () => {
+	test('detects leading import and export', () => {
+		expect(fileUsesModuleSyntax('import x from "./x"\n')).toBe(true)
+		expect(fileUsesModuleSyntax('export const x = 1\n')).toBe(true)
+		expect(fileUsesModuleSyntax('// comment\nimport x from "./x"\n')).toBe(true)
+		expect(fileUsesModuleSyntax('/* block */\nexport default 1\n')).toBe(true)
+	})
+
+	test('ignores import/export after other statements', () => {
+		expect(fileUsesModuleSyntax('const x = 1\nimport "./x"\n')).toBe(false)
+		expect(fileUsesModuleSyntax('console.log("import")\n')).toBe(false)
+	})
+})
+
+describe('resolveBundleDecision', () => {
+	test('--no-bundle wins over --bundle and auto-detect', () => {
+		expect(resolveBundleDecision({ noBundle: true, bundle: true }, 'import x\n')).toEqual({
+			shouldBundle: false,
+			autoEnabled: false,
+		})
+	})
+
+	test('--bundle forces bundling without auto flag', () => {
+		expect(resolveBundleDecision({ bundle: true }, '1 + 1\n')).toEqual({
+			shouldBundle: true,
+			autoEnabled: false,
+		})
+	})
+
+	test('auto-bundles when file uses module syntax', () => {
+		expect(resolveBundleDecision({}, 'import x from "./x"\n')).toEqual({
+			shouldBundle: true,
+			autoEnabled: true,
+		})
 	})
 })
 
 describe('resolveExpression with --bundle', () => {
-	test('requires --file', async () => {
+	test('requires --file for --bundle and --no-bundle', async () => {
 		const output = createTestOutput()
 		const resolved = await resolveExpression(undefined, { bundle: true }, output)
 		expect(resolved).toBeNull()
-		expect(output.warnings[0]).toContain('--bundle requires --file')
+		expect(output.warnings[0]).toContain('--bundle and --no-bundle require --file')
+
+		const outputNoBundle = createTestOutput()
+		const resolvedNoBundle = await resolveExpression(undefined, { noBundle: true }, outputNoBundle)
+		expect(resolvedNoBundle).toBeNull()
+		expect(outputNoBundle.warnings[0]).toContain('--bundle and --no-bundle require --file')
+	})
+
+	test('auto-bundles --file with import and warns', async () => {
+		const root = await createFixtureDir()
+		await writeFixture(root, {
+			'helper.js': 'export const value = 41\n',
+			'main.js': 'import { value } from "./helper.js"\nvalue + 1\n',
+		})
+
+		const output = createTestOutput()
+		const resolved = await resolveExpression(undefined, { file: path.join(root, 'main.js') }, output)
+		expect(resolved).not.toBeNull()
+		expect(resolved).not.toMatch(/\bimport\b/)
+		expect(output.warnings[0]).toContain('bundling automatically')
+		expect(runExpression(resolved!)).toBe(42)
+	})
+
+	test('--no-bundle reads file as-is', async () => {
+		const root = await createFixtureDir()
+		await writeFixture(root, { 'main.js': 'import { value } from "./helper.js"\n' })
+
+		const output = createTestOutput()
+		const resolved = await resolveExpression(undefined, { file: path.join(root, 'main.js'), noBundle: true }, output)
+		expect(resolved).toContain('import { value }')
+		expect(output.warnings).toHaveLength(0)
 	})
 
 	test('prepends inject after bundling', async () => {

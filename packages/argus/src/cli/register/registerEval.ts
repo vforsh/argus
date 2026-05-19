@@ -23,7 +23,8 @@ export function registerEval(program: Command): void {
 		.option('--count <n>', 'Stop after N iterations (requires --interval)')
 		.option('--until <condition>', 'Stop when local condition becomes truthy (requires --interval)')
 		.option('-f, --file <path>', 'Read expression from a file')
-		.option('--bundle', 'Bundle local imports from --file into one script before eval')
+		.option('--bundle', 'Bundle --file and its resolved imports into one script before eval')
+		.option('--no-bundle', 'Read --file as-is (skip bundling and auto-bundle)')
 		.option('--stdin', 'Read expression from stdin')
 		.option('--inject <path>', 'Read setup code from a file and run it before the expression')
 		.option('--iframe <selector>', 'Eval in iframe via postMessage (requires helper script)')
@@ -65,6 +66,7 @@ Examples:
 				until: options.until,
 				file: options.file,
 				bundle: options.bundle,
+				noBundle: options.noBundle,
 				stdin: options.stdin,
 				inject: options.inject,
 				iframe: options.iframe,
@@ -113,7 +115,8 @@ Examples:
 		.option('--total-timeout <duration>', 'Max wall-clock time (e.g. 30s, 2m)')
 		.option('--verbose', 'Print intermediate (falsy) results')
 		.option('-f, --file <path>', 'Read expression from a file')
-		.option('--bundle', 'Bundle local imports from --file into one script before eval')
+		.option('--bundle', 'Bundle --file and its resolved imports into one script before eval')
+		.option('--no-bundle', 'Read --file as-is (skip bundling and auto-bundle)')
 		.option('--stdin', 'Read expression from stdin')
 		.option('--inject <path>', 'Read setup code from a file and run it before the expression')
 		.option('--iframe <selector>', 'Eval in iframe via postMessage (requires helper script)')
@@ -151,6 +154,7 @@ Examples:
 				verbose: options.verbose,
 				file: options.file,
 				bundle: options.bundle,
+				noBundle: options.noBundle,
 				stdin: options.stdin,
 				inject: options.inject,
 				iframe: options.iframe,
