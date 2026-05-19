@@ -19,7 +19,10 @@ argus eval app "document.title"
 argus eval app "await fetch('/ping').then(r => r.status)"
 argus eval app "window.store.getState()" --inject ./debug-hooks.js
 argus eval app --file ./script.js --arg level=10 --arg mode=fast
+argus eval app --file ./script.js --bundle
 ```
+
+`--bundle` requires `--file`. It bundles relative local imports from the entry file directory into one script before eval. Package imports, `node_modules`, and Node built-ins are rejected. TypeScript entry/helpers are transpiled without typechecking. Helpers may `export` symbols; the entry file must not emit top-level `export` into the bundle. Static and dynamic `import()` of local files are inlined into one script.
 
 Poll until condition:
 
@@ -34,16 +37,17 @@ argus eval app "document.title" --interval 250ms --until 'result === "ready"'
 
 ## Behavior Flags
 
-| Flag                     | Effect                           |
-| ------------------------ | -------------------------------- |
-| `--no-await`             | Don't await promises             |
-| `--timeout <ms>`         | Eval timeout                     |
-| `--no-return-by-value`   | Preview-style results            |
-| `--no-fail-on-exception` | Don't exit 1 on throw            |
-| `--retry <n>`            | Retry failed evals               |
-| `--silent` / `-q`        | Suppress success output          |
-| `--inject <file>`        | Run setup code before expression |
-| `--arg <key=value>`      | Expose string arg as `args[key]` |
+| Flag                     | Effect                             |
+| ------------------------ | ---------------------------------- |
+| `--no-await`             | Don't await promises               |
+| `--timeout <ms>`         | Eval timeout                       |
+| `--no-return-by-value`   | Preview-style results              |
+| `--no-fail-on-exception` | Don't exit 1 on throw              |
+| `--retry <n>`            | Retry failed evals                 |
+| `--silent` / `-q`        | Suppress success output            |
+| `--inject <file>`        | Run setup code before expression   |
+| `--bundle`               | Bundle local imports from `--file` |
+| `--arg <key=value>`      | Expose string arg as `args[key]`   |
 
 ## Script Args
 
