@@ -3,16 +3,8 @@ import { evalWithRetries } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { pollEval } from './evalPolling.js'
-import {
-	formatError,
-	parseCount,
-	parseIntervalMs,
-	parseNumber,
-	parseRetryCount,
-	prepareEvalExpression,
-	printError,
-	printSuccess,
-} from './evalShared.js'
+import { createEvalEmitter, formatError, parseCount, parseIntervalMs, parseNumber, parseRetryCount, prepareEvalExpression } from './evalShared.js'
+import { validateEvalResultFileOptions } from './evalResultOutput.js'
 
 /** Options for the eval command. */
 export type EvalOptions = {
@@ -44,6 +36,12 @@ export type EvalOptions = {
 	iframeTimeout?: string
 	/** Repeated key=value arguments exposed to scripts as `args`. */
 	arg?: string[]
+	/** Load args from a JSON object file. */
+	args?: string
+	/** Write the eval result to a file. */
+	out?: string
+	/** With --interval, write one file per iteration instead of appending NDJSON. */
+	rotate?: boolean
 }
 
 /** Execute the eval command for a watcher id. */
@@ -95,6 +93,12 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		return
 	}
 
+	if (!validateEvalResultFileOptions(options, output)) {
+		return
+	}
+
+	const emitter = createEvalEmitter(options, output)
+
 	const resolved = await resolveWatcherOrExit({ id }, output)
 	if (!resolved) return
 
@@ -115,12 +119,12 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		})
 
 		if (!singleResult.ok) {
-			printError(singleResult, options, output)
+			emitter.emitError(singleResult)
 			process.exitCode = 1
 			return
 		}
 
-		printSuccess(singleResult.response, options, output, false)
+		await emitter.emitSuccess(singleResult.response, false)
 		return
 	}
 
@@ -135,8 +139,8 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		retryCount: retryCount.value,
 		intervalMs: intervalMs.value,
 		count: countValue.value,
-		onResult: (response) => {
-			printSuccess(response, options, output, true)
+		onResult: async (response) => {
+			await emitter.emitSuccess(response, true)
 		},
 		shouldStop: (context) => {
 			if (!untilEvaluator.evaluator) {
@@ -155,13 +159,13 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 	})
 
 	if (pollResult.kind === 'eval-error') {
-		printError(pollResult.failure, options, output)
+		emitter.emitError(pollResult.failure)
 		process.exitCode = 1
 		return
 	}
 
 	if (pollResult.kind === 'condition-error') {
-		printError({ kind: 'until', error: pollResult.error }, options, output)
+		emitter.emitError({ kind: 'until', error: pollResult.error })
 		process.exitCode = 1
 		return
 	}

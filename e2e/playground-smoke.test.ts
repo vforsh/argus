@@ -172,6 +172,57 @@ describe('playground smoke tests', () => {
 		expect(response.result).toBe('fast:42')
 	})
 
+	test('eval loads --args JSON and allows --arg overrides', async () => {
+		const scriptPath = path.join(tempDir, 'args-file.js')
+		const argsPath = path.join(tempDir, 'args.json')
+		await fs.writeFile(scriptPath, '`${args.mode}:${Number(args.level) + 1}`', 'utf8')
+		await fs.writeFile(argsPath, JSON.stringify({ level: 40, mode: 'slow' }), 'utf8')
+
+		const { stdout } = await runCommand(
+			'bun',
+			[BIN_PATH, 'eval', 'playground', '--file', scriptPath, '--args', argsPath, '--arg', 'mode=fast', '--json'],
+			{ env },
+		)
+		const response = JSON.parse(stdout) as EvalResponse
+		expect(response.ok).toBe(true)
+		expect(response.result).toBe('fast:41')
+	})
+
+	test('eval writes --out result files', async () => {
+		const outPath = path.join(tempDir, 'result.json')
+		const { stdout } = await runCommand('bun', [BIN_PATH, 'eval', 'playground', '41 + 1', '--json', '--out', outPath], { env })
+		const response = JSON.parse(stdout) as EvalResponse
+		expect(response.ok).toBe(true)
+		expect(response.result).toBe(42)
+		expect(JSON.parse(await fs.readFile(outPath, 'utf8'))).toEqual(response)
+	})
+
+	test('eval appends NDJSON while polling with --out', async () => {
+		const outPath = path.join(tempDir, 'poll.ndjson')
+		await runCommand(
+			'bun',
+			[
+				BIN_PATH,
+				'eval',
+				'playground',
+				'window.__argusPollCount = (window.__argusPollCount ?? 0) + 1',
+				'--interval',
+				'50',
+				'--count',
+				'2',
+				'--json',
+				'--silent',
+				'--out',
+				outPath,
+			],
+			{ env },
+		)
+
+		const lines = (await fs.readFile(outPath, 'utf8')).trim().split('\n')
+		expect(lines.length).toBeGreaterThanOrEqual(2)
+		expect(JSON.parse(lines[0] ?? '').ok).toBe(true)
+	})
+
 	test('eval runs injected setup before the expression', async () => {
 		const injectPath = path.join(tempDir, 'inject.js')
 		await fs.writeFile(injectPath, 'window.__argusInjectedValue = Number(args.base) + 1', 'utf8')

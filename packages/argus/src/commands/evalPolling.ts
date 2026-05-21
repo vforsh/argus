@@ -23,7 +23,7 @@ export type EvalPollInput = {
 	count?: number
 	totalTimeoutMs?: number
 	shouldStop?: (context: PollStopContext) => PollStopResult
-	onResult?: (response: EvalResponse, context: PollStopContext) => void
+	onResult?: (response: EvalResponse, context: PollStopContext) => void | Promise<void>
 }
 
 export type EvalPollOutcome =
@@ -74,7 +74,7 @@ export const pollEval = async (input: EvalPollInput): Promise<EvalPollOutcome> =
 
 			const context = { response: result.response, iteration, attempt: result.attempt }
 			// Streaming commands print the matched iteration too, so emit before checking stop conditions.
-			input.onResult?.(result.response, context)
+			await input.onResult?.(result.response, context)
 
 			const stopResult = input.shouldStop?.(context)
 			if (stopResult) {

@@ -31,6 +31,9 @@ export function registerEval(program: Command): void {
 		.option('--iframe-namespace <name>', 'Message type prefix for iframe eval (default: argus)')
 		.option('--iframe-timeout <ms>', 'Timeout for iframe postMessage response (default: 5000)')
 		.option('--arg <key=value>', 'Argument exposed to eval scripts as args[key]', collectValue, [])
+		.option('--args <path>', 'Load args from a JSON object file (overridden by --arg)')
+		.option('-o, --out <path>', 'Write eval result to a file')
+		.option('--rotate', 'With --interval, write one file per iteration instead of appending NDJSON')
 		.addHelpText(
 			'after',
 			`
@@ -41,6 +44,10 @@ Examples:
   $ argus eval app --file ./script.js --bundle
   $ argus eval app "window.store.getState()" --inject ./debug-hooks.js
   $ argus eval app --file ./script.js --arg level=10 --arg mode=fast
+  $ argus eval app --file ./script.js --args ./args.json
+  $ argus eval app "document.title" --json --out ./result.json
+  $ argus eval app "Date.now()" --interval 500 --count 10 --out ./poll.ndjson
+  $ argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rotate
   $ cat script.js | argus eval app --stdin
   $ argus eval app - < script.js
   $ argus eval app "document.title" --no-fail-on-exception
@@ -73,6 +80,9 @@ Examples:
 				iframeNamespace: options.iframeNamespace,
 				iframeTimeout: options.iframeTimeout,
 				arg: options.arg,
+				args: options.args,
+				out: options.out,
+				rotate: options.rotate,
 			})
 		})
 
@@ -123,6 +133,8 @@ Examples:
 		.option('--iframe-namespace <name>', 'Message type prefix for iframe eval (default: argus)')
 		.option('--iframe-timeout <ms>', 'Timeout for iframe postMessage response (default: 5000)')
 		.option('--arg <key=value>', 'Argument exposed to eval scripts as args[key]', collectValue, [])
+		.option('--args <path>', 'Load args from a JSON object file (overridden by --arg)')
+		.option('-o, --out <path>', 'Write the matched eval result to a file')
 		.addHelpText(
 			'after',
 			`
@@ -137,6 +149,7 @@ Examples:
   $ argus eval-until app --file ./check.js --bundle --total-timeout 1m
   $ argus wait app "window.appReady" --inject ./debug-hooks.js --total-timeout 20s
   $ argus wait app --file ./ready.js --arg level=10 --total-timeout 20s
+  $ argus wait app --file ./ready.js --args ./args.json --out ./ready.json
 `,
 		)
 		.action(async (id, expression, options) => {
@@ -161,6 +174,8 @@ Examples:
 				iframeNamespace: options.iframeNamespace,
 				iframeTimeout: options.iframeTimeout,
 				arg: options.arg,
+				args: options.args,
+				out: options.out,
 			})
 		})
 }

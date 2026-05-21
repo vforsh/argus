@@ -4,8 +4,13 @@ import { readFile } from 'node:fs/promises'
 import { formatError, parseNumber } from '../cli/parse.js'
 import type { Output } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
+import { type EvalArgMap, type EvalArgSourceOptions, hasEvalArgs, resolveEvalArgs } from './evalArgs.js'
 import { bundleEvalEntry } from './evalBundle.js'
 import { fileUsesModuleSyntax } from './evalModuleSyntax.js'
+import { createEvalResultFileSink, type EvalResultFileOptions } from './evalResultOutput.js'
+
+// Re-export eval arg helpers for existing imports and tests.
+export { type EvalArgMap, hasEvalArgs, parseEvalArgFlags as parseEvalArgs } from './evalArgs.js'
 
 // Re-export shared parsers so existing eval imports keep working
 export { formatError, parseNumber } from '../cli/parse.js'
@@ -24,15 +29,12 @@ type ExpressionSourceOptions = {
 	noBundle?: boolean
 }
 
-/** String-only argument map exposed to eval scripts as `args`. */
-export type EvalArgMap = Record<string, string>
-
-type EvalExpressionOptions = ExpressionSourceOptions & {
-	iframe?: string
-	iframeNamespace?: string
-	iframeTimeout?: string
-	arg?: string[]
-}
+type EvalExpressionOptions = ExpressionSourceOptions &
+	EvalArgSourceOptions & {
+		iframe?: string
+		iframeNamespace?: string
+		iframeTimeout?: string
+	}
 
 export type PreparedEvalExpression = {
 	expression: string
@@ -45,9 +47,8 @@ export const prepareEvalExpression = async (
 	options: EvalExpressionOptions,
 	output: Output,
 ): Promise<PreparedEvalExpression | null> => {
-	const evalArgs = parseEvalArgs(options.arg)
-	if (evalArgs.error) {
-		output.writeWarn(evalArgs.error)
+	const args = await resolveEvalArgs(options, output)
+	if (args == null) {
 		return null
 	}
 
@@ -56,7 +57,6 @@ export const prepareEvalExpression = async (
 		return null
 	}
 
-	const args = evalArgs.value
 	if (!options.iframe) {
 		return {
 			expression: resolvedExpression,
@@ -283,25 +283,6 @@ export const parseCount = (value?: string): { value?: number; error?: string } =
 	return { value: parsed }
 }
 
-/** Parse repeated `--arg key=value` flags. Later values override earlier ones. */
-export const parseEvalArgs = (values?: string[]): { value: EvalArgMap; error?: string } => {
-	const args: EvalArgMap = {}
-
-	for (const value of values ?? []) {
-		const separatorIndex = value.indexOf('=')
-		if (separatorIndex < 0 || separatorIndex === 0) {
-			return { value: args, error: `Invalid --arg value ${JSON.stringify(value)}: expected key=value.` }
-		}
-
-		args[value.slice(0, separatorIndex)] = value.slice(separatorIndex + 1)
-	}
-
-	return { value: args }
-}
-
-/** True when the parsed arg map should be sent or injected. */
-export const hasEvalArgs = (args: EvalArgMap): boolean => Object.keys(args).length > 0
-
 /** Prepend the reserved `args` binding only when eval arguments were supplied. */
 export const wrapExpressionWithArgs = (source: string, args: EvalArgMap): string => {
 	if (!hasEvalArgs(args)) {
@@ -339,7 +320,7 @@ export const formatException = (response: EvalResponse): string => {
 // Output helpers
 // ---------------------------------------------------------------------------
 
-/** Failure shape used by `printError`. */
+/** Failure shape used by eval emitters. */
 export type EvalAttemptFailure = {
 	ok: false
 	kind: 'transport' | 'exception'
@@ -348,13 +329,37 @@ export type EvalAttemptFailure = {
 	attempt: number
 }
 
-type PrintableEvalOptions = {
+export type EvalEmitOptions = EvalResultFileOptions & {
 	json?: boolean
 	silent?: boolean
 }
 
-/** Print a successful eval response. */
-export const printSuccess = (response: EvalResponse, options: PrintableEvalOptions, output: Output, streaming: boolean): void => {
+/** Writes eval results to stdout/stderr and optionally to `--out`. */
+export type EvalEmitter = {
+	emitSuccess: (response: EvalResponse, streaming: boolean) => Promise<void>
+	emitError: (error: EvalAttemptFailure | { kind: 'until'; error: string }) => void
+}
+
+/** Create stdout/stderr and optional file sinks for eval command output. */
+export const createEvalEmitter = (options: EvalEmitOptions, output: Output): EvalEmitter => {
+	const fileSink = createEvalResultFileSink(options)
+
+	return {
+		emitSuccess: async (response, streaming) => {
+			await fileSink?.write(response, streaming)
+			writeEvalSuccess(response, options, output, streaming)
+
+			if (fileSink && !streaming && !options.silent) {
+				output.writeHuman(`Result saved: ${fileSink.displayPath}`)
+			}
+		},
+		emitError: (error) => {
+			writeEvalError(error, options, output)
+		},
+	}
+}
+
+const writeEvalSuccess = (response: EvalResponse, options: EvalEmitOptions, output: Output, streaming: boolean): void => {
 	if (options.silent) {
 		return
 	}
@@ -376,8 +381,7 @@ export const printSuccess = (response: EvalResponse, options: PrintableEvalOptio
 	output.writeHuman(previewStringify(response.result))
 }
 
-/** Print an eval error (transport, exception, or until-condition failure). */
-export const printError = (error: EvalAttemptFailure | { kind: 'until'; error: string }, options: PrintableEvalOptions, output: Output): void => {
+const writeEvalError = (error: EvalAttemptFailure | { kind: 'until'; error: string }, options: EvalEmitOptions, output: Output): void => {
 	if (options.json && 'response' in error && error.response) {
 		output.writeJsonLine(error.response)
 	}
@@ -389,6 +393,12 @@ export const printError = (error: EvalAttemptFailure | { kind: 'until'; error: s
 
 	output.writeWarn(error.error)
 }
+
+/** Write a successful eval response to stdout/stderr only. */
+export const printSuccess = writeEvalSuccess
+
+/** Write an eval error to stdout/stderr only. */
+export const printError = writeEvalError
 
 // ---------------------------------------------------------------------------
 // Iframe wrapping

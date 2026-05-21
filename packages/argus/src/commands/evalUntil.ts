@@ -2,7 +2,8 @@ import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { pollEval } from './evalPolling.js'
-import { parseCount, parseIntervalMs, parseNumber, parseRetryCount, prepareEvalExpression, printError, printSuccess } from './evalShared.js'
+import { createEvalEmitter, parseCount, parseIntervalMs, parseNumber, parseRetryCount, prepareEvalExpression, printSuccess } from './evalShared.js'
+import { validateEvalResultFileOptions } from './evalResultOutput.js'
 
 /** Options for the eval-until command. */
 export type EvalUntilOptions = {
@@ -35,6 +36,10 @@ export type EvalUntilOptions = {
 	iframeTimeout?: string
 	/** Repeated key=value arguments exposed to scripts as `args`. */
 	arg?: string[]
+	/** Load args from a JSON object file. */
+	args?: string
+	/** Write the matched eval result to a file. */
+	out?: string
 }
 
 /** Execute the eval-until command: poll until the expression returns a truthy value. */
@@ -76,6 +81,12 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		return
 	}
 
+	if (!validateEvalResultFileOptions(options, output)) {
+		return
+	}
+
+	const emitter = createEvalEmitter(options, output)
+
 	const resolved = await resolveWatcherOrExit({ id }, output)
 	if (!resolved) return
 
@@ -103,12 +114,12 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 	})
 
 	if (pollResult.kind === 'matched') {
-		printSuccess(pollResult.response, options, output, false)
+		await emitter.emitSuccess(pollResult.response, false)
 		return
 	}
 
 	if (pollResult.kind === 'eval-error') {
-		printError(pollResult.failure, options, output)
+		emitter.emitError(pollResult.failure)
 		process.exitCode = 1
 		return
 	}

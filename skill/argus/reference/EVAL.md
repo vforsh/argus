@@ -19,6 +19,8 @@ argus eval app "document.title"
 argus eval app "await fetch('/ping').then(r => r.status)"
 argus eval app "window.store.getState()" --inject ./debug-hooks.js
 argus eval app --file ./script.js --arg level=10 --arg mode=fast
+argus eval app --file ./script.js --args ./args.json
+argus eval app "document.title" --json --out ./result.json
 argus eval app --file ./script.js --bundle
 argus eval app --file ./script.js --no-bundle
 ```
@@ -29,12 +31,15 @@ Poll until condition:
 
 ```bash
 argus eval app "document.title" --interval 250ms --until 'result === "ready"'
+argus eval app "Date.now()" --interval 500 --count 10 --out ./poll.ndjson
+argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rotate
 ```
 
 ## Output
 
 - Default: compact preview
 - `--json`: JSON object (NDJSON with `--interval`)
+- `--out <path>`: write result to file; single eval overwrites, polling appends NDJSON, `--rotate` writes one numbered file per iteration
 
 ## Behavior Flags
 
@@ -50,6 +55,9 @@ argus eval app "document.title" --interval 250ms --until 'result === "ready"'
 | `--bundle`               | Force bundling for `--file`      |
 | `--no-bundle`            | Skip bundling (disables auto)    |
 | `--arg <key=value>`      | Expose string arg as `args[key]` |
+| `--args <path>`          | Load args map from JSON file     |
+| `--out <path>`           | Write result to file             |
+| `--rotate`               | One file per poll iteration      |
 
 ## Script Args
 
@@ -57,6 +65,7 @@ argus eval app "document.title" --interval 250ms --until 'result === "ready"'
 
 ```bash
 argus js app --file ./open-level.js --arg level=10 --arg variant=arrows
+argus js app --file ./open-level.js --args ./fixtures/level.json --arg variant=arrows
 argus js app "window.store.getState()" --inject ./debug-hooks.js --arg user=qa
 cat ./click-test-id.js | argus js app --stdin --arg testId=arrows.boosters.button.ruler
 argus wait app --file ./ready.js --arg level=10 --total-timeout 20s
@@ -70,6 +79,8 @@ const variant = String(args.variant ?? 'arrows')
 ```
 
 Duplicate keys use the last value. Values are split at the first `=`, so URLs and query strings work. Invalid values like `--arg level`, `--arg =10`, or `--arg ""` exit with code 2 before contacting the watcher.
+
+`--args <path>` loads a JSON object from disk. Primitive values (`string`, `number`, `boolean`, `null`) are coerced to strings; nested objects/arrays are rejected. CLI `--arg` flags override file entries.
 
 ## Polling Flags
 
@@ -106,7 +117,7 @@ argus wait app --file ./ready.js --arg level=10 --total-timeout 20s
 | `--verbose`                  | Print intermediate (falsy) results      |
 
 Also supports all behavior flags (`--no-await`, `--timeout`, `--json`, `--retry`, etc.) and iframe flags.
-Also supports `--arg <key=value>`.
+Also supports `--arg <key=value>`, `--args <path>`, and `--out <path>`.
 
 **Exit codes:** 0 = truthy found, 1 = error/exhausted, 2 = invalid args, 130 = SIGINT/SIGTERM.
 
