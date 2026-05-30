@@ -1,21 +1,24 @@
 import path from 'node:path'
 import { existsSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+import os from 'node:os'
 import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginContextV1, type ArgusPluginV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 
 import { resolveArgusConfigPath, loadArgusConfig } from '../../config/argusConfig.js'
+import { getGlobalArgusConfigPath } from '../../config/argusHome.js'
 import { createOutput } from '../../output/io.js'
 import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from './pluginAliases.js'
 import { createPluginHost } from './pluginHost.js'
 
-type PluginSource = 'config' | 'env' | 'cli'
+type PluginSource = 'global-config' | 'config' | 'env' | 'cli'
 
 type PluginInput = {
 	source: PluginSource
 	spec: string
 	resolvedSpec: string
 	alias: string | null
+	configDir: string | null
 }
 
 export type PluginLoadEntry =
@@ -46,6 +49,8 @@ export type PluginLoadEntry =
 export type PluginLoadReport = {
 	configPath: string | null
 	configDir: string | null
+	globalConfigPath: string | null
+	globalConfigDir: string | null
 	cwd: string
 	entries: PluginLoadEntry[]
 }
@@ -53,6 +58,8 @@ export type PluginLoadReport = {
 let lastPluginLoadReport: PluginLoadReport = {
 	configPath: null,
 	configDir: null,
+	globalConfigPath: null,
+	globalConfigDir: null,
 	cwd: process.cwd(),
 	entries: [],
 }
@@ -70,9 +77,9 @@ const parseEnvPlugins = (): string[] => {
 
 const uniq = (values: string[]): string[] => Array.from(new Set(values))
 
-const createPluginInput = (source: PluginSource, spec: string, aliases: Record<string, string>): PluginInput => {
+const createPluginInput = (source: PluginSource, spec: string, aliases: Record<string, string>, configDir: string | null): PluginInput => {
 	const resolved = resolvePluginAlias(spec, aliases)
-	return { source, spec, resolvedSpec: resolved.spec, alias: resolved.alias }
+	return { source, spec, resolvedSpec: resolved.spec, alias: resolved.alias, configDir }
 }
 
 /** Plugins must be loaded before Commander parses commands, so scan raw argv for dynamic loads. */
@@ -108,10 +115,17 @@ const resolveWithImportMeta = (specifier: string, parentUrl: string): string => 
 	return resolver(specifier, parentUrl)
 }
 
-const isPathLikeSpecifier = (specifier: string): boolean => specifier.startsWith('.') || specifier.startsWith('/')
+const expandHomeSpecifier = (specifier: string): string => {
+	if (specifier === '~') return os.homedir()
+	if (specifier.startsWith('~/') || specifier.startsWith('~\\')) return path.join(os.homedir(), specifier.slice(2))
+	return specifier
+}
+
+const isPathLikeSpecifier = (specifier: string): boolean =>
+	specifier.startsWith('.') || specifier.startsWith('/') || specifier === '~' || specifier.startsWith('~/') || specifier.startsWith('~\\')
 
 const resolvePluginModuleUrl = (specifier: string, baseDirs: string[]): { ok: true; url: string } | { ok: false; error: string } => {
-	const trimmed = specifier.trim()
+	const trimmed = expandHomeSpecifier(specifier.trim())
 	if (!trimmed) {
 		return { ok: false, error: 'Empty plugin specifier.' }
 	}
@@ -214,23 +228,30 @@ const createLoadedEntry = (entry: PluginInput, plugin: ArgusPluginV1, url: strin
 export const registerPlugins = async (program: Command, argv: readonly string[] = process.argv.slice(2)): Promise<void> => {
 	const cwd = process.cwd()
 
+	const globalConfigPath = getGlobalArgusConfigPath()
+	const globalConfigResult = existsSync(globalConfigPath) ? loadArgusConfig(globalConfigPath) : null
 	const configPath = resolveArgusConfigPath({ cwd })
 	const configResult = configPath ? loadArgusConfig(configPath) : null
-	const aliases = { ...BUILTIN_PLUGIN_ALIASES, ...(configResult?.config.pluginAliases ?? {}) }
+	const globalAliases = { ...BUILTIN_PLUGIN_ALIASES, ...(globalConfigResult?.config.pluginAliases ?? {}) }
+	const localAliases = { ...globalAliases, ...(configResult?.config.pluginAliases ?? {}) }
 
+	const globalConfigPlugins = globalConfigResult?.config.plugins ?? []
 	const configPlugins = configResult?.config.plugins ?? []
 	const envPlugins = parseEnvPlugins()
 	const cliPlugins = parseCliPlugins(argv)
 
 	const all: PluginInput[] = []
-	for (const spec of configPlugins) all.push(createPluginInput('config', spec, aliases))
-	for (const spec of envPlugins) all.push(createPluginInput('env', spec, aliases))
-	for (const spec of cliPlugins) all.push(createPluginInput('cli', spec, aliases))
+	for (const spec of globalConfigPlugins) all.push(createPluginInput('global-config', spec, globalAliases, globalConfigResult?.configDir ?? null))
+	for (const spec of configPlugins) all.push(createPluginInput('config', spec, localAliases, configResult?.configDir ?? null))
+	for (const spec of envPlugins) all.push(createPluginInput('env', spec, localAliases, null))
+	for (const spec of cliPlugins) all.push(createPluginInput('cli', spec, localAliases, null))
 
 	const entries: PluginLoadEntry[] = []
 	lastPluginLoadReport = {
 		configPath,
 		configDir: configResult?.configDir ?? null,
+		globalConfigPath: globalConfigResult ? globalConfigPath : null,
+		globalConfigDir: globalConfigResult?.configDir ?? null,
 		cwd,
 		entries,
 	}
@@ -247,17 +268,16 @@ export const registerPlugins = async (program: Command, argv: readonly string[] 
 		return true
 	})
 
-	const baseDirs = uniq([configResult?.configDir, cwd].filter((v): v is string => Boolean(v)))
-
 	const ctxBase: Omit<ArgusPluginContextV1, 'program'> = {
 		apiVersion: ARGUS_PLUGIN_API_VERSION,
 		host: createPluginHost(),
 		cwd,
-		configPath,
-		configDir: configResult?.configDir ?? null,
+		configPath: configPath ?? (globalConfigResult ? globalConfigPath : null),
+		configDir: configResult?.configDir ?? globalConfigResult?.configDir ?? null,
 	}
 
 	for (const entry of ordered) {
+		const baseDirs = uniq([entry.configDir, configResult?.configDir, globalConfigResult?.configDir, cwd].filter((v): v is string => Boolean(v)))
 		const resolved = resolvePluginModuleUrl(entry.resolvedSpec, baseDirs)
 		if (!resolved.ok) {
 			recordPluginFailure(entries, entry, resolved.error)

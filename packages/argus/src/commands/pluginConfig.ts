@@ -3,10 +3,12 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createOutput } from '../output/io.js'
 import { resolveArgusConfigPath } from '../config/argusConfig.js'
+import { getGlobalArgusConfigPath } from '../config/argusHome.js'
 import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from '../cli/plugins/pluginAliases.js'
 
 export type PluginConfigMutationOptions = {
 	path?: string
+	global?: boolean
 	json?: boolean
 }
 
@@ -34,6 +36,11 @@ const resolveTargetConfigPath = (cwd: string, cliPath?: string): { path: string;
 	if (process.exitCode) return null
 
 	return { path: path.resolve(cwd, DEFAULT_CONFIG_PATH), exists: false }
+}
+
+const resolveGlobalTargetConfigPath = (): { path: string; exists: boolean } => {
+	const configPath = getGlobalArgusConfigPath()
+	return { path: configPath, exists: existsSync(configPath) }
 }
 
 const readConfigObject = async (configPath: string, exists: boolean): Promise<JsonObject | null> => {
@@ -106,7 +113,13 @@ const writeConfigObject = async (configPath: string, config: JsonObject): Promis
 }
 
 const loadMutablePluginConfig = async (options: PluginConfigMutationOptions): Promise<MutablePluginConfig | null> => {
-	const target = resolveTargetConfigPath(process.cwd(), options.path)
+	if (options.path && options.global) {
+		console.error('Use either --path or --global, not both.')
+		process.exitCode = 2
+		return null
+	}
+
+	const target = options.global ? resolveGlobalTargetConfigPath() : resolveTargetConfigPath(process.cwd(), options.path)
 	if (!target) return null
 
 	const config = await readConfigObject(target.path, target.exists)

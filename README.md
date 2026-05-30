@@ -399,9 +399,10 @@ Example:
 
 Argus can load optional CLI plugins that register additional top-level commands.
 
-- Config: add `"plugins": [...]` to an Argus config file
+- Global config: add `"plugins": [...]` to `ARGUS_HOME/config.json` (defaults to `~/.argus/config.json`) for plugins available everywhere
+- Workspace config: add `"plugins": [...]` to a repo-local Argus config file
 - Alias config: add `"pluginAliases": { "name": "<module-or-path>" }`
-- Manage config: run `argus plugin add <module-or-path|alias=specifier>` or `argus plugin remove <specifier-or-name>`
+- Manage config: run `argus plugin add <module-or-path|alias=specifier>` for workspace config, or add `--global` for per-user config
 - Env: set `ARGUS_PLUGINS` to a comma-separated list of module specifiers, aliases, or resolvable paths
 - Dynamic: pass `--plugin <module-or-path-or-alias>` before the command for a single invocation
 - Inspect: run `argus plugin list` to see metadata, commands, discovered plugins, and load failures
@@ -439,8 +440,8 @@ TypeScript plugin authors should import from `@vforsh/argus-plugin-api`.
 `@vforsh/argus-plugin-google-sheets` adds `argus sheets` / `argus gs` commands for the Google Sheets tab attached through Argus.
 
 ```bash
-argus plugin add gsheets
-argus --plugin gs plugin list
+argus plugin add --global gsheets
+argus plugin list
 argus sheets list extension-3
 argus sheets info extension-3
 argus sheets switch extension-3 "Sheet 2"

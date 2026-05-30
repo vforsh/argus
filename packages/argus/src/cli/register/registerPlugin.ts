@@ -19,10 +19,11 @@ export function registerPlugin(program: Command): void {
 		.command('add <specifier>')
 		.description('Add a plugin specifier or alias to the Argus config')
 		.option('--path <file>', 'Config file to update (default: discovered config or .argus/config.json)')
+		.option('--global', 'Update the per-user Argus config at ARGUS_HOME/config.json')
 		.option('--json', 'Output JSON for automation')
 		.addHelpText(
 			'after',
-			'\nExamples:\n  $ argus plugin add gsheets\n  $ argus plugin add gs=@vforsh/argus-plugin-google-sheets\n  $ argus plugin add ./plugins/foo.js\n',
+			'\nExamples:\n  $ argus plugin add gsheets\n  $ argus plugin add --global clogs=~/dev/argus-clogs-plugin/dist/index.js\n  $ argus plugin add gs=@vforsh/argus-plugin-google-sheets\n  $ argus plugin add ./plugins/foo.js\n',
 		)
 		.action(async (specifier, options) => {
 			await runPluginAdd(specifier, options)
@@ -33,6 +34,7 @@ export function registerPlugin(program: Command): void {
 		.alias('rm')
 		.description('Remove a plugin from the Argus config')
 		.option('--path <file>', 'Config file to update (default: discovered config or .argus/config.json)')
+		.option('--global', 'Update the per-user Argus config at ARGUS_HOME/config.json')
 		.option('--json', 'Output JSON for automation')
 		.addHelpText('after', '\nExamples:\n  $ argus plugin remove @vforsh/argus-plugin-google-sheets\n  $ argus plugin remove google-sheets\n')
 		.action(async (specifierOrName, options) => {

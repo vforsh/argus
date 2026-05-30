@@ -5,7 +5,11 @@ Argus plugins are normal ESM modules loaded before Commander parses the CLI comm
 ## Load Sources
 
 ```bash
-# Config: persistent for this workspace
+# Global config: persistent for every workspace
+argus plugin add --global foo=~/dev/foo-plugin/dist/index.js
+argus foo ...
+
+# Workspace config: persistent for this workspace
 argus plugin list
 
 # Env: useful for shells/scripts
@@ -16,15 +20,17 @@ argus --plugin foo plugin list
 
 # Config mutation
 argus plugin add gsheets
+argus plugin add --global foo=./plugins/foo.js
 argus plugin add foo=./plugins/foo.js
 argus plugin remove google-sheets
 ```
 
 Load order:
 
-1. `plugins` from Argus config
-2. `ARGUS_PLUGINS` comma-separated entries
-3. `--plugin <module-or-path-or-alias>` entries
+1. `plugins` from per-user config at `ARGUS_HOME/config.json` (default `~/.argus/config.json`)
+2. `plugins` from repo-local Argus config
+3. `ARGUS_PLUGINS` comma-separated entries
+4. `--plugin <module-or-path-or-alias>` entries
 
 Duplicate specifiers are loaded once, preserving first occurrence.
 
@@ -66,18 +72,20 @@ Failures are non-fatal: Argus prints a warning and keeps registering the rest.
 ```bash
 argus plugin add <module-or-path-or-alias>
 argus plugin add <alias>=<module-or-path>
+argus plugin add --global <alias>=<module-or-path>
 argus plugin remove <specifier-or-name>
+argus plugin remove --global <specifier-or-name>
 argus plugin add ./plugins/foo.js --path argus.config.json
 ```
 
-`plugin add` creates `.argus/config.json` when no config exists, appends the specifier once, and preserves the rest of the config. `plugin add foo=./plugins/foo.js` writes both `plugins: ["foo"]` and `pluginAliases.foo`. `plugin remove` accepts the full specifier, alias, or package shorthand (`google-sheets` removes `gsheets` / `@vforsh/argus-plugin-google-sheets`).
+`plugin add` creates `.argus/config.json` when no workspace config exists, appends the specifier once, and preserves the rest of the config. `--global` writes `ARGUS_HOME/config.json`, so the plugin command is available from any directory without passing `--plugin`. `plugin add foo=./plugins/foo.js` writes both `plugins: ["foo"]` and `pluginAliases.foo`. `plugin remove` accepts the full specifier, alias, or package shorthand (`google-sheets` removes `gsheets` / `@vforsh/argus-plugin-google-sheets`).
 
 ## Resolution
 
 - Built-in aliases resolve first: `gsheets` and `gs` point at `@vforsh/argus-plugin-google-sheets`.
 - Config aliases in `pluginAliases` override built-ins.
 - `file:` URLs load directly.
-- Relative and absolute paths resolve from config directory first, then cwd.
+- `~`, relative, and absolute paths resolve from the owning config directory first, then other discovered config directories, then cwd.
 - Package specifiers resolve next to Argus first, then from config directory / cwd.
 
 Use dynamic loading for local development:
