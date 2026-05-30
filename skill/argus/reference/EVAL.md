@@ -43,21 +43,21 @@ argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rota
 
 ## Behavior Flags
 
-| Flag                     | Effect                           |
-| ------------------------ | -------------------------------- |
-| `--no-await`             | Don't await promises             |
-| `--timeout <ms>`         | Eval timeout                     |
-| `--no-return-by-value`   | Preview-style results            |
-| `--no-fail-on-exception` | Don't exit 1 on throw            |
-| `--retry <n>`            | Retry failed evals               |
-| `--silent` / `-q`        | Suppress success output          |
-| `--inject <file>`        | Run setup code before expression |
-| `--bundle`               | Force bundling for `--file`      |
-| `--no-bundle`            | Skip bundling (disables auto)    |
-| `--arg <key=value>`      | Expose string arg as `args[key]` |
-| `--args <path>`          | Load args map from JSON file     |
-| `--out <path>`           | Write result to file             |
-| `--rotate`               | One file per poll iteration      |
+| Flag                     | Effect                              |
+| ------------------------ | ----------------------------------- |
+| `--no-await`             | Don't await promises                |
+| `--timeout <duration>`   | Eval timeout (`60000`, `60s`, `2m`) |
+| `--no-return-by-value`   | Preview-style results               |
+| `--no-fail-on-exception` | Don't exit 1 on throw               |
+| `--retry <n>`            | Retry failed evals                  |
+| `--silent` / `-q`        | Suppress success output             |
+| `--inject <file>`        | Run setup code before expression    |
+| `--bundle`               | Force bundling for `--file`         |
+| `--no-bundle`            | Skip bundling (disables auto)       |
+| `--arg <key=value>`      | Expose string arg as `args[key]`    |
+| `--args <path>`          | Load args map from JSON file        |
+| `--out <path>`           | Write result to file                |
+| `--rotate`               | One file per poll iteration         |
 
 ## Script Args
 
@@ -116,7 +116,7 @@ argus wait app --file ./ready.js --arg level=10 --total-timeout 20s
 | `--total-timeout <duration>` | Max wall-clock time (`30s`, `2m`, `1h`) |
 | `--verbose`                  | Print intermediate (falsy) results      |
 
-Also supports all behavior flags (`--no-await`, `--timeout`, `--json`, `--retry`, etc.) and iframe flags.
+Also supports all behavior flags (`--no-await`, `--timeout 60s`, `--json`, `--retry`, etc.) and iframe flags.
 Also supports `--arg <key=value>`, `--args <path>`, and `--out <path>`.
 
 **Exit codes:** 0 = truthy found, 1 = error/exhausted, 2 = invalid args, 130 = SIGINT/SIGTERM.
@@ -132,6 +132,6 @@ argus eval iframe-helper --out src/argus-helper.js
 argus eval app "window.gameState" --iframe "iframe#game"
 ```
 
-Options: `--iframe <selector>`, `--iframe-namespace <name>`, `--iframe-timeout <ms>`
+Options: `--iframe <selector>`, `--iframe-namespace <name>`, `--iframe-timeout <duration>` (`5000`, `5s`, `1m`)
 
 See [EXTENSION_IFRAME_EVAL.md](./EXTENSION_IFRAME_EVAL.md).

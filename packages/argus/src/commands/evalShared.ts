@@ -12,7 +12,7 @@ import { createEvalResultFileSink, type EvalResultFileOptions } from './evalResu
 // Re-export eval arg helpers for existing imports and tests.
 export { type EvalArgMap, hasEvalArgs, parseEvalArgFlags as parseEvalArgs } from './evalArgs.js'
 
-// Re-export shared parsers so existing eval imports keep working
+// Re-export shared parsers so existing eval imports keep working.
 export { formatError, parseNumber } from '../cli/parse.js'
 
 // ---------------------------------------------------------------------------
@@ -64,11 +64,17 @@ export const prepareEvalExpression = async (
 		}
 	}
 
+	const iframeTimeoutMs = parseDurationFlagMs(options.iframeTimeout, '--iframe-timeout')
+	if (iframeTimeoutMs.error) {
+		output.writeWarn(iframeTimeoutMs.error)
+		return null
+	}
+
 	return {
 		expression: wrapForIframeEval(wrapExpressionWithArgs(resolvedExpression, args), {
 			selector: options.iframe,
 			namespace: options.iframeNamespace ?? 'argus',
-			timeoutMs: parseNumber(options.iframeTimeout) ?? 5000,
+			timeoutMs: iframeTimeoutMs.value ?? 5000,
 		}),
 	}
 }
@@ -246,24 +252,28 @@ export const parseRetryCount = (value?: string): { value: number; error?: string
 
 /** Parse `--interval` flag into milliseconds. Accepts bare numbers or durations (250ms, 3s, 2m). */
 export const parseIntervalMs = (value?: string): { value?: number; error?: string } => {
+	return parseDurationFlagMs(value, '--interval')
+}
+
+/** Parse eval timeout flags. Bare numbers remain milliseconds for compatibility; unit suffixes opt into durations. */
+export const parseTimeoutMs = (value?: string): { value?: number; error?: string } => {
+	return parseDurationFlagMs(value, '--timeout')
+}
+
+/** Parse timeout-like flags. Bare numbers mean milliseconds; unit suffixes support ms/s/m/h/d. */
+export const parseDurationFlagMs = (value: string | undefined, flagName: string): { value?: number; error?: string } => {
 	if (value == null) {
 		return {}
 	}
 
 	const trimmed = value.trim()
 	if (!trimmed) {
-		return { error: 'Invalid --interval value: empty duration.' }
+		return { error: `Invalid ${flagName} value: empty duration.` }
 	}
 
-	let parsed: number | null
-	if (/^[0-9]+$/.test(trimmed)) {
-		parsed = Number(trimmed)
-	} else {
-		parsed = parseDurationMs(trimmed)
-	}
-
+	const parsed = /^[0-9]+(?:\.[0-9]+)?$/.test(trimmed) ? Number(trimmed) : parseDurationMs(trimmed)
 	if (parsed == null || !Number.isFinite(parsed) || parsed <= 0) {
-		return { error: 'Invalid --interval value: expected milliseconds or a duration like 250ms, 3s, 2m.' }
+		return { error: `Invalid ${flagName} value: expected milliseconds or a duration like 250ms, 30s, 2m.` }
 	}
 
 	return { value: parsed }

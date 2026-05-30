@@ -128,12 +128,13 @@ argus eval app --file ./script.js --bundle
 argus eval app --file ./script.js --no-bundle
 argus eval app --file ./script.js --arg level=10 --arg mode=fast
 argus eval app --file ./script.js --args ./args.json
+argus eval app --file ./long-task.js --timeout 60s
 argus eval app "document.title" --json --out ./result.json
 argus eval app "Date.now()" --interval 500 --count 10 --out ./poll.ndjson
 argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rotate
 ```
 
-`js` is the short alias for `eval`. `--inject <file>` runs setup code before the expression. `--file` scripts with leading `import`/`export` are bundled automatically (stderr note); use `--bundle` to force bundling or `--no-bundle` to read the file as-is. Bundling resolves imports from the current working directory (including `node_modules`; `node:` built-ins are rejected; entry file must not use top-level `export`). `--arg key=value` is repeatable and exposes string values as a frozen `args` object inside inline, file, stdin, or injected scripts; duplicate keys use the last value. `--args <path>` loads the same map from a JSON object file (primitive values are coerced to strings); `--arg` overrides file entries. `--out <path>` writes the eval result to disk and prints `Result saved: …` on success; with `--interval`, results append as NDJSON unless `--rotate` writes `name.0001.ext`, `name.0002.ext`, … per iteration.
+`js` is the short alias for `eval`. `--inject <file>` runs setup code before the expression. `--timeout` accepts milliseconds or duration syntax (`60000`, `60s`, `2m`); bare numbers remain milliseconds. `--file` scripts with leading `import`/`export` are bundled automatically (stderr note); use `--bundle` to force bundling or `--no-bundle` to read the file as-is. Bundling resolves imports from the current working directory (including `node_modules`; `node:` built-ins are rejected; entry file must not use top-level `export`). `--arg key=value` is repeatable and exposes string values as a frozen `args` object inside inline, file, stdin, or injected scripts; duplicate keys use the last value. `--args <path>` loads the same map from a JSON object file (primitive values are coerced to strings); `--arg` overrides file entries. `--out <path>` writes the eval result to disk and prints `Result saved: …` on success; with `--interval`, results append as NDJSON unless `--rotate` writes `name.0001.ext`, `name.0002.ext`, … per iteration.
 
 ### Runtime Code
 

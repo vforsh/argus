@@ -3,7 +3,7 @@ import { evalWithRetries } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { pollEval } from './evalPolling.js'
-import { createEvalEmitter, formatError, parseCount, parseIntervalMs, parseNumber, parseRetryCount, prepareEvalExpression } from './evalShared.js'
+import { createEvalEmitter, formatError, parseCount, parseIntervalMs, parseRetryCount, parseTimeoutMs, prepareEvalExpression } from './evalShared.js'
 import { validateEvalResultFileOptions } from './evalResultOutput.js'
 
 /** Options for the eval command. */
@@ -32,7 +32,7 @@ export type EvalOptions = {
 	iframe?: string
 	/** Message type prefix for iframe eval (default: argus). */
 	iframeNamespace?: string
-	/** Timeout for iframe postMessage response in ms (default: 5000). */
+	/** Timeout for iframe postMessage response (default: 5000; accepts duration syntax). */
 	iframeTimeout?: string
 	/** Repeated key=value arguments exposed to scripts as `args`. */
 	arg?: string[]
@@ -97,14 +97,19 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		return
 	}
 
+	const timeoutMs = parseTimeoutMs(options.timeout)
+	if (timeoutMs.error) {
+		output.writeWarn(timeoutMs.error)
+		process.exitCode = 2
+		return
+	}
+
 	const emitter = createEvalEmitter(options, output)
 
 	const resolved = await resolveWatcherOrExit({ id }, output)
 	if (!resolved) return
 
 	const { watcher } = resolved
-
-	const timeoutMs = parseNumber(options.timeout)
 
 	if (intervalMs.value == null) {
 		const singleResult = await evalWithRetries({
@@ -113,7 +118,7 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 			args: prepared.args,
 			awaitPromise: options.await ?? true,
 			returnByValue: options.returnByValue ?? true,
-			timeoutMs,
+			timeoutMs: timeoutMs.value,
 			failOnException: options.failOnException ?? true,
 			retryCount: retryCount.value,
 		})
@@ -134,7 +139,7 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		args: prepared.args,
 		awaitPromise: options.await ?? true,
 		returnByValue: options.returnByValue ?? true,
-		timeoutMs,
+		timeoutMs: timeoutMs.value,
 		failOnException: options.failOnException ?? true,
 		retryCount: retryCount.value,
 		intervalMs: intervalMs.value,

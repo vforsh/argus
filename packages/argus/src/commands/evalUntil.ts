@@ -1,8 +1,16 @@
 import { createOutput } from '../output/io.js'
-import { parseDurationMs } from '../time.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { pollEval } from './evalPolling.js'
-import { createEvalEmitter, parseCount, parseIntervalMs, parseNumber, parseRetryCount, prepareEvalExpression, printSuccess } from './evalShared.js'
+import {
+	createEvalEmitter,
+	parseCount,
+	parseDurationFlagMs,
+	parseIntervalMs,
+	parseRetryCount,
+	parseTimeoutMs,
+	prepareEvalExpression,
+	printSuccess,
+} from './evalShared.js'
 import { validateEvalResultFileOptions } from './evalResultOutput.js'
 
 /** Options for the eval-until command. */
@@ -32,7 +40,7 @@ export type EvalUntilOptions = {
 	iframe?: string
 	/** Message type prefix for iframe eval (default: argus). */
 	iframeNamespace?: string
-	/** Timeout for iframe postMessage response in ms (default: 5000). */
+	/** Timeout for iframe postMessage response (default: 5000; accepts duration syntax). */
 	iframeTimeout?: string
 	/** Repeated key=value arguments exposed to scripts as `args`. */
 	arg?: string[]
@@ -74,9 +82,16 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		return
 	}
 
-	const totalTimeoutMs = parseTotalTimeout(options.totalTimeout)
+	const totalTimeoutMs = parseDurationFlagMs(options.totalTimeout, '--total-timeout')
 	if (totalTimeoutMs.error) {
 		output.writeWarn(totalTimeoutMs.error)
+		process.exitCode = 2
+		return
+	}
+
+	const timeoutMs = parseTimeoutMs(options.timeout)
+	if (timeoutMs.error) {
+		output.writeWarn(timeoutMs.error)
 		process.exitCode = 2
 		return
 	}
@@ -91,7 +106,6 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 	if (!resolved) return
 
 	const { watcher } = resolved
-	const timeoutMs = parseNumber(options.timeout)
 
 	const pollResult = await pollEval({
 		watcher,
@@ -99,7 +113,7 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		args: prepared.args,
 		awaitPromise: options.await ?? true,
 		returnByValue: options.returnByValue ?? true,
-		timeoutMs,
+		timeoutMs: timeoutMs.value,
 		failOnException: options.failOnException ?? true,
 		retryCount: retryCount.value,
 		intervalMs: pollIntervalMs,
@@ -145,28 +159,4 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 	if (pollResult.kind === 'interrupted') {
 		process.exitCode = 130
 	}
-}
-
-const parseTotalTimeout = (value?: string): { value?: number; error?: string } => {
-	if (value == null) {
-		return {}
-	}
-
-	const trimmed = value.trim()
-	if (!trimmed) {
-		return { error: 'Invalid --total-timeout value: empty duration.' }
-	}
-
-	let parsed: number | null
-	if (/^[0-9]+$/.test(trimmed)) {
-		parsed = Number(trimmed)
-	} else {
-		parsed = parseDurationMs(trimmed)
-	}
-
-	if (parsed == null || !Number.isFinite(parsed) || parsed <= 0) {
-		return { error: 'Invalid --total-timeout value: expected milliseconds or a duration like 30s, 2m, 1h.' }
-	}
-
-	return { value: parsed }
 }
