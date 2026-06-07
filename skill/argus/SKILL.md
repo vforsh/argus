@@ -483,8 +483,13 @@ argus sheets rows add extension-3 5 --count 2 --before
 argus sheets rows remove extension-3 5 --count 2 --force
 argus sheets columns add extension-3 3 --after
 argus sheets columns remove extension-3 3 --force
-ARGUS_PLUGINS=./packages/argus-plugin-google-sheets/dist/index.js argus sheets read extension-3 --range A1:C5
+ARGUS_PLUGINS=./packages/argus-plugin-google-sheets/dist/index.js argus sheets read extension-3 --sheet "Burn rate (Vlad)" --range A1:C5
+cat rows.tsv | argus sheets write extension-3 B12 --sheet "Burn rate (Vlad)" --stdin --strict --verify-timeout 5s
+argus sheets clear extension-3 J57:J58 --sheet "Фабрика: солитёр" --strict
+argus sheets batch extension-3 --sheet "Фабрика: солитёр" --file changes.json --strict --json
 ```
+
+Google Sheets reads and mutations accept `--sheet <name|gid|index>` so ranges can stay local (`B12`) instead of sheet-qualified (`'Sheet name'!B12`). Writes and clears mutate through the live browser UI, then verify through authenticated CSV readback. Use `--strict` when correctness matters; verification reports mismatched A1 cells, and `--verify-timeout` accepts values like `500ms`, `5s`, or `1m`. `batch` reads a JSON array from `--file` or `--stdin`; each operation has either `values: string[][]` or `clear: true`, plus optional `sheet` and `verify: false`.
 
 See [PLUGINS.md](./reference/PLUGINS.md).
 

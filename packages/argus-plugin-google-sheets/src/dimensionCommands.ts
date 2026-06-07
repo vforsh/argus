@@ -1,9 +1,7 @@
 import type { Command } from 'commander'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { buildDimensionMutationExpression, type SheetDimensionMutationResult } from './dimensionPageScripts.js'
-import { buildSelectRangeExpression, type SheetSelectResult } from './pageScripts.js'
-
-type Output = ReturnType<ArgusPluginContextV1['host']['createOutput']>
+import { evalInWatcher, type Output, selectRange } from './sheetCommandUtils.js'
 
 type Dimension = 'rows' | 'columns'
 type InsertSide = 'before' | 'after'
@@ -164,17 +162,6 @@ const mutateDimension = async (
 	return mutations
 }
 
-const selectRange = async (ctx: ArgusPluginContextV1, id: string | undefined, range: string, output: Output): Promise<SheetSelectResult | null> => {
-	const result = await evalInWatcher<SheetSelectResult>(ctx, id, buildSelectRangeExpression(range), output)
-	if (!result) return null
-
-	const selected = await dispatchKey(ctx, id, output, { key: 'Enter', selector: '#t-name-box' })
-	if (!selected) return null
-
-	await sleep(200)
-	return result
-}
-
 const buildSingleDimensionRange = (dimension: Dimension, index: number): string => {
 	if (dimension === 'rows') return `${index}:${index}`
 	const column = indexToColumnLetters(index)
@@ -225,48 +212,6 @@ const indexToColumnLetters = (index: number): string => {
 	return letters
 }
 
-const dispatchKey = async (
-	ctx: ArgusPluginContextV1,
-	id: string | undefined,
-	output: Output,
-	body: { key: string; selector?: string; modifiers?: string },
-): Promise<boolean> => {
-	const response = await ctx.host.argus.dom.keydown(id, body, {
-		timeoutMs: 30_000,
-	})
-	if (response.ok) return true
-
-	ctx.host.writeRequestError(response, output)
-	process.exitCode = response.exitCode
-	return false
-}
-
-const evalInWatcher = async <T>(ctx: ArgusPluginContextV1, id: string | undefined, expression: string, output: Output): Promise<T | null> => {
-	const response = await ctx.host.argus.eval(
-		id,
-		{
-			expression,
-			awaitPromise: true,
-			returnByValue: true,
-			timeoutMs: 30_000,
-		},
-		{
-			timeoutMs: 35_000,
-		},
-	)
-	if (!response.ok) {
-		ctx.host.writeRequestError(response, output)
-		process.exitCode = response.exitCode
-		return null
-	}
-	if (response.data.exception) {
-		output.writeWarn(response.data.exception.text)
-		process.exitCode = 1
-		return null
-	}
-	return response.data.result as T
-}
-
 const writeDimensionResult = (output: Output, options: DimensionOptions, result: DimensionCommandResult): void => {
 	if (options.json) {
 		output.writeJson(result)
@@ -277,5 +222,3 @@ const writeDimensionResult = (output: Output, options: DimensionOptions, result:
 	const side = result.side ? ` ${result.side}` : ''
 	output.writeHuman(`${verb} ${result.count} ${result.dimension} at #${result.index}${side}`)
 }
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
