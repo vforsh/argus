@@ -212,6 +212,27 @@ argus net tail app --grep api --json
 
 `net clear` resets the watcher’s buffered requests so the next inspection starts clean. `net watch` now waits for an actual quiet window: it tails matching requests until no new matches arrive for `--settle`, and `--max-timeout` stops the watch if the page never settles. Add `--settle-after "<expr>"` when network quiet alone is too early: Argus polls the page every `250ms` by default (override with `--settle-after-interval`) until the expression becomes truthy, then starts the normal quiet-window countdown. `net inspect` is the happy path for one endpoint: it captures a fresh window, picks the newest URL match, prints a compact header summary, and dumps request/response bodies in one shot. `net export --format har` writes the current buffer, or a fresh reload capture, as a HAR file. `net show` drills into one buffered request by Argus id or raw CDP request id, including redacted request/response headers, initiator, redirect chain, cache/service-worker flags, remote endpoint, timing phases, and request/response body availability. `net body` lazily fetches either the response body (default) or `--request` body from CDP so the ring buffer stays lean. `net ws` lists WebSocket connections, and `net ws show` prints handshake headers plus bounded recent frame previews; `net sse` lists EventSource/text-event-stream requests at request level only because CDP does not reliably expose SSE event payloads. `net`/`net tail`/`net watch`/`net export`/`net inspect`/`net ws`/`net sse` also support richer filtering: host, method, status or status class (`2xx`), resource type, MIME prefix, first-party vs third-party, failed-only, slow-over, large-over, and target scope. Scope is explicit: use `--scope selected` or `--frame selected` when you want iframe-only traffic in extension mode, but reload-driven `net watch` / `net export` / `net inspect` intentionally reject selected-frame scope.
 
+### Network Mocking
+
+Intercept live requests via CDP Fetch: block, fail with a real network error, stub responses, inject latency, or rewrite requests. Rules persist across reloads and reattach until removed.
+
+```bash
+argus net mock add app --url "*/analytics/*" --block
+argus net mock add app --url "*/api/save" --fail ConnectionRefused
+argus net mock add app --url "*/game/init" --fail TimedOut --times 1
+argus net mock add app --url "*/api/config" --status 200 --body-file ./fixtures/config.json
+argus net mock add app --url "*/game/init" --status 500 --body '{"error":"maintenance"}'
+echo '{"flags":{"newShop":true}}' | argus net mock add app --url "*/api/flags" --body -
+argus net mock add app --url "*/api/*" --delay 2s --method POST
+argus net mock add app --url "*/api/*" --set-header "x-debug: 1"
+argus net mock add app --url "cdn.prod.com" --rewrite-host localhost:3000
+argus net mock ls app
+argus net mock rm 2 app
+argus net mock clear app
+```
+
+`--url` is a case-insensitive wildcard pattern over the full request URL (`*` matches anything; no `*` means substring match). First matching rule wins; unmatched requests pass through untouched. Exactly one primary action per rule: `--block` (abort as BlockedByClient), `--fail <reason>` (abort with a CDP network error such as `TimedOut`, `ConnectionRefused`, `InternetDisconnected` — page `fetch()` calls actually reject), or a stubbed response via `--status`/`--body`/`--body-file`/`--header` (content-type is inferred from the file extension or body shape unless a `--header` overrides it). Without a primary action, the rule passes the request through with optional `--delay`, request-header overrides (`--set-header`), or `--rewrite-host` (host only, or full origin when the value contains `://` — points production pages at a local server). `--delay` combines with any action. `--times N` expires the rule after N applications — `--fail TimedOut --times 1` makes only the first call fail, which is the happy path for retry testing. `--method`/`--resource-type` narrow the match. `net mock ls` shows per-rule hit counts, so you can verify a mock actually fired. Mocks operate at the page level; set them up first, then `argus reload` to exercise boot-time requests.
+
 ### Storage
 
 ```bash

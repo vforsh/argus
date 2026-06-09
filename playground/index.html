@@ -101,6 +101,7 @@
 				<button data-testid="btn-fetch-echo" onclick="doFetch('/api/echo')">GET /api/echo (200)</button>
 				<button data-testid="btn-fetch-slow" onclick="doFetch('/api/slow')">GET /api/slow (2s)</button>
 				<button data-testid="btn-fetch-error" onclick="doFetch('/api/error')">GET /api/error (500)</button>
+				<button data-testid="btn-fetch-missing" onclick="doFetch('/api/missing')">GET /api/missing (404, mock target)</button>
 			</div>
 			<pre data-testid="network-output" id="network-output">—</pre>
 		</section>

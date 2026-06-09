@@ -9,6 +9,7 @@ import { runNetSummary } from '../../commands/netSummary.js'
 import { runNetSse } from '../../commands/netSse.js'
 import { runNetTail } from '../../commands/netTail.js'
 import { runNetWatch } from '../../commands/netWatch.js'
+import { runNetMockAdd, runNetMockClear, runNetMockList, runNetMockRemove } from '../../commands/netMock.js'
 import { runNetWebSocket, runNetWebSocketShow } from '../../commands/netWebSocket.js'
 import { collectValues } from '../validation.js'
 
@@ -182,6 +183,8 @@ export function registerNet(program: Command): void {
 			await runNetWebSocketShow(id, connection, resolveCommandOptions(options))
 		})
 
+	registerNetMock(net)
+
 	const sse = net.command('sse').argument('[id]', 'Watcher id to query').description('List SSE/EventSource streams captured by a watcher')
 	sse.option('--after <id>', 'Only return streams after this id').option('--limit <count>', 'Maximum number of streams')
 	applyNetFilterOptions(sse, { includeSince: true })
@@ -189,6 +192,67 @@ export function registerNet(program: Command): void {
 		.addHelpText('after', '\nExamples:\n  $ argus net sse app\n  $ argus net sse app --mime text/event-stream\n  $ argus net sse app --json\n')
 		.action(async (id, options) => {
 			await runNetSse(id, resolveCommandOptions(options))
+		})
+}
+
+const registerNetMock = (net: Command): void => {
+	const mock = net
+		.command('mock')
+		.description('Intercept matching requests: block, fail with a network error, stub the response, delay, or rewrite')
+
+	mock.command('add')
+		.argument('[id]', 'Watcher id')
+		.description('Add a mock rule (first match wins, rules persist until removed)')
+		.option('--url <pattern>', 'URL wildcard pattern; substring match when it contains no *')
+		.option('--method <method>', 'Only match this HTTP method')
+		.option('--resource-type <type>', 'Only match this CDP resource type (Fetch, XHR, Document, ...)')
+		.option('--block', 'Abort matching requests as BlockedByClient')
+		.option('--fail <reason>', 'Abort with a network error (TimedOut, ConnectionRefused, ...)')
+		.option('--status <code>', 'Stub a response with this HTTP status (default 200 when a body is given)')
+		.option('--body <value>', 'Stub response body (inline string, or - for stdin)')
+		.option('--body-file <path>', 'Stub response body from file')
+		.option('--header <header>', 'Stub response header "Name: value" (repeatable)', collectValues, [])
+		.option('--set-header <header>', 'Override a request header "Name: value" before sending (repeatable)', collectValues, [])
+		.option('--rewrite-host <host>', 'Rewrite the request URL host (or origin when the value contains ://)')
+		.option('--delay <duration>', 'Delay before the action executes (e.g. 2s, 500ms)')
+		.option('--times <count>', 'Apply the rule at most N times, then let requests through')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText(
+			'after',
+			'\nExamples:\n  $ argus net mock add app --url "*/analytics/*" --block\n  $ argus net mock add app --url "*/api/save" --fail ConnectionRefused --times 1\n  $ argus net mock add app --url "*/api/config" --status 200 --body-file ./fixtures/config.json\n  $ argus net mock add app --url "*/game/init" --status 500 --body \'{"error":"maintenance"}\'\n  $ argus net mock add app --url "*/api/*" --delay 2s --method POST\n  $ argus net mock add app --url "cdn.prod.com" --rewrite-host localhost:3000\n',
+		)
+		.action(async (id, options) => {
+			await runNetMockAdd(id, options)
+		})
+
+	mock.command('ls')
+		.alias('list')
+		.argument('[id]', 'Watcher id')
+		.description('List mock rules with hit counts')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText('after', '\nExamples:\n  $ argus net mock ls app\n  $ argus net mock ls app --json\n')
+		.action(async (id, options) => {
+			await runNetMockList(id, options)
+		})
+
+	mock.command('rm')
+		.alias('remove')
+		.argument('<rule>', 'Rule id (see `argus net mock ls`)')
+		.argument('[id]', 'Watcher id')
+		.description('Remove one mock rule')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText('after', '\nExamples:\n  $ argus net mock rm 2 app\n  $ argus net mock rm 2 app --json\n')
+		.action(async (rule, id, options) => {
+			await runNetMockRemove(id, rule, options)
+		})
+
+	mock.command('clear')
+		.argument('[id]', 'Watcher id')
+		.description('Remove all mock rules and disable interception')
+		.option('--json', 'Output JSON for automation')
+		.addHelpText('after', '\nExamples:\n  $ argus net mock clear app\n  $ argus net mock clear app --json\n')
+		.action(async (id, options) => {
+			await runNetMockClear(id, options)
 		})
 }
 
