@@ -10,6 +10,7 @@ import { buildIgnoreMatcher } from '../cdp/ignoreList.js'
 import { createCdpSessionHandle } from '../cdp/connection.js'
 import { createEmulationController } from '../emulation/EmulationController.js'
 import { createThrottleController } from '../throttle/ThrottleController.js'
+import { createNetMockController } from '../net/NetMockController.js'
 import { createVisibilityController } from '../visibility/VisibilityController.js'
 import type { ArgusWatcherEventMap } from '../events.js'
 import type { StartWatcherOptions } from '../index.js'
@@ -38,6 +39,7 @@ export type NormalizedWatcherSetup = {
 	emulationController: ReturnType<typeof createEmulationController>
 	throttleController: ReturnType<typeof createThrottleController>
 	visibilityController: ReturnType<typeof createVisibilityController>
+	netMockController: ReturnType<typeof createNetMockController>
 }
 
 export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: string): NormalizedWatcherSetup => {
@@ -111,6 +113,7 @@ export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: s
 		emulationController: createEmulationController(),
 		throttleController: createThrottleController(),
 		visibilityController: createVisibilityController(),
+		netMockController: createNetMockController(),
 	}
 }
 

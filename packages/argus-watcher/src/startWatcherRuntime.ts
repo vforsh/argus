@@ -29,6 +29,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		emulationController,
 		throttleController,
 		visibilityController,
+		netMockController,
 	} = setup
 	let closing = false
 	let readyForShutdown = false
@@ -229,6 +230,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		// forward the attach to other services so downstream flows (boot
 		// waits, indicator paints) benefit immediately.
 		await visibilityController.onAttach(sourceHandle.pageSession ?? session)
+		await netMockController.onAttach(sourceHandle.pageSession ?? session)
 		await networkCapture?.onAttached()
 		onIndicatorAttach(session, target)
 		await maybeInjectOnAttach(session, target)
@@ -257,6 +259,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		dialogTracker.clear()
 		runtimeEditor?.rebind()
 		networkCapture?.onDetached()
+		netMockController.onDetach()
 		indicatorController?.onDetach()
 		if (reason != null) {
 			traceRecorder.onDetached(reason)
@@ -273,6 +276,8 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		onTargetChanged: handleTargetChanged,
 		onDetach: handleSourceDetach,
 	})
+
+	netMockController.bind(sourceHandle.pageSession ?? sourceHandle.session)
 
 	const dialogSession = sourceHandle.pageSession ?? sourceHandle.session
 	dialogSession.onEvent('Page.javascriptDialogOpening', (params) => {
@@ -304,6 +309,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		emulationController,
 		throttleController,
 		visibilityController,
+		netMockController,
 		getNetFilterContext: sourceHandle.getNetFilterContext,
 		readBrowserCookies: sourceHandle.readBrowserCookies,
 		sourceHandle: sourceMode === 'extension' ? sourceHandle : undefined,

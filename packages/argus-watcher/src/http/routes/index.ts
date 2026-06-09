@@ -12,6 +12,12 @@ import { handle as getNetWebSockets } from './getNetWebSockets.js'
 import { handle as getNetWebSocketConnection } from './getNetWebSocketConnection.js'
 import { handle as getNetSse } from './getNetSse.js'
 import { handle as postNetClear } from './postNetClear.js'
+import {
+	handleStatus as getNetMock,
+	handleAdd as postNetMockAdd,
+	handleRemove as postNetMockRemove,
+	handleClear as postNetMockClear,
+} from './netMock.js'
 import { handle as getAuthCookies } from './getAuthCookies.js'
 import { handle as getAuthState } from './getAuthState.js'
 import { handleCookieClear, handleCookieDelete, handleCookieGet, handleCookieSet } from './authCookies.js'
@@ -70,6 +76,10 @@ export const watcherRoutes = [
 	defineRoute({ method: 'GET', path: '/net/ws/connection', handler: getNetWebSocketConnection }),
 	defineRoute({ method: 'GET', path: '/net/sse', handler: getNetSse }),
 	defineRoute({ method: 'POST', path: '/net/clear', handler: postNetClear }),
+	defineRoute({ method: 'GET', path: '/net/mock', handler: getNetMock }),
+	defineRoute({ method: 'POST', path: '/net/mock/add', handler: postNetMockAdd }),
+	defineRoute({ method: 'POST', path: '/net/mock/remove', handler: postNetMockRemove }),
+	defineRoute({ method: 'POST', path: '/net/mock/clear', handler: postNetMockClear }),
 	defineRoute({ method: 'GET', path: '/auth/cookies', handler: getAuthCookies }),
 	defineRoute({ method: 'POST', path: '/auth/cookies/get', handler: handleCookieGet }),
 	defineRoute({ method: 'POST', path: '/auth/cookies/set', handler: handleCookieSet }),

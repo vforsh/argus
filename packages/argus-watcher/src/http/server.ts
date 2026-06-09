@@ -11,6 +11,7 @@ import type { Screenshotter } from '../cdp/screenshot.js'
 import type { CdpSourceCookieQuery, CdpSourceHandle, CdpSourceStatus } from '../sources/types.js'
 import type { EmulationController } from '../emulation/EmulationController.js'
 import type { ThrottleController } from '../throttle/ThrottleController.js'
+import type { NetMockController } from '../net/NetMockController.js'
 import type { VisibilityController } from '../visibility/VisibilityController.js'
 import type { NetFilterContext, NetParty, NetScope } from '../net/filtering.js'
 import { dispatch } from './router.js'
@@ -26,6 +27,10 @@ export type HttpRequestEventMetadata = {
 		| 'net/request/body'
 		| 'net/tail'
 		| 'net/clear'
+		| 'net/mock'
+		| 'net/mock/add'
+		| 'net/mock/remove'
+		| 'net/mock/clear'
 		| 'net/ws'
 		| 'net/ws/connection'
 		| 'net/sse'
@@ -133,6 +138,8 @@ export type HttpServerOptions = {
 	emulationController: EmulationController
 	/** Throttle controller for GET/POST /throttle endpoints. */
 	throttleController: ThrottleController
+	/** Network mock controller for /net/mock endpoints. */
+	netMockController: NetMockController
 	/** Visibility controller for GET/POST /visibility endpoints. */
 	visibilityController: VisibilityController
 	/** Source handle for extension mode (enables /targets, /attach, /detach endpoints). */
