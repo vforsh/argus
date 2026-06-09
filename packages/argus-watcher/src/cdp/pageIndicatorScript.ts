@@ -22,6 +22,7 @@ const ICONS = {
 const COPY_ICON_SIZE = 15
 const INFO_REVEAL_DELAY_MS = 1500
 const INFO_REVEAL_DURATION_MS = 100
+const INFO_BUTTON_GAP_PX = 3
 const MAIN_FEEDBACK_MS = 1400
 const DIALOG_COPY_FEEDBACK_MS = 1500
 const INFO_VISIBLE_CLASS = 'argus-indicator-info-visible'
@@ -136,7 +137,7 @@ export const buildInstallExpression = (params: InstallExpressionParams): string 
         'max-width: ${size}px; max-height: ${size}px; flex: 0 0 auto; display: block;' +
       '}' +
       '#' + INDICATOR_ID + ' .argus-indicator-info {' +
-        'position: absolute; right: 0; bottom: 100%; opacity: 0; pointer-events: none; transform: translateY(2px);' +
+        'position: absolute; right: 0; bottom: calc(100% + ${INFO_BUTTON_GAP_PX}px); opacity: 0; pointer-events: none; transform: translateY(2px);' +
       '}' +
       '#' + INDICATOR_ID + ' .argus-indicator-info-visible {' +
         'opacity: 1; pointer-events: auto; transform: translateY(0);' +
