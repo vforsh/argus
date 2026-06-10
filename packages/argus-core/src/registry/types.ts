@@ -40,6 +40,21 @@ export type WatcherChrome = {
 	port: number
 }
 
+/**
+ * Source mode for a watcher's Chrome connection.
+ * - `cdp`: Connect directly to Chrome via WebSocket.
+ * - `extension`: Connect via the Argus Chrome extension (Native Messaging).
+ */
+export type WatcherSourceMode = 'cdp' | 'extension'
+
+/**
+ * Page console logging level for watcher lifecycle and request logs.
+ * - `none`: Do not write anything to the page's DevTools console.
+ * - `minimal`: Write attach/detach lifecycle messages.
+ * - `full`: Same as minimal, plus log every HTTP request to the watcher API.
+ */
+export type PageConsoleLogging = 'none' | 'minimal' | 'full'
+
 /** Registry entry for a watcher instance. */
 export type WatcherRecord = {
 	/** Unique watcher identifier (also used as the key in the registry). */
@@ -63,7 +78,7 @@ export type WatcherRecord = {
 	/** Whether to include ISO timestamps in formatted log output. */
 	includeTimestamps?: boolean
 	/** Source mode: 'cdp' (direct Chrome connection) or 'extension' (via Chrome extension). */
-	source?: 'cdp' | 'extension'
+	source?: WatcherSourceMode
 }
 
 /** Registry schema v1. */

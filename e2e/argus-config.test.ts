@@ -3,14 +3,11 @@ import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
 import { runCommandWithExit } from './helpers/process.js'
-import {
-	loadArgusConfig,
-	mergeChromeStartOptionsWithConfig,
-	mergeWatcherStartOptionsWithConfig,
-	resolveArgusConfigPath,
-} from '../packages/argus/src/config/argusConfig.js'
+import { loadArgusConfig, resolveArgusConfigPath } from '../packages/argus/src/config/loadConfig.js'
+import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../packages/argus/src/config/mergeConfig.js'
 
-const CONFIG_MODULE_PATH = path.resolve('packages/argus/dist/config/argusConfig.js')
+const LOAD_CONFIG_MODULE_PATH = path.resolve('packages/argus/dist/config/loadConfig.js')
+const MERGE_CONFIG_MODULE_PATH = path.resolve('packages/argus/dist/config/mergeConfig.js')
 
 const resetExitCode = () => {
 	process.exitCode = undefined
@@ -25,11 +22,8 @@ const runConfigSubprocess = async (body: string) =>
 		'--input-type=module',
 		'--eval',
 		`
-import {
-	loadArgusConfig,
-	mergeChromeStartOptionsWithConfig,
-	resolveArgusConfigPath,
-} from ${JSON.stringify(CONFIG_MODULE_PATH)}
+import { loadArgusConfig, resolveArgusConfigPath } from ${JSON.stringify(LOAD_CONFIG_MODULE_PATH)}
+import { mergeChromeStartOptionsWithConfig } from ${JSON.stringify(MERGE_CONFIG_MODULE_PATH)}
 
 const createCommand = (sources) => ({
 	getOptionValueSource: (key) => sources[key] ?? 'default',

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createOutput } from '../output/io.js'
-import { resolveArgusConfigPath } from '../config/argusConfig.js'
+import { resolveArgusConfigPath } from '../config/loadConfig.js'
 import { getGlobalArgusConfigPath } from '../config/argusHome.js'
 import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from '../cli/plugins/pluginAliases.js'
 

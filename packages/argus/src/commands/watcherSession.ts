@@ -1,7 +1,7 @@
-import type { WatcherMatch } from '@vforsh/argus-core'
-import { startWatcher, type PageConsoleLogging, type WatcherHandle, type WatcherSourceMode } from '@vforsh/argus-watcher'
+import type { PageConsoleLogging, WatcherMatch, WatcherSourceMode } from '@vforsh/argus-core'
+import { startWatcher, type WatcherHandle } from '@vforsh/argus-watcher'
 import type { Output } from '../output/io.js'
-import type { WatcherInjectConfig } from '../config/argusConfig.js'
+import type { WatcherInjectConfig } from '../config/types.js'
 import { resolvePath } from '../utils/paths.js'
 import { resolveInjectScript } from './startShared.js'
 

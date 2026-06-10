@@ -19,12 +19,14 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.1.15",
+      "version": "0.1.17",
       "bin": {
         "argus": "dist/argus.js",
       },
       "dependencies": {
+        "@vforsh/argus-core": "workspace:*",
         "@vforsh/argus-plugin-api": "workspace:*",
+        "@vforsh/argus-watcher": "workspace:*",
         "commander": "14.0.2",
         "esbuild": "0.25.12",
         "prettier": "3.7.4",

@@ -1,11 +1,11 @@
 import { createAuthStateOriginUrl, type AuthStateSnapshot } from '@vforsh/argus-core'
 import { rmSync } from 'node:fs'
-import type { PageConsoleLogging } from '@vforsh/argus-watcher'
+import type { PageConsoleLogging } from '@vforsh/argus-core'
 import { requestAuthStateSnapshot } from './auth.js'
 import { applyAuthStateSnapshotToChrome } from './chrome/authState.js'
 import { launchChrome, type LaunchChromeResult } from './chromeStart.js'
 import { createOutput } from '../output/io.js'
-import type { WatcherInjectConfig } from '../config/argusConfig.js'
+import type { WatcherInjectConfig } from '../config/types.js'
 import { buildWatcherMatch, normalizeHttpUrl, registerTerminationHandlers, waitForever } from './startShared.js'
 import { startManagedWatcher } from './watcherSession.js'
 

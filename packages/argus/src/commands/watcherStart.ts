@@ -1,7 +1,7 @@
-import type { PageConsoleLogging, WatcherSourceMode } from '@vforsh/argus-watcher'
+import type { PageConsoleLogging, WatcherSourceMode } from '@vforsh/argus-core'
 import crypto from 'node:crypto'
 import { createOutput } from '../output/io.js'
-import type { WatcherInjectConfig } from '../config/argusConfig.js'
+import type { WatcherInjectConfig } from '../config/types.js'
 import { buildWatcherMatch, registerTerminationHandlers, waitForever } from './startShared.js'
 import { startManagedWatcher } from './watcherSession.js'
 

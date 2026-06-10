@@ -1,4 +1,4 @@
-import type { WatcherMatch, WatcherChrome, WatcherRecord, LogEvent } from '@vforsh/argus-core'
+import type { WatcherMatch, WatcherChrome, WatcherRecord, LogEvent, PageConsoleLogging, WatcherSourceMode } from '@vforsh/argus-core'
 import Emittery from 'emittery'
 import { resolveUniqueWatcherId } from './registry/registry.js'
 import { createWatcherHandle } from './startWatcherRuntime.js'
@@ -53,12 +53,6 @@ export type NetOptions = {
 	/** Enable network request capture. Defaults to `false`. */
 	enabled?: boolean
 }
-
-/** Page console logging level for watcher lifecycle and request logs. */
-export type PageConsoleLogging = 'none' | 'minimal' | 'full'
-
-/** Source mode for CDP connection. */
-export type WatcherSourceMode = 'cdp' | 'extension'
 
 /** Native Messaging role used by extension-backed watchers. */
 export type ExtensionWatcherRole = 'tab' | 'control'

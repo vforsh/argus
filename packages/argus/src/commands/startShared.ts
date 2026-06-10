@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import type { WatcherMatch } from '@vforsh/argus-core'
-import type { WatcherInjectConfig } from '../config/argusConfig.js'
+import type { WatcherInjectConfig } from '../config/types.js'
 import { resolvePath } from '../utils/paths.js'
 
 type WarningOutput = {
