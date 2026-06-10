@@ -5,7 +5,7 @@ import os from 'node:os'
 import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginContextV1, type ArgusPluginV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 
-import { resolveArgusConfigPath, loadArgusConfig } from '../../config/argusConfig.js'
+import { resolveArgusConfigPath, loadArgusConfig } from '../../config/loadConfig.js'
 import { getGlobalArgusConfigPath } from '../../config/argusHome.js'
 import { createOutput } from '../../output/io.js'
 import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from './pluginAliases.js'

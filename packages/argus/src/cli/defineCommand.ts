@@ -5,11 +5,14 @@ export type ArgusCommandOption = {
 	description: string
 	defaultValue?: string | boolean | string[]
 	required?: boolean
+	/** Custom Commander argParser, e.g. accumulating repeatable flags into an array. */
+	parser?: (value: string, previous: any) => any
 }
 
 export type ArgusCommandDefinition = {
 	name: string
 	alias?: string
+	aliases?: readonly string[]
 	description?: string
 	arguments?: readonly { flags: string; description: string }[]
 	options?: readonly ArgusCommandOption[]
@@ -25,6 +28,9 @@ export const defineCommand = (parent: Command, definition: ArgusCommandDefinitio
 
 	if (definition.alias) {
 		command.alias(definition.alias)
+	}
+	for (const alias of definition.aliases ?? []) {
+		command.alias(alias)
 	}
 	if (definition.description) {
 		command.description(definition.description)
@@ -62,6 +68,10 @@ export const defineCommands = (parent: Command, definitions: readonly ArgusComma
 }
 
 const addRequiredOption = (command: Command, option: ArgusCommandOption): void => {
+	if (option.parser) {
+		command.requiredOption(option.flags, option.description, option.parser, option.defaultValue)
+		return
+	}
 	if (option.defaultValue === undefined) {
 		command.requiredOption(option.flags, option.description)
 		return
@@ -70,6 +80,10 @@ const addRequiredOption = (command: Command, option: ArgusCommandOption): void =
 }
 
 const addOption = (command: Command, option: ArgusCommandOption): void => {
+	if (option.parser) {
+		command.option(option.flags, option.description, option.parser, option.defaultValue)
+		return
+	}
 	if (option.defaultValue === undefined) {
 		command.option(option.flags, option.description)
 		return

@@ -1,59 +1,59 @@
 import type { Command } from 'commander'
-import { domClickCommandDefinition } from '../../commands/domClick.js'
+import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { defineCommands } from '../defineCommand.js'
-import { registerQuickAccess } from './registerQuickAccess.js'
-import { registerChrome } from './registerChrome.js'
-import { registerWatcher } from './registerWatcher.js'
-import { registerPage } from './registerPage.js'
-import { registerDialog } from './registerDialog.js'
-import { registerLogs } from './registerLogs.js'
-import { registerNet } from './registerNet.js'
-import { registerAuth } from './registerAuth.js'
-import { registerEval } from './registerEval.js'
-import { registerDom } from './registerDom.js'
-import { registerKeydown } from './registerKeydown.js'
-import { registerFill } from './registerFill.js'
-import { registerHover } from './registerHover.js'
-import { registerScrollTo } from './registerScrollTo.js'
-import { registerStorage } from './registerStorage.js'
-import { registerThrottle } from './registerThrottle.js'
-import { registerSnapshot } from './registerSnapshot.js'
-import { registerTrace } from './registerTrace.js'
-import { registerConfig } from './registerConfig.js'
-import { registerExtension } from './registerExtension.js'
-import { registerCode } from './registerCode.js'
-import { registerLocate } from './registerLocate.js'
-import { registerPlugin } from './registerPlugin.js'
+import { domClickCommandDefinition } from '../../commands/domClick.js'
+import { quickAccessCommands } from './quickAccessCommands.js'
+import { chromeCommands } from './chromeCommands.js'
+import { watcherCommands } from './watcherCommands.js'
+import { pageCommands } from './pageCommands.js'
+import { dialogCommands } from './dialogCommands.js'
+import { logsCommands } from './logsCommands.js'
+import { netCommands } from './netCommands.js'
+import { authCommands } from './authCommands.js'
+import { evalCommands } from './evalCommands.js'
+import { locateCommands } from './locateCommands.js'
+import { codeCommands } from './codeCommands.js'
+import { domCommands } from './domCommands.js'
+import { keydownCommand } from './keydownCommand.js'
+import { fillCommand } from './fillCommand.js'
+import { hoverCommand } from './hoverCommand.js'
+import { scrollToCommand } from './scrollToCommand.js'
+import { storageCommands } from './storageCommands.js'
+import { throttleCommands } from './throttleCommands.js'
+import { snapshotCommands } from './snapshotCommands.js'
+import { traceCommands } from './traceCommands.js'
+import { configCommands } from './configCommands.js'
+import { pluginCommands } from './pluginCommands.js'
+import { extensionCommands } from './extensionCommands.js'
 
 export type ProgramRegistrar = (program: Command) => void
 
-const registerDefinedCommands: ProgramRegistrar = (program) => {
-	defineCommands(program, [domClickCommandDefinition])
-}
-
-export const coreProgramRegistrars: readonly ProgramRegistrar[] = [
-	registerQuickAccess,
-	registerChrome,
-	registerWatcher,
-	registerPage,
-	registerDialog,
-	registerLogs,
-	registerNet,
-	registerAuth,
-	registerEval,
-	registerLocate,
-	registerCode,
-	registerDom,
-	registerDefinedCommands,
-	registerKeydown,
-	registerFill,
-	registerHover,
-	registerScrollTo,
-	registerStorage,
-	registerThrottle,
-	registerSnapshot,
-	registerTrace,
-	registerConfig,
-	registerPlugin,
-	registerExtension,
+/** All built-in CLI commands, in registration (help display) order. */
+const coreCommandDefinitions: readonly ArgusCommandDefinition[] = [
+	...quickAccessCommands,
+	...chromeCommands,
+	...watcherCommands,
+	...pageCommands,
+	...dialogCommands,
+	...logsCommands,
+	...netCommands,
+	...authCommands,
+	...evalCommands,
+	...locateCommands,
+	...codeCommands,
+	...domCommands,
+	domClickCommandDefinition,
+	keydownCommand,
+	fillCommand,
+	hoverCommand,
+	scrollToCommand,
+	...storageCommands,
+	...throttleCommands,
+	...snapshotCommands,
+	...traceCommands,
+	...configCommands,
+	...pluginCommands,
+	...extensionCommands,
 ]
+
+export const coreProgramRegistrars: readonly ProgramRegistrar[] = [(program) => defineCommands(program, coreCommandDefinitions)]
