@@ -1,9 +1,9 @@
 import type { LocateLabelRequest, LocateResponse, LocateRoleRequest, LocateTextRequest } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
-import { respondMultipleMatches } from './domSelectorRoute.js'
-import { emitRequest } from './types.js'
+import type { RouteContext } from './types.js'
+import type { WatcherRouteDefinition } from './defineRoute.js'
 import { locateByLabel, locateByRole, locateByText } from '../../cdp/locate.js'
-import { respondError, respondInvalidBody, respondJson, readJsonBody } from '../httpUtils.js'
+import { defineJsonRoute } from './defineRoute.js'
+import { respondMultipleMatches } from './domSelectorRoute.js'
 
 type LocatePayload = {
 	all?: unknown
@@ -13,78 +13,54 @@ type LocatePayload = {
 	label?: unknown
 }
 
-type LocateHandlerConfig<TPayload extends LocatePayload> = {
+type LocateRouteConfig<TPayload extends LocatePayload> = {
 	endpoint: 'locate/role' | 'locate/text' | 'locate/label'
 	requiredField: 'role' | 'text' | 'label'
-	run: (ctx: Parameters<RouteHandler>[3], payload: TPayload) => Promise<LocateResponse>
+	run: (ctx: RouteContext, payload: TPayload) => Promise<LocateResponse>
 }
 
-function createLocateHandler<TPayload extends LocatePayload>(config: LocateHandlerConfig<TPayload>): RouteHandler {
-	return async (req, res, _url, ctx) => {
-		const payload = await readJsonBody<TPayload>(req, res)
-		if (!payload) {
-			return
-		}
-		if (!validateRequiredString(res, payload[config.requiredField], config.requiredField)) {
-			return
-		}
-		if (!validateLocateOptions(res, payload)) {
-			return
-		}
+const createLocateRoute = <TPayload extends LocatePayload>(config: LocateRouteConfig<TPayload>): WatcherRouteDefinition =>
+	defineJsonRoute<TPayload, LocateResponse>({
+		method: 'POST',
+		path: `/${config.endpoint}`,
+		parseBody: true,
+		endpoint: config.endpoint,
+		validate: (payload) => {
+			const required = payload[config.requiredField]
+			if (typeof required !== 'string' || required.trim() === '') {
+				return `${config.requiredField} is required`
+			}
+			if (payload.all != null && typeof payload.all !== 'boolean') {
+				return 'all must be a boolean'
+			}
+			if (payload.exact != null && typeof payload.exact !== 'boolean') {
+				return 'exact must be a boolean'
+			}
+			return null
+		},
+		handle: async ({ res, ctx, body: payload }) => {
+			const response = await config.run(ctx, payload)
+			if (payload.all !== true && response.matches > 1) {
+				return respondMultipleMatches(res, response.matches, 'return')
+			}
+			return response
+		},
+	})
 
-		emitRequest(ctx, res, config.endpoint)
-		const allowMultiple = payload.all === true
-		await handleLocateRequest(res, allowMultiple, () => config.run(ctx, payload))
-	}
-}
-
-export const handleLocateRole = createLocateHandler<LocateRoleRequest>({
-	endpoint: 'locate/role',
-	requiredField: 'role',
-	run: (ctx, payload) => locateByRole(ctx.cdpSession, ctx.elementRefs, payload),
-})
-
-export const handleLocateText = createLocateHandler<LocateTextRequest>({
-	endpoint: 'locate/text',
-	requiredField: 'text',
-	run: (ctx, payload) => locateByText(ctx.cdpSession, ctx.elementRefs, payload),
-})
-
-export const handleLocateLabel = createLocateHandler<LocateLabelRequest>({
-	endpoint: 'locate/label',
-	requiredField: 'label',
-	run: (ctx, payload) => locateByLabel(ctx.cdpSession, ctx.elementRefs, payload),
-})
-
-const handleLocateRequest = async (res: Parameters<RouteHandler>[1], all: boolean, run: () => Promise<LocateResponse>): Promise<void> => {
-	try {
-		const response = await run()
-		if (!all && response.matches > 1) {
-			return respondMultipleMatches(res, response.matches, 'return')
-		}
-		respondJson(res, response)
-	} catch (error) {
-		respondError(res, error)
-	}
-}
-
-const validateLocateOptions = (res: Parameters<RouteHandler>[1], payload: { all?: unknown; exact?: unknown }): boolean => {
-	if (payload.all != null && typeof payload.all !== 'boolean') {
-		respondInvalidBody(res, 'all must be a boolean')
-		return false
-	}
-	if (payload.exact != null && typeof payload.exact !== 'boolean') {
-		respondInvalidBody(res, 'exact must be a boolean')
-		return false
-	}
-	return true
-}
-
-const validateRequiredString = (res: Parameters<RouteHandler>[1], value: unknown, label: string): boolean => {
-	if (typeof value === 'string' && value.trim() !== '') {
-		return true
-	}
-
-	respondInvalidBody(res, `${label} is required`)
-	return false
-}
+export const locateRoutes: WatcherRouteDefinition[] = [
+	createLocateRoute<LocateRoleRequest>({
+		endpoint: 'locate/role',
+		requiredField: 'role',
+		run: (ctx, payload) => locateByRole(ctx.cdpSession, ctx.elementRefs, payload),
+	}),
+	createLocateRoute<LocateTextRequest>({
+		endpoint: 'locate/text',
+		requiredField: 'text',
+		run: (ctx, payload) => locateByText(ctx.cdpSession, ctx.elementRefs, payload),
+	}),
+	createLocateRoute<LocateLabelRequest>({
+		endpoint: 'locate/label',
+		requiredField: 'label',
+		run: (ctx, payload) => locateByLabel(ctx.cdpSession, ctx.elementRefs, payload),
+	}),
+]

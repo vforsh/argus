@@ -1,9 +1,8 @@
-import type { RouteHandler } from './types.js'
-import { emitRequest } from './types.js'
-import { respondJson } from '../httpUtils.js'
+import { defineJsonRoute } from './defineRoute.js'
 
-export const handle: RouteHandler = (_req, res, _url, ctx) => {
-	emitRequest(ctx, res, 'emulation')
-	const status = ctx.emulationController.getStatus({ attached: ctx.getCdpStatus().attached })
-	respondJson(res, status)
-}
+export const route = defineJsonRoute({
+	method: 'GET',
+	path: '/emulation',
+	endpoint: 'emulation',
+	handle: ({ ctx }) => ctx.emulationController.getStatus({ attached: ctx.getCdpStatus().attached }),
+})

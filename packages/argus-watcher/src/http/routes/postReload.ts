@@ -1,7 +1,7 @@
 import type { ReloadRequest, ReloadResponse } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
 
-export const handle = defineJsonRoute<ReloadRequest, ReloadResponse>({
+export const route = defineJsonRoute<ReloadRequest, ReloadResponse>({
 	method: 'POST',
 	path: '/reload',
 	parseBody: true,
@@ -13,4 +13,4 @@ export const handle = defineJsonRoute<ReloadRequest, ReloadResponse>({
 		})
 		return { ok: true }
 	},
-}).handler
+})

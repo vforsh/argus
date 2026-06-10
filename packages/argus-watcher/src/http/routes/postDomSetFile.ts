@@ -1,43 +1,37 @@
 import type { DomSetFileRequest, DomSetFileResponse } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
-import { respondMultipleMatches } from './domSelectorRoute.js'
-import { emitRequest } from './types.js'
 import { setFileOnResolvedNodes } from '../../cdp/dom.js'
 import { resolveSelectorTargets } from '../../cdp/dom/selector.js'
-import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
+import { defineJsonRoute } from './defineRoute.js'
+import { respondMultipleMatches } from './domSelectorRoute.js'
 
-export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const payload = await readJsonBody<DomSetFileRequest>(req, res)
-	if (!payload) {
-		return
-	}
-
-	if (!payload.selector || typeof payload.selector !== 'string') {
-		return respondInvalidBody(res, 'selector is required')
-	}
-
-	if (!Array.isArray(payload.files) || payload.files.length === 0) {
-		return respondInvalidBody(res, 'files array is required and must not be empty')
-	}
-
-	const all = payload.all ?? false
-	if (typeof all !== 'boolean') {
-		return respondInvalidBody(res, 'all must be a boolean')
-	}
-
-	const waitMs = payload.wait ?? 0
-	if (typeof waitMs !== 'number' || !Number.isFinite(waitMs) || waitMs < 0) {
-		return respondInvalidBody(res, 'wait must be a non-negative number (ms)')
-	}
-
-	emitRequest(ctx, res, 'dom/set-file')
-
-	try {
+export const route = defineJsonRoute<DomSetFileRequest, DomSetFileResponse>({
+	method: 'POST',
+	path: '/dom/set-file',
+	parseBody: true,
+	endpoint: 'dom/set-file',
+	validate: (payload) => {
+		if (!payload.selector || typeof payload.selector !== 'string') {
+			return 'selector is required'
+		}
+		if (!Array.isArray(payload.files) || payload.files.length === 0) {
+			return 'files array is required and must not be empty'
+		}
+		if (typeof (payload.all ?? false) !== 'boolean') {
+			return 'all must be a boolean'
+		}
+		const waitMs = payload.wait ?? 0
+		if (typeof waitMs !== 'number' || !Number.isFinite(waitMs) || waitMs < 0) {
+			return 'wait must be a non-negative number (ms)'
+		}
+		return null
+	},
+	handle: async ({ res, ctx, body: payload }) => {
+		const all = payload.all ?? false
 		const { allNodeIds, nodeIds } = await resolveSelectorTargets(ctx.cdpSession, {
 			selector: payload.selector,
 			all,
 			text: payload.text,
-			waitMs,
+			waitMs: payload.wait ?? 0,
 		})
 
 		if (!all && allNodeIds.length > 1) {
@@ -45,9 +39,6 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		}
 
 		const updatedCount = await setFileOnResolvedNodes(ctx.cdpSession, nodeIds, payload.files)
-		const response: DomSetFileResponse = { ok: true, matches: allNodeIds.length, updated: updatedCount }
-		respondJson(res, response)
-	} catch (error) {
-		respondError(res, error)
-	}
-}
+		return { ok: true, matches: allNodeIds.length, updated: updatedCount }
+	},
+})

@@ -1,11 +1,13 @@
 import type { StatusResponse } from '@vforsh/argus-core'
 import { ARGUS_PROTOCOL_VERSION } from '@vforsh/argus-core'
-import type { RouteHandler, RouteContext } from './types.js'
-import { respondJson } from '../httpUtils.js'
+import type { RouteContext } from './types.js'
+import { defineJsonRoute } from './defineRoute.js'
 
-export const handle: RouteHandler = (_req, res, _url, ctx) => {
-	respondJson(res, buildStatus(ctx))
-}
+export const route = defineJsonRoute<undefined, StatusResponse>({
+	method: 'GET',
+	path: '/status',
+	handle: ({ ctx }) => buildStatus(ctx),
+})
 
 const buildStatus = (ctx: RouteContext): StatusResponse => {
 	const watcher = ctx.getWatcher()

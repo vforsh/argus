@@ -67,5 +67,3 @@ export const route = defineJsonRoute({
 	},
 	handleError: respondTargetResolutionError,
 })
-
-export const handle = route.handler

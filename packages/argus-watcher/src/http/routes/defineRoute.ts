@@ -18,6 +18,14 @@ type JsonRouteInput<TBody, TResponse extends object> = {
 	path: string
 	bodySchema?: ProtocolSchema<TBody>
 	parseBody?: boolean
+	/**
+	 * Route-specific body validation, run after schema parsing and before the
+	 * request event is emitted. Return an error message to respond 400
+	 * `invalid_request`, or null when the body is valid. Prefer `bodySchema`
+	 * when a protocol schema exists; use this for validation rules that a
+	 * schema cannot express.
+	 */
+	validate?: (body: TBody) => string | null
 	endpoint?: HttpRequestEventMetadata['endpoint']
 	extensionOnly?: boolean
 	handle: (input: JsonRouteHandlerInput<TBody>) => Promise<TResponse | void> | TResponse | void
@@ -51,18 +59,18 @@ export const defineJsonRoute = <TBody = undefined, TResponse extends object = ob
 			return respondInvalidBody(res, formatProtocolValidationIssues(parsedBody.issues))
 		}
 
+		const body = (parsedBody?.value ?? rawBody) as TBody
+		const validationError = input.validate?.(body)
+		if (validationError) {
+			return respondInvalidBody(res, validationError)
+		}
+
 		if (input.endpoint) {
 			emitRequest(ctx, res, input.endpoint)
 		}
 
 		try {
-			const response = await input.handle({
-				req,
-				res,
-				url,
-				ctx,
-				body: (parsedBody?.value ?? rawBody) as TBody,
-			})
+			const response = await input.handle({ req, res, url, ctx, body })
 			if (response) {
 				respondJson(res, response)
 			}

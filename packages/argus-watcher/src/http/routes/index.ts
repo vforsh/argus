@@ -1,130 +1,120 @@
 import type { WatcherRouteDefinition } from './defineRoute.js'
 
-import { handle as getStatus } from './getStatus.js'
-import { handle as getLogs } from './getLogs.js'
-import { handle as getTail } from './getTail.js'
-import { handle as getNet } from './getNet.js'
-import { handle as getNetRequests } from './getNetRequests.js'
-import { handle as getNetRequest } from './getNetRequest.js'
-import { handle as getNetRequestBody } from './getNetRequestBody.js'
-import { handle as getNetTail } from './getNetTail.js'
-import { handle as getNetWebSockets } from './getNetWebSockets.js'
-import { handle as getNetWebSocketConnection } from './getNetWebSocketConnection.js'
-import { handle as getNetSse } from './getNetSse.js'
-import { handle as postNetClear } from './postNetClear.js'
-import {
-	handleStatus as getNetMock,
-	handleAdd as postNetMockAdd,
-	handleRemove as postNetMockRemove,
-	handleClear as postNetMockClear,
-} from './netMock.js'
-import { handle as getAuthCookies } from './getAuthCookies.js'
-import { handle as getAuthState } from './getAuthState.js'
-import { handleCookieClear, handleCookieDelete, handleCookieGet, handleCookieSet } from './authCookies.js'
-import { handle as postAuthStateLoad } from './postAuthStateLoad.js'
-import { handle as postEval } from './postEval.js'
-import { handle as postTraceStart } from './postTraceStart.js'
-import { handle as postTraceStop } from './postTraceStop.js'
-import { handle as postScreenshot } from './postScreenshot.js'
-import { handle as postSnapshot } from './postSnapshot.js'
-import { handleLocateLabel, handleLocateRole, handleLocateText } from './postLocate.js'
-import { handle as postCodeList } from './postCodeList.js'
-import { handle as postCodeRead } from './postCodeRead.js'
-import { handle as postCodeGrep } from './postCodeGrep.js'
-import { handle as postCodeEdit } from './postCodeEdit.js'
-import { handle as postDomTree } from './postDomTree.js'
-import { handle as postDomInfo } from './postDomInfo.js'
-import { route as postDomHoverRoute } from './postDomHover.js'
-import { route as postDomClickRoute } from './postDomClick.js'
-import { handle as postDomKeydown } from './postDomKeydown.js'
-import { handle as postDomAdd } from './postDomAdd.js'
-import { handle as postDomRemove } from './postDomRemove.js'
-import { handle as postDomModify } from './postDomModify.js'
-import { handle as postDomSetFile } from './postDomSetFile.js'
-import { route as postDomFocusRoute } from './postDomFocus.js'
-import { handle as postDomFill } from './postDomFill.js'
-import { handle as postDomScroll } from './postDomScroll.js'
-import { handle as postDomScrollTo } from './postDomScrollTo.js'
-import { handle as getEmulation } from './getEmulation.js'
-import { handle as postEmulation } from './postEmulation.js'
-import { handle as getThrottle } from './getThrottle.js'
-import { handle as postThrottle } from './postThrottle.js'
-import { handle as getDialog } from './getDialog.js'
-import { handle as postDialog } from './postDialog.js'
-import { handle as postVisibility } from './postVisibility.js'
-import { handle as postStorageLocal } from './postStorageLocal.js'
-import { handle as postStorageSession } from './postStorageSession.js'
-import { handle as postReload } from './postReload.js'
-import { handle as postShutdown } from './postShutdown.js'
-import { handle as getExtensionTabs } from './getExtensionTabs.js'
-import { handle as getTargets } from './getTargets.js'
-import { handle as postAttach } from './postAttach.js'
-import { handle as postDetach } from './postDetach.js'
+import { route as getStatus } from './getStatus.js'
+import { route as getLogs } from './getLogs.js'
+import { route as getTail } from './getTail.js'
+import { route as getNet } from './getNet.js'
+import { route as getNetRequests } from './getNetRequests.js'
+import { route as getNetRequest } from './getNetRequest.js'
+import { route as getNetRequestBody } from './getNetRequestBody.js'
+import { route as getNetTail } from './getNetTail.js'
+import { route as getNetWebSockets } from './getNetWebSockets.js'
+import { route as getNetWebSocketConnection } from './getNetWebSocketConnection.js'
+import { route as getNetSse } from './getNetSse.js'
+import { route as postNetClear } from './postNetClear.js'
+import { netMockRoutes } from './netMock.js'
+import { route as getAuthCookies } from './getAuthCookies.js'
+import { route as getAuthState } from './getAuthState.js'
+import { cookieClearRoute, cookieDeleteRoute, cookieGetRoute, cookieSetRoute } from './authCookies.js'
+import { route as postAuthStateLoad } from './postAuthStateLoad.js'
+import { route as postEval } from './postEval.js'
+import { route as postTraceStart } from './postTraceStart.js'
+import { route as postTraceStop } from './postTraceStop.js'
+import { route as postScreenshot } from './postScreenshot.js'
+import { route as postSnapshot } from './postSnapshot.js'
+import { locateRoutes } from './postLocate.js'
+import { route as postCodeList } from './postCodeList.js'
+import { route as postCodeRead } from './postCodeRead.js'
+import { route as postCodeGrep } from './postCodeGrep.js'
+import { route as postCodeEdit } from './postCodeEdit.js'
+import { route as postDomTree } from './postDomTree.js'
+import { route as postDomInfo } from './postDomInfo.js'
+import { route as postDomHover } from './postDomHover.js'
+import { route as postDomClick } from './postDomClick.js'
+import { route as postDomKeydown } from './postDomKeydown.js'
+import { route as postDomAdd } from './postDomAdd.js'
+import { route as postDomRemove } from './postDomRemove.js'
+import { route as postDomModify } from './postDomModify.js'
+import { route as postDomSetFile } from './postDomSetFile.js'
+import { route as postDomFocus } from './postDomFocus.js'
+import { route as postDomFill } from './postDomFill.js'
+import { route as postDomScroll } from './postDomScroll.js'
+import { route as postDomScrollTo } from './postDomScrollTo.js'
+import { route as getEmulation } from './getEmulation.js'
+import { route as postEmulation } from './postEmulation.js'
+import { route as getThrottle } from './getThrottle.js'
+import { route as postThrottle } from './postThrottle.js'
+import { route as getDialog } from './getDialog.js'
+import { route as postDialog } from './postDialog.js'
+import { route as postVisibility } from './postVisibility.js'
+import { storageRoutes } from './storage.js'
+import { route as postReload } from './postReload.js'
+import { route as postShutdown } from './postShutdown.js'
+import { route as getExtensionTabs } from './getExtensionTabs.js'
+import { route as getTargets } from './getTargets.js'
+import { route as postAttach } from './postAttach.js'
+import { route as postDetach } from './postDetach.js'
 
-const defineRoute = (definition: WatcherRouteDefinition): WatcherRouteDefinition => definition
-
-export const watcherRoutes = [
-	defineRoute({ method: 'GET', path: '/status', handler: getStatus }),
-	defineRoute({ method: 'GET', path: '/logs', handler: getLogs }),
-	defineRoute({ method: 'GET', path: '/tail', handler: getTail }),
-	defineRoute({ method: 'GET', path: '/net', handler: getNet }),
-	defineRoute({ method: 'GET', path: '/net/requests', handler: getNetRequests }),
-	defineRoute({ method: 'GET', path: '/net/request', handler: getNetRequest }),
-	defineRoute({ method: 'GET', path: '/net/request/body', handler: getNetRequestBody }),
-	defineRoute({ method: 'GET', path: '/net/tail', handler: getNetTail }),
-	defineRoute({ method: 'GET', path: '/net/ws', handler: getNetWebSockets }),
-	defineRoute({ method: 'GET', path: '/net/ws/connection', handler: getNetWebSocketConnection }),
-	defineRoute({ method: 'GET', path: '/net/sse', handler: getNetSse }),
-	defineRoute({ method: 'POST', path: '/net/clear', handler: postNetClear }),
-	defineRoute({ method: 'GET', path: '/net/mock', handler: getNetMock }),
-	defineRoute({ method: 'POST', path: '/net/mock/add', handler: postNetMockAdd }),
-	defineRoute({ method: 'POST', path: '/net/mock/remove', handler: postNetMockRemove }),
-	defineRoute({ method: 'POST', path: '/net/mock/clear', handler: postNetMockClear }),
-	defineRoute({ method: 'GET', path: '/auth/cookies', handler: getAuthCookies }),
-	defineRoute({ method: 'POST', path: '/auth/cookies/get', handler: handleCookieGet }),
-	defineRoute({ method: 'POST', path: '/auth/cookies/set', handler: handleCookieSet }),
-	defineRoute({ method: 'POST', path: '/auth/cookies/delete', handler: handleCookieDelete }),
-	defineRoute({ method: 'POST', path: '/auth/cookies/clear', handler: handleCookieClear }),
-	defineRoute({ method: 'GET', path: '/auth/state', handler: getAuthState }),
-	defineRoute({ method: 'POST', path: '/auth/state/load', handler: postAuthStateLoad }),
-	defineRoute({ method: 'POST', path: '/eval', handler: postEval }),
-	defineRoute({ method: 'POST', path: '/trace/start', handler: postTraceStart }),
-	defineRoute({ method: 'POST', path: '/trace/stop', handler: postTraceStop }),
-	defineRoute({ method: 'POST', path: '/screenshot', handler: postScreenshot }),
-	defineRoute({ method: 'POST', path: '/snapshot', handler: postSnapshot }),
-	defineRoute({ method: 'POST', path: '/locate/role', handler: handleLocateRole }),
-	defineRoute({ method: 'POST', path: '/locate/text', handler: handleLocateText }),
-	defineRoute({ method: 'POST', path: '/locate/label', handler: handleLocateLabel }),
-	defineRoute({ method: 'POST', path: '/code/list', handler: postCodeList }),
-	defineRoute({ method: 'POST', path: '/code/read', handler: postCodeRead }),
-	defineRoute({ method: 'POST', path: '/code/grep', handler: postCodeGrep }),
-	defineRoute({ method: 'POST', path: '/code/edit', handler: postCodeEdit }),
-	defineRoute({ method: 'POST', path: '/dom/tree', handler: postDomTree }),
-	defineRoute({ method: 'POST', path: '/dom/info', handler: postDomInfo }),
-	postDomHoverRoute,
-	postDomClickRoute,
-	defineRoute({ method: 'POST', path: '/dom/keydown', handler: postDomKeydown }),
-	defineRoute({ method: 'POST', path: '/dom/add', handler: postDomAdd }),
-	defineRoute({ method: 'POST', path: '/dom/remove', handler: postDomRemove }),
-	defineRoute({ method: 'POST', path: '/dom/modify', handler: postDomModify }),
-	defineRoute({ method: 'POST', path: '/dom/set-file', handler: postDomSetFile }),
-	postDomFocusRoute,
-	defineRoute({ method: 'POST', path: '/dom/fill', handler: postDomFill }),
-	defineRoute({ method: 'POST', path: '/dom/scroll', handler: postDomScroll }),
-	defineRoute({ method: 'POST', path: '/dom/scroll-to', handler: postDomScrollTo }),
-	defineRoute({ method: 'GET', path: '/emulation', handler: getEmulation }),
-	defineRoute({ method: 'POST', path: '/emulation', handler: postEmulation }),
-	defineRoute({ method: 'GET', path: '/throttle', handler: getThrottle }),
-	defineRoute({ method: 'POST', path: '/throttle', handler: postThrottle }),
-	defineRoute({ method: 'GET', path: '/dialog', handler: getDialog }),
-	defineRoute({ method: 'POST', path: '/dialog', handler: postDialog }),
-	defineRoute({ method: 'POST', path: '/visibility', handler: postVisibility }),
-	defineRoute({ method: 'POST', path: '/storage/local', handler: postStorageLocal }),
-	defineRoute({ method: 'POST', path: '/storage/session', handler: postStorageSession }),
-	defineRoute({ method: 'POST', path: '/reload', handler: postReload }),
-	defineRoute({ method: 'POST', path: '/shutdown', handler: postShutdown }),
-	defineRoute({ method: 'GET', path: '/tabs', handler: getExtensionTabs, extensionOnly: true }),
-	defineRoute({ method: 'GET', path: '/targets', handler: getTargets, extensionOnly: true }),
-	defineRoute({ method: 'POST', path: '/attach', handler: postAttach, extensionOnly: true }),
-	defineRoute({ method: 'POST', path: '/detach', handler: postDetach, extensionOnly: true }),
-] as const satisfies readonly WatcherRouteDefinition[]
+/**
+ * Flat registry of all watcher HTTP routes. Each route file owns its method,
+ * path, and `extensionOnly` flag; this list only aggregates them for the router.
+ */
+export const watcherRoutes: readonly WatcherRouteDefinition[] = [
+	getStatus,
+	getLogs,
+	getTail,
+	getNet,
+	getNetRequests,
+	getNetRequest,
+	getNetRequestBody,
+	getNetTail,
+	getNetWebSockets,
+	getNetWebSocketConnection,
+	getNetSse,
+	postNetClear,
+	...netMockRoutes,
+	getAuthCookies,
+	cookieGetRoute,
+	cookieSetRoute,
+	cookieDeleteRoute,
+	cookieClearRoute,
+	getAuthState,
+	postAuthStateLoad,
+	postEval,
+	postTraceStart,
+	postTraceStop,
+	postScreenshot,
+	postSnapshot,
+	...locateRoutes,
+	postCodeList,
+	postCodeRead,
+	postCodeGrep,
+	postCodeEdit,
+	postDomTree,
+	postDomInfo,
+	postDomHover,
+	postDomClick,
+	postDomKeydown,
+	postDomAdd,
+	postDomRemove,
+	postDomModify,
+	postDomSetFile,
+	postDomFocus,
+	postDomFill,
+	postDomScroll,
+	postDomScrollTo,
+	getEmulation,
+	postEmulation,
+	getThrottle,
+	postThrottle,
+	getDialog,
+	postDialog,
+	postVisibility,
+	...storageRoutes,
+	postReload,
+	postShutdown,
+	getExtensionTabs,
+	getTargets,
+	postAttach,
+	postDetach,
+]

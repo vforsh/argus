@@ -1,21 +1,17 @@
 import type { DomInfoRequest, DomInfoResponse } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
-import { readDomTargetPayload, respondMultipleMatches, respondTargetResolutionError } from './domSelectorRoute.js'
-import { emitRequest } from './types.js'
 import { fetchDomInfoBySelector } from '../../cdp/dom.js'
-import { respondJson, respondError } from '../httpUtils.js'
+import { defineJsonRoute } from './defineRoute.js'
+import { respondMultipleMatches, respondTargetResolutionError, validateDomTargetBody } from './domSelectorRoute.js'
 
-export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const parsed = await readDomTargetPayload<DomInfoRequest>(req, res)
-	if (!parsed) {
-		return
-	}
-	const { payload, all } = parsed
-
-	emitRequest(ctx, res, 'dom/info')
-
-	try {
-		const response: DomInfoResponse = await fetchDomInfoBySelector(ctx.cdpSession, ctx.elementRefs, {
+export const route = defineJsonRoute<DomInfoRequest, DomInfoResponse>({
+	method: 'POST',
+	path: '/dom/info',
+	parseBody: true,
+	endpoint: 'dom/info',
+	validate: validateDomTargetBody,
+	handle: async ({ res, ctx, body: payload }) => {
+		const all = payload.all ?? false
+		const response = await fetchDomInfoBySelector(ctx.cdpSession, ctx.elementRefs, {
 			selector: payload.selector,
 			ref: payload.ref,
 			all,
@@ -27,11 +23,7 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 			return respondMultipleMatches(res, response.matches, 'return')
 		}
 
-		respondJson(res, response)
-	} catch (error) {
-		if (respondTargetResolutionError(res, error)) {
-			return
-		}
-		respondError(res, error)
-	}
-}
+		return response
+	},
+	handleError: respondTargetResolutionError,
+})

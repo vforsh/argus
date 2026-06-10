@@ -11,14 +11,14 @@ import {
 	type AuthCookieSetRequest,
 	type AuthCookieSetResponse,
 } from '@vforsh/argus-core'
-import type { RouteContext, RouteHandler } from './types.js'
-import { emitRequest } from './types.js'
+import type { RouteContext } from './types.js'
+import type { WatcherRouteDefinition } from './defineRoute.js'
 import { clearAuthCookies, deleteAuthCookie, inspectAuthCookie, setAuthCookie } from '../../cdp/auth.js'
-import { readJsonBody, respondError, respondInvalidBody, respondJson } from '../httpUtils.js'
+import { defineJsonRoute } from './defineRoute.js'
 
 const CLEAR_SCOPES = new Set<AuthCookieClearScope>(['origin', 'site', 'domain', 'browserContext'])
 
-export const validateCookieGetPayload = (payload: AuthCookieGetRequest): string | null => {
+const validateCookieGetPayload = (payload: AuthCookieGetRequest): string | null => {
 	const identityError = validateCookieIdentityPayload(payload)
 	if (identityError) {
 		return identityError
@@ -31,9 +31,9 @@ export const validateCookieGetPayload = (payload: AuthCookieGetRequest): string 
 	return null
 }
 
-export const validateCookieDeletePayload = (payload: AuthCookieDeleteRequest): string | null => validateCookieIdentityPayload(payload)
+const validateCookieDeletePayload = (payload: AuthCookieDeleteRequest): string | null => validateCookieIdentityPayload(payload)
 
-export const validateCookieSetPayload = (payload: AuthCookieSetRequest): string | null => {
+const validateCookieSetPayload = (payload: AuthCookieSetRequest): string | null => {
 	if (!payload.cookie || typeof payload.cookie !== 'object') {
 		return 'cookie is required'
 	}
@@ -77,7 +77,7 @@ export const validateCookieSetPayload = (payload: AuthCookieSetRequest): string 
 	return null
 }
 
-export const validateCookieClearPayload = (payload: AuthCookieClearRequest): string | null => {
+const validateCookieClearPayload = (payload: AuthCookieClearRequest): string | null => {
 	if (!CLEAR_SCOPES.has(payload.scope)) {
 		return 'scope must be one of: origin, site, domain, browserContext'
 	}
@@ -101,28 +101,15 @@ const createAuthCookieRoute = <TRequest, TResponse extends { ok: true }>(options
 	endpoint: 'auth/cookies/get' | 'auth/cookies/set' | 'auth/cookies/delete' | 'auth/cookies/clear'
 	validate: (payload: TRequest) => string | null
 	run: (payload: TRequest, ctx: RouteContext) => Promise<TResponse>
-}): RouteHandler => {
-	return async (req, res, _url, ctx) => {
-		const payload = await readJsonBody<TRequest>(req, res)
-		if (!payload) {
-			return
-		}
-
-		const validationError = options.validate(payload)
-		if (validationError) {
-			respondInvalidBody(res, validationError)
-			return
-		}
-
-		emitRequest(ctx, res, options.endpoint)
-
-		try {
-			respondJson(res, await options.run(payload, ctx))
-		} catch (error) {
-			respondError(res, error)
-		}
-	}
-}
+}): WatcherRouteDefinition =>
+	defineJsonRoute<TRequest, TResponse>({
+		method: 'POST',
+		path: `/${options.endpoint}`,
+		parseBody: true,
+		endpoint: options.endpoint,
+		validate: options.validate,
+		handle: ({ ctx, body: payload }) => options.run(payload, ctx),
+	})
 
 const validateCookieIdentityPayload = (payload: { name?: string; domain?: string; path?: string }): string | null => {
 	if (typeof payload.name !== 'string' || payload.name.trim() === '') {
@@ -141,7 +128,7 @@ const validateCookieIdentityPayload = (payload: { name?: string; domain?: string
 	return null
 }
 
-export const handleCookieGet = createAuthCookieRoute<AuthCookieGetRequest, AuthCookieGetResponse>({
+export const cookieGetRoute = createAuthCookieRoute<AuthCookieGetRequest, AuthCookieGetResponse>({
 	endpoint: 'auth/cookies/get',
 	validate: validateCookieGetPayload,
 	run: (payload, ctx) =>
@@ -151,7 +138,7 @@ export const handleCookieGet = createAuthCookieRoute<AuthCookieGetRequest, AuthC
 		}),
 })
 
-export const handleCookieSet = createAuthCookieRoute<AuthCookieSetRequest, AuthCookieSetResponse>({
+export const cookieSetRoute = createAuthCookieRoute<AuthCookieSetRequest, AuthCookieSetResponse>({
 	endpoint: 'auth/cookies/set',
 	validate: validateCookieSetPayload,
 	run: (payload, ctx) =>
@@ -161,7 +148,7 @@ export const handleCookieSet = createAuthCookieRoute<AuthCookieSetRequest, AuthC
 		}),
 })
 
-export const handleCookieDelete = createAuthCookieRoute<AuthCookieDeleteRequest, AuthCookieDeleteResponse>({
+export const cookieDeleteRoute = createAuthCookieRoute<AuthCookieDeleteRequest, AuthCookieDeleteResponse>({
 	endpoint: 'auth/cookies/delete',
 	validate: validateCookieDeletePayload,
 	run: (payload, ctx) =>
@@ -171,7 +158,7 @@ export const handleCookieDelete = createAuthCookieRoute<AuthCookieDeleteRequest,
 		}),
 })
 
-export const handleCookieClear = createAuthCookieRoute<AuthCookieClearRequest, AuthCookieClearResponse>({
+export const cookieClearRoute = createAuthCookieRoute<AuthCookieClearRequest, AuthCookieClearResponse>({
 	endpoint: 'auth/cookies/clear',
 	validate: validateCookieClearPayload,
 	run: (payload, ctx) =>

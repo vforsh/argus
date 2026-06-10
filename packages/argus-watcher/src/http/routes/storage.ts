@@ -1,8 +1,7 @@
 import type { StorageAction, StorageArea, StorageRequest } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
-import { emitRequest } from './types.js'
+import type { WatcherRouteDefinition } from './defineRoute.js'
 import { executeStorage } from '../../cdp/storage.js'
-import { respondError, respondInvalidBody, respondJson, readJsonBody } from '../httpUtils.js'
+import { defineJsonRoute } from './defineRoute.js'
 
 const validActions = ['get', 'set', 'remove', 'list', 'clear'] as const satisfies readonly StorageAction[]
 const keyActions = new Set<StorageAction>(['get', 'set', 'remove'])
@@ -12,31 +11,20 @@ const endpointByArea: Record<StorageArea, 'storage/local' | 'storage/session'> =
 	session: 'storage/session',
 }
 
-/** Create a POST /storage/<area> route handler. */
-export const createStorageHandler = (area: StorageArea): RouteHandler => {
-	return async (req, res, _url, ctx) => {
-		const payload = await readJsonBody<StorageRequest>(req, res)
-		if (!payload) {
-			return
-		}
+/** Build a POST /storage/<area> route. */
+const createStorageRoute = (area: StorageArea): WatcherRouteDefinition =>
+	defineJsonRoute<StorageRequest>({
+		method: 'POST',
+		path: `/storage/${area}`,
+		parseBody: true,
+		endpoint: endpointByArea[area],
+		validate: validateStoragePayload,
+		handle: ({ ctx, body: payload }) => executeStorage(ctx.cdpSession, area, payload),
+	})
 
-		const validationError = validateStoragePayload(payload)
-		if (validationError) {
-			return respondInvalidBody(res, validationError)
-		}
+export const storageRoutes: WatcherRouteDefinition[] = [createStorageRoute('local'), createStorageRoute('session')]
 
-		emitRequest(ctx, res, endpointByArea[area])
-
-		try {
-			const response = await executeStorage(ctx.cdpSession, area, payload)
-			respondJson(res, response)
-		} catch (error) {
-			respondError(res, error)
-		}
-	}
-}
-
-const validateStoragePayload = (payload: StorageRequest): string | null => {
+function validateStoragePayload(payload: StorageRequest): string | null {
 	if (!payload.action || !validActions.includes(payload.action)) {
 		return `action must be one of: ${validActions.join(', ')}`
 	}

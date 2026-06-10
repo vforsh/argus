@@ -1,19 +1,20 @@
 import type { DialogHandleRequest, DialogHandleResponse, ErrorResponse } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
-import { respondInvalidBody, respondJson } from '../httpUtils.js'
+import { respondJson } from '../httpUtils.js'
 
-export const handle = defineJsonRoute<DialogHandleRequest, DialogHandleResponse>({
+export const route = defineJsonRoute<DialogHandleRequest, DialogHandleResponse>({
 	method: 'POST',
 	path: '/dialog',
 	parseBody: true,
 	endpoint: 'dialog/handle',
+	validate: (payload) => {
+		if (payload.action !== 'accept' && payload.action !== 'dismiss') {
+			return 'Dialog action must be "accept" or "dismiss"'
+		}
+		return null
+	},
 	handle: async ({ res, ctx, body: payload }) => {
 		const action = payload.action
-		if (action !== 'accept' && action !== 'dismiss') {
-			respondInvalidBody(res, 'Dialog action must be "accept" or "dismiss"')
-			return
-		}
-
 		const dialog = ctx.getDialog()
 		if (!dialog) {
 			respondJson(res, { ok: false, error: { message: 'No active browser dialog', code: 'no_active_dialog' } } satisfies ErrorResponse, 409)
@@ -44,4 +45,4 @@ export const handle = defineJsonRoute<DialogHandleRequest, DialogHandleResponse>
 		}
 		return response
 	},
-}).handler
+})

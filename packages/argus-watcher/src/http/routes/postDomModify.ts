@@ -1,58 +1,38 @@
 import type { DomModifyRequest, DomModifyResponse } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
-import { emitRequest } from './types.js'
 import { modifyElements } from '../../cdp/dom.js'
-import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
+import { defineJsonRoute } from './defineRoute.js'
+import { respondMultipleMatches } from './domSelectorRoute.js'
 
-export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const payload = await readJsonBody<DomModifyRequest>(req, res)
-	if (!payload) {
-		return
-	}
+const validTypes = ['attr', 'class', 'style', 'text', 'html']
 
-	if (!payload.selector || typeof payload.selector !== 'string') {
-		return respondInvalidBody(res, 'selector is required')
-	}
-
-	const validTypes = ['attr', 'class', 'style', 'text', 'html']
-	if (!payload.type || !validTypes.includes(payload.type)) {
-		return respondInvalidBody(res, `type must be one of: ${validTypes.join(', ')}`)
-	}
-
-	if ((payload.type === 'text' || payload.type === 'html') && typeof payload.value !== 'string') {
-		return respondInvalidBody(res, 'value is required for text/html modifications')
-	}
-
-	const all = payload.all ?? false
-	if (typeof all !== 'boolean') {
-		return respondInvalidBody(res, 'all must be a boolean')
-	}
-
-	emitRequest(ctx, res, 'dom/modify')
-
-	try {
-		const { allNodeIds, modifiedCount } = await modifyElements(ctx.cdpSession, {
-			...payload,
-			all,
-		})
+export const route = defineJsonRoute<DomModifyRequest, DomModifyResponse>({
+	method: 'POST',
+	path: '/dom/modify',
+	parseBody: true,
+	endpoint: 'dom/modify',
+	validate: (payload) => {
+		if (!payload.selector || typeof payload.selector !== 'string') {
+			return 'selector is required'
+		}
+		if (!payload.type || !validTypes.includes(payload.type)) {
+			return `type must be one of: ${validTypes.join(', ')}`
+		}
+		if ((payload.type === 'text' || payload.type === 'html') && typeof payload.value !== 'string') {
+			return 'value is required for text/html modifications'
+		}
+		if (typeof (payload.all ?? false) !== 'boolean') {
+			return 'all must be a boolean'
+		}
+		return null
+	},
+	handle: async ({ res, ctx, body: payload }) => {
+		const all = payload.all ?? false
+		const { allNodeIds, modifiedCount } = await modifyElements(ctx.cdpSession, { ...payload, all })
 
 		if (!all && allNodeIds.length > 1) {
-			return respondJson(
-				res,
-				{
-					ok: false,
-					error: {
-						message: `Selector matched ${allNodeIds.length} elements; pass all=true to modify all matches`,
-						code: 'multiple_matches',
-					},
-				},
-				400,
-			)
+			return respondMultipleMatches(res, allNodeIds.length, 'modify')
 		}
 
-		const response: DomModifyResponse = { ok: true, matches: allNodeIds.length, modified: modifiedCount }
-		respondJson(res, response)
-	} catch (error) {
-		respondError(res, error)
-	}
-}
+		return { ok: true, matches: allNodeIds.length, modified: modifiedCount }
+	},
+})

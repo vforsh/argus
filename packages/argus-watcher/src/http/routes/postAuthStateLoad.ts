@@ -1,42 +1,33 @@
 import type { AuthStateLoadRequest } from '@vforsh/argus-core'
 import { parseAuthStateSnapshot } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
-import { emitRequest } from './types.js'
 import { applyAuthStateToSession } from '../../cdp/authState.js'
-import { normalizeQueryValue, respondError, respondInvalidBody, respondJson, readJsonBody } from '../httpUtils.js'
+import { defineJsonRoute } from './defineRoute.js'
+import { normalizeQueryValue } from '../httpUtils.js'
 
-export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const payload = await readJsonBody<AuthStateLoadRequest>(req, res)
-	if (!payload) {
-		return
-	}
-
-	if (!payload.snapshot) {
-		return respondInvalidBody(res, 'snapshot is required')
-	}
-
-	if (payload.url !== undefined && typeof payload.url !== 'string') {
-		return respondInvalidBody(res, 'url must be a string when provided')
-	}
-
-	let snapshot
-	try {
-		snapshot = parseAuthStateSnapshot(payload.snapshot, 'auth state snapshot')
-	} catch (error) {
-		return respondInvalidBody(res, error instanceof Error ? error.message : String(error))
-	}
-
-	const startupUrl = normalizeQueryValue(payload.url ?? null)
-	emitRequest(ctx, res, 'auth/state/load')
-
-	try {
-		const response = await applyAuthStateToSession({
+export const route = defineJsonRoute<AuthStateLoadRequest>({
+	method: 'POST',
+	path: '/auth/state/load',
+	parseBody: true,
+	endpoint: 'auth/state/load',
+	validate: (payload) => {
+		if (!payload.snapshot) {
+			return 'snapshot is required'
+		}
+		if (payload.url !== undefined && typeof payload.url !== 'string') {
+			return 'url must be a string when provided'
+		}
+		try {
+			parseAuthStateSnapshot(payload.snapshot, 'auth state snapshot')
+		} catch (error) {
+			return error instanceof Error ? error.message : String(error)
+		}
+		return null
+	},
+	handle: ({ ctx, body: payload }) =>
+		applyAuthStateToSession({
 			session: ctx.cdpSession,
-			snapshot,
-			startupUrl: startupUrl ?? null,
-		})
-		respondJson(res, response)
-	} catch (error) {
-		respondError(res, error)
-	}
-}
+			// Re-parse is cheap and keeps validation/normalization in one place.
+			snapshot: parseAuthStateSnapshot(payload.snapshot, 'auth state snapshot'),
+			startupUrl: normalizeQueryValue(payload.url ?? null) ?? null,
+		}),
+})

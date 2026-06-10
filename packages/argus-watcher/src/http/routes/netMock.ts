@@ -1,52 +1,47 @@
 import type { NetMockAction, NetMockAddRequest, NetMockHeader, NetMockMatch, NetMockRemoveRequest } from '@vforsh/argus-core'
+import type { WatcherRouteDefinition } from './defineRoute.js'
 import { NET_MOCK_FAIL_REASONS } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
-import { respondInvalidBody } from '../httpUtils.js'
 
-export const handleStatus = defineJsonRoute({
-	method: 'GET',
-	path: '/net/mock',
-	endpoint: 'net/mock',
-	handle: ({ ctx }) => ctx.netMockController.getStatus({ attached: ctx.getCdpStatus().attached }),
-}).handler
-
-export const handleAdd = defineJsonRoute<NetMockAddRequest>({
-	method: 'POST',
-	path: '/net/mock/add',
-	parseBody: true,
-	endpoint: 'net/mock/add',
-	handle: async ({ res, ctx, body }) => {
-		const issue = validateAddRequest(body)
-		if (issue) {
-			return respondInvalidBody(res, issue)
-		}
-		return ctx.netMockController.addRule(body, ctx.getCdpStatus().attached)
-	},
-}).handler
-
-export const handleRemove = defineJsonRoute<NetMockRemoveRequest>({
-	method: 'POST',
-	path: '/net/mock/remove',
-	parseBody: true,
-	endpoint: 'net/mock/remove',
-	handle: async ({ res, ctx, body }) => {
-		const id = (body as { id?: unknown }).id
-		if (!Number.isInteger(id) || (id as number) < 1) {
-			return respondInvalidBody(res, 'id must be an integer >= 1')
-		}
-		return ctx.netMockController.removeRule(id as number)
-	},
-}).handler
-
-export const handleClear = defineJsonRoute({
-	method: 'POST',
-	path: '/net/mock/clear',
-	endpoint: 'net/mock/clear',
-	handle: ({ ctx }) => ctx.netMockController.clearRules(),
-}).handler
+export const netMockRoutes: WatcherRouteDefinition[] = [
+	defineJsonRoute({
+		method: 'GET',
+		path: '/net/mock',
+		endpoint: 'net/mock',
+		handle: ({ ctx }) => ctx.netMockController.getStatus({ attached: ctx.getCdpStatus().attached }),
+	}),
+	defineJsonRoute<NetMockAddRequest>({
+		method: 'POST',
+		path: '/net/mock/add',
+		parseBody: true,
+		endpoint: 'net/mock/add',
+		validate: validateAddRequest,
+		handle: ({ ctx, body }) => ctx.netMockController.addRule(body, ctx.getCdpStatus().attached),
+	}),
+	defineJsonRoute<NetMockRemoveRequest>({
+		method: 'POST',
+		path: '/net/mock/remove',
+		parseBody: true,
+		endpoint: 'net/mock/remove',
+		validate: (body) => {
+			const id = (body as { id?: unknown }).id
+			if (!Number.isInteger(id) || (id as number) < 1) {
+				return 'id must be an integer >= 1'
+			}
+			return null
+		},
+		handle: ({ ctx, body }) => ctx.netMockController.removeRule((body as { id: number }).id),
+	}),
+	defineJsonRoute({
+		method: 'POST',
+		path: '/net/mock/clear',
+		endpoint: 'net/mock/clear',
+		handle: ({ ctx }) => ctx.netMockController.clearRules(),
+	}),
+]
 
 /** Validate an add payload. Returns an error message, or null when valid. */
-const validateAddRequest = (body: unknown): string | null => {
+function validateAddRequest(body: unknown): string | null {
 	const payload = body as Partial<NetMockAddRequest> | null
 	if (!payload || typeof payload !== 'object') {
 		return 'body must be an object'

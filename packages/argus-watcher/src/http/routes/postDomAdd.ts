@@ -1,56 +1,47 @@
 import type { DomAddRequest, DomAddResponse } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
-import { emitRequest } from './types.js'
 import { insertAdjacentHtml } from '../../cdp/dom.js'
 import { resolveDomSelectorMatches } from '../../cdp/mouse.js'
-import { respondJson, respondInvalidBody, respondError, readJsonBody } from '../httpUtils.js'
+import { defineJsonRoute } from './defineRoute.js'
+import { respondJson } from '../httpUtils.js'
 
-export const handle: RouteHandler = async (req, res, _url, ctx) => {
-	const payload = await readJsonBody<DomAddRequest>(req, res)
-	if (!payload) {
-		return
-	}
+const validPositions = ['beforebegin', 'afterbegin', 'beforeend', 'afterend']
 
-	if (!payload.selector || typeof payload.selector !== 'string') {
-		return respondInvalidBody(res, 'selector is required')
-	}
-
-	if (!payload.html || typeof payload.html !== 'string') {
-		return respondInvalidBody(res, 'html is required')
-	}
-
-	const validPositions = ['beforebegin', 'afterbegin', 'beforeend', 'afterend']
-	if (payload.position && !validPositions.includes(payload.position)) {
-		return respondInvalidBody(res, `position must be one of: ${validPositions.join(', ')}`)
-	}
-
-	const all = payload.all ?? false
-	if (typeof all !== 'boolean') {
-		return respondInvalidBody(res, 'all must be a boolean')
-	}
-
-	const nth = payload.nth
-	if (nth != null && (!Number.isFinite(nth) || !Number.isInteger(nth) || nth < 0)) {
-		return respondInvalidBody(res, 'nth must be a non-negative integer')
-	}
-
-	const expect = payload.expect
-	if (expect != null && (!Number.isFinite(expect) || !Number.isInteger(expect) || expect < 0)) {
-		return respondInvalidBody(res, 'expect must be a non-negative integer')
-	}
-
-	const text = payload.text ?? false
-	if (typeof text !== 'boolean') {
-		return respondInvalidBody(res, 'text must be a boolean')
-	}
-
-	if (all && nth != null) {
-		return respondInvalidBody(res, 'nth cannot be combined with all=true')
-	}
-
-	emitRequest(ctx, res, 'dom/add')
-
-	try {
+export const route = defineJsonRoute<DomAddRequest, DomAddResponse>({
+	method: 'POST',
+	path: '/dom/add',
+	parseBody: true,
+	endpoint: 'dom/add',
+	validate: (payload) => {
+		if (!payload.selector || typeof payload.selector !== 'string') {
+			return 'selector is required'
+		}
+		if (!payload.html || typeof payload.html !== 'string') {
+			return 'html is required'
+		}
+		if (payload.position && !validPositions.includes(payload.position)) {
+			return `position must be one of: ${validPositions.join(', ')}`
+		}
+		const all = payload.all ?? false
+		if (typeof all !== 'boolean') {
+			return 'all must be a boolean'
+		}
+		if (payload.nth != null && (!Number.isFinite(payload.nth) || !Number.isInteger(payload.nth) || payload.nth < 0)) {
+			return 'nth must be a non-negative integer'
+		}
+		if (payload.expect != null && (!Number.isFinite(payload.expect) || !Number.isInteger(payload.expect) || payload.expect < 0)) {
+			return 'expect must be a non-negative integer'
+		}
+		if (typeof (payload.text ?? false) !== 'boolean') {
+			return 'text must be a boolean'
+		}
+		if (all && payload.nth != null) {
+			return 'nth cannot be combined with all=true'
+		}
+		return null
+	},
+	handle: async ({ res, ctx, body: payload }) => {
+		const all = payload.all ?? false
+		const { nth, expect } = payload
 		const { allNodeIds } = await resolveDomSelectorMatches(ctx.cdpSession, payload.selector, true)
 
 		if (expect != null && allNodeIds.length !== expect) {
@@ -96,8 +87,7 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 		}
 
 		if (allNodeIds.length === 0) {
-			const response: DomAddResponse = { ok: true, matches: 0, inserted: 0 }
-			return respondJson(res, response)
+			return { ok: true, matches: 0, inserted: 0 }
 		}
 
 		const nodeIds = selectDomAddNodeIds(allNodeIds, { all, nth })
@@ -105,15 +95,12 @@ export const handle: RouteHandler = async (req, res, _url, ctx) => {
 			nodeIds,
 			html: payload.html,
 			position: payload.position,
-			text,
+			text: payload.text ?? false,
 		})
 
-		const response: DomAddResponse = { ok: true, matches: allNodeIds.length, inserted: insertedCount }
-		respondJson(res, response)
-	} catch (error) {
-		respondError(res, error)
-	}
-}
+		return { ok: true, matches: allNodeIds.length, inserted: insertedCount }
+	},
+})
 
 export const selectDomAddNodeIds = (allNodeIds: number[], options: { all: boolean; nth?: number }): number[] => {
 	if (options.all) {

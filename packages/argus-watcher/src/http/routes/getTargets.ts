@@ -1,18 +1,18 @@
-import type { RouteHandler } from './types.js'
+import { defineJsonRoute } from './defineRoute.js'
+import { respondJson } from '../httpUtils.js'
 import { emitRequest } from './types.js'
-import { respondJson, respondError } from '../httpUtils.js'
 
-export const handle: RouteHandler = async (_req, res, _url, ctx) => {
-	if (!ctx.sourceHandle?.listTargets) {
-		return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
-	}
+export const route = defineJsonRoute({
+	method: 'GET',
+	path: '/targets',
+	extensionOnly: true,
+	handle: async ({ res, ctx }) => {
+		if (!ctx.sourceHandle?.listTargets) {
+			return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
+		}
 
-	emitRequest(ctx, res, 'targets')
-
-	try {
+		emitRequest(ctx, res, 'targets')
 		const targets = await ctx.sourceHandle.listTargets()
-		respondJson(res, { ok: true, targets })
-	} catch (error) {
-		respondError(res, error)
-	}
-}
+		return { ok: true, targets }
+	},
+})

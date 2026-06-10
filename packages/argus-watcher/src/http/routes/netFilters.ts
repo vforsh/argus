@@ -1,7 +1,9 @@
+import type http from 'node:http'
 import type { NetFilterContext, NetFilters, NetParty, NetScope } from '../../net/filtering.js'
 import { derivePartyHost, normalizeNetUrlKey } from '../../net/filtering.js'
 import type { HttpRequestEventMetadata } from '../server.js'
-import { clampNumber, normalizeQueryValue } from '../httpUtils.js'
+import type { RouteContext } from './types.js'
+import { clampNumber, normalizeQueryValue, respondJson } from '../httpUtils.js'
 
 export type ParsedNetFilters = NetFilters & {
 	after: number
@@ -25,6 +27,30 @@ type ParseNetFilterResult = {
 type NormalizedValueResult<T> = {
 	value?: T
 	error?: string
+}
+
+/** Respond 400 `net_disabled`. Shared precondition failure for all `/net*` routes. */
+export const respondNetDisabled = (res: http.ServerResponse): void => {
+	respondJson(res, { ok: false, error: { code: 'net_disabled', message: 'Network capture is disabled for this watcher' } }, 400)
+}
+
+/**
+ * Parse network filters from a route URL with the standard after/limit/sinceTs
+ * defaults shared by the `/net*` listing routes. Responds 400 `invalid_net_filter`
+ * and returns null when the query is invalid.
+ */
+export const readNetFiltersFromUrl = (url: URL, ctx: RouteContext, res: http.ServerResponse): ParsedNetFilters | null => {
+	const filters = parseNetRequestFilters(url.searchParams, {
+		after: clampNumber(url.searchParams.get('after'), 0),
+		limit: clampNumber(url.searchParams.get('limit'), 500, 1, 5000),
+		sinceTs: clampNumber(url.searchParams.get('sinceTs'), undefined),
+		context: ctx.getNetFilterContext?.() ?? null,
+	})
+	if (filters.error || !filters.value) {
+		respondJson(res, { ok: false, error: { code: 'invalid_net_filter', message: filters.error ?? 'Invalid network filter' } }, 400)
+		return null
+	}
+	return filters.value
 }
 
 /**

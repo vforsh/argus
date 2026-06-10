@@ -1,24 +1,16 @@
 import type { ScreenshotClipRegion, ScreenshotRequest, ScreenshotResponse } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
-import { emitRequest } from './types.js'
-import { respondInvalidBody } from '../httpUtils.js'
 
-export const handle = defineJsonRoute<ScreenshotRequest, ScreenshotResponse>({
+export const route = defineJsonRoute<ScreenshotRequest, ScreenshotResponse>({
 	method: 'POST',
 	path: '/screenshot',
 	parseBody: true,
-	handle: async ({ res, ctx, body: payload }) => {
-		const validationError = validateScreenshotRequest(payload)
-		if (validationError) {
-			return respondInvalidBody(res, validationError)
-		}
+	endpoint: 'screenshot',
+	validate: validateScreenshotRequest,
+	handle: ({ ctx, body: payload }) => ctx.screenshotter.capture(payload),
+})
 
-		emitRequest(ctx, res, 'screenshot')
-		return ctx.screenshotter.capture(payload)
-	},
-}).handler
-
-const validateScreenshotRequest = (payload: ScreenshotRequest): string | null => {
+function validateScreenshotRequest(payload: ScreenshotRequest): string | null {
 	if (payload.selector != null && (typeof payload.selector !== 'string' || !payload.selector.trim())) {
 		return 'selector must be a non-empty string'
 	}

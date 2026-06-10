@@ -1,5 +1,5 @@
 import type http from 'node:http'
-import { respondInvalidBody, respondJson, readJsonBody } from '../httpUtils.js'
+import { respondJson } from '../httpUtils.js'
 
 type SelectorPayload = {
 	selector?: unknown
@@ -8,36 +8,23 @@ type SelectorPayload = {
 }
 
 /**
- * Shared parser for DOM routes that require a selector and optional `all` toggle.
- * Keeps route modules focused on the actual DOM operation.
+ * Validate the shared DOM target body shape (exactly one of selector/ref, plus
+ * an optional `all` toggle). Returns an error message, or null when valid.
+ * Used as the base `validate` step by DOM routes built on `defineJsonRoute`.
  */
-export const readDomTargetPayload = async <T extends SelectorPayload>(
-	req: http.IncomingMessage,
-	res: http.ServerResponse,
-): Promise<{ payload: T; all: boolean } | null> => {
-	const payload = await readJsonBody<T>(req, res)
-	if (!payload) {
-		return null
-	}
-
+export const validateDomTargetBody = (payload: SelectorPayload): string | null => {
 	const hasSelector = typeof payload.selector === 'string' && payload.selector.trim() !== ''
 	const hasRef = typeof payload.ref === 'string' && payload.ref.trim() !== ''
 	if (hasSelector === hasRef) {
-		respondInvalidBody(res, 'Exactly one of selector or ref is required')
-		return null
+		return 'Exactly one of selector or ref is required'
 	}
 
-	const all = payload.all ?? false
-	if (typeof all !== 'boolean') {
-		respondInvalidBody(res, 'all must be a boolean')
-		return null
+	if (typeof (payload.all ?? false) !== 'boolean') {
+		return 'all must be a boolean'
 	}
 
-	return { payload, all }
+	return null
 }
-
-/** Backwards-compatible alias used by selector-only routes while they migrate to ref support. */
-export const readDomSelectorPayload = readDomTargetPayload
 
 export const respondMultipleMatches = (res: http.ServerResponse, matches: number, action: string): void => {
 	respondJson(

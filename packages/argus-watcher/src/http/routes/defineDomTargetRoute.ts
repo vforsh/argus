@@ -1,33 +1,40 @@
+import type { HttpRequestEventMetadata } from '../server.js'
 import type { DomNodeHandle } from '../../cdp/dom/selector.js'
 import type { WatcherRouteDefinition } from './defineRoute.js'
 import type { RouteContext } from './types.js'
 import { resolveElementTargets } from '../../cdp/dom/selector.js'
-import { respondError, respondJson } from '../httpUtils.js'
-import { readDomTargetPayload, respondMissingElementRef, respondMultipleMatches, respondTargetResolutionError } from './domSelectorRoute.js'
-import { emitRequest } from './types.js'
+import { defineJsonRoute } from './defineRoute.js'
+import { respondMissingElementRef, respondMultipleMatches, respondTargetResolutionError, validateDomTargetBody } from './domSelectorRoute.js'
 
 /**
  * Body shape required by `defineDomTargetRoute`. Routes that need extra fields
- * (e.g. `wait`, `value`) extend this type.
+ * (e.g. `value`) extend this type.
  */
 export type DomTargetRequestBody = {
 	selector?: string
 	ref?: string
 	all?: boolean
 	text?: string
+	/** Optional bounded wait (ms) for the selector to match before resolving. */
+	wait?: number
 }
 
 type DomTargetRouteInput<TBody extends DomTargetRequestBody, TExtra extends object> = {
 	method?: 'POST'
 	path: string
 	/** Endpoint label used by `emitRequest`. */
-	endpoint: string
+	endpoint: HttpRequestEventMetadata['endpoint']
 	/**
 	 * Verb used in the "Selector matched N elements; pass all=true to {action}…"
 	 * error message returned when the request matches more than one node and
 	 * `all` is false.
 	 */
 	action: string
+	/**
+	 * Extra body validation, run after the shared selector/ref/all checks.
+	 * Returns an error message to respond 400 `invalid_request`, or null.
+	 */
+	validate?: (payload: TBody) => string | null
 	/**
 	 * Run the DOM action against the resolved handles. Receives both the
 	 * "filtered" handles (subject to `text`/`all`) and `allHandles` for routes
@@ -42,29 +49,29 @@ type DomTargetRouteInput<TBody extends DomTargetRequestBody, TExtra extends obje
 
 /**
  * Build a `WatcherRouteDefinition` for routes that resolve an element target
- * (selector/ref + text/all) and perform a DOM action.
+ * (selector/ref + text/all/wait) and perform a DOM action.
  *
- * Centralizes the body-parse → emit → resolve → handle multiple/missing
- * → run → respond pipeline shared by hover/focus and similar routes.
+ * Centralizes the body-parse → validate → emit → resolve → handle
+ * multiple/missing → run → respond pipeline shared by hover/focus/fill and
+ * similar routes.
  */
 export const defineDomTargetRoute = <TBody extends DomTargetRequestBody, TExtra extends object>(
 	input: DomTargetRouteInput<TBody, TExtra>,
-): WatcherRouteDefinition => ({
-	method: input.method ?? 'POST',
-	path: input.path,
-	handler: async (req, res, _url, ctx) => {
-		const parsed = await readDomTargetPayload<TBody>(req, res)
-		if (!parsed) return
-
-		const { payload, all } = parsed
-		emitRequest(ctx, res, input.endpoint as Parameters<typeof emitRequest>[2])
-
-		try {
+): WatcherRouteDefinition =>
+	defineJsonRoute<TBody, { ok: true; matches: number } & TExtra>({
+		method: input.method ?? 'POST',
+		path: input.path,
+		parseBody: true,
+		endpoint: input.endpoint,
+		validate: (payload) => validateDomTargetBody(payload) ?? input.validate?.(payload) ?? null,
+		handle: async ({ res, ctx, body: payload }) => {
+			const all = payload.all ?? false
 			const resolved = await resolveElementTargets(ctx.cdpSession, ctx.elementRefs, {
 				selector: payload.selector,
 				ref: payload.ref,
 				all,
 				text: payload.text,
+				waitMs: payload.wait,
 			})
 			if (resolved.missingRef && payload.ref) {
 				return respondMissingElementRef(res, payload.ref)
@@ -76,10 +83,7 @@ export const defineDomTargetRoute = <TBody extends DomTargetRequestBody, TExtra 
 			}
 
 			const extra = await input.run({ handles, allHandles, payload, ctx })
-			respondJson(res, { ok: true, matches: allHandles.length, ...extra })
-		} catch (error) {
-			if (respondTargetResolutionError(res, error)) return
-			respondError(res, error)
-		}
-	},
-})
+			return { ok: true, matches: allHandles.length, ...extra }
+		},
+		handleError: respondTargetResolutionError,
+	})

@@ -1,17 +1,19 @@
 import type { ShutdownResponse } from '@vforsh/argus-core'
-import type { RouteHandler } from './types.js'
-import { emitRequest } from './types.js'
+import { defineJsonRoute } from './defineRoute.js'
 import { respondJson } from '../httpUtils.js'
 
-export const handle: RouteHandler = (_req, res, _url, ctx) => {
-	emitRequest(ctx, res, 'shutdown')
+export const route = defineJsonRoute({
+	method: 'POST',
+	path: '/shutdown',
+	endpoint: 'shutdown',
+	handle: ({ res, ctx }) => {
+		// Respond before scheduling shutdown so the response reliably reaches the client.
+		respondJson(res, { ok: true } satisfies ShutdownResponse)
 
-	const response: ShutdownResponse = { ok: true }
-	respondJson(res, response)
-
-	if (ctx.onShutdown) {
-		queueMicrotask(() => {
-			void ctx.onShutdown?.()
-		})
-	}
-}
+		if (ctx.onShutdown) {
+			queueMicrotask(() => {
+				void ctx.onShutdown?.()
+			})
+		}
+	},
+})
