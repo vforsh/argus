@@ -101,7 +101,7 @@ In extension mode, `extension-control` is a browser-level watcher for commands t
 
 You can ask the extension control watcher for the browser tab list: `argus ext tabs`, `argus ext tabs --url localhost`, or `argus ext tabs --id extension-control`. Tab-scoped extension watchers intentionally do not list browser tabs; use them for page/debugging commands after attachment.
 
-Attach/detach tabs through the control watcher: `argus ext attach --tab 123`, `argus ext attach --url localhost`, `argus ext detach --title Docs`. Use `argus ext show --tab 123`, `argus ext show --url localhost`, or `argus ext show extension` to attach or resolve an extension tab and lock it shown+focused via the same sticky visibility lock as `argus page show`. URL/title matches fail closed when multiple tabs match; rerun with `--tab`.
+Attach/detach tabs through the control watcher: `argus ext attach --tab 123`, `argus ext attach --url localhost --show`, `argus ext detach --title Docs`. Use `--show` when attaching a tab that must keep running while Chrome is backgrounded or covered. Use `argus ext show --tab 123`, `argus ext show --url localhost`, or `argus ext show extension` to attach/resolve an extension tab and lock it shown+focused via the same sticky visibility lock as `argus page show`. URL/title matches fail closed when multiple tabs match; rerun with `--tab`.
 
 ### Logs
 
@@ -408,6 +408,7 @@ Emulates device viewport (width/height/DPR/mobile), touch, and user-agent on the
 ```bash
 argus page show app
 argus page show app --json
+argus ext attach --url localhost --show
 argus ext show --url localhost  # attach/resolve an extension tab, then show it
 argus page hide app
 argus watcher show app     # alias (same behavior)

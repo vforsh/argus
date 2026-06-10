@@ -120,7 +120,9 @@ Then use the CLI as usual:
 
 ```bash
 argus list
-argus ext show --url localhost
+argus ext attach --url localhost --show
+# or, for an already attached tab:
+argus ext show extension
 argus logs extension
 argus eval extension-2 "document.title"
 argus watcher start --id app --source extension
@@ -132,7 +134,7 @@ argus page ls --id app
 - No special Chrome launch flags required
 - Manual tab selection through the extension popup
 - Each attached tab gets its own watcher id; use `argus list` to see them
-- `argus ext show --tab <id>` / `--url <substring>` can attach a tab if needed and lock it shown+focused so preview/game boot flows keep running when Chrome is covered or backgrounded
+- `argus ext attach --show` and `argus ext show --tab <id>` / `--url <substring>` lock the tab shown+focused so preview/game boot flows keep running when Chrome is covered or backgrounded
 - The popup can switch the active target between the top page and discovered iframes inside that tab
 - `argus page ls --id <watcher>` shows only that watcher's page/iframe targets
 

@@ -1,9 +1,19 @@
-import type { ErrorResponse, ExtensionBrowserTab, ExtensionTabsResponse, StatusResponse, VisibilityResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { ErrorResponse, ExtensionBrowserTab, StatusResponse, VisibilityResponse, WatcherRecord } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { pruneRegistry } from '../../registry.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
 import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
+import {
+	fetchExtensionTabs,
+	formatExtensionTabLine,
+	hasTabSelector,
+	isExtensionTab,
+	parseTabSelector,
+	resolveTab,
+	type TabResolutionResult,
+	type TabSelector,
+} from './tabSelection.js'
 
 export type ExtensionShowOptions = {
 	tab?: string | number
@@ -12,9 +22,10 @@ export type ExtensionShowOptions = {
 	json?: boolean
 }
 
-type TabSelector = { kind: 'tab'; tabId: number } | { kind: 'query'; url?: string; title?: string }
-type SelectorResult = { ok: true; selector: TabSelector } | { ok: false; reason: string; exitCode: 2 }
-type TabResolutionResult = { ok: true; tab: ExtensionBrowserTab } | { ok: false; reason: string; exitCode: 2; matches?: ExtensionBrowserTab[] }
+type ExtensionShowConfig = {
+	missingSelectorReason?: string
+}
+
 type WatcherResolutionResult =
 	| { ok: true; watcher: WatcherRecord; tab: ExtensionBrowserTab; status?: StatusResponse }
 	| { ok: false; reason: string; exitCode: 1 | 2; matches?: Array<{ watcher: WatcherRecord; status: StatusResponse }> }
@@ -29,7 +40,7 @@ type ActionResponse = {
 const WATCHER_POLL_TIMEOUT_MS = 5_000
 const WATCHER_POLL_INTERVAL_MS = 200
 
-export const runExtensionShow = async (id: string | undefined, options: ExtensionShowOptions): Promise<void> => {
+export const runExtensionShow = async (id: string | undefined, options: ExtensionShowOptions, config: ExtensionShowConfig = {}): Promise<void> => {
 	const output = createOutput(options)
 
 	if (id && hasTabSelector(options)) {
@@ -52,7 +63,10 @@ export const runExtensionShow = async (id: string | undefined, options: Extensio
 		return
 	}
 
-	const selector = parseTabSelector(options)
+	const selector = parseTabSelector(
+		options,
+		config.missingSelectorReason ?? 'Specify a watcher id, --tab <tabId>, --url <substring>, or --title <substring>.',
+	)
 	if (!selector.ok) {
 		writeFailure(output, options, selector.reason, selector.exitCode)
 		return
@@ -168,6 +182,7 @@ const waitForTabWatcher = async (
 	while (Date.now() - startedAt <= WATCHER_POLL_TIMEOUT_MS) {
 		const latestTab = await refreshTab(controlWatcher, selector, tab)
 		if (latestTab?.watcherId) {
+			// Fresh extension attaches report their tab-scoped watcher id asynchronously through `ext tabs`.
 			const watcher = await resolveWatcherById(latestTab.watcherId)
 			if (watcher) {
 				return { ok: true, watcher, tab: latestTab }
@@ -247,84 +262,6 @@ const targetMatchesTab = (target: NonNullable<StatusResponse['target']>, tab: Ex
 	return Boolean(target.title && target.title === tab.title && target.url === tab.url)
 }
 
-const fetchExtensionTabs = async (
-	watcher: WatcherRecord,
-	selector: TabSelector,
-): Promise<{ ok: true; tabs: ExtensionBrowserTab[] } | { ok: false; error: string }> => {
-	const query = buildTabsQuery(selector)
-
-	try {
-		const response = await fetchWatcherJson<ExtensionTabsResponse | ErrorResponse>(watcher, {
-			path: '/tabs',
-			query,
-			timeoutMs: 5_000,
-			returnErrorResponse: true,
-		})
-		if (!response.ok) {
-			return { ok: false, error: `Error: ${response.error.message}` }
-		}
-		return { ok: true, tabs: response.tabs }
-	} catch (error) {
-		return { ok: false, error: `${watcher.id}: failed to list extension tabs (${formatError(error)})` }
-	}
-}
-
-const parseTabSelector = (options: ExtensionShowOptions): SelectorResult => {
-	const tabId = parseTabId(options.tab)
-	const url = options.url?.trim()
-	const title = options.title?.trim()
-
-	if (tabId !== null && (url || title)) {
-		return { ok: false, reason: 'Use --tab by itself, or resolve by --url/--title.', exitCode: 2 }
-	}
-	if (tabId === null && !url && !title) {
-		return { ok: false, reason: 'Specify a watcher id, --tab <tabId>, --url <substring>, or --title <substring>.', exitCode: 2 }
-	}
-	if (options.tab != null && tabId === null) {
-		return { ok: false, reason: `Invalid --tab value: ${options.tab}`, exitCode: 2 }
-	}
-
-	if (tabId !== null) {
-		return { ok: true, selector: { kind: 'tab', tabId } }
-	}
-	return { ok: true, selector: { kind: 'query', url, title } }
-}
-
-const resolveTab = (tabs: ExtensionBrowserTab[], selector: TabSelector): TabResolutionResult => {
-	const matches = selector.kind === 'tab' ? tabs.filter((tab) => tab.tabId === selector.tabId) : tabs
-	if (matches.length === 0) {
-		return { ok: false, reason: 'No extension tab matched.', exitCode: 2 }
-	}
-	if (matches.length > 1) {
-		return { ok: false, reason: 'Multiple extension tabs matched. Use --tab to pick one.', exitCode: 2, matches }
-	}
-	return { ok: true, tab: matches[0] }
-}
-
-const parseTabId = (value: string | number | undefined): number | null => {
-	if (value === undefined) {
-		return null
-	}
-	const tabId = typeof value === 'number' ? value : Number(value)
-	return Number.isInteger(tabId) ? tabId : null
-}
-
-const buildTabsQuery = (selector: TabSelector): URLSearchParams => {
-	const query = new URLSearchParams()
-	if (selector.kind === 'tab') {
-		return query
-	}
-	if (selector.url) {
-		query.set('url', selector.url)
-	}
-	if (selector.title) {
-		query.set('title', selector.title)
-	}
-	return query
-}
-
-const hasTabSelector = (options: ExtensionShowOptions): boolean => Boolean(options.tab != null || options.url || options.title)
-
 const writeTabFailure = (output: ReturnType<typeof createOutput>, options: ExtensionShowOptions, result: TabResolutionFailure): void => {
 	writeFailure(output, options, result.reason, result.exitCode, { matches: result.matches ?? [] })
 }
@@ -359,15 +296,6 @@ const writeFailure = (
 		}
 	}
 	process.exitCode = exitCode
-}
-
-const isExtensionTab = (value: unknown): value is ExtensionBrowserTab =>
-	Boolean(value && typeof value === 'object' && 'tabId' in value && 'url' in value && 'title' in value)
-
-const formatExtensionTabLine = (tab: ExtensionBrowserTab): string => {
-	const state = tab.attached ? 'attached' : 'available'
-	const label = tab.title || '(untitled)'
-	return `${tab.tabId} [${state}] ${label} - ${tab.url}`
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

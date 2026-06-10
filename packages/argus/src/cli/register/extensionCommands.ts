@@ -16,6 +16,14 @@ const tabTargetOptions = [
 	jsonOption,
 ] as const
 
+const attachTargetOptions = [
+	{ flags: '--tab <tabId>', description: 'Browser tab id' },
+	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
+	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
+	{ flags: '--show', description: 'After attaching, lock the tab shown+focused' },
+	jsonOption,
+] as const
+
 export const extensionCommands: readonly ArgusCommandDefinition[] = [
 	{
 		name: 'extension',
@@ -82,8 +90,8 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 			{
 				name: 'attach',
 				description: 'Ask the extension control watcher to attach a browser tab',
-				options: tabTargetOptions,
-				examples: ['argus ext attach --tab 123', 'argus ext attach --url localhost', 'argus ext attach --title Docs --json'],
+				options: attachTargetOptions,
+				examples: ['argus ext attach --tab 123', 'argus ext attach --url localhost --show', 'argus ext attach --title Docs --json'],
 				action: async (options) => {
 					await runExtensionAttach(options)
 				},
