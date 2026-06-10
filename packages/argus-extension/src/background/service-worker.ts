@@ -1,19 +1,34 @@
 /**
  * Service Worker - Main entry point for the Argus CDP Bridge extension.
- * Owns one debugger manager plus one Native Messaging bridge session per attached tab.
+ * Owns one debugger manager plus one Native Messaging bridge session per attached tab,
+ * and answers popup messages (see `popup-protocol.ts` for the message shapes).
  */
 
 import { DebuggerManager } from './debugger-manager.js'
 import { TabBridgeSession } from './tab-bridge-session.js'
 import { ControlBridgeSession } from './control-bridge-session.js'
-import {
-	type RememberedTargetSelection,
-	type SelectionTarget,
-	TargetSelectionHistoryStore,
-	matchRememberedIframeTarget,
-} from './target-selection-history.js'
+import { type RememberedTargetSelection, TargetSelectionHistoryStore, matchRememberedIframeTarget } from './target-selection-history.js'
 import { TargetVisibilityHistoryStore, matchesHiddenTarget } from './target-visibility-history.js'
 import { listBrowserTabs } from './tab-list.js'
+import { syncActionBadge } from './action-badge.js'
+import { buildWatcherStatus } from './watcher-status.js'
+import {
+	getPageUrlForTab,
+	getPopupTarget,
+	getPopupTargets,
+	getRequiredIframeTarget,
+	parseWatcherTargetId,
+	toSelectionTarget,
+} from './popup-targets.js'
+import type {
+	PopupActionMessage,
+	PopupEvent,
+	PopupResponse,
+	PopupStatusPayload,
+	PopupTabWithTargets,
+	PopupTarget,
+	PopupWatcherStatus,
+} from './popup-protocol.js'
 
 const debuggerManager = new DebuggerManager()
 const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
@@ -36,78 +51,6 @@ const recentEvents: PopupEvent[] = []
 const MAX_RECENT_EVENTS = 8
 const REMEMBERED_TARGET_RETRY_EVENTS = new Set(['Page.frameAttached', 'Page.frameDetached', 'Page.frameNavigated'])
 
-type PopupEvent = {
-	ts: number
-	level: 'info' | 'error'
-	source: 'bridge' | 'debugger' | 'popup'
-	message: string
-}
-
-type PopupTarget = {
-	type: 'page' | 'iframe'
-	frameId: string | null
-	parentFrameId: string | null
-	title: string
-	url: string
-}
-
-type PopupWatcherStatus = {
-	tabId: number
-	bridgeConnected: boolean
-	nativeHostConnected: boolean
-	watcherReady: boolean
-	targetReady: boolean | null
-	targetState: 'ready' | 'rebinding' | 'not-selected'
-	watcherId: string | null
-	watcherHost: string | null
-	watcherPort: number | null
-	nativeHostPid: number | null
-	lastMessageAt: number | null
-	currentTarget: PopupCurrentTarget | null
-}
-
-type PopupCurrentTarget = {
-	type: 'page' | 'iframe'
-	title: string | null
-	url: string | null
-	targetId: string
-	frameId: string | null
-	attachedAt: number
-	targetReady: boolean | null
-}
-
-type PopupStatusPayload = {
-	bridgeConnected: boolean
-	attachedTabs: Array<{
-		tabId: number
-		url: string
-		title: string
-	}>
-	watchers: PopupWatcherStatus[]
-	recentEvents: PopupEvent[]
-}
-
-type PopupTabWithTargets = Awaited<ReturnType<typeof getTabsForPopup>>[number] & {
-	targets: PopupTarget[]
-	hiddenTargets: PopupTarget[]
-	selectedFrameId?: string | null
-	watcher: PopupWatcherStatus | null
-}
-
-type PopupActionMessage = {
-	action: string
-	tabId?: number
-	frameId?: string | null
-}
-
-type PopupResponse =
-	| { success: true }
-	| { success: true; tabs: PopupTabWithTargets[] }
-	| { success: true; status: PopupStatusPayload }
-	| { success: false; error: string }
-
-let badgeSyncChain: Promise<void> = Promise.resolve()
-
 function recordEvent(level: PopupEvent['level'], source: PopupEvent['source'], message: string): void {
 	recentEvents.unshift({
 		ts: Date.now(),
@@ -121,45 +64,10 @@ function recordEvent(level: PopupEvent['level'], source: PopupEvent['source'], m
 	}
 }
 
-/**
- * Serialize badge writes and reconcile on popup reads so an external detach from Chrome's
- * debugger infobar cannot leave stale badge text behind.
- */
-function syncActionBadge(): Promise<void> {
-	badgeSyncChain = badgeSyncChain
-		.catch(() => undefined)
-		.then(async () => {
-			const attachedCount = debuggerManager.listAttached().length
-			await applyBadgeState(attachedCount)
-		})
-		.catch((error) => {
-			console.error('[ServiceWorker] Failed to sync action badge:', error)
-		})
-
-	return badgeSyncChain
-}
-
-async function applyBadgeState(attachedCount: number): Promise<void> {
-	const badgeText = attachedCount > 0 ? String(attachedCount) : ''
-	const tabs = await chrome.tabs.query({})
-
-	// Clear any tab-specific badge text Chrome may still be holding onto, then keep the default in sync.
-	await Promise.all(
-		tabs
-			.filter((tab): tab is chrome.tabs.Tab & { id: number } => tab.id !== undefined)
-			.map((tab) => chrome.action.setBadgeText({ tabId: tab.id, text: badgeText })),
-	)
-	await chrome.action.setBadgeText({ text: badgeText })
-
-	if (attachedCount > 0) {
-		await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' })
-	}
-}
-
 debuggerManager.onDetach((tabId, reason) => {
 	clearTabState(tabId)
 	recordEvent('error', 'debugger', `Tab ${tabId} detached: ${reason}`)
-	void syncActionBadge()
+	void syncActionBadge(debuggerManager)
 })
 
 debuggerManager.onEvent((tabId, method) => {
@@ -189,7 +97,7 @@ async function handlePopupMessage(message: PopupActionMessage, sendResponse: (re
 	ensureControlBridgeSession()
 	pruneStaleBridgeSessions()
 	const response = await buildPopupResponse(message)
-	await syncActionBadge()
+	await syncActionBadge(debuggerManager)
 	sendResponse(response)
 }
 
@@ -207,13 +115,13 @@ async function attachTabFromControl(tabId: number): Promise<void> {
 	setSelectedFrame(tabId, null)
 	await prepareRememberedTargetSelection(tabId)
 	recordEvent('info', 'bridge', `Control attached tab ${tabId}`)
-	void syncActionBadge()
+	void syncActionBadge(debuggerManager)
 }
 
 async function detachTabFromControl(tabId: number): Promise<void> {
 	await detachTab(tabId)
 	recordEvent('info', 'bridge', `Control detached tab ${tabId}`)
-	void syncActionBadge()
+	void syncActionBadge(debuggerManager)
 }
 
 async function buildPopupResponse(message: PopupActionMessage): Promise<PopupResponse> {
@@ -253,7 +161,7 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 				}
 
 				const frameId = message.frameId ?? null
-				const target = getPopupTarget(tabId, frameId)
+				const target = getPopupTarget(debuggerManager, tabId, frameId)
 				if (!target) {
 					return { success: false, error: `Unknown target for tab ${tabId}` }
 				}
@@ -268,7 +176,7 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 
 			case 'hideTarget': {
 				const tabId = requireTabId(message)
-				const target = getRequiredIframeTarget(tabId, message.frameId ?? null)
+				const target = getRequiredIframeTarget(debuggerManager, tabId, message.frameId ?? null)
 				await hideTarget(tabId, target)
 				recordEvent('info', 'popup', `Hid iframe ${target.frameId} on tab ${tabId}`)
 				return { success: true }
@@ -276,7 +184,7 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 
 			case 'showTarget': {
 				const tabId = requireTabId(message)
-				const target = getRequiredIframeTarget(tabId, message.frameId ?? null)
+				const target = getRequiredIframeTarget(debuggerManager, tabId, message.frameId ?? null)
 				await showTarget(tabId, target)
 				recordEvent('info', 'popup', `Restored iframe ${target.frameId} on tab ${tabId}`)
 				return { success: true }
@@ -326,7 +234,7 @@ async function attachBridgeSession(tabId: number): Promise<void> {
 			recordEvent('error', 'bridge', `Native host disconnected for tab ${tabId}`)
 			void debuggerManager.detach(tabId).catch(() => {})
 			clearTabState(tabId)
-			void syncActionBadge()
+			void syncActionBadge(debuggerManager)
 		},
 	})
 	bridgeSessions.set(tabId, session)
@@ -413,39 +321,12 @@ function buildPopupStatusPayload(): PopupStatusPayload {
 
 function getWatcherStatuses(): PopupWatcherStatus[] {
 	return [...bridgeSessions.entries()]
-		.map(([tabId, session]) => buildWatcherStatus(tabId, session))
+		.map(([tabId, session]) => buildWatcherStatus(debuggerManager, tabId, session))
 		.filter((status): status is PopupWatcherStatus => status !== null)
 }
 
-function buildWatcherStatus(tabId: number, session: TabBridgeSession): PopupWatcherStatus | null {
-	const watcherInfo = session.getWatcherInfo()
-	const targetInfo = session.getTargetInfo()
-	const parsedTarget = targetInfo ? parseWatcherTargetId(targetInfo.targetId) : null
-
-	if (!watcherInfo && !targetInfo) {
-		return createWatcherStatus(tabId, session, null, null)
-	}
-
-	return createWatcherStatus(
-		tabId,
-		session,
-		watcherInfo ?? null,
-		targetInfo && parsedTarget
-			? {
-					type: parsedTarget.frameId ? 'iframe' : 'page',
-					title: targetInfo.title,
-					url: targetInfo.url,
-					targetId: targetInfo.targetId,
-					frameId: parsedTarget.frameId,
-					attachedAt: targetInfo.attachedAt,
-					targetReady: targetInfo.targetReady,
-				}
-			: null,
-	)
-}
-
 async function getTabsWithTargets(): Promise<PopupTabWithTargets[]> {
-	const tabs = await getTabsForPopup()
+	const tabs = await listBrowserTabs(debuggerManager)
 	return await Promise.all(
 		tabs.map(async (tab) => {
 			const session = bridgeSessions.get(tab.tabId)
@@ -455,15 +336,15 @@ async function getTabsWithTargets(): Promise<PopupTabWithTargets[]> {
 				targets: visibleTargets,
 				hiddenTargets,
 				selectedFrameId: getSelectedFrameId(tab.tabId),
-				watcher: session ? buildWatcherStatus(tab.tabId, session) : null,
+				watcher: session ? buildWatcherStatus(debuggerManager, tab.tabId, session) : null,
 			}
 		}),
 	)
 }
 
 async function getPopupTargetVisibility(tabId: number, attached: boolean): Promise<{ visibleTargets: PopupTarget[]; hiddenTargets: PopupTarget[] }> {
-	const targets = attached ? getPopupTargets(tabId) : []
-	const pageUrl = getPageUrlForTab(tabId)
+	const targets = attached ? getPopupTargets(debuggerManager, tabId) : []
+	const pageUrl = getPageUrlForTab(debuggerManager, tabId)
 	if (!pageUrl) {
 		return { visibleTargets: targets, hiddenTargets: [] }
 	}
@@ -477,77 +358,6 @@ async function getPopupTargetVisibility(tabId: number, attached: boolean): Promi
 		visibleTargets: targets.filter((target) => !hiddenTargets.includes(target)),
 		hiddenTargets,
 	}
-}
-
-function createWatcherStatus(
-	tabId: number,
-	session: TabBridgeSession,
-	watcherInfo: ReturnType<TabBridgeSession['getWatcherInfo']>,
-	currentTarget: PopupWatcherStatus['currentTarget'],
-): PopupWatcherStatus {
-	const readiness = buildWatcherReadiness(tabId, session, watcherInfo, currentTarget)
-	return {
-		tabId,
-		bridgeConnected: readiness.nativeHostConnected,
-		nativeHostConnected: readiness.nativeHostConnected,
-		watcherReady: readiness.watcherReady,
-		targetReady: readiness.targetReady,
-		targetState: readiness.targetState,
-		watcherId: watcherInfo?.watcherId ?? null,
-		watcherHost: watcherInfo?.watcherHost ?? null,
-		watcherPort: watcherInfo?.watcherPort ?? null,
-		nativeHostPid: watcherInfo?.pid ?? null,
-		lastMessageAt: session.getLastMessageAt(),
-		currentTarget,
-	}
-}
-
-function buildWatcherReadiness(
-	tabId: number,
-	session: TabBridgeSession,
-	watcherInfo: ReturnType<TabBridgeSession['getWatcherInfo']>,
-	currentTarget: PopupWatcherStatus['currentTarget'],
-): Pick<PopupWatcherStatus, 'nativeHostConnected' | 'watcherReady' | 'targetReady' | 'targetState'> {
-	const nativeHostConnected = session.isConnected()
-	const watcherReady = nativeHostConnected && Boolean(watcherInfo?.watcherId && watcherInfo.watcherHost && watcherInfo.watcherPort != null)
-	const targetReady = currentTarget?.targetReady ?? getTargetReadiness(tabId, currentTarget)
-
-	return {
-		nativeHostConnected,
-		watcherReady,
-		targetReady,
-		targetState: targetReady == null ? 'not-selected' : targetReady ? 'ready' : 'rebinding',
-	}
-}
-
-/**
- * The watcher can be connected while a remembered iframe is still rebinding after reload.
- * Treat the extension's live frame map as the source of truth for whether frame-scoped
- * commands have a concrete execution target again.
- */
-function getTargetReadiness(tabId: number, target: PopupWatcherStatus['currentTarget']): boolean | null {
-	if (!target) {
-		return null
-	}
-
-	if (!target.frameId) {
-		return debuggerManager.isAttached(tabId)
-	}
-
-	const frame = debuggerManager.getFrames(tabId).find((candidate) => candidate.frameId === target.frameId)
-	return Boolean(frame?.sessionId)
-}
-
-async function getTabsForPopup(): Promise<
-	Array<{
-		tabId: number
-		url: string
-		title: string
-		faviconUrl?: string
-		attached: boolean
-	}>
-> {
-	return await listBrowserTabs(debuggerManager)
 }
 
 function syncSelectedFrameFromWatcher(targetId: string): void {
@@ -567,69 +377,8 @@ function getSelectedFrameId(tabId: number): string | null | undefined {
 	return selectedFrameByTabId.get(tabId) ?? null
 }
 
-function parseWatcherTargetId(targetId: string): { tabId: number; frameId: string | null } | null {
-	if (targetId.startsWith('tab:')) {
-		const tabId = Number.parseInt(targetId.slice(4), 10)
-		return Number.isFinite(tabId) ? { tabId, frameId: null } : null
-	}
-
-	if (targetId.startsWith('frame:')) {
-		const [, tabIdRaw, ...frameIdParts] = targetId.split(':')
-		const tabId = Number.parseInt(tabIdRaw ?? '', 10)
-		const frameId = frameIdParts.join(':')
-		return Number.isFinite(tabId) && frameId ? { tabId, frameId } : null
-	}
-
-	return null
-}
-
-function getPopupTargets(tabId: number): PopupTarget[] {
-	const frames = debuggerManager.getFrames(tabId)
-	const topFrameId = debuggerManager.getTarget(tabId)?.topFrameId ?? null
-	const topFrame = frames.find((frame) => frame.frameId === topFrameId) ?? frames.find((frame) => frame.parentFrameId == null)
-	if (!topFrame) {
-		return []
-	}
-
-	return [
-		{
-			type: 'page',
-			frameId: null,
-			parentFrameId: null,
-			title: topFrame.title || 'Page',
-			url: topFrame.url,
-		},
-		...frames
-			.filter((frame) => frame.frameId !== topFrame.frameId)
-			.map((frame) => ({
-				type: 'iframe' as const,
-				frameId: frame.frameId,
-				parentFrameId: frame.parentFrameId === topFrame.frameId ? null : frame.parentFrameId,
-				title: frame.title || frame.url || `iframe ${frame.frameId.slice(0, 8)}`,
-				url: frame.url,
-			})),
-	]
-}
-
-function getPopupTarget(tabId: number, frameId: string | null): PopupTarget | null {
-	return getPopupTargets(tabId).find((target) => (target.frameId ?? null) === frameId) ?? null
-}
-
-function getRequiredIframeTarget(tabId: number, frameId: string | null): PopupTarget {
-	const target = getPopupTarget(tabId, frameId)
-	if (!target || target.type !== 'iframe' || !target.frameId) {
-		throw new Error(`Unknown iframe target for tab ${tabId}`)
-	}
-
-	return target
-}
-
-function getPageUrlForTab(tabId: number): string | null {
-	return getPopupTarget(tabId, null)?.url ?? debuggerManager.getTarget(tabId)?.url ?? null
-}
-
 async function rememberTargetSelection(tabId: number, target: PopupTarget): Promise<void> {
-	const pageUrl = getPageUrlForTab(tabId)
+	const pageUrl = getPageUrlForTab(debuggerManager, tabId)
 	if (!pageUrl) {
 		return
 	}
@@ -638,7 +387,7 @@ async function rememberTargetSelection(tabId: number, target: PopupTarget): Prom
 }
 
 async function hideTarget(tabId: number, target: PopupTarget): Promise<void> {
-	const pageUrl = getPageUrlForTab(tabId)
+	const pageUrl = getPageUrlForTab(debuggerManager, tabId)
 	if (!pageUrl) {
 		return
 	}
@@ -651,14 +400,14 @@ async function hideTarget(tabId: number, target: PopupTarget): Promise<void> {
 	const session = bridgeSessions.get(tabId)
 	session?.selectTarget(null)
 	setSelectedFrame(tabId, null)
-	const pageTarget = getPopupTarget(tabId, null)
+	const pageTarget = getPopupTarget(debuggerManager, tabId, null)
 	if (pageTarget) {
 		await rememberTargetSelection(tabId, pageTarget)
 	}
 }
 
 async function showTarget(tabId: number, target: PopupTarget): Promise<void> {
-	const pageUrl = getPageUrlForTab(tabId)
+	const pageUrl = getPageUrlForTab(debuggerManager, tabId)
 	if (!pageUrl) {
 		return
 	}
@@ -676,7 +425,7 @@ async function filterHiddenTargets(pageUrl: string, targets: PopupTarget[]): Pro
 }
 
 async function prepareRememberedTargetSelection(tabId: number): Promise<void> {
-	const pageUrl = getPageUrlForTab(tabId)
+	const pageUrl = getPageUrlForTab(debuggerManager, tabId)
 	if (!pageUrl) {
 		clearPendingRememberedTarget(tabId)
 		return
@@ -701,7 +450,7 @@ async function replayRememberedTargetSelection(tabId: number): Promise<void> {
 
 	const target = matchRememberedIframeTarget(
 		remembered,
-		getPopupTargets(tabId).map((candidate) => toSelectionTarget(candidate)),
+		getPopupTargets(debuggerManager, tabId).map((candidate) => toSelectionTarget(candidate)),
 	)
 	if (!target?.frameId) {
 		return
@@ -733,16 +482,7 @@ function clearPendingRememberedTarget(tabId: number): void {
 	pendingRememberedTargetByTabId.delete(tabId)
 }
 
-function toSelectionTarget(target: PopupTarget): SelectionTarget {
-	return {
-		type: target.type,
-		frameId: target.frameId,
-		title: target.title,
-		url: target.url,
-	}
-}
-
 console.log('[ServiceWorker] Argus CDP Bridge extension loaded')
-void syncActionBadge()
+void syncActionBadge(debuggerManager)
 
 export { debuggerManager, bridgeSessions }
