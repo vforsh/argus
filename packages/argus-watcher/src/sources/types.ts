@@ -108,6 +108,7 @@ export type CdpSourceHandle = {
 			title: string
 			faviconUrl?: string
 			attached: boolean
+			watcherId?: string
 		}>
 	>
 	/** Attach to a specific target by ID (extension mode only). */

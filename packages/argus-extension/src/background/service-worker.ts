@@ -37,6 +37,7 @@ const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
 	},
 	onAttachTabWatcher: attachTabFromControl,
 	onDetachTabWatcher: detachTabFromControl,
+	getWatcherIdForTab: (tabId) => bridgeSessions.get(tabId)?.getWatcherInfo()?.watcherId ?? null,
 	onDisconnect: () => {
 		recordEvent('error', 'bridge', 'Control native host disconnected')
 	},

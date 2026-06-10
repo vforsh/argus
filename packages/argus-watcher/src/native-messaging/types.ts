@@ -83,6 +83,7 @@ export type TabInfo = {
 	title: string
 	faviconUrl?: string
 	attached: boolean
+	watcherId?: string
 }
 
 export type FrameSnapshot = {

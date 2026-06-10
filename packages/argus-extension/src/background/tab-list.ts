@@ -6,10 +6,14 @@ type TabFilter = {
 	title?: string
 }
 
+type TabListOptions = {
+	getWatcherIdForTab?: (tabId: number) => string | null | undefined
+}
+
 /**
  * Shared tab-list query for popup UI and native-host requests so both surfaces stay in sync.
  */
-export const listBrowserTabs = async (debuggerManager: DebuggerManager, filter?: TabFilter): Promise<TabInfo[]> => {
+export const listBrowserTabs = async (debuggerManager: DebuggerManager, filter?: TabFilter, options: TabListOptions = {}): Promise<TabInfo[]> => {
 	const chromeTabs = await chrome.tabs.query({})
 	const attachedTargets = debuggerManager.listAttached()
 	const attachedTabIds = new Set(attachedTargets.map((target) => target.tabId))
@@ -23,6 +27,7 @@ export const listBrowserTabs = async (debuggerManager: DebuggerManager, filter?:
 			title: tab.title ?? '',
 			faviconUrl: tab.favIconUrl,
 			attached: attachedTabIds.has(tab.id),
+			watcherId: options.getWatcherIdForTab?.(tab.id) ?? undefined,
 		}))
 
 	if (filter?.url) {

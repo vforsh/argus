@@ -4,6 +4,7 @@ export type ExtensionBrowserTab = {
 	title: string
 	faviconUrl?: string
 	attached: boolean
+	watcherId?: string
 }
 
 export type ExtensionTabsResponse = {

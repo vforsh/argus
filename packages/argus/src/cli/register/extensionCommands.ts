@@ -5,6 +5,7 @@ import { runExtensionStatus } from '../../commands/extension/status.js'
 import { runExtensionInfo } from '../../commands/extension/info.js'
 import { runExtensionTabs } from '../../commands/extension/tabs.js'
 import { runExtensionAttach, runExtensionDetach } from '../../commands/extension/attach.js'
+import { runExtensionShow } from '../../commands/extension/show.js'
 
 const jsonOption = { flags: '--json', description: 'Output JSON for automation' } as const
 
@@ -94,6 +95,21 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 				examples: ['argus ext detach --tab 123', 'argus ext detach --url localhost', 'argus ext detach --title Docs --json'],
 				action: async (options) => {
 					await runExtensionDetach(options)
+				},
+			},
+			{
+				name: 'show',
+				description: 'Attach or resolve an extension tab and lock it shown+focused',
+				arguments: [{ flags: '[id]', description: 'Attached extension watcher id' }],
+				options: tabTargetOptions,
+				configure: (command) => {
+					command.addHelpText(
+						'after',
+						'\nExamples:\n  $ argus ext show extension\n  $ argus ext show --tab 123\n  $ argus ext show --url localhost\n  $ argus ext show --title "Cocos Creator" --json\n\nWith --tab/--url/--title, attaches the tab first if needed, then applies the\nsame sticky shown+focused lock as `argus page show <watcherId>`.\n',
+					)
+				},
+				action: async (id, options) => {
+					await runExtensionShow(id, options)
 				},
 			},
 		],

@@ -15,6 +15,7 @@ export type ControlBridgeSessionEvents = {
 	onWatcherInfo?: (info: ControlWatcherInfo) => void
 	onAttachTabWatcher?: (tabId: number) => void | Promise<void>
 	onDetachTabWatcher?: (tabId: number) => void | Promise<void>
+	getWatcherIdForTab?: (tabId: number) => string | null | undefined
 	onDisconnect?: () => void
 }
 
@@ -104,7 +105,9 @@ export class ControlBridgeSession {
 	}
 
 	private async handleListTabs(filter?: { url?: string; title?: string }): Promise<void> {
-		const tabs: TabInfo[] = await listBrowserTabs(this.debuggerManager, filter)
+		const tabs: TabInfo[] = await listBrowserTabs(this.debuggerManager, filter, {
+			getWatcherIdForTab: this.events.getWatcherIdForTab,
+		})
 		this.bridgeClient.send({
 			type: 'list_tabs_response',
 			tabs,
