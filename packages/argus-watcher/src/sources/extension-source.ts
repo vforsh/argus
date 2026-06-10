@@ -1,21 +1,22 @@
 import { createNativeMessaging } from '../native-messaging/messaging.js'
-import { ControlSessionManager } from '../native-messaging/control-session-manager.js'
 import { SessionManager, type ExtensionSession } from '../native-messaging/session-manager.js'
-import type { ControlHostToExtension, ExtensionToControlHost, ExtensionToTabHost, TabHostToExtension } from '../native-messaging/types.js'
+import type { ExtensionToTabHost, TabHostToExtension } from '../native-messaging/types.js'
 import type { CdpSourceHandle, CdpSourceTarget, CdpSourceBaseOptions } from './types.js'
-import type { CdpSessionHandle, CdpTargetContext } from '../cdp/connection.js'
+import type { CdpTargetContext } from '../cdp/connection.js'
 import {
+	buildFrameTargetContext,
 	buildFrameTargets,
 	buildPageTarget,
 	createEmptyFrameState,
 	createNotAttachedError,
 	isSelectedTargetReady,
 	parseExtensionTargetId,
-	resolveSelectedFrameCommandState,
 	type ExtensionFrameState,
 } from './extension-frame-state.js'
 import { createDelegatingSession, type DelegatingSessionController } from './extension-delegating-session.js'
 import { registerExtensionSessionEventHandlers } from './extension-session-events.js'
+import { createControlExtensionSource } from './extension-control-source.js'
+import { createTargetRecovery } from './extension-target-recovery.js'
 import {
 	getSelectedExtensionTarget,
 	reconcileExtensionTargetSelection,
@@ -28,95 +29,6 @@ import {
 
 export type ExtensionSourceOptions = CdpSourceBaseOptions & {
 	role?: 'tab' | 'control'
-}
-
-const TARGET_RECOVERY_INTERVAL_MS = 500
-const TARGET_RECOVERY_TIMEOUT_MS = 30_000
-const FRAME_COMMAND_READY_TIMEOUT_MS = 3_000
-const FRAME_COMMAND_READY_POLL_MS = 100
-type TargetRecovery = { timer: ReturnType<typeof setInterval>; deadline: number }
-
-const createDetachedSession = (message: string): CdpSessionHandle => ({
-	isAttached: () => false,
-	sendAndWait: async () => {
-		const error = new Error(message)
-		;(error as Error & { code?: string }).code = 'cdp_not_attached'
-		throw error
-	},
-	onEvent: () => () => {},
-})
-
-const createControlExtensionSource = (options: ExtensionSourceOptions): CdpSourceHandle => {
-	const { events, watcherId, watcherHost, watcherPort } = options
-	const messaging = createNativeMessaging<ExtensionToControlHost, ControlHostToExtension>()
-	const controlSession = new ControlSessionManager(messaging)
-	const hostInfo = {
-		watcherId: watcherId ?? 'extension-control',
-		watcherHost: watcherHost ?? '127.0.0.1',
-		watcherPort: watcherPort ?? 0,
-		watcherPid: process.pid,
-	}
-	let stopping = false
-
-	messaging.start()
-	messaging.send({ type: 'host_ready' })
-	sendHostInfo()
-	events.onStatus({
-		attached: false,
-		target: null,
-		reason: 'control_watcher',
-	})
-	messaging.onDisconnect(() => {
-		console.error('[ExtensionControlSource] Extension disconnected')
-		if (!stopping) {
-			events.onStatus({ attached: false, target: null, reason: 'extension_disconnected' })
-			events.onDetach?.('extension_disconnected')
-		}
-	})
-
-	return {
-		session: createDetachedSession('Extension control watcher does not expose a CDP tab session'),
-		syncWatcherInfo: (info) => {
-			hostInfo.watcherId = info.watcherId
-			hostInfo.watcherHost = info.watcherHost
-			hostInfo.watcherPort = info.watcherPort
-			hostInfo.watcherPid = info.watcherPid
-			sendHostInfo()
-		},
-		stop: async () => {
-			stopping = true
-			messaging.stop()
-		},
-		listTargets: async () => [],
-		listTabs: async (filter) => await controlSession.listTabs(filter),
-		attachTarget: (targetId) => {
-			controlSession.attachTabWatcher(parseControlTabTarget(targetId, 'attach'))
-		},
-		detachTarget: (targetId) => {
-			controlSession.detachTabWatcher(parseControlTabTarget(targetId, 'detach'))
-		},
-	}
-
-	function sendHostInfo(): void {
-		messaging.send({
-			type: 'host_info',
-			watcherId: hostInfo.watcherId,
-			watcherHost: hostInfo.watcherHost,
-			watcherPort: hostInfo.watcherPort,
-			pid: hostInfo.watcherPid,
-		})
-	}
-}
-
-const parseControlTabTarget = (targetId: string, action: 'attach' | 'detach'): number => {
-	const target = parseExtensionTargetId(targetId)
-	if (!target.frameId) {
-		return target.tabId
-	}
-	if (action === 'attach') {
-		throw new Error(`Cannot attach iframe ${target.frameId} from extension-control before tab ${target.tabId} has a tab watcher`)
-	}
-	throw new Error(`Cannot detach iframe ${target.frameId} from extension-control. Detach tab ${target.tabId} instead.`)
 }
 
 /**
@@ -140,7 +52,6 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	let currentSession: ExtensionSession | null = null
 	let stopping = false
 	const frameStateByTabId = new Map<number, ExtensionFrameState>()
-	const targetRecoveryByTabId = new Map<number, TargetRecovery>()
 	const delegatingSessions = new Set<DelegatingSessionController>()
 	const getCurrentExtensionSession = (): ExtensionSession => {
 		if (!currentSession) {
@@ -148,6 +59,13 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		}
 		return currentSession
 	}
+
+	const targetRecovery = createTargetRecovery({
+		getCurrentSession: () => currentSession,
+		getOrCreateFrameState,
+		refreshFrameTree,
+		reconcileTargetSelection,
+	})
 
 	const sessionManager = new SessionManager(messaging, {
 		onAttach: (session: ExtensionSession) => {
@@ -164,7 +82,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				currentSession = null
 			}
 			rebindDelegatingSessions()
-			clearTargetRecovery(tabId)
+			targetRecovery.clear(tabId)
 			frameStateByTabId.delete(tabId)
 			emitStatus(null, reason)
 			events.onDetach?.(reason)
@@ -191,7 +109,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				return undefined
 			}
 
-			const readyTargetContext = await waitForSelectedFrameCommandTarget()
+			const readyTargetContext = await targetRecovery.waitForSelectedFrameCommandTarget()
 			if (method !== 'Runtime.evaluate' || params?.contextId != null || readyTargetContext.sessionId) {
 				return { targetContext: readyTargetContext }
 			}
@@ -228,7 +146,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 	const stop = async (): Promise<void> => {
 		stopping = true
-		clearAllTargetRecovery()
+		targetRecovery.clearAll()
 		disposeDelegatingSessions()
 		messaging.stop()
 	}
@@ -346,12 +264,6 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			controller.dispose()
 		}
 		delegatingSessions.clear()
-	}
-
-	function clearAllTargetRecovery(): void {
-		for (const tabId of targetRecoveryByTabId.keys()) {
-			clearTargetRecovery(tabId)
-		}
 	}
 
 	async function bootstrapAttachedSession(session: ExtensionSession): Promise<void> {
@@ -496,7 +408,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		const changed = reconcileExtensionTargetSelection(session, state, () => {
 			emitTargetChanged(session)
 		})
-		syncTargetRecovery(session, state)
+		targetRecovery.sync(session, state)
 		return changed
 	}
 
@@ -527,135 +439,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		)
 	}
 
-	function syncTargetRecovery(session: ExtensionSession, state: ExtensionFrameState): void {
-		if (!needsTargetRecovery(state)) {
-			clearTargetRecovery(session.tabId)
-			return
-		}
-
-		if (targetRecoveryByTabId.has(session.tabId)) {
-			return
-		}
-
-		const timer = setInterval(() => {
-			void retryTargetRecovery(session.tabId)
-		}, TARGET_RECOVERY_INTERVAL_MS)
-
-		targetRecoveryByTabId.set(session.tabId, {
-			timer,
-			deadline: Date.now() + TARGET_RECOVERY_TIMEOUT_MS,
-		})
-	}
-
-	async function kickTargetRecovery(session: ExtensionSession): Promise<void> {
-		const state = getOrCreateFrameState(session.tabId)
-		if (!needsTargetRecovery(state)) {
-			return
-		}
-
-		syncTargetRecovery(session, state)
-		await retryTargetRecovery(session.tabId)
-	}
-
-	function clearTargetRecovery(tabId: number): void {
-		const recovery = targetRecoveryByTabId.get(tabId)
-		if (!recovery) {
-			return
-		}
-
-		clearInterval(recovery.timer)
-		targetRecoveryByTabId.delete(tabId)
-	}
-
-	async function retryTargetRecovery(tabId: number): Promise<void> {
-		const recovery = targetRecoveryByTabId.get(tabId)
-		const session = currentSession
-		if (!recovery || !session || session.tabId !== tabId) {
-			clearTargetRecovery(tabId)
-			return
-		}
-
-		if (hasTargetRecoveryExpired(recovery)) {
-			clearTargetRecovery(tabId)
-			return
-		}
-
-		const state = getOrCreateFrameState(tabId)
-		if (!needsTargetRecovery(state)) {
-			clearTargetRecovery(tabId)
-			return
-		}
-
-		try {
-			await refreshFrameTree(session)
-		} catch {
-			// Best-effort; Chrome can reject frame-tree reads transiently during reload.
-		}
-
-		reconcileTargetSelection(session)
-		if (!needsTargetRecovery(getOrCreateFrameState(tabId))) {
-			clearTargetRecovery(tabId)
-		}
-	}
-
-	function buildFrameTargetContext(state: ExtensionFrameState, frameId: string): Extract<CdpTargetContext, { kind: 'frame' }> {
-		return {
-			kind: 'frame',
-			frameId,
-			executionContextId: state.executionContexts.get(frameId) ?? null,
-			sessionId: state.frames.get(frameId)?.sessionId ?? null,
-		}
-	}
-
 	function isTargetReady(tabId: number): boolean {
 		return isSelectedTargetReady(getOrCreateFrameState(tabId))
 	}
-
-	async function waitForSelectedFrameCommandTarget(): Promise<Extract<CdpTargetContext, { kind: 'frame' }>> {
-		const session = getCurrentExtensionSession()
-		const tabId = session.tabId
-		const immediate = resolveSelectedFrameCommandState(getOrCreateFrameState(tabId))
-		if (immediate.kind === 'frame') {
-			return buildFrameTargetContext(getOrCreateFrameState(tabId), immediate.frameId)
-		}
-
-		await kickTargetRecovery(session)
-
-		const deadline = Date.now() + FRAME_COMMAND_READY_TIMEOUT_MS
-		while (Date.now() < deadline) {
-			await delay(FRAME_COMMAND_READY_POLL_MS)
-
-			const current = currentSession
-			if (!current || current.tabId !== tabId) {
-				throw createNotAttachedError()
-			}
-
-			const commandState = resolveSelectedFrameCommandState(getOrCreateFrameState(tabId))
-			if (commandState.kind === 'frame') {
-				return buildFrameTargetContext(getOrCreateFrameState(tabId), commandState.frameId)
-			}
-		}
-
-		throw buildSelectedFrameNotReadyError(tabId)
-	}
-}
-
-function needsTargetRecovery(state: ExtensionFrameState): boolean {
-	return resolveSelectedFrameCommandState(state).kind === 'pending'
-}
-
-function hasTargetRecoveryExpired(recovery: TargetRecovery): boolean {
-	return Date.now() >= recovery.deadline
-}
-
-function buildSelectedFrameNotReadyError(tabId: number): Error {
-	const error = new Error(
-		`Selected iframe target on tab ${tabId} is not executable yet after reload. Try again in a few seconds or reattach the watcher if the problem persists.`,
-	)
-	;(error as Error & { code?: string }).code = 'extension_frame_not_ready'
-	return error
-}
-
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms))
 }

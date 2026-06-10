@@ -1,4 +1,5 @@
 import type { CdpSourceTarget } from './types.js'
+import type { CdpTargetContext } from '../cdp/connection.js'
 import { normalizeNetUrlKey } from '../net/filtering.js'
 
 type SessionSummary = {
@@ -284,6 +285,14 @@ export const resolveSelectedFrameCommandState = (state: ExtensionFrameState): Se
 }
 
 export const isSelectedTargetReady = (state: ExtensionFrameState): boolean => resolveSelectedFrameCommandState(state).kind !== 'pending'
+
+/** Build the frame-scoped CDP target context for a frame tracked in `state`. */
+export const buildFrameTargetContext = (state: ExtensionFrameState, frameId: string): Extract<CdpTargetContext, { kind: 'frame' }> => ({
+	kind: 'frame',
+	frameId,
+	executionContextId: state.executionContexts.get(frameId) ?? null,
+	sessionId: state.frames.get(frameId)?.sessionId ?? null,
+})
 
 const findSingleMatchingFrameId = (state: ExtensionFrameState, predicate: (frame: ExtensionFrame) => boolean): string | null => {
 	let matchId: string | null = null
