@@ -6,6 +6,8 @@ import type { Output } from '../output/io.js'
 import { createOutput } from '../output/io.js'
 import type { WatcherRequestSuccess } from '../watchers/requestWatcher.js'
 
+// Intentionally not on `defineWatcherCommand`: these flows compose multiple
+// watcher calls (clone = export from one watcher + load into another).
 export type AuthExportStateOptions = {
 	domain?: string
 	out?: string

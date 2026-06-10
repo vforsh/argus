@@ -7,6 +7,8 @@ import { runDomFill, type DomFillOptions } from './domFill.js'
 import { runDomFocus, type DomFocusOptions } from './domFocus.js'
 import { runDomHover, type DomHoverOptions } from './domHover.js'
 
+// Intentionally not on `defineWatcherCommand`: --action chains a second DOM
+// command (click/fill/focus/hover) after the locate request resolves a ref.
 type LocateAction = 'click' | 'fill' | 'focus' | 'hover'
 type LocatePath = '/locate/role' | '/locate/text' | '/locate/label'
 type LocateRequestBody = LocateRoleRequest | LocateTextRequest | LocateLabelRequest

@@ -11,7 +11,7 @@ import {
 import { buildPrettyCodeMatches, formatRuntimeSource } from '../runtime-code/format.js'
 import { extractCodeStrings } from '../runtime-code/strings.js'
 import type { CodeStringFilters, CodeStringKind, CodeStringMatch, LoadedCodeResource } from '../runtime-code/types.js'
-import { requestWatcherCommandAction } from '../cli/defineWatcherCommand.js'
+import { defineWatcherCommand, requestWatcherCommandAction } from '../cli/defineWatcherCommand.js'
 
 const FULL_RESOURCE_CHUNK_LINES = 5_000
 const DEFAULT_CODE_STRINGS_LIMIT = 200
@@ -50,59 +50,51 @@ export type CodeStringsOptions = {
 
 type CodeOutput = ReturnType<typeof createOutput>
 
-export const runCodeList = async (id: string | undefined, options: CodeListOptions): Promise<void> => {
-	const output = createOutput(options)
-	const response = await requestCodeResources(id, output, options.pattern)
-	if (!response) {
-		return
-	}
+export const runCodeList = defineWatcherCommand<CodeListOptions, CodeListResponse>({
+	build: (_args, options) => ({
+		path: '/code/list',
+		method: 'POST',
+		body: { pattern: options.pattern },
+	}),
+	formatHuman: (response, { output, options }) => {
+		if (response.resources.length === 0) {
+			writeNoResourcesFound(output, options.pattern)
+			return
+		}
+		output.writeHuman(formatCodeResources(response.resources))
+	},
+})
 
-	if (options.json) {
-		output.writeJson(response)
-		return
-	}
+export const runCodeRead = defineWatcherCommand<CodeReadOptions, CodeReadResponse, unknown, [url: string]>({
+	build: ([url], options, output) => {
+		if (!requireNonEmptyText(url, 'url is required', output)) {
+			return null
+		}
 
-	if (response.resources.length === 0) {
-		writeNoResourcesFound(output, options.pattern)
-		return
-	}
+		const offset = parseOptionalInteger(options.offset, '--offset', output, { min: 0, description: 'a non-negative integer' })
+		if (offset === null) {
+			return null
+		}
+		const limit = parseOptionalInteger(options.limit, '--limit', output, { min: 1, description: 'a positive integer' })
+		if (limit === null) {
+			return null
+		}
 
-	output.writeHuman(formatCodeResources(response.resources))
-}
+		return {
+			path: '/code/read',
+			method: 'POST',
+			body: { url, offset: offset ?? undefined, limit: limit ?? undefined },
+		}
+	},
+	formatHuman: (response, { output }) => {
+		output.writeHuman(`${response.resource.type} ${response.resource.url}`)
+		output.writeHuman(`Lines ${response.startLine}-${response.endLine} of ${response.totalLines}`)
+		output.writeHuman(response.content)
+	},
+})
 
-export const runCodeRead = async (id: string | undefined, url: string, options: CodeReadOptions): Promise<void> => {
-	const output = createOutput(options)
-	if (!requireNonEmptyText(url, 'url is required', output)) {
-		return
-	}
-
-	const offset = parseOptionalInteger(options.offset, '--offset', output, { min: 0, description: 'a non-negative integer' })
-	if (offset === null) {
-		return
-	}
-	const limit = parseOptionalInteger(options.limit, '--limit', output, { min: 1, description: 'a positive integer' })
-	if (limit === null) {
-		return
-	}
-
-	const response = await requestCodeSlice(id, output, url, {
-		offset: offset ?? undefined,
-		limit: limit ?? undefined,
-	})
-	if (!response) {
-		return
-	}
-
-	if (options.json) {
-		output.writeJson(response)
-		return
-	}
-
-	output.writeHuman(`${response.resource.type} ${response.resource.url}`)
-	output.writeHuman(`Lines ${response.startLine}-${response.endLine} of ${response.totalLines}`)
-	output.writeHuman(response.content)
-}
-
+// grep/deminify/strings stay on custom runners: they compose multiple watcher
+// requests (paginated source loads) which `defineWatcherCommand` does not model.
 export const runCodeGrep = async (id: string | undefined, pattern: string, options: CodeGrepOptions): Promise<void> => {
 	const output = createOutput(options)
 	if (!requireNonEmptyText(pattern, 'pattern is required', output)) {

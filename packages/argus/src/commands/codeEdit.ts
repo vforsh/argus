@@ -5,6 +5,8 @@ import { createOutput, type Output } from '../output/io.js'
 
 const FULL_RESOURCE_CHUNK_LINES = 5_000
 
+// Intentionally not on `defineWatcherCommand`: resolving the edit source may
+// itself require paginated `/code/read` watcher requests (--search/--replace).
 export type CodeEditOptions = {
 	file?: string
 	search?: string
