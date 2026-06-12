@@ -1,9 +1,10 @@
-import type { ErrorResponse } from '@vforsh/argus-core'
+import type { ErrorResponse, ExtensionTabActionResponse } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { formatWatcherLine } from '../../output/format.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
 import { runExtensionShow } from './show.js'
+import { waitForTabWatcher } from './tabAttach.js'
 import {
 	fetchExtensionTabs,
 	formatExtensionTabLine,
@@ -20,15 +21,12 @@ type ExtensionTabActionOptions = {
 	tab?: string | number
 	url?: string
 	title?: string
+	as?: string
+	wait?: boolean
 	json?: boolean
 }
 
 type ExtensionTabAction = 'attach' | 'detach'
-
-type ActionResponse = {
-	ok: true
-	message?: string
-}
 
 export const runExtensionAttach = async (options: ExtensionAttachOptions): Promise<void> => {
 	if (options.show) {
@@ -71,12 +69,12 @@ const runExtensionTabAction = async (action: ExtensionTabAction, options: Extens
 		return
 	}
 
-	let response: ActionResponse | ErrorResponse
+	let response: ExtensionTabActionResponse | ErrorResponse
 	try {
-		response = await fetchWatcherJson<ActionResponse | ErrorResponse>(resolved.watcher, {
+		response = await fetchWatcherJson<ExtensionTabActionResponse | ErrorResponse>(resolved.watcher, {
 			path: action === 'attach' ? '/attach' : '/detach',
 			method: 'POST',
-			body: { tabId: tab.tab.tabId },
+			body: { tabId: tab.tab.tabId, watcherId: action === 'attach' ? options.as : undefined },
 			timeoutMs: 5_000,
 			returnErrorResponse: true,
 		})
@@ -91,18 +89,50 @@ const runExtensionTabAction = async (action: ExtensionTabAction, options: Extens
 		return
 	}
 
+	if (action === 'attach' && options.wait !== false) {
+		const watcher = await waitForTabWatcher(
+			resolved.watcher,
+			{ kind: 'tab', tabId: response.tab.tabId },
+			{ ...response.tab, attached: true },
+			response.watcherId ?? options.as,
+		)
+		if (!watcher.ok) {
+			writeCommandError(output, options, watcher.reason, {
+				ok: false,
+				error: watcher.reason,
+				tab: response.tab,
+				watcherId: response.watcherId ?? options.as,
+			})
+			return
+		}
+
+		if (options.json) {
+			output.writeJson({
+				ok: true,
+				tab: watcher.tab,
+				watcherId: watcher.watcher.id,
+				status: watcher.status,
+			})
+			return
+		}
+
+		output.writeHuman(`attached ${watcher.watcher.id}`)
+		output.writeHuman(`  ${formatExtensionTabLine(watcher.tab)}`)
+		return
+	}
+
 	if (options.json) {
 		output.writeJson({
 			ok: true,
-			tab: tab.tab,
-			watcherId: resolved.watcher.id,
+			tab: response.tab,
+			watcherId: response.watcherId,
 		})
 		return
 	}
 
-	const verb = action === 'attach' ? 'Attach' : 'Detach'
-	output.writeHuman(`${verb} request sent via ${resolved.watcher.id}`)
-	output.writeHuman(`  ${formatExtensionTabLine(tab.tab)}`)
+	const verb = action === 'attach' ? 'attached' : 'detached'
+	output.writeHuman(`${verb}${response.watcherId ? ` ${response.watcherId}` : ''}`)
+	output.writeHuman(`  ${formatExtensionTabLine(response.tab)}`)
 }
 
 type TabActionFailure = Exclude<TabResolutionResult, { ok: true }> | Exclude<SelectorResult, { ok: true }>
@@ -144,7 +174,7 @@ const writeCommandError = (
 	output: ReturnType<typeof createOutput>,
 	options: ExtensionTabActionOptions,
 	humanMessage: string,
-	jsonPayload: string | ErrorResponse,
+	jsonPayload: string | Record<string, unknown> | ErrorResponse,
 ): void => {
 	if (options.json) {
 		output.writeJson(typeof jsonPayload === 'string' ? { ok: false, error: jsonPayload } : jsonPayload)

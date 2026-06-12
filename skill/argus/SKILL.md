@@ -97,11 +97,11 @@ argus watcher start --id app --source extension
 
 `--url` matches target URL substring. `--origin` matches protocol+host+port only. `--target` connects to a specific Chrome target ID. `--type` filters by target type (page, iframe, worker). `--parent` filters by parent target URL. `--inject` runs a JS file on attach + navigation. `--no-page-indicator` hides the in-page overlay in both CDP and extension mode — use this when capturing screenshots so the badge doesn't end up in the image.
 
-In extension mode, `extension-control` is a browser-level watcher for commands that don't need a tab debugger attachment, such as `argus ext tabs`, `argus ext attach`, `argus ext show`, and `argus ext detach`. Each attached browser tab still gets its own watcher id. The popup can switch that watcher's active target between the top page and discovered iframes inside the same attached tab. `argus list` shows the control watcher plus tab-scoped watcher ids, and `argus page ls --id <watcher>` shows the page/iframe targets for that watcher only.
+In extension mode, `extension-control` is a browser-level watcher for commands that don't need a tab debugger attachment, such as `argus ext tabs`, `argus ext attach`, `argus ext use`, `argus ext targets`, `argus ext select`, `argus ext show`, and `argus ext detach`. Each attached browser tab still gets its own watcher id. The popup and CLI can switch that watcher's active target between the top page and discovered iframes inside the same attached tab. `argus list` shows the control watcher plus tab-scoped watcher ids.
 
-You can ask the extension control watcher for the browser tab list: `argus ext tabs`, `argus ext tabs --url localhost`, or `argus ext tabs --id extension-control`. Tab-scoped extension watchers intentionally do not list browser tabs; use them for page/debugging commands after attachment.
+You can ask the extension control watcher for the browser tab list: `argus ext tabs`, `argus ext tabs --url localhost`, or `argus ext tabs --id extension-control`. Run `argus ext doctor` when setup/runtime state is suspect; it checks native host manifests plus the live extension-control bridge. Tab-scoped extension watchers intentionally do not list browser tabs; use them for page/debugging commands after attachment.
 
-Attach/detach tabs through the control watcher: `argus ext attach --tab 123`, `argus ext attach --url localhost --show`, `argus ext detach --title Docs`. Use `--show` when attaching a tab that must keep running while Chrome is backgrounded or covered. Use `argus ext show --tab 123`, `argus ext show --url localhost`, or `argus ext show extension` to attach/resolve an extension tab and lock it shown+focused via the same sticky visibility lock as `argus page show`. URL/title matches fail closed when multiple tabs match; rerun with `--tab`.
+Attach/detach tabs through the control watcher: `argus ext attach --tab 123`, `argus ext attach --url localhost --as app`, `argus ext attach --url localhost --show`, `argus ext detach --title Docs`. `ext attach` waits by default until the tab-scoped watcher is registered and matched; add `--no-wait` only when you want the raw extension acknowledgement. Use `argus ext use --url localhost --as app` as the idempotent happy path: it resolves or attaches the tab, waits, and prints the watcher id for chaining. For iframe apps use `argus ext use --url vk.com/app --as vk-game --iframe-url stark.games`, `argus ext use --url vk.com/app --as vk-game --iframe-title "Ёлочка 2025"`, or `argus ext use --url vk.com/app --as vk-game --iframe auto`. Use `argus ext targets vk-game --tree` to inspect page/iframe targets, `argus ext select vk-game --iframe-url stark.games` or `argus ext select vk-game --page` to switch active targets, and `argus ext doctor --watcher vk-game` for targeted diagnostics. URL/title matches fail closed when multiple tabs or iframes match; rerun with `--tab`, `--iframe-url`, or `--iframe-title`.
 
 ### Logs
 
@@ -409,6 +409,8 @@ Emulates device viewport (width/height/DPR/mobile), touch, and user-agent on the
 argus page show app
 argus page show app --json
 argus ext attach --url localhost --show
+argus ext use --url localhost --as app --show
+argus ext use --url vk.com/app --as vk-game --iframe auto --show
 argus ext show --url localhost  # attach/resolve an extension tab, then show it
 argus page hide app
 argus watcher show app     # alias (same behavior)
