@@ -85,7 +85,7 @@ describe('bundleEvalEntry', () => {
 		expect(code).not.toMatch(/\bimport\b/)
 		expect(code).toContain('//# sourceURL=argus-file://')
 
-		expect(runExpression(code)).toBe(42)
+		await expect(runExpression(code)).resolves.toBe(42)
 	})
 
 	test('supports TypeScript helpers and top-level await', async () => {
@@ -132,7 +132,7 @@ describe('bundleEvalEntry', () => {
 		})
 
 		const code = await expectBundleOk(root, 'entry/main.js')
-		expect(runExpression(code)).toBe(42)
+		await expect(runExpression(code)).resolves.toBe(42)
 	})
 
 	test('bundles packages from node_modules', async () => {
@@ -147,7 +147,7 @@ describe('bundleEvalEntry', () => {
 		process.chdir(root)
 		try {
 			const code = await expectBundleOk(root, 'sub/main.js')
-			expect(runExpression(code)).toBe(42)
+			await expect(runExpression(code)).resolves.toBe(42)
 		} finally {
 			process.chdir(previousCwd)
 		}
@@ -216,7 +216,7 @@ describe('resolveExpression with --bundle', () => {
 		expect(resolved).not.toBeNull()
 		expect(resolved).not.toMatch(/\bimport\b/)
 		expect(output.warnings[0]).toContain('bundling automatically')
-		expect(runExpression(resolved!)).toBe(42)
+		await expect(runExpression(resolved!)).resolves.toBe(42)
 	})
 
 	test('--no-bundle reads file as-is', async () => {

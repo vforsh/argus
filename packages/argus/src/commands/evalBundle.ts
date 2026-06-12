@@ -1,5 +1,5 @@
-import type { Message, Plugin } from 'esbuild'
-import { realpath } from 'node:fs/promises'
+import type { Loader, Message, Plugin } from 'esbuild'
+import { readFile, realpath } from 'node:fs/promises'
 import path from 'node:path'
 
 export type BundleEvalEntryResult = { ok: true; code: string } | { ok: false; error: string }
@@ -9,6 +9,7 @@ type EsbuildModule = typeof import('esbuild')
 let esbuildModulePromise: Promise<EsbuildModule> | undefined
 
 const loadEsbuild = (): Promise<EsbuildModule> => (esbuildModulePromise ??= import('esbuild'))
+const RESULT_BINDING = '__argusEvalBundleResult'
 
 /**
  * Bundle a `--file` entry and its import graph into one browser-evaluable script.
@@ -38,7 +39,7 @@ export const bundleEvalEntry = async (entryPath: string): Promise<BundleEvalEntr
 			target: 'es2022',
 			sourcemap: false,
 			logLevel: 'silent',
-			plugins: [pageEvalBundlePlugin],
+			plugins: [createPageEvalBundlePlugin(entryPoint)],
 		})
 
 		const output = result.outputFiles[0]
@@ -46,16 +47,28 @@ export const bundleEvalEntry = async (entryPath: string): Promise<BundleEvalEntr
 			return { ok: false, error: 'Bundle produced no output.' }
 		}
 
-		return { ok: true, code: `${output.text.trimEnd()}\n//# sourceURL=argus-file://${entryPoint}\n` }
+		return { ok: true, code: wrapBundledEval(output.text, entryPoint) }
 	} catch (error) {
 		return { ok: false, error: formatBundleFailure(error) }
 	}
 }
 
-const pageEvalBundlePlugin: Plugin = {
+const createPageEvalBundlePlugin = (entryPoint: string): Plugin => ({
 	name: 'argus-eval-bundle',
 	setup(build) {
 		build.onResolve({ filter: /^node:/ }, (args) => bundleError(`Node built-in import ${JSON.stringify(args.path)} is not allowed in page eval.`))
+
+		build.onLoad({ filter: /.*/ }, async (args) => {
+			if ((await realpath(args.path)) !== entryPoint) {
+				return null
+			}
+
+			const source = await readFile(args.path, 'utf8')
+			return {
+				contents: captureFinalExpression(source),
+				loader: loaderForPath(args.path),
+			}
+		})
 
 		build.onEnd((result) => {
 			if (result.errors.length > 0) {
@@ -75,7 +88,57 @@ const pageEvalBundlePlugin: Plugin = {
 			}
 		})
 	},
+})
+
+const captureFinalExpression = (source: string): string => {
+	const lines = source.split(/\r?\n/)
+	const index = findFinalCodeLine(lines)
+	if (index == null) {
+		return source
+	}
+
+	const line = lines[index]
+	const expression = line.trim().replace(/;$/, '')
+	if (!expression || isStatementLike(expression)) {
+		return source
+	}
+
+	const indent = line.match(/^\s*/)?.[0] ?? ''
+	lines[index] = `${indent}${RESULT_BINDING} = (${expression});`
+	return lines.join('\n')
 }
+
+const findFinalCodeLine = (lines: string[]): number | null => {
+	for (let index = lines.length - 1; index >= 0; index -= 1) {
+		const trimmed = lines[index].trim()
+		if (trimmed && !trimmed.startsWith('//')) {
+			return index
+		}
+	}
+
+	return null
+}
+
+const isStatementLike = (source: string): boolean =>
+	/^(?:import|export|const|let|var|function|class|if|for|while|switch|try|catch|finally|return|throw|break|continue)\b/.test(source)
+
+const loaderForPath = (filePath: string): Loader => {
+	const extension = path.extname(filePath).toLowerCase()
+	if (extension === '.ts') return 'ts'
+	if (extension === '.tsx') return 'tsx'
+	if (extension === '.jsx') return 'jsx'
+	if (extension === '.json') return 'json'
+	return 'js'
+}
+
+const wrapBundledEval = (source: string, entryPoint: string): string =>
+	`(async () => {
+let ${RESULT_BINDING};
+${source.trimEnd()}
+return ${RESULT_BINDING};
+})()
+//# sourceURL=argus-file://${entryPoint}
+`
 
 const bundleError = (text: string) => ({ errors: [{ text }] as Message[] })
 

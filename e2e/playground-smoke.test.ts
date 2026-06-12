@@ -244,7 +244,7 @@ describe('playground smoke tests', () => {
 				BIN_PATH,
 				'eval',
 				'playground',
-				'window.__argusPollCount = (window.__argusPollCount ?? 0) + 1',
+				'window.__argusPollUntilCount = (window.__argusPollUntilCount ?? 0) + 1',
 				'--interval',
 				'50',
 				'--until',
