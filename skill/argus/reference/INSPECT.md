@@ -1,6 +1,6 @@
 ## Inspect Commands
 
-Use this as the command catalog after a watcher is attached. For eval-specific flags, polling, file scripts, and args, see [EVAL.md](./EVAL.md).
+Use this as the command catalog after a watcher is attached. For eval-specific flags, polling, file scripts, and args, see [EVAL.md](./EVAL.md). For network capture, filtering, bodies, export, and mocks, see [NET.md](./NET.md).
 
 ## Logs
 
@@ -106,50 +106,6 @@ argus dom scroll app --pos 400,300 --by 0,200
 ```
 
 `dom scroll` dispatches real wheel input via CDP. `dom set-file` / `dom upload` set file inputs.
-
-## Network
-
-```bash
-argus net app --since 5m
-argus net app --grep api
-argus net clear app
-argus net watch app --reload --settle 3s
-argus net watch app --reload --settle-after "window.appReady" --settle 2s
-argus net inspect /api/post app --settle-after "window.appReady" --settle 400ms
-argus net inspect /api/init app --reload --request --response
-argus net extension --scope selected --host game-frame-host.example --resource-type Fetch
-argus net extension --first-party --slow-over 500ms --status 4xx
-argus net export app --reload --settle 3s --out boot.har
-argus net show 42 app
-argus net body 42 app
-argus net body 42 app --request
-argus net summary app
-argus net ws app
-argus net ws show 1 app
-argus net sse app
-argus net tail app --grep api --json
-```
-
-`net clear` resets the buffer. `net watch` waits for a quiet window. `--settle-after "<expr>"` starts the quiet-window countdown only after the expression becomes truthy. Scope is explicit: use `--scope selected` or `--frame selected` for iframe-only traffic in extension mode; reload-driven network commands reject selected-frame scope.
-
-## Network Mocking
-
-```bash
-argus net mock add app --url "*/analytics/*" --block
-argus net mock add app --url "*/api/save" --fail ConnectionRefused
-argus net mock add app --url "*/api/init" --fail TimedOut --times 1
-argus net mock add app --url "*/api/config" --status 200 --body-file ./fixtures/config.json
-argus net mock add app --url "*/api/config" --status 500 --body '{"error":"maintenance"}'
-echo '{"flags":{"newShop":true}}' | argus net mock add app --url "*/api/flags" --body -
-argus net mock add app --url "*/api/*" --delay 2s --method POST
-argus net mock add app --url "*/api/*" --set-header "x-debug: 1"
-argus net mock add app --url "cdn.prod.com" --rewrite-host localhost:3000
-argus net mock ls app
-argus net mock rm 2 app
-argus net mock clear app
-```
-
-Rules persist across reloads and reattach until removed. First matching rule wins. Use `--times N` for one-shot failures.
 
 ## Storage
 

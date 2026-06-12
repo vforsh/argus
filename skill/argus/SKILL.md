@@ -34,7 +34,8 @@ Read:
 
 - [START.md](./reference/START.md) for CDP startup, watcher lifecycle, config defaults, and Node API.
 - [EXTENSION.md](./reference/EXTENSION.md) for extension setup and runtime limitations.
-- [INSPECT.md](./reference/INSPECT.md) for command catalogs: logs, eval, screenshots, DOM, network, auth, storage, trace, pages, emulation.
+- [INSPECT.md](./reference/INSPECT.md) for command catalogs: logs, eval, screenshots, DOM, interaction, auth, storage, trace, pages, emulation.
+- [NET.md](./reference/NET.md) for network capture, filtering, inspection, bodies, WebSockets, SSE, HAR export, and mocks.
 
 ---
 
@@ -180,7 +181,8 @@ Keep these commands in the background in agent shells. See [START.md](./referenc
 
 - [START.md](./reference/START.md) — CDP startup, watcher lifecycle, config defaults, Node API.
 - [EXTENSION.md](./reference/EXTENSION.md) — Extension setup and extension-control details.
-- [INSPECT.md](./reference/INSPECT.md) — Logs, screenshots, DOM, interaction, network, auth, storage, trace, emulation.
+- [INSPECT.md](./reference/INSPECT.md) — Logs, screenshots, DOM, interaction, auth, storage, trace, emulation.
+- [NET.md](./reference/NET.md) — Network capture, filtering, inspection, export, and mocks.
 - [EVAL.md](./reference/EVAL.md) — Eval syntax, polling, files, args, iframe eval.
 - [RUNTIME_CODE.md](./reference/RUNTIME_CODE.md) — Runtime JS/CSS discovery and live CSS edits.
 - [IFRAMES.md](./reference/IFRAMES.md) — CDP iframe targeting and iframe concepts.
