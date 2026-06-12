@@ -170,7 +170,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		return targets
 	}
 
-	const attachTarget = (targetId: string): void => {
+	const attachTarget = async (targetId: string) => {
 		const target = parseExtensionTargetId(targetId)
 		const session = currentSession
 		if (!session) {
@@ -183,14 +183,20 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			throw new Error(`Watcher ${hostInfo.watcherId} is pinned to tab ${session.tabId}, not tab ${target.tabId}`)
 		}
 		requestTargetSelection(session, target.frameId)
+		return { ok: true as const, tab: sessionToBrowserTab(session), watcherId: hostInfo.watcherId }
 	}
 
-	const detachTarget = (targetId: string): void => {
+	const detachTarget = async (targetId: string) => {
 		const target = parseExtensionTargetId(targetId)
 		const session = currentSession
 		if (!session || session.tabId === target.tabId) {
 			sessionManager.detachTab(target.tabId)
-			return
+			return {
+				ok: true as const,
+				tab: session
+					? { ...sessionToBrowserTab(session), attached: false, watcherId: undefined }
+					: { tabId: target.tabId, url: '', title: '', attached: false },
+			}
 		}
 		throw new Error(`Watcher ${hostInfo.watcherId} is pinned to tab ${session.tabId}, not tab ${target.tabId}`)
 	}
@@ -443,3 +449,11 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		return isSelectedTargetReady(getOrCreateFrameState(tabId))
 	}
 }
+
+const sessionToBrowserTab = (session: ExtensionSession) => ({
+	tabId: session.tabId,
+	url: session.url,
+	title: session.title,
+	faviconUrl: session.faviconUrl,
+	attached: true,
+})

@@ -15,7 +15,6 @@ export type NativeHostOptions = {
 }
 
 export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<void> => {
-	const watcherId = options.id?.trim() || 'extension'
 	const role = options.role?.trim() || 'tab'
 	if (role !== 'tab' && role !== 'control') {
 		console.error(`Invalid native host role: ${role}. Expected "tab" or "control".`)
@@ -24,6 +23,7 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 
 	let handle: WatcherHandle
 	try {
+		const watcherId = role === 'tab' ? await resolveTabWatcherId(options.id?.trim()) : options.id?.trim() || 'extension'
 		handle = await startWatcher({
 			id: watcherId,
 			source: 'extension',
@@ -72,4 +72,56 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 
 	// Keep process running - Native Messaging will handle stdin/stdout
 	await new Promise(() => {})
+}
+
+const resolveTabWatcherId = async (fallback: string | undefined): Promise<string> => {
+	const message = await new Promise<{ type?: string; watcherId?: string }>((resolve, reject) => {
+		let buffer = Buffer.alloc(0)
+		const timeout = setTimeout(() => {
+			cleanup()
+			reject(new Error('Timed out waiting for extension tab watcher init'))
+		}, 3000)
+
+		const cleanup = (): void => {
+			clearTimeout(timeout)
+			process.stdin.removeListener('data', onData)
+			process.stdin.removeListener('end', onDisconnect)
+			process.stdin.removeListener('close', onDisconnect)
+			process.stdin.pause()
+		}
+
+		const onDisconnect = (): void => {
+			cleanup()
+			reject(new Error('Extension disconnected before tab watcher init'))
+		}
+
+		const onData = (chunk: Buffer): void => {
+			buffer = Buffer.concat([buffer, chunk])
+			if (buffer.length < 4) {
+				return
+			}
+			const messageLength = buffer.readUInt32LE(0)
+			if (buffer.length < 4 + messageLength) {
+				return
+			}
+			const messageBytes = buffer.subarray(4, 4 + messageLength)
+			cleanup()
+			try {
+				resolve(JSON.parse(messageBytes.toString('utf8')) as { type?: string; watcherId?: string })
+			} catch (error) {
+				reject(error instanceof Error ? error : new Error(String(error)))
+			}
+		}
+
+		process.stdin.setRawMode?.(true)
+		process.stdin.resume()
+		process.stdin.on('data', onData)
+		process.stdin.on('end', onDisconnect)
+		process.stdin.on('close', onDisconnect)
+	})
+
+	if (message.type !== 'init_tab_watcher') {
+		throw new Error(`Expected init_tab_watcher, received ${message.type ?? 'unknown message'}`)
+	}
+	return message.watcherId?.trim() || fallback || 'extension'
 }

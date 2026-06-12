@@ -25,6 +25,10 @@ export type TabBridgeSessionEvents = {
 	onDisconnect?: () => void
 }
 
+export type TabBridgeSessionOptions = {
+	watcherId?: string
+}
+
 /**
  * Owns one Native Messaging bridge + one watcher process for a single attached tab.
  * Each session stays tab-scoped so the extension can expose true one-watcher-per-tab semantics.
@@ -36,14 +40,17 @@ export class TabBridgeSession {
 	private readonly events: TabBridgeSessionEvents
 	private watcherInfo: TabWatcherInfo | null = null
 	private targetInfo: TabTargetInfo | null = null
+	private desiredWatcherId: string | undefined
 	private lastMessageAt: number | null = null
 	private ready = false
 	private readyWaiters: Array<() => void> = []
+	private watcherInfoWaiters: Array<() => void> = []
 	private disposed = false
 
-	constructor(tabId: number, debuggerManager: DebuggerManager, events: TabBridgeSessionEvents = {}) {
+	constructor(tabId: number, debuggerManager: DebuggerManager, events: TabBridgeSessionEvents = {}, options: TabBridgeSessionOptions = {}) {
 		this.tabId = tabId
 		this.events = events
+		this.desiredWatcherId = options.watcherId
 		this.bridgeClient = new BridgeClient(BRIDGE_HOST_NAME, { autoReconnect: false })
 		this.cdpProxy = new CdpProxy(debuggerManager, this.bridgeClient)
 
@@ -65,7 +72,15 @@ export class TabBridgeSession {
 			throw new Error(`Failed to connect native host for tab ${this.tabId}`)
 		}
 
+		const sent = this.bridgeClient.send({
+			type: 'init_tab_watcher',
+			watcherId: this.desiredWatcherId,
+		})
+		if (!sent) {
+			throw new Error(`Failed to initialize watcher for tab ${this.tabId}`)
+		}
 		await this.waitUntilReady()
+		await this.waitForWatcherInfo()
 		await this.cdpProxy.attachTab(this.tabId)
 	}
 
@@ -138,6 +153,25 @@ export class TabBridgeSession {
 		return this.lastMessageAt
 	}
 
+	private async waitForWatcherInfo(timeoutMs = 3_000): Promise<void> {
+		this.assertOpen()
+		if (this.watcherInfo) {
+			return
+		}
+
+		await new Promise<void>((resolve, reject) => {
+			const timer = setTimeout(() => {
+				this.watcherInfoWaiters = this.watcherInfoWaiters.filter((waiter) => waiter !== onWatcherInfo)
+				reject(new Error(`Native host session for tab ${this.tabId} did not report watcher info`))
+			}, timeoutMs)
+			const onWatcherInfo = (): void => {
+				clearTimeout(timer)
+				resolve()
+			}
+			this.watcherInfoWaiters.push(onWatcherInfo)
+		})
+	}
+
 	private handleMessage(message: TabHostToExtension): void {
 		this.lastMessageAt = Date.now()
 
@@ -150,6 +184,7 @@ export class TabBridgeSession {
 					pid: message.pid,
 				}
 				this.events.onWatcherInfo?.(this.watcherInfo)
+				this.resolveWatcherInfoWaiters()
 				return
 
 			case 'host_ready':
@@ -172,6 +207,14 @@ export class TabBridgeSession {
 		this.ready = true
 		const waiters = this.readyWaiters
 		this.readyWaiters = []
+		for (const waiter of waiters) {
+			waiter()
+		}
+	}
+
+	private resolveWatcherInfoWaiters(): void {
+		const waiters = this.watcherInfoWaiters
+		this.watcherInfoWaiters = []
 		for (const waiter of waiters) {
 			waiter()
 		}

@@ -1,4 +1,4 @@
-import type { ControlHostToExtension, ExtensionToControlHost, TabInfo } from '../types/messages.js'
+import type { ControlDiagnostics, ControlHostToExtension, ExtensionToControlHost, TabInfo } from '../types/messages.js'
 import { BridgeClient } from './bridge-client.js'
 import type { DebuggerManager } from './debugger-manager.js'
 import { CONTROL_HOST_NAME } from './native-hosts.js'
@@ -13,11 +13,14 @@ export type ControlWatcherInfo = {
 
 export type ControlBridgeSessionEvents = {
 	onWatcherInfo?: (info: ControlWatcherInfo) => void
-	onAttachTabWatcher?: (tabId: number) => void | Promise<void>
-	onDetachTabWatcher?: (tabId: number) => void | Promise<void>
+	onAttachTabWatcher?: (tabId: number, options: { watcherId?: string }) => Promise<TabActionResult>
+	onDetachTabWatcher?: (tabId: number) => Promise<TabActionResult>
 	getWatcherIdForTab?: (tabId: number) => string | null | undefined
+	getDiagnostics?: () => ControlDiagnostics
 	onDisconnect?: () => void
 }
+
+export type TabActionResult = { ok: true; tab: TabInfo; watcherId?: string } | { ok: false; error: string }
 
 /**
  * Owns the extension-level native host. It never attaches chrome.debugger to a tab;
@@ -88,15 +91,19 @@ export class ControlBridgeSession {
 				return
 
 			case 'attach_tab_watcher':
-				await this.events.onAttachTabWatcher?.(message.tabId)
+				await this.handleTabAction(message.requestId, () => this.events.onAttachTabWatcher?.(message.tabId, { watcherId: message.watcherId }))
 				return
 
 			case 'detach_tab_watcher':
-				await this.events.onDetachTabWatcher?.(message.tabId)
+				await this.handleTabAction(message.requestId, () => this.events.onDetachTabWatcher?.(message.tabId))
 				return
 
 			case 'list_tabs':
-				await this.handleListTabs(message.filter)
+				await this.handleListTabs(message.requestId, message.filter)
+				return
+
+			case 'control_status':
+				this.handleControlStatus(message.requestId)
 				return
 
 			case 'host_ready':
@@ -104,14 +111,59 @@ export class ControlBridgeSession {
 		}
 	}
 
-	private async handleListTabs(filter?: { url?: string; title?: string }): Promise<void> {
+	private async handleTabAction(requestId: number, action: () => Promise<TabActionResult> | undefined): Promise<void> {
+		try {
+			const result = (await action()) ?? { ok: false, error: 'Extension control action is not available' }
+			if (!result.ok) {
+				this.bridgeClient.send({ type: 'tab_action_response', requestId, ok: false, error: { message: result.error } })
+				return
+			}
+
+			this.bridgeClient.send({ type: 'tab_action_response', requestId, ok: true, tab: result.tab, watcherId: result.watcherId })
+		} catch (error) {
+			this.bridgeClient.send({
+				type: 'tab_action_response',
+				requestId,
+				ok: false,
+				error: { message: error instanceof Error ? error.message : String(error) },
+			})
+		}
+	}
+
+	private async handleListTabs(requestId: number, filter?: { url?: string; title?: string }): Promise<void> {
 		const tabs: TabInfo[] = await listBrowserTabs(this.debuggerManager, filter, {
 			getWatcherIdForTab: this.events.getWatcherIdForTab,
 		})
 		this.bridgeClient.send({
 			type: 'list_tabs_response',
+			requestId,
 			tabs,
 		})
+	}
+
+	private handleControlStatus(requestId: number): void {
+		this.bridgeClient.send({
+			type: 'control_status_response',
+			requestId,
+			diagnostics: this.events.getDiagnostics?.() ?? this.buildFallbackDiagnostics(),
+		})
+	}
+
+	private buildFallbackDiagnostics(): ControlDiagnostics {
+		return {
+			extensionId: null,
+			extensionVersion: null,
+			control: {
+				connected: this.isConnected(),
+				watcherId: this.watcherInfo?.watcherId ?? null,
+				watcherHost: this.watcherInfo?.watcherHost ?? null,
+				watcherPort: this.watcherInfo?.watcherPort ?? null,
+				pid: this.watcherInfo?.pid ?? null,
+				lastMessageAt: this.lastMessageAt,
+			},
+			tabWatchers: [],
+			recentEvents: [],
+		}
 	}
 
 	private assertOpen(): void {

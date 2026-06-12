@@ -54,11 +54,32 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 		},
 		listTargets: async () => [],
 		listTabs: async (filter) => await controlSession.listTabs(filter),
-		attachTarget: (targetId) => {
-			controlSession.attachTabWatcher(parseControlTabTarget(targetId, 'attach'))
+		attachTarget: async (targetId, attachOptions) => {
+			const result = await controlSession.attachTabWatcher(parseControlTabTarget(targetId, 'attach'), attachOptions)
+			if (!result.ok) {
+				throw new Error(result.error)
+			}
+			return { ok: true, tab: result.tab, watcherId: result.watcherId }
 		},
-		detachTarget: (targetId) => {
-			controlSession.detachTabWatcher(parseControlTabTarget(targetId, 'detach'))
+		detachTarget: async (targetId) => {
+			const result = await controlSession.detachTabWatcher(parseControlTabTarget(targetId, 'detach'))
+			if (!result.ok) {
+				throw new Error(result.error)
+			}
+			return { ok: true, tab: result.tab, watcherId: result.watcherId }
+		},
+		getExtensionDiagnostics: async () => {
+			const diagnostics = await controlSession.getDiagnostics()
+			return {
+				ok: true,
+				extension: {
+					id: diagnostics.extensionId,
+					version: diagnostics.extensionVersion,
+				},
+				control: diagnostics.control,
+				tabWatchers: diagnostics.tabWatchers,
+				recentEvents: diagnostics.recentEvents,
+			}
 		},
 	}
 

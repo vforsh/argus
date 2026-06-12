@@ -5,8 +5,8 @@
  */
 
 import { DebuggerManager } from './debugger-manager.js'
-import { TabBridgeSession } from './tab-bridge-session.js'
-import { ControlBridgeSession } from './control-bridge-session.js'
+import { TabBridgeSession, type TabBridgeSessionOptions } from './tab-bridge-session.js'
+import { ControlBridgeSession, type TabActionResult } from './control-bridge-session.js'
 import { type RememberedTargetSelection, TargetSelectionHistoryStore, matchRememberedIframeTarget } from './target-selection-history.js'
 import { TargetVisibilityHistoryStore, matchesHiddenTarget } from './target-visibility-history.js'
 import { listBrowserTabs } from './tab-list.js'
@@ -29,6 +29,7 @@ import type {
 	PopupTarget,
 	PopupWatcherStatus,
 } from './popup-protocol.js'
+import type { ControlDiagnostics, TabInfo } from '../types/messages.js'
 
 const debuggerManager = new DebuggerManager()
 const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
@@ -37,7 +38,8 @@ const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
 	},
 	onAttachTabWatcher: attachTabFromControl,
 	onDetachTabWatcher: detachTabFromControl,
-	getWatcherIdForTab: (tabId) => bridgeSessions.get(tabId)?.getWatcherInfo()?.watcherId ?? null,
+	getWatcherIdForTab,
+	getDiagnostics: buildControlDiagnostics,
 	onDisconnect: () => {
 		recordEvent('error', 'bridge', 'Control native host disconnected')
 	},
@@ -111,18 +113,40 @@ function ensureControlBridgeSession(): void {
 
 ensureControlBridgeSession()
 
-async function attachTabFromControl(tabId: number): Promise<void> {
-	await attachBridgeSession(tabId)
-	setSelectedFrame(tabId, null)
-	await prepareRememberedTargetSelection(tabId)
-	recordEvent('info', 'bridge', `Control attached tab ${tabId}`)
-	void syncActionBadge(debuggerManager)
+async function attachTabFromControl(tabId: number, options: TabBridgeSessionOptions = {}): Promise<TabActionResult> {
+	try {
+		const session = await attachBridgeSession(tabId, options)
+		setSelectedFrame(tabId, null)
+		await prepareRememberedTargetSelection(tabId)
+		recordEvent('info', 'bridge', `Control attached tab ${tabId}`)
+		void syncActionBadge(debuggerManager)
+
+		const tab = await getTabInfo(tabId)
+		if (!tab) {
+			return { ok: false, error: `Tab ${tabId} is no longer available` }
+		}
+
+		return { ok: true, tab, watcherId: session.getWatcherInfo()?.watcherId }
+	} catch (error) {
+		return { ok: false, error: error instanceof Error ? error.message : String(error) }
+	}
 }
 
-async function detachTabFromControl(tabId: number): Promise<void> {
-	await detachTab(tabId)
-	recordEvent('info', 'bridge', `Control detached tab ${tabId}`)
-	void syncActionBadge(debuggerManager)
+async function detachTabFromControl(tabId: number): Promise<TabActionResult> {
+	try {
+		await detachTab(tabId)
+		recordEvent('info', 'bridge', `Control detached tab ${tabId}`)
+		void syncActionBadge(debuggerManager)
+
+		const tab = await getTabInfo(tabId)
+		if (!tab) {
+			return { ok: false, error: `Tab ${tabId} is no longer available` }
+		}
+
+		return { ok: true, tab }
+	} catch (error) {
+		return { ok: false, error: error instanceof Error ? error.message : String(error) }
+	}
 }
 
 async function buildPopupResponse(message: PopupActionMessage): Promise<PopupResponse> {
@@ -217,29 +241,35 @@ function requireTabId(message: PopupActionMessage): number {
 	throw new Error('No tabId provided')
 }
 
-async function attachBridgeSession(tabId: number): Promise<void> {
+async function attachBridgeSession(tabId: number, options: TabBridgeSessionOptions = {}): Promise<TabBridgeSession> {
 	const existing = bridgeSessions.get(tabId)
 	if (existing) {
 		await connectBridgeSession(tabId, existing)
-		return
+		return existing
 	}
 
-	const session = new TabBridgeSession(tabId, debuggerManager, {
-		onWatcherInfo: (info) => {
-			recordEvent('info', 'bridge', `Watcher ready for tab ${tabId}: ${info.watcherId} (pid ${info.pid})`)
+	const session = new TabBridgeSession(
+		tabId,
+		debuggerManager,
+		{
+			onWatcherInfo: (info) => {
+				recordEvent('info', 'bridge', `Watcher ready for tab ${tabId}: ${info.watcherId} (pid ${info.pid})`)
+			},
+			onTargetInfo: (info) => {
+				syncSelectedFrameFromWatcher(info.targetId)
+			},
+			onDisconnect: () => {
+				recordEvent('error', 'bridge', `Native host disconnected for tab ${tabId}`)
+				void debuggerManager.detach(tabId).catch(() => {})
+				clearTabState(tabId)
+				void syncActionBadge(debuggerManager)
+			},
 		},
-		onTargetInfo: (info) => {
-			syncSelectedFrameFromWatcher(info.targetId)
-		},
-		onDisconnect: () => {
-			recordEvent('error', 'bridge', `Native host disconnected for tab ${tabId}`)
-			void debuggerManager.detach(tabId).catch(() => {})
-			clearTabState(tabId)
-			void syncActionBadge(debuggerManager)
-		},
-	})
+		options,
+	)
 	bridgeSessions.set(tabId, session)
 	await connectBridgeSession(tabId, session)
+	return session
 }
 
 async function detachTab(tabId: number): Promise<void> {
@@ -318,6 +348,53 @@ function buildPopupStatusPayload(): PopupStatusPayload {
 		watchers: getWatcherStatuses(),
 		recentEvents,
 	}
+}
+
+function buildControlDiagnostics(): ControlDiagnostics {
+	const controlInfo = controlBridgeSession.getWatcherInfo()
+	return {
+		extensionId: chrome.runtime.id ?? null,
+		extensionVersion: chrome.runtime.getManifest().version ?? null,
+		control: {
+			connected: controlBridgeSession.isConnected(),
+			watcherId: controlInfo?.watcherId ?? null,
+			watcherHost: controlInfo?.watcherHost ?? null,
+			watcherPort: controlInfo?.watcherPort ?? null,
+			pid: controlInfo?.pid ?? null,
+			lastMessageAt: controlBridgeSession.getLastMessageAt(),
+		},
+		tabWatchers: [...bridgeSessions.entries()].map(([tabId, session]) => buildTabBridgeStatus(tabId, session)),
+		recentEvents,
+	}
+}
+
+function buildTabBridgeStatus(tabId: number, session: TabBridgeSession): ControlDiagnostics['tabWatchers'][number] {
+	const watcher = session.getWatcherInfo()
+	const target = session.getTargetInfo()
+	return {
+		tabId,
+		connected: session.isConnected(),
+		watcherId: watcher?.watcherId ?? null,
+		watcherHost: watcher?.watcherHost ?? null,
+		watcherPort: watcher?.watcherPort ?? null,
+		pid: watcher?.pid ?? null,
+		targetId: target?.targetId ?? null,
+		targetTitle: target?.title ?? null,
+		targetUrl: target?.url ?? null,
+		targetReady: target?.targetReady ?? null,
+		lastMessageAt: session.getLastMessageAt(),
+	}
+}
+
+async function getTabInfo(tabId: number): Promise<TabInfo | null> {
+	const tabs = await listBrowserTabs(debuggerManager, undefined, {
+		getWatcherIdForTab,
+	})
+	return tabs.find((tab) => tab.tabId === tabId) ?? null
+}
+
+function getWatcherIdForTab(tabId: number): string | null {
+	return bridgeSessions.get(tabId)?.getWatcherInfo()?.watcherId ?? null
 }
 
 function getWatcherStatuses(): PopupWatcherStatus[] {

@@ -4,7 +4,7 @@
  * to work with either CDP WebSocket or Extension Native Messaging.
  */
 
-import type { AuthStateCookie, LogEvent } from '@vforsh/argus-core'
+import type { AuthStateCookie, ExtensionDiagnosticsResponse, ExtensionTabActionResponse, LogEvent } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 import type { NetFilterContext } from '../net/filtering.js'
 
@@ -112,9 +112,11 @@ export type CdpSourceHandle = {
 		}>
 	>
 	/** Attach to a specific target by ID (extension mode only). */
-	attachTarget?: (targetId: string) => void
+	attachTarget?: (targetId: string, options?: { watcherId?: string }) => Promise<ExtensionTabActionResponse>
 	/** Detach from a specific target by ID (extension mode only). */
-	detachTarget?: (targetId: string) => void
+	detachTarget?: (targetId: string) => Promise<ExtensionTabActionResponse>
+	/** Read live extension/control diagnostics (extension-control only). */
+	getExtensionDiagnostics?: () => Promise<ExtensionDiagnosticsResponse>
 }
 
 /**

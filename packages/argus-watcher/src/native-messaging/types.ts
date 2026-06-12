@@ -47,7 +47,23 @@ export type CookieQueryResponseMessage = {
 
 export type ListTabsResponseMessage = {
 	type: 'list_tabs_response'
+	requestId: number
 	tabs: TabInfo[]
+}
+
+export type TabActionResponseMessage = {
+	type: 'tab_action_response'
+	requestId: number
+	ok: boolean
+	tab?: TabInfo
+	watcherId?: string
+	error?: { message: string }
+}
+
+export type ControlStatusResponseMessage = {
+	type: 'control_status_response'
+	requestId: number
+	diagnostics: ControlDiagnostics
 }
 
 export type TargetSelectedMessage = {
@@ -77,6 +93,11 @@ export type TargetInfoMessage = {
 	targetReady?: boolean | null
 }
 
+export type InitTabWatcherMessage = {
+	type: 'init_tab_watcher'
+	watcherId?: string
+}
+
 export type TabInfo = {
 	tabId: number
 	url: string
@@ -84,6 +105,38 @@ export type TabInfo = {
 	faviconUrl?: string
 	attached: boolean
 	watcherId?: string
+}
+
+export type ControlDiagnostics = {
+	extensionId: string | null
+	extensionVersion: string | null
+	control: {
+		connected: boolean
+		watcherId: string | null
+		watcherHost: string | null
+		watcherPort: number | null
+		pid: number | null
+		lastMessageAt: number | null
+	}
+	tabWatchers: Array<{
+		tabId: number
+		connected: boolean
+		watcherId: string | null
+		watcherHost: string | null
+		watcherPort: number | null
+		pid: number | null
+		targetId: string | null
+		targetTitle: string | null
+		targetUrl: string | null
+		targetReady: boolean | null
+		lastMessageAt: number | null
+	}>
+	recentEvents: Array<{
+		ts: number
+		level: 'info' | 'error'
+		source: 'popup' | 'bridge' | 'debugger'
+		message: string
+	}>
 }
 
 export type FrameSnapshot = {
@@ -114,9 +167,9 @@ export type ExtensionToHost =
 	| CookieQueryResponseMessage
 	| TargetSelectedMessage
 
-export type ExtensionToControlHost = ListTabsResponseMessage
+export type ExtensionToControlHost = ListTabsResponseMessage | TabActionResponseMessage | ControlStatusResponseMessage
 
-export type ExtensionToTabHost = ExtensionToHost
+export type ExtensionToTabHost = ExtensionToHost | InitTabWatcherMessage
 
 // ============================================================
 // Host -> Extension messages
@@ -129,11 +182,14 @@ export type AttachTabMessage = {
 
 export type AttachTabWatcherMessage = {
 	type: 'attach_tab_watcher'
+	requestId: number
 	tabId: number
+	watcherId?: string
 }
 
 export type DetachTabWatcherMessage = {
 	type: 'detach_tab_watcher'
+	requestId: number
 	tabId: number
 }
 
@@ -153,10 +209,16 @@ export type CdpCommandMessage = {
 
 export type ListTabsMessage = {
 	type: 'list_tabs'
+	requestId: number
 	filter?: {
 		url?: string
 		title?: string
 	}
+}
+
+export type ControlStatusMessage = {
+	type: 'control_status'
+	requestId: number
 }
 
 export type EnableDomainMessage = {
@@ -183,7 +245,13 @@ export type HostToExtension =
 	| HostReadyMessage
 	| TargetInfoMessage
 
-export type ControlHostToExtension = AttachTabWatcherMessage | DetachTabWatcherMessage | ListTabsMessage | HostInfoMessage | HostReadyMessage
+export type ControlHostToExtension =
+	| AttachTabWatcherMessage
+	| DetachTabWatcherMessage
+	| ListTabsMessage
+	| ControlStatusMessage
+	| HostInfoMessage
+	| HostReadyMessage
 
 export type TabHostToExtension = HostToExtension
 

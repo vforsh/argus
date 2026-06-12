@@ -51,6 +51,7 @@ import { storageRoutes } from './storage.js'
 import { route as postReload } from './postReload.js'
 import { route as postShutdown } from './postShutdown.js'
 import { route as getExtensionTabs } from './getExtensionTabs.js'
+import { route as getExtensionDiagnostics } from './getExtensionDiagnostics.js'
 import { route as getTargets } from './getTargets.js'
 import { route as postAttach } from './postAttach.js'
 import { route as postDetach } from './postDetach.js'
@@ -114,6 +115,7 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	postReload,
 	postShutdown,
 	getExtensionTabs,
+	getExtensionDiagnostics,
 	getTargets,
 	postAttach,
 	postDetach,

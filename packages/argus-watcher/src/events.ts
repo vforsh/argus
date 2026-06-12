@@ -156,6 +156,7 @@ export type HttpRequestEvent = {
 		| 'reload'
 		| 'shutdown'
 		| 'tabs'
+		| 'extension/diagnostics'
 		| 'targets'
 		| 'attach'
 		| 'detach'

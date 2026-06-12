@@ -13,6 +13,10 @@ export type StatusResponse = {
 	target: {
 		title: string | null
 		url: string | null
+		/** Target type, such as `page` or `iframe`, when the source can report it. */
+		type?: string | null
+		/** Parent target id for nested targets, e.g. `tab:<tabId>` for extension iframes. */
+		parentId?: string | null
 	} | null
 	dialog?: DialogStatus | null
 	buffer: {

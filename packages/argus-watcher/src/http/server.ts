@@ -76,6 +76,7 @@ export type HttpRequestEventMetadata = {
 		| 'reload'
 		| 'shutdown'
 		| 'tabs'
+		| 'extension/diagnostics'
 		| 'targets'
 		| 'attach'
 		| 'detach'
