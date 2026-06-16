@@ -41,9 +41,15 @@ export type PageIndicatorInfo = {
 	attachedAt: number
 }
 
+export type PageIndicatorState = {
+	recording: boolean
+}
+
 export type PageIndicatorController = {
 	onAttach: (session: CdpSessionHandle, target: CdpTarget, info: PageIndicatorInfo) => void
 	onNavigation: (session: CdpSessionHandle, info: PageIndicatorInfo) => void
+	/** Update transient indicator state without reinstalling the DOM. */
+	setRecording: (recording: boolean) => void
 	/** Re-inject the indicator using the last known info. Use after DOM is rebuilt (e.g. domContentEventFired). */
 	reinstall: () => void
 	onDetach: () => void
@@ -88,6 +94,7 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 	let currentSession: CdpSessionHandle | null = null
 	let currentInfo: PageIndicatorInfo | null = null
+	let currentState: PageIndicatorState = { recording: false }
 
 	const onAttach = (session: CdpSessionHandle, _target: CdpTarget, info: PageIndicatorInfo): void => {
 		stop()
@@ -103,13 +110,14 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 			iconColor,
 			margin,
 			size,
+			state: currentState,
 		})
 
 		heartbeatTimer = setInterval(() => {
 			if (!currentSession || !currentInfo) {
 				return
 			}
-			void sendHeartbeat(currentSession, currentInfo)
+			void sendHeartbeat(currentSession, currentInfo, currentState)
 		}, heartbeatMs)
 	}
 
@@ -124,7 +132,19 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 			iconColor,
 			margin,
 			size,
+			state: currentState,
 		})
+	}
+
+	const setRecording = (recording: boolean): void => {
+		if (currentState.recording === recording) {
+			return
+		}
+		currentState = { ...currentState, recording }
+		if (!currentSession || !currentInfo) {
+			return
+		}
+		void sendHeartbeat(currentSession, currentInfo, currentState)
 	}
 
 	const reinstall = (): void => {
@@ -140,6 +160,7 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 			iconColor,
 			margin,
 			size,
+			state: currentState,
 		})
 	}
 
@@ -155,13 +176,14 @@ export const createPageIndicatorController = (options: PageIndicatorOptions): Pa
 
 		currentSession = null
 		currentInfo = null
+		currentState = { recording: false }
 	}
 
 	const stop = (): void => {
 		onDetach()
 	}
 
-	return { onAttach, onNavigation, reinstall, onDetach, stop }
+	return { onAttach, onNavigation, setRecording, reinstall, onDetach, stop }
 }
 
 const installIndicator = async (
@@ -175,9 +197,10 @@ const installIndicator = async (
 		iconColor: string
 		margin: number
 		size: number
+		state: PageIndicatorState
 	},
 ): Promise<void> => {
-	const { info, position, ttlMs, bgColor, hoverBgColor, iconColor, margin, size } = params
+	const { info, position, ttlMs, bgColor, hoverBgColor, iconColor, margin, size, state } = params
 	const expression = buildInstallExpression({
 		info,
 		position,
@@ -187,6 +210,7 @@ const installIndicator = async (
 		iconColor,
 		margin,
 		size,
+		state,
 	})
 
 	try {
@@ -199,8 +223,8 @@ const installIndicator = async (
 	}
 }
 
-const sendHeartbeat = async (session: CdpSessionHandle, info: PageIndicatorInfo): Promise<void> => {
-	const expression = buildHeartbeatExpression(info)
+const sendHeartbeat = async (session: CdpSessionHandle, info: PageIndicatorInfo, state: PageIndicatorState): Promise<void> => {
+	const expression = buildHeartbeatExpression(info, state)
 
 	try {
 		await session.sendAndWait('Runtime.evaluate', {

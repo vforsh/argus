@@ -1,4 +1,4 @@
-import type { PageIndicatorInfo, PageIndicatorPosition } from './pageIndicator.js'
+import type { PageIndicatorInfo, PageIndicatorPosition, PageIndicatorState } from './pageIndicator.js'
 
 type InstallExpressionParams = {
 	info: PageIndicatorInfo
@@ -9,6 +9,7 @@ type InstallExpressionParams = {
 	iconColor: string
 	margin: number
 	size: number
+	state: PageIndicatorState
 }
 
 const ICONS = {
@@ -30,9 +31,10 @@ const INDICATOR_BUTTON_TRANSITION_PROPS = ['background', 'border-color', 'filter
 
 /** Build the page-side installer script that owns all indicator DOM, events, and clipboard feedback. */
 export const buildInstallExpression = (params: InstallExpressionParams): string => {
-	const { info, position, ttlMs, bgColor, hoverBgColor, iconColor, margin, size } = params
+	const { info, position, ttlMs, bgColor, hoverBgColor, iconColor, margin, size, state } = params
 	const iconJson = JSON.stringify(ICONS)
 	const infoJson = JSON.stringify(info)
+	const stateJson = JSON.stringify(state)
 	const positionStyle = resolvePositionStyle(position, margin)
 	const tooltipText = JSON.stringify(`Argus Watcher: ${info.watcherId}`)
 	const buttonSize = size + 12
@@ -47,6 +49,7 @@ export const buildInstallExpression = (params: InstallExpressionParams): string 
   var INFO_VISIBLE_CLASS = '${INFO_VISIBLE_CLASS}';
   var ICONS = ${iconJson};
   var info = ${infoJson};
+  var indicatorState = ${stateJson};
   var ttlMs = ${ttlMs};
   var isHovering = false;
   var infoVisible = false;
@@ -61,6 +64,10 @@ export const buildInstallExpression = (params: InstallExpressionParams): string 
   wrapper.setAttribute('data-testid', INDICATOR_ID);
 
   var mainButton = createIconButton('argus-indicator-main', 'Argus watcher: copy info', ${tooltipText}, 'bot');
+  var recordingDot = document.createElement('span');
+  recordingDot.className = 'argus-indicator-recording-dot';
+  recordingDot.setAttribute('aria-hidden', 'true');
+  mainButton.appendChild(recordingDot);
   var infoButton = createIconButton('argus-indicator-info', 'Argus watcher details', 'Watcher details', 'info');
   wrapper.appendChild(mainButton);
   wrapper.appendChild(infoButton);
@@ -111,8 +118,10 @@ export const buildInstallExpression = (params: InstallExpressionParams): string 
     lastSeenMs: Date.now(),
     ttlMs: ttlMs,
     timerId: timerId,
-    info: info
+    info: info,
+    recording: indicatorState.recording === true
   };
+  applyIndicatorState(indicatorState);
 
   function installStyle() {
     var existingStyle = document.getElementById(STYLE_ID);
@@ -130,11 +139,23 @@ export const buildInstallExpression = (params: InstallExpressionParams): string 
         'border-radius: 7px; padding: 6px; display: flex; align-items: center; justify-content: center; color: ${iconColor}; ' +
         'background: ${bgColor}; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22); cursor: pointer; transition: ${buttonTransition};' +
       '}' +
+      '#' + INDICATOR_ID + ' .argus-indicator-main { position: relative; }' +
       '#' + INDICATOR_ID + ' .argus-indicator-button:hover {' +
         'background: ${hoverBgColor}; border-color: rgba(255, 255, 255, 0.22); filter: brightness(1.15);' +
       '}' +
+      '#' + INDICATOR_ID + ' .argus-indicator-icon { display: flex; align-items: center; justify-content: center; }' +
       '#' + INDICATOR_ID + ' .argus-indicator-button svg {' +
         'max-width: ${size}px; max-height: ${size}px; flex: 0 0 auto; display: block;' +
+      '}' +
+      '#' + INDICATOR_ID + ' .argus-indicator-recording-dot {' +
+        'position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 999px; pointer-events: none; opacity: 0; ' +
+        'background: #ef4444; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.72), 0 0 12px rgba(239, 68, 68, 0.95); ' +
+        'opacity: var(--argus-recording-dot-opacity, 0); transform: scale(var(--argus-recording-dot-scale, 0.72)); ' +
+        'animation: var(--argus-recording-dot-animation, none); transition: opacity 120ms ease, transform 120ms ease;' +
+      '}' +
+      '@keyframes argus-indicator-recording-pulse {' +
+        '0%, 100% { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.72), 0 0 10px rgba(239, 68, 68, 0.75); }' +
+        '50% { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.72), 0 0 18px rgba(239, 68, 68, 1); }' +
       '}' +
       '#' + INDICATOR_ID + ' .argus-indicator-info {' +
         'position: absolute; right: 0; bottom: calc(100% + ${INFO_BUTTON_GAP_PX}px); opacity: 0; pointer-events: none; transform: translateY(2px);' +
@@ -164,12 +185,26 @@ export const buildInstallExpression = (params: InstallExpressionParams): string 
     button.className = 'argus-indicator-button ' + className;
     button.setAttribute('aria-label', ariaLabel);
     button.setAttribute('title', title);
-    button.innerHTML = renderIcon(iconName);
+    button.innerHTML = '<span class="argus-indicator-icon">' + renderIcon(iconName) + '</span>';
     return button;
   }
 
   function setMainIcon(iconName) {
-    mainButton.innerHTML = renderIcon(iconName);
+    var iconEl = mainButton.querySelector('.argus-indicator-icon');
+    if (iconEl) iconEl.innerHTML = renderIcon(iconName);
+  }
+
+  function applyIndicatorState(nextState) {
+    var isRecording = nextState && nextState.recording === true;
+    wrapper.classList.toggle('argus-indicator-recording', isRecording);
+    wrapper.setAttribute('data-recording', isRecording ? 'true' : 'false');
+    wrapper.style.setProperty('--argus-recording-dot-opacity', isRecording ? '1' : '0');
+    wrapper.style.setProperty('--argus-recording-dot-scale', isRecording ? '1' : '0.72');
+    wrapper.style.setProperty('--argus-recording-dot-animation', isRecording ? 'argus-indicator-recording-pulse 1.15s ease-in-out infinite' : 'none');
+    mainButton.setAttribute('title', isRecording ? 'Argus watcher: recording - copy info' : ${tooltipText});
+    mainButton.setAttribute('aria-label', isRecording ? 'Argus watcher recording: copy info' : 'Argus watcher: copy info');
+    var state = window[STATE_KEY];
+    if (state) state.recording = isRecording;
   }
 
   function scheduleInfoReveal() {
@@ -285,13 +320,15 @@ export const buildInstallExpression = (params: InstallExpressionParams): string 
   function getWatcherFields() {
     var state = window[STATE_KEY];
     var i = state ? state.info : info;
+    var isRecording = state ? state.recording === true : indicatorState.recording === true;
     return [
       ['ID', i.watcherId],
       ['Host', i.watcherHost + ':' + i.watcherPort],
       ['PID', String(i.watcherPid)],
       ['Target', i.targetTitle || '(no title)'],
       ['URL', i.targetUrl || '(no url)'],
-      ['Attached', new Date(i.attachedAt).toISOString()]
+      ['Attached', new Date(i.attachedAt).toISOString()],
+      ['Recording', isRecording ? 'active' : 'inactive']
     ];
   }
 
@@ -315,17 +352,35 @@ export const buildInstallExpression = (params: InstallExpressionParams): string 
 `
 }
 
-/** Build a cheap page-side heartbeat update; the installed script keeps the DOM and TTL timer. */
-export const buildHeartbeatExpression = (info: PageIndicatorInfo): string => {
+/** Build a cheap page-side heartbeat/state update; the installed script keeps the DOM and TTL timer. */
+export const buildHeartbeatExpression = (info: PageIndicatorInfo, state: PageIndicatorState): string => {
 	const infoJson = JSON.stringify(info)
+	const stateJson = JSON.stringify(state)
+	const tooltipText = JSON.stringify(`Argus Watcher: ${info.watcherId}`)
 
 	return `
 (function() {
+  var INDICATOR_ID = 'argus-watcher-indicator';
   var STATE_KEY = '__ARGUS_WATCHER_INDICATOR__';
+  var nextState = ${stateJson};
   var state = window[STATE_KEY];
   if (state) {
     state.lastSeenMs = Date.now();
     state.info = ${infoJson};
+    state.recording = nextState.recording === true;
+    var indicator = document.getElementById(INDICATOR_ID);
+    if (indicator) {
+      indicator.classList.toggle('argus-indicator-recording', state.recording);
+      indicator.setAttribute('data-recording', state.recording ? 'true' : 'false');
+      indicator.style.setProperty('--argus-recording-dot-opacity', state.recording ? '1' : '0');
+      indicator.style.setProperty('--argus-recording-dot-scale', state.recording ? '1' : '0.72');
+      indicator.style.setProperty('--argus-recording-dot-animation', state.recording ? 'argus-indicator-recording-pulse 1.15s ease-in-out infinite' : 'none');
+      var mainButton = indicator.querySelector('.argus-indicator-main');
+      if (mainButton) {
+        mainButton.setAttribute('title', state.recording ? 'Argus watcher: recording - copy info' : ${tooltipText});
+        mainButton.setAttribute('aria-label', state.recording ? 'Argus watcher recording: copy info' : 'Argus watcher: copy info');
+      }
+    }
   }
 })();
 `

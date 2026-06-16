@@ -276,6 +276,9 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		onAttach: handleSourceAttach,
 		onTargetChanged: handleTargetChanged,
 		onDetach: handleSourceDetach,
+		onRecordingStateChange: (recording) => {
+			indicatorController?.setRecording(recording)
+		},
 	})
 
 	netMockController.bind(sourceHandle.pageSession ?? sourceHandle.session)
