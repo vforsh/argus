@@ -21,6 +21,7 @@ import { scrollToCommand } from './scrollToCommand.js'
 import { storageCommands } from './storageCommands.js'
 import { throttleCommands } from './throttleCommands.js'
 import { snapshotCommands } from './snapshotCommands.js'
+import { recordCommands } from './recordCommands.js'
 import { traceCommands } from './traceCommands.js'
 import { configCommands } from './configCommands.js'
 import { pluginCommands } from './pluginCommands.js'
@@ -50,6 +51,7 @@ const coreCommandDefinitions: readonly ArgusCommandDefinition[] = [
 	...storageCommands,
 	...throttleCommands,
 	...snapshotCommands,
+	...recordCommands,
 	...traceCommands,
 	...configCommands,
 	...pluginCommands,

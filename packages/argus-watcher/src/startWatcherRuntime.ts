@@ -261,12 +261,13 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		networkCapture?.onDetached()
 		netMockController.onDetach()
 		indicatorController?.onDetach()
+		recorder.onDetached(reason)
 		if (reason != null) {
 			traceRecorder.onDetached(reason)
 		}
 	}
 
-	const { sourceHandle, networkCapture, traceRecorder, screenshotter, runtimeEditor } = createWatcherRuntimeServices(options, setup, {
+	const { sourceHandle, networkCapture, traceRecorder, screenshotter, recorder, runtimeEditor } = createWatcherRuntimeServices(options, setup, {
 		onLog: handleSourceLog,
 		onStatus: updateCdpStatus,
 		onPageNavigation: handlePageNavigation,
@@ -305,6 +306,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		cdpSession: sourceHandle.session,
 		traceRecorder,
 		screenshotter,
+		recorder,
 		runtimeEditor,
 		emulationController,
 		throttleController,
@@ -354,6 +356,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		await sourceHandle.stop()
 		await fileLogger?.close()
 		traceRecorder.onDetached('watcher_stopped')
+		recorder.onDetached('watcher_stopped')
 		await server.close()
 		await removeWatcher(record.id)
 		events.clearListeners()

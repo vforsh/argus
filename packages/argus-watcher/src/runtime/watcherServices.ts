@@ -1,6 +1,7 @@
 import { createNetworkCapture } from '../cdp/networkCapture.js'
 import { createTraceRecorder } from '../cdp/tracing.js'
 import { createScreenshotter } from '../cdp/screenshot.js'
+import { createRecorder } from '../cdp/recording.js'
 import { createRuntimeEditor } from '../cdp/editor.js'
 import { createCdpSource } from '../sources/cdp-source.js'
 import { createExtensionSource } from '../sources/extension-source.js'
@@ -17,6 +18,7 @@ export type WatcherSourceCallbacks = {
 	onAttach: (session: CdpSourceHandle['session'], target: CdpSourceTarget) => Promise<void>
 	onTargetChanged?: (session: CdpSourceHandle['session'], target: CdpSourceTarget) => void
 	onDetach: (reason?: string) => void
+	onRecordingStateChange?: (recording: boolean) => void
 }
 
 export type WatcherRuntimeServices = {
@@ -24,6 +26,7 @@ export type WatcherRuntimeServices = {
 	networkCapture: Awaited<ReturnType<typeof createNetworkCapture>> | null
 	traceRecorder: ReturnType<typeof createTraceRecorder>
 	screenshotter: ReturnType<typeof createScreenshotter>
+	recorder: ReturnType<typeof createRecorder>
 	runtimeEditor: ReturnType<typeof createRuntimeEditor>
 }
 
@@ -84,6 +87,12 @@ export const createWatcherRuntimeServices = (
 				pageSession: sourceHandle.pageSession,
 				artifactsDir: artifactsBaseDir,
 			}),
+			recorder: createRecorder({
+				session: sourceHandle.session,
+				pageSession: sourceHandle.pageSession,
+				artifactsDir: artifactsBaseDir,
+				onRecordingStateChange: callbacks.onRecordingStateChange,
+			}),
 			runtimeEditor: createRuntimeEditor(sourceHandle.session),
 		}
 	}
@@ -115,6 +124,11 @@ export const createWatcherRuntimeServices = (
 			: null,
 		traceRecorder: createTraceRecorder({ session: sessionHandle.session, artifactsDir: artifactsBaseDir }),
 		screenshotter: createScreenshotter({ session: sessionHandle.session, artifactsDir: artifactsBaseDir }),
+		recorder: createRecorder({
+			session: sessionHandle.session,
+			artifactsDir: artifactsBaseDir,
+			onRecordingStateChange: callbacks.onRecordingStateChange,
+		}),
 		runtimeEditor: createRuntimeEditor(sessionHandle.session),
 	}
 }

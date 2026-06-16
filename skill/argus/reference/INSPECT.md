@@ -29,15 +29,16 @@ argus wait app --file ./ready.js --arg level=10 --total-timeout 20s
 
 `js` is the short alias for `eval`; `wait` is the short alias for `eval-until`.
 
-## Screenshots
+## Screenshots / Recording
 
 ```bash
 argus screenshot app --out shot.png
 argus screenshot app --selector "canvas" --out canvas.png
-argus screenshot app --clip 100,80,640,360 --out crop.png
+argus record app --duration 5s --out demo.webm
+argus record app --duration 3s --selector "canvas" --out canvas.webm
 ```
 
-When the active extension target is an iframe, screenshots and selector clips are resolved relative to that iframe.
+See [CAPTURE.md](./CAPTURE.md) for crop semantics, iframe behavior, recording start/stop, `ffmpeg`, and troubleshooting.
 
 ## DOM / Snapshot / Locate
 

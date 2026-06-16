@@ -8,6 +8,7 @@ import type { ElementRefRegistry } from '../cdp/elementRefs.js'
 import type { RuntimeEditor } from '../cdp/editor.js'
 import type { TraceRecorder } from '../cdp/tracing.js'
 import type { Screenshotter } from '../cdp/screenshot.js'
+import type { Recorder } from '../cdp/recording.js'
 import type { CdpSourceCookieQuery, CdpSourceHandle, CdpSourceStatus } from '../sources/types.js'
 import type { EmulationController } from '../emulation/EmulationController.js'
 import type { ThrottleController } from '../throttle/ThrottleController.js'
@@ -44,6 +45,9 @@ export type HttpRequestEventMetadata = {
 		| 'eval'
 		| 'trace/start'
 		| 'trace/stop'
+		| 'record'
+		| 'record/start'
+		| 'record/stop'
 		| 'screenshot'
 		| 'snapshot'
 		| 'locate/role'
@@ -134,6 +138,7 @@ export type HttpServerOptions = {
 	cdpSession: CdpSessionHandle
 	traceRecorder: TraceRecorder
 	screenshotter: Screenshotter
+	recorder: Recorder
 	runtimeEditor: RuntimeEditor
 	/** Emulation controller for GET/POST /emulation endpoints. */
 	emulationController: EmulationController

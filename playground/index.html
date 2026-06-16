@@ -73,6 +73,14 @@
 				font-size: 0.85rem;
 				color: #666;
 			}
+			#recording-canvas {
+				display: block;
+				width: 360px;
+				max-width: 100%;
+				aspect-ratio: 16 / 9;
+				border: 1px solid #aaa;
+				background: #111;
+			}
 		</style>
 	</head>
 	<body>
@@ -250,6 +258,12 @@
 			<button data-testid="btn-increment" onclick="incrementCounter()">Increment</button>
 		</section>
 
+		<!-- ── Recording ── -->
+		<section data-testid="recording-section">
+			<h2>Recording</h2>
+			<canvas data-testid="recording-canvas" id="recording-canvas" width="640" height="360"></canvas>
+		</section>
+
 		<!-- ── Dialogs ── -->
 		<section data-testid="dialog-section">
 			<h2>Dialogs</h2>
@@ -335,6 +349,34 @@
 				document.getElementById('eval-counter').textContent = window.playground.counter
 				window.__events.push('increment')
 			}
+
+			// ── Recording canvas ──
+			const recordingCanvas = document.getElementById('recording-canvas')
+			const recordingCtx = recordingCanvas.getContext('2d')
+			function drawRecordingCanvas(ts) {
+				const w = recordingCanvas.width
+				const h = recordingCanvas.height
+				const t = ts / 1000
+				recordingCtx.clearRect(0, 0, w, h)
+				recordingCtx.fillStyle = '#111827'
+				recordingCtx.fillRect(0, 0, w, h)
+				recordingCtx.fillStyle = '#0ea5e9'
+				recordingCtx.fillRect(0, h - 44, w, 44)
+				recordingCtx.fillStyle = '#f8fafc'
+				recordingCtx.font = '28px system-ui, sans-serif'
+				recordingCtx.fillText(`Argus recording ${Math.floor(t * 10)}`, 28, 54)
+				const x = 80 + Math.sin(t * 2.4) * 58
+				const y = 160 + Math.cos(t * 1.8) * 42
+				recordingCtx.fillStyle = '#f97316'
+				recordingCtx.beginPath()
+				recordingCtx.arc(x, y, 38, 0, Math.PI * 2)
+				recordingCtx.fill()
+				recordingCtx.strokeStyle = '#22c55e'
+				recordingCtx.lineWidth = 10
+				recordingCtx.strokeRect(300 + Math.sin(t) * 55, 110, 160, 112)
+				requestAnimationFrame(drawRecordingCanvas)
+			}
+			requestAnimationFrame(drawRecordingCanvas)
 
 			// ── Dialog helpers ──
 			window.__dialogResults = []

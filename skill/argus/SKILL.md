@@ -34,7 +34,8 @@ Read:
 
 - [START.md](./reference/START.md) for CDP startup, watcher lifecycle, config defaults, and Node API.
 - [EXTENSION.md](./reference/EXTENSION.md) for extension setup and runtime limitations.
-- [INSPECT.md](./reference/INSPECT.md) for command catalogs: logs, eval, screenshots, DOM, interaction, auth, storage, trace, pages, emulation.
+- [INSPECT.md](./reference/INSPECT.md) for command catalogs: logs, eval, capture, DOM, interaction, auth, storage, trace, pages, emulation.
+- [CAPTURE.md](./reference/CAPTURE.md) for screenshots, recordings, crop semantics, iframe capture, and WebM troubleshooting.
 - [NET.md](./reference/NET.md) for network capture, filtering, inspection, bodies, WebSockets, SSE, HAR export, and mocks.
 
 ---
@@ -116,6 +117,7 @@ Once a watcher is attached, use quick bounded commands first:
 argus logs app --since 10m --levels error,warning
 argus eval app "({ href: location.href, title: document.title })" --json
 argus screenshot app --out shot.png
+argus record app --duration 5s --selector "canvas" --out demo.webm
 argus dom tree app --selector body --depth 2
 argus snapshot app --interactive
 ```
@@ -131,9 +133,9 @@ argus keydown app --key Enter
 argus scroll-to app --selector "#footer"
 ```
 
-For iframe-active extension watchers, commands run against the selected iframe target. Screenshots, selectors, and eval are resolved relative to that iframe.
+For iframe-active extension watchers, commands run against the selected iframe target. Screenshots, recordings, selectors, and eval are resolved relative to that iframe.
 
-For deeper command lists, use [INSPECT.md](./reference/INSPECT.md). For eval flags, polling, file scripts, and args, use [EVAL.md](./reference/EVAL.md).
+For deeper command lists, use [INSPECT.md](./reference/INSPECT.md). For screenshots/recording details, use [CAPTURE.md](./reference/CAPTURE.md). For eval flags, polling, file scripts, and args, use [EVAL.md](./reference/EVAL.md).
 
 ---
 
@@ -146,6 +148,7 @@ npm run dev
 argus start --id app --url localhost:3000
 argus eval app "location.href"
 argus screenshot app --out shot.png
+argus record app --duration 3s --out demo.webm
 ```
 
 `argus start` launches Chrome and a watcher together. For more control:
@@ -181,7 +184,8 @@ Keep these commands in the background in agent shells. See [START.md](./referenc
 
 - [START.md](./reference/START.md) — CDP startup, watcher lifecycle, config defaults, Node API.
 - [EXTENSION.md](./reference/EXTENSION.md) — Extension setup and extension-control details.
-- [INSPECT.md](./reference/INSPECT.md) — Logs, screenshots, DOM, interaction, auth, storage, trace, emulation.
+- [INSPECT.md](./reference/INSPECT.md) — Logs, capture summary, DOM, interaction, auth, storage, trace, emulation.
+- [CAPTURE.md](./reference/CAPTURE.md) — Screenshots, recordings, crop semantics, iframe capture, WebM troubleshooting.
 - [NET.md](./reference/NET.md) — Network capture, filtering, inspection, export, and mocks.
 - [EVAL.md](./reference/EVAL.md) — Eval syntax, polling, files, args, iframe eval.
 - [RUNTIME_CODE.md](./reference/RUNTIME_CODE.md) — Runtime JS/CSS discovery and live CSS edits.
