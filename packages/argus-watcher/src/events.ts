@@ -140,6 +140,7 @@ export type HttpRequestEvent = {
 		| 'dom/info'
 		| 'dom/hover'
 		| 'dom/click'
+		| 'dom/drag'
 		| 'dom/keydown'
 		| 'dom/add'
 		| 'dom/remove'

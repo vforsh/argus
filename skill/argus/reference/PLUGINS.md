@@ -126,7 +126,7 @@ Plugins may also export the plugin as `argusPlugin`.
 - `writeRequestError(result, output)` for standard watcher errors
 - `runChromeOpen(options)` for opening tabs through Argus Chrome resolution
 - `defineWatcherCommand(spec)` for stable watcher-backed command runners with JSON/human formatting
-- `argus.eval`, `argus.dom.click/info/keydown`, and `argus.screenshot` for common watcher calls without raw paths
+- `argus.eval`, `argus.dom.click/drag/info/keydown`, and `argus.screenshot` for common watcher calls without raw paths
 
 Minimal watcher command:
 

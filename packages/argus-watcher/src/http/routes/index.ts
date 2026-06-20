@@ -32,6 +32,7 @@ import { route as postDomTree } from './postDomTree.js'
 import { route as postDomInfo } from './postDomInfo.js'
 import { route as postDomHover } from './postDomHover.js'
 import { route as postDomClick } from './postDomClick.js'
+import { route as postDomDrag } from './postDomDrag.js'
 import { route as postDomKeydown } from './postDomKeydown.js'
 import { route as postDomAdd } from './postDomAdd.js'
 import { route as postDomRemove } from './postDomRemove.js'
@@ -97,6 +98,7 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	postDomInfo,
 	postDomHover,
 	postDomClick,
+	postDomDrag,
 	postDomKeydown,
 	postDomAdd,
 	postDomRemove,

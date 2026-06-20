@@ -61,6 +61,7 @@ export type HttpRequestEventMetadata = {
 		| 'dom/info'
 		| 'dom/hover'
 		| 'dom/click'
+		| 'dom/drag'
 		| 'dom/keydown'
 		| 'dom/add'
 		| 'dom/remove'

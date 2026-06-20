@@ -19,6 +19,7 @@ const argus: ArgusBrowserHelpers = {
 	eval: (id, request, options) => postWatcherJson(id, '/eval', request, options?.timeoutMs ?? request.timeoutMs ?? DEFAULT_TIMEOUT_MS),
 	dom: {
 		click: (id, request, options) => postWatcherJson(id, '/dom/click', request, options?.timeoutMs),
+		drag: (id, request, options) => postWatcherJson(id, '/dom/drag', request, options?.timeoutMs),
 		info: (id, request, options) => postWatcherJson(id, '/dom/info', request, options?.timeoutMs),
 		keydown: (id, request, options) => postWatcherJson(id, '/dom/keydown', request, options?.timeoutMs),
 	},

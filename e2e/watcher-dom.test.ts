@@ -11,11 +11,34 @@ import type {
 	DomInfoResponse,
 	DomHoverResponse,
 	DomClickResponse,
+	DomDragResponse,
 	DomKeydownResponse,
 	ErrorResponse,
 	LocateResponse,
 	SnapshotResponse,
 } from '@vforsh/argus-core'
+
+type DragCanvasEvent = {
+	type: string
+	x: number
+	y: number
+	buttons: number
+	trusted: boolean
+}
+
+type DragCanvasState = {
+	dragging: boolean
+	start: { x: number; y: number } | null
+	current: { x: number; y: number } | null
+	moves: number
+	events: DragCanvasEvent[]
+}
+
+const expectPointNear = (actual: { x: number; y: number } | null, expected: { x: number; y: number }, tolerance = 1): void => {
+	expect(actual).not.toBeNull()
+	expect(Math.abs(actual!.x - expected.x)).toBeLessThanOrEqual(tolerance)
+	expect(Math.abs(actual!.y - expected.y)).toBeLessThanOrEqual(tolerance)
+}
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -45,6 +68,7 @@ const TEST_HTML = `
       <label for="input">Email</label>
       <input id="input" type="text" />
       <button id="btn" class="action">Click me</button>
+      <canvas id="drag-canvas" width="320" height="180" style="display:block;width:320px;height:180px;border:0"></canvas>
       <div id="multi-1" class="multi">Multi One</div>
       <div id="multi-2" class="multi">Multi Two</div>
     </main>
@@ -65,6 +89,55 @@ const TEST_HTML = `
     const input = document.getElementById('input')
     input.addEventListener('keydown', (e) => {
       window.__events.push(\`input-keydown:\${e.key}\`)
+    })
+    const dragCanvas = document.getElementById('drag-canvas')
+    window.__dragCanvas = {
+      dragging: false,
+      start: null,
+      current: null,
+      moves: 0,
+      events: [],
+    }
+    function dragCanvasPoint(event) {
+      const rect = dragCanvas.getBoundingClientRect()
+      return {
+        x: Math.round((event.clientX - rect.left) * (dragCanvas.width / rect.width)),
+        y: Math.round((event.clientY - rect.top) * (dragCanvas.height / rect.height)),
+      }
+    }
+    function recordDragCanvasEvent(type, event, point) {
+      window.__dragCanvas.events.push({
+        type,
+        x: point.x,
+        y: point.y,
+        buttons: event.buttons,
+        trusted: event.isTrusted,
+      })
+      window.__events.push(\`drag-canvas:\${type}\`)
+    }
+    dragCanvas.addEventListener('mousedown', (event) => {
+      const point = dragCanvasPoint(event)
+      window.__dragCanvas.dragging = true
+      window.__dragCanvas.start = point
+      window.__dragCanvas.current = point
+      window.__dragCanvas.moves = 0
+      window.__dragCanvas.events = []
+      recordDragCanvasEvent('mousedown', event, point)
+      event.preventDefault()
+    })
+    window.addEventListener('mousemove', (event) => {
+      if (!window.__dragCanvas.dragging) return
+      const point = dragCanvasPoint(event)
+      window.__dragCanvas.current = point
+      window.__dragCanvas.moves++
+      recordDragCanvasEvent('mousemove', event, point)
+    })
+    window.addEventListener('mouseup', (event) => {
+      if (!window.__dragCanvas.dragging) return
+      const point = dragCanvasPoint(event)
+      window.__dragCanvas.dragging = false
+      window.__dragCanvas.current = point
+      recordDragCanvasEvent('mouseup', event, point)
     })
   </script>
 </body>
@@ -403,6 +476,55 @@ describe('dom tree and dom info e2e', () => {
 		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
 		expect(events).toContain('click:multi-1')
 		expect(events).toContain('click:multi-2')
+	})
+
+	test('dom drag dispatches real mouse movement on canvas', async () => {
+		await page.evaluate(() => {
+			;(globalThis as { __events?: string[] }).__events = []
+			const state = (globalThis as { __dragCanvas?: DragCanvasState }).__dragCanvas!
+			state.dragging = false
+			state.start = null
+			state.current = null
+			state.moves = 0
+			state.events = []
+		})
+
+		const { stdout } = await runArgus([
+			'drag',
+			watcherId,
+			'--selector',
+			'#drag-canvas',
+			'--pos',
+			'40,50',
+			'--by',
+			'120,30',
+			'--duration',
+			'0ms',
+			'--steps',
+			'5',
+			'--json',
+		])
+		const response = JSON.parse(stdout) as DomDragResponse
+		expect(response.ok).toBe(true)
+		expect(response.matches).toBe(1)
+		expect(response.dragged).toBe(1)
+
+		const state = await page.evaluate(() => (globalThis as { __dragCanvas?: DragCanvasState }).__dragCanvas!)
+		expect(state.dragging).toBe(false)
+		expectPointNear(state.start, { x: 40, y: 50 })
+		expectPointNear(state.current, { x: 160, y: 80 })
+		expect(state.moves).toBeGreaterThanOrEqual(5)
+		expect(state.events.map((event) => event.type)).toEqual([
+			'mousedown',
+			'mousemove',
+			'mousemove',
+			'mousemove',
+			'mousemove',
+			'mousemove',
+			'mouseup',
+		])
+		expect(state.events.every((event) => event.trusted)).toBe(true)
+		expect(state.events.filter((event) => event.type === 'mousemove').every((event) => event.buttons === 1)).toBe(true)
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────

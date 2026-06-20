@@ -11,6 +11,15 @@ type Point = {
 	y: number
 }
 
+export type MouseButton = 'left' | 'middle' | 'right'
+type CdpMouseButton = MouseButton | 'back' | 'forward' | 'none'
+export type DragDestination = { to: Point } | { delta: Point }
+export type DragGestureOptions = {
+	button?: MouseButton
+	durationMs?: number
+	steps?: number
+}
+
 export const resolveDomSelectorMatches = async (
 	session: CdpSessionHandle,
 	selector: string,
@@ -27,34 +36,82 @@ export const hoverDomNodes = async (session: CdpSessionHandle, handles: DomNodeH
 
 	for (const handle of handles) {
 		await scrollIntoView(session, handle)
-		const point = await resolveNodeCenter(session, handle)
+		const point = await resolveNodePoint(session, handle)
 		await dispatchMouseEvent(session, { type: 'mouseMoved', x: point.x, y: point.y })
 	}
 }
 
 /** CDP buttons bitmask per button name. */
-const BUTTON_MASK: Record<string, number> = { left: 1, middle: 4, right: 2 }
+const BUTTON_MASK: Record<MouseButton, number> = { left: 1, middle: 4, right: 2 }
 
-export const clickAtPoint = async (session: CdpSessionHandle, x: number, y: number, button: 'left' | 'middle' | 'right' = 'left'): Promise<void> => {
+export const clickAtPoint = async (session: CdpSessionHandle, x: number, y: number, button: MouseButton = 'left'): Promise<void> => {
 	const mask = BUTTON_MASK[button] ?? 1
 	await dispatchMouseEvent(session, { type: 'mouseMoved', x, y })
 	await dispatchMouseEvent(session, { type: 'mousePressed', x, y, button, buttons: mask, clickCount: 1 })
 	await dispatchMouseEvent(session, { type: 'mouseReleased', x, y, button, buttons: 0, clickCount: 1 })
 }
 
-export const resolveNodeTopLeft = async (session: CdpSessionHandle, handle: DomNodeHandle): Promise<Point> => {
-	const { x, y, w, h } = await resolveNodeRect(session, handle)
-	if (w <= 0 || h <= 0) {
-		throw createNotInteractableError('Element has zero area')
+export const dragAtPoints = async (session: CdpSessionHandle, start: Point, end: Point, options: DragGestureOptions = {}): Promise<void> => {
+	const button = options.button ?? 'left'
+	const mask = BUTTON_MASK[button] ?? 1
+	const steps = Math.max(1, Math.floor(options.steps ?? 12))
+	const durationMs = Math.max(0, options.durationMs ?? 250)
+	const stepDelayMs = durationMs / steps
+	let latest = start
+	let pressed = false
+
+	await dispatchMouseEvent(session, { type: 'mouseMoved', x: start.x, y: start.y })
+	try {
+		await dispatchMouseEvent(session, { type: 'mousePressed', x: start.x, y: start.y, button, buttons: mask, clickCount: 1 })
+		pressed = true
+
+		for (let i = 1; i <= steps; i++) {
+			if (stepDelayMs > 0) {
+				await sleep(stepDelayMs)
+			}
+			latest = interpolatePoint(start, end, i / steps)
+			await dispatchMouseEvent(session, { type: 'mouseMoved', x: latest.x, y: latest.y, button, buttons: mask, clickCount: 1 })
+		}
+
+		await dispatchMouseEvent(session, { type: 'mouseReleased', x: end.x, y: end.y, button, buttons: 0, clickCount: 1 })
+		pressed = false
+	} finally {
+		if (pressed) {
+			await dispatchMouseEvent(session, { type: 'mouseReleased', x: latest.x, y: latest.y, button, buttons: 0, clickCount: 1 }).catch(
+				() => undefined,
+			)
+		}
 	}
-	return { x, y }
 }
 
-export const clickDomNodes = async (
+export const dragDomNodes = async (
 	session: CdpSessionHandle,
 	handles: DomNodeHandle[],
-	button: 'left' | 'middle' | 'right' = 'left',
+	destination: DragDestination,
+	options: DragGestureOptions & { offset?: Point } = {},
 ): Promise<void> => {
+	if (handles.length === 0) {
+		return
+	}
+
+	for (const handle of handles) {
+		await scrollIntoView(session, handle)
+		const start = await resolveNodePoint(session, handle, options.offset)
+		await dragAtPoints(session, start, resolveDragEndPoint(start, destination), options)
+	}
+}
+
+export const resolveDragEndPoint = (start: Point, destination: DragDestination): Point => {
+	if ('to' in destination) {
+		return destination.to
+	}
+	return {
+		x: start.x + destination.delta.x,
+		y: start.y + destination.delta.y,
+	}
+}
+
+export const clickDomNodes = async (session: CdpSessionHandle, handles: DomNodeHandle[], button: MouseButton = 'left'): Promise<void> => {
 	if (handles.length === 0) {
 		return
 	}
@@ -62,7 +119,7 @@ export const clickDomNodes = async (
 	const mask = BUTTON_MASK[button] ?? 1
 	for (const handle of handles) {
 		await scrollIntoView(session, handle)
-		const point = await resolveNodeCenter(session, handle)
+		const point = await resolveNodePoint(session, handle)
 		await dispatchMouseEvent(session, { type: 'mouseMoved', x: point.x, y: point.y })
 		await dispatchMouseEvent(session, { type: 'mousePressed', x: point.x, y: point.y, button, buttons: mask, clickCount: 1 })
 		await dispatchMouseEvent(session, { type: 'mouseReleased', x: point.x, y: point.y, button, buttons: 0, clickCount: 1 })
@@ -167,10 +224,13 @@ const getViewportScroll = async (session: CdpSessionHandle): Promise<ScrollPosit
 	return { scrollX: parsed.scrollX, scrollY: parsed.scrollY }
 }
 
-const resolveNodeCenter = async (session: CdpSessionHandle, handle: DomNodeHandle): Promise<Point> => {
+export const resolveNodePoint = async (session: CdpSessionHandle, handle: DomNodeHandle, offset?: Point): Promise<Point> => {
 	const { x, y, w, h } = await resolveNodeRect(session, handle)
 	if (w <= 0 || h <= 0) {
 		throw createNotInteractableError('Element has zero area')
+	}
+	if (offset) {
+		return { x: x + offset.x, y: y + offset.y }
 	}
 	return { x: x + w / 2, y: y + h / 2 }
 }
@@ -231,7 +291,7 @@ export const emulateScrollOnNodes = async (session: CdpSessionHandle, handles: D
 
 	for (const handle of handles) {
 		await scrollIntoView(session, handle)
-		const point = await resolveNodeCenter(session, handle)
+		const point = await resolveNodePoint(session, handle)
 		await emulateScroll(session, point.x, point.y, delta)
 	}
 }
@@ -242,7 +302,7 @@ const dispatchMouseEvent = async (
 		type: 'mouseMoved' | 'mousePressed' | 'mouseReleased'
 		x: number
 		y: number
-		button?: 'left' | 'middle' | 'right' | 'back' | 'forward' | 'none'
+		button?: CdpMouseButton
 		buttons?: number
 		clickCount?: number
 	},
@@ -256,6 +316,13 @@ const dispatchMouseEvent = async (
 		clickCount: options.clickCount,
 	})
 }
+
+const interpolatePoint = (start: Point, end: Point, progress: number): Point => ({
+	x: start.x + (end.x - start.x) * progress,
+	y: start.y + (end.y - start.y) * progress,
+})
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const createNotInteractableError = (message: string): Error => {
 	const error = new Error(message)

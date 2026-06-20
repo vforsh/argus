@@ -2,6 +2,7 @@ import type { Command } from 'commander'
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { defineCommands } from '../defineCommand.js'
 import { domClickCommandDefinition } from '../../commands/domClick.js'
+import { domDragCommandDefinition } from '../../commands/domDrag.js'
 import { quickAccessCommands } from './quickAccessCommands.js'
 import { chromeCommands } from './chromeCommands.js'
 import { watcherCommands } from './watcherCommands.js'
@@ -44,6 +45,7 @@ const coreCommandDefinitions: readonly ArgusCommandDefinition[] = [
 	...codeCommands,
 	...domCommands,
 	domClickCommandDefinition,
+	domDragCommandDefinition,
 	keydownCommand,
 	fillCommand,
 	hoverCommand,

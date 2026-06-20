@@ -66,6 +66,9 @@ argus click app --testid "submit-btn"
 argus click app --ref e5
 argus click app --selector ".delayed-btn" --wait 5s
 argus click app --pos 100,200
+argus drag app --selector "#piece" --by 120,0
+argus drag app --selector "canvas" --pos 320,240 --by 80,-30
+argus drag app --pos 200,300 --to 500,300
 argus hover app --selector ".menu-item"
 argus fill app --selector "#username" "Bob"
 argus fill app --selector "#desc" --value-file ./description.txt
@@ -78,7 +81,9 @@ argus scroll-to app --to 0,1000
 argus scroll-to app --selector ".panel" --by 0,500
 ```
 
-`--wait <duration>` on click/fill polls for the selector before acting. Duration examples: `5s`, `500ms`, `2m`.
+`drag` uses real Chrome mouse input (`mousePressed` → `mouseMoved` → `mouseReleased`), which works for canvas/WebGL game interactions. With `--selector`/`--ref`, `--pos` is an offset from the element top-left; without an element target, `--pos` is the viewport start.
+
+`--wait <duration>` on click/fill/drag polls for the selector before acting. Duration examples: `5s`, `500ms`, `2m`.
 
 ## Dialogs
 

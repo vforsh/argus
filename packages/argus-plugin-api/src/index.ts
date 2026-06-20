@@ -1,6 +1,8 @@
 import type {
 	DomClickRequest,
 	DomClickResponse,
+	DomDragRequest,
+	DomDragResponse,
 	DomInfoRequest,
 	DomInfoResponse,
 	DomKeydownRequest,
@@ -145,6 +147,11 @@ export type ArgusBrowserHelpers = {
 			request: DomClickRequest,
 			options?: ArgusBrowserHelperOptions,
 		) => Promise<ArgusWatcherRequestResult<DomClickResponse>>
+		drag: (
+			id: string | undefined,
+			request: DomDragRequest,
+			options?: ArgusBrowserHelperOptions,
+		) => Promise<ArgusWatcherRequestResult<DomDragResponse>>
 		info: (
 			id: string | undefined,
 			request: DomInfoRequest,
