@@ -34,8 +34,8 @@ argus wait app --file ./ready.js --arg level=10 --total-timeout 20s
 ```bash
 argus screenshot app --out shot.png
 argus screenshot app --selector "canvas" --out canvas.png
-argus record app --duration 5s --out demo.webm
-argus record app --duration 3s --selector "canvas" --out canvas.webm
+argus record app --duration 5s --out demo.mp4
+argus record app --duration 3s --selector "canvas" --out canvas.mp4
 ```
 
 See [CAPTURE.md](./CAPTURE.md) for crop semantics, iframe behavior, recording start/stop, `ffmpeg`, and troubleshooting.

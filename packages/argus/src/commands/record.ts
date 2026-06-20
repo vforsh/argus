@@ -1,5 +1,6 @@
 import path from 'node:path'
-import type { RecordClipRegion, RecordResponse, RecordStartResponse, RecordStopResponse } from '@vforsh/argus-core'
+import type { RecordClipRegion, RecordFormat, RecordResponse, RecordStartResponse, RecordStopResponse } from '@vforsh/argus-core'
+import { RECORD_FORMATS } from '@vforsh/argus-core'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
 import { parseDurationMs } from '../time.js'
@@ -15,6 +16,7 @@ export type RecordOptions = {
 	selector?: string
 	clip?: string
 	fps?: string
+	format?: string
 }
 
 export type RecordStartOptions = Omit<RecordOptions, 'duration'>
@@ -42,15 +44,7 @@ export const runRecordStart = defineWatcherCommand<RecordStartOptions, RecordSta
 })
 
 export const runRecordStop = defineWatcherCommand<RecordStopOptions, RecordStopResponse>({
-	build: (_args, options) => ({
-		path: '/record/stop',
-		method: 'POST',
-		body: {
-			recordId: normalizeString(options.recordId),
-			outFile: options.out,
-		},
-		timeoutMs: RECORD_STOP_TIMEOUT_MS,
-	}),
+	build: (_args, options, output) => buildRecordStopPlan(options, output),
 	formatHuman: (response, { output }) => {
 		output.writeHuman(`Recording saved: ${response.outFile} (${response.frameCount} frames, ${formatDurationMs(response.durationMs)})`)
 	},
@@ -92,10 +86,28 @@ const buildRecordStartPlan = (options: RecordStartOptions, output: Output): Watc
 	}
 }
 
+const buildRecordStopPlan = (options: RecordStopOptions, output: Output): WatcherRequestPlan | null => {
+	const outputError = validateRecordOutFile(options.out)
+	if (outputError) {
+		writeRecordOptionError(output, outputError)
+		return null
+	}
+
+	return {
+		path: '/record/stop',
+		method: 'POST',
+		body: {
+			recordId: normalizeString(options.recordId),
+			outFile: options.out,
+		},
+		timeoutMs: RECORD_STOP_TIMEOUT_MS,
+	}
+}
+
 const buildRecordBody = (
 	options: RecordStartOptions,
 	output: Output,
-): { outFile?: string; selector?: string; clip?: RecordClipRegion; fps?: number; format: 'webm' } | null => {
+): { outFile?: string; selector?: string; clip?: RecordClipRegion; fps?: number; format: RecordFormat } | null => {
 	const clip = parseRecordClip(options.clip, output)
 	if (clip === null) {
 		return null
@@ -112,7 +124,8 @@ const buildRecordBody = (
 		return null
 	}
 
-	if (!validateWebmOutput(options.out, output)) {
+	const format = parseRecordFormat(options.format, options.out, output)
+	if (!format) {
 		return null
 	}
 
@@ -121,7 +134,7 @@ const buildRecordBody = (
 		selector,
 		clip,
 		fps,
-		format: 'webm',
+		format,
 	}
 }
 
@@ -160,15 +173,6 @@ const parseRecordClip = (value: string | undefined, output: Output): RecordClipR
 	return parsed.value
 }
 
-const validateWebmOutput = (outFile: string | undefined, output: Output): boolean => {
-	const error = validateRecordOutFile(outFile)
-	if (error) {
-		writeRecordOptionError(output, error)
-		return false
-	}
-	return true
-}
-
 export const parseRecordFpsValue = (value: string | undefined): { value?: number; error?: string } => {
 	if (value == null) {
 		return {}
@@ -202,8 +206,60 @@ export const parseRecordClipValue = (value: string | undefined): { value?: Recor
 
 export const validateRecordOutFile = (outFile: string | undefined): string | null => {
 	const ext = path.extname(outFile?.trim() ?? '').toLowerCase()
-	return ext && ext !== '.webm' ? 'Only WebM output is supported in this version. Use --out <file>.webm.' : null
+	if (!ext || ext === '.mp4' || ext === '.webm') {
+		return null
+	}
+	return 'Recording output must use .mp4 or .webm when an extension is provided.'
 }
+
+export const parseRecordFormatValue = (value: string | undefined): { value?: RecordFormat; error?: string } => {
+	if (value == null) {
+		return {}
+	}
+
+	const normalized = value.trim().toLowerCase()
+	if (isRecordFormat(normalized)) {
+		return { value: normalized }
+	}
+
+	return { error: `Invalid --format value: expected one of ${RECORD_FORMATS.join(', ')}.` }
+}
+
+export const inferRecordFormatFromOutFile = (outFile: string | undefined): RecordFormat | undefined => {
+	const ext = path.extname(outFile?.trim() ?? '').toLowerCase()
+	if (ext === '.mp4') return 'mp4'
+	if (ext === '.webm') return 'webm'
+	return undefined
+}
+
+export const validateRecordOutFileForFormat = (outFile: string | undefined, format: RecordFormat): string | null => {
+	const outputError = validateRecordOutFile(outFile)
+	if (outputError) {
+		return outputError
+	}
+
+	const inferred = inferRecordFormatFromOutFile(outFile)
+	return inferred && inferred !== format ? `Output extension .${inferred} does not match --format ${format}.` : null
+}
+
+const parseRecordFormat = (value: string | undefined, outFile: string | undefined, output: Output): RecordFormat | null => {
+	const parsed = parseRecordFormatValue(value)
+	if (parsed.error) {
+		writeRecordOptionError(output, parsed.error)
+		return null
+	}
+
+	const format = parsed.value ?? inferRecordFormatFromOutFile(outFile) ?? 'mp4'
+	const outputError = validateRecordOutFileForFormat(outFile, format)
+	if (outputError) {
+		writeRecordOptionError(output, outputError)
+		return null
+	}
+
+	return format
+}
+
+const isRecordFormat = (value: string): value is RecordFormat => RECORD_FORMATS.includes(value as RecordFormat)
 
 const normalizeString = (value: string | undefined): string | undefined => {
 	const trimmed = value?.trim()

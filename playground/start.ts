@@ -51,7 +51,7 @@ const main = async (): Promise<void> => {
     argus eval playground "window.iframeState" --iframe "#playground-iframe"
     argus eval playground "window.iframeState" --iframe "#cross-origin-iframe"
     argus screenshot playground
-    argus record playground --duration 2s --selector '[data-testid="recording-canvas"]' --out /tmp/argus-playground.webm
+    argus record playground --duration 2s --selector '[data-testid="recording-canvas"]' --out /tmp/argus-playground.mp4
 ────────────────────────────────────
   Press Ctrl+C to stop.
 `)

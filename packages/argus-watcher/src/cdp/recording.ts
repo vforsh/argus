@@ -3,7 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
-import type { RecordRequest, RecordStartRequest, RecordStartResponse, RecordStopRequest, RecordStopResponse } from '@vforsh/argus-core'
+import type { RecordFormat, RecordRequest, RecordStartRequest, RecordStartResponse, RecordStopRequest, RecordStopResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import { ensureArtifactsDir, ensureParentDir, resolveArtifactPath } from '../artifacts.js'
 import { createVisualCapturePlan, type VisualCaptureClip, type VisualCaptureViewport } from './visualCapture.js'
@@ -38,6 +38,7 @@ type RecordingState = {
 	startedAt: number
 	capturedDurationMs: number | null
 	fps: number
+	format: RecordFormat
 	clip: VisualCaptureClip | undefined
 	viewport: VisualCaptureViewport | undefined
 	state: 'starting' | 'recording' | 'stopping'
@@ -70,11 +71,13 @@ export const createRecorder = (options: {
 		}
 
 		await ensureArtifactsDir(options.artifactsDir)
+		const format = resolveRecordFormat(request)
 		const fps = normalizeFps(request.fps)
 		const recordId = crypto.randomUUID()
 		const sessionName = `record-${new Date().toISOString().replace(/[:.]/g, '-')}`
-		const defaultName = `recordings/${sessionName}.webm`
+		const defaultName = `recordings/${sessionName}.${format}`
 		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
+		validateOutputPathFormat(displayPath, format)
 		await ensureParentDir(absolutePath)
 
 		const capturePlan = await createVisualCapturePlan(options.session, options.pageSession, request)
@@ -103,6 +106,7 @@ export const createRecorder = (options: {
 			startedAt: Date.now(),
 			capturedDurationMs: null,
 			fps,
+			format,
 			clip: capturePlan.clip,
 			viewport: capturePlan.viewport,
 			state: 'starting',
@@ -120,6 +124,7 @@ export const createRecorder = (options: {
 			state.ffmpeg = await startFfmpeg({
 				absolutePath: state.absolutePath,
 				fps,
+				format,
 				clip: state.clip,
 				viewport: state.viewport,
 				frameSize,
@@ -134,6 +139,7 @@ export const createRecorder = (options: {
 				recordId,
 				sessionName,
 				outFile: displayPath,
+				format,
 				fps,
 				clipped: Boolean(state.clip),
 			}
@@ -198,7 +204,8 @@ export const createRecorder = (options: {
 			return
 		}
 
-		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, outFile, `recordings/${state.sessionName}.webm`)
+		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, outFile, `recordings/${state.sessionName}.${state.format}`)
+		validateOutputPathFormat(displayPath, state.format)
 		if (path.resolve(absolutePath) === state.absolutePath) {
 			return
 		}
@@ -292,6 +299,7 @@ const pumpQueuedFrames = (state: RecordingState): void => {
 const startFfmpeg = async (options: {
 	absolutePath: string
 	fps: number
+	format: RecordFormat
 	clip: VisualCaptureClip | undefined
 	viewport: VisualCaptureViewport | undefined
 	frameSize: PngSize
@@ -313,14 +321,7 @@ const startFfmpeg = async (options: {
 		'-an',
 		'-vf',
 		filter,
-		'-c:v',
-		'libvpx',
-		'-deadline',
-		'realtime',
-		'-cpu-used',
-		'5',
-		'-b:v',
-		'1M',
+		...buildEncoderArgs(options.format),
 		'-y',
 		options.absolutePath,
 	]
@@ -401,6 +402,7 @@ const buildStopResponse = (state: RecordingState): RecordStopResponse => ({
 	recordId: state.recordId,
 	sessionName: state.sessionName,
 	outFile: state.outFile,
+	format: state.format,
 	frameCount: state.frameCount,
 	durationMs: state.capturedDurationMs ?? Math.max(0, Date.now() - state.startedAt),
 	fps: state.fps,
@@ -412,6 +414,36 @@ const normalizeFps = (fps: number | undefined): number => {
 		return DEFAULT_RECORD_FPS
 	}
 	return Math.min(60, Math.max(1, Math.round(fps)))
+}
+
+const resolveRecordFormat = (request: RecordStartRequest): RecordFormat => request.format ?? inferRecordFormatFromPath(request.outFile) ?? 'mp4'
+
+const inferRecordFormatFromPath = (outFile: string | undefined): RecordFormat | undefined => {
+	const ext = path.extname(outFile?.trim() ?? '').toLowerCase()
+	if (ext === '.mp4') return 'mp4'
+	if (ext === '.webm') return 'webm'
+	return undefined
+}
+
+const validateOutputPathFormat = (outFile: string, format: RecordFormat): void => {
+	const ext = path.extname(outFile.trim()).toLowerCase()
+	if (ext && ext !== '.mp4' && ext !== '.webm') {
+		throw new Error('Recording output must use .mp4 or .webm when an extension is provided')
+	}
+
+	const inferred = inferRecordFormatFromPath(outFile)
+	if (inferred && inferred !== format) {
+		throw new Error(`Output extension .${inferred} does not match recording format ${format}`)
+	}
+}
+
+const buildEncoderArgs = (format: RecordFormat): string[] => {
+	if (format === 'webm') {
+		return ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '5', '-b:v', '1M', '-f', 'webm']
+	}
+
+	// yuv420p + H.264 keeps files playable in Finder, QuickTime, iOS Photos, Slack, and browsers.
+	return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-movflags', '+faststart', '-f', 'mp4']
 }
 
 const readPngSize = (buffer: Buffer): PngSize => {

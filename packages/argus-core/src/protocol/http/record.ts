@@ -3,7 +3,13 @@ import type { ScreenshotClipRegion } from './screenshot.js'
 /** Viewport-relative crop rectangle in CSS pixels. */
 export type RecordClipRegion = ScreenshotClipRegion
 
-/** Shared options for WebM recording requests. */
+/** Supported recording containers/codecs. */
+export const RECORD_FORMATS = ['mp4', 'webm'] as const
+
+/** Recording container/codec preset. */
+export type RecordFormat = (typeof RECORD_FORMATS)[number]
+
+/** Shared options for video recording requests. */
 export type RecordOptions = {
 	outFile?: string
 	selector?: string
@@ -11,7 +17,8 @@ export type RecordOptions = {
 	clip?: RecordClipRegion
 	/** Output frames per second. Defaults to 30. */
 	fps?: number
-	format?: 'webm'
+	/** Output format. Defaults to mp4 unless inferred from outFile extension. */
+	format?: RecordFormat
 }
 
 /** Request payload for POST /record. */
@@ -29,6 +36,7 @@ export type RecordStartResponse = {
 	recordId: string
 	sessionName: string
 	outFile: string
+	format: RecordFormat
 	fps: number
 	clipped: boolean
 }
@@ -45,6 +53,7 @@ export type RecordStopResponse = {
 	recordId: string
 	sessionName: string
 	outFile: string
+	format: RecordFormat
 	frameCount: number
 	durationMs: number
 	fps: number

@@ -16,22 +16,23 @@ argus screenshot app --testid "game-canvas" --out game.png
 ## Recording
 
 ```bash
-argus record app --duration 5s --out demo.webm
-argus record app --duration 3s --selector "canvas" --out canvas.webm
-argus record app --duration 3s --clip 100,80,640,360 --out crop.webm
-argus record app --duration 3s --testid "game-canvas" --out game.webm
+argus record app --duration 5s --out demo.mp4
+argus record app --duration 3s --selector "canvas" --out canvas.mp4
+argus record app --duration 3s --clip 100,80,640,360 --out crop.mp4
+argus record app --duration 3s --testid "game-canvas" --out game.mp4
 ```
 
-Recordings are silent WebM files. Default FPS is 30; use `--fps <1-60>` for large canvases or lighter artifacts.
+Recordings are silent MP4/H.264 files by default. WebM is supported with `--format webm` or a `.webm` output path. Default FPS is 30; use `--fps <1-60>` for large canvases or lighter artifacts.
 
 ```bash
-argus record app --duration 5s --selector "canvas" --fps 12 --out canvas.webm
+argus record app --duration 5s --selector "canvas" --fps 12 --out canvas.mp4
+argus record app --duration 5s --selector "canvas" --format webm --out canvas.webm
 ```
 
 For manual interaction windows:
 
 ```bash
-argus record start app --selector "canvas" --out canvas.webm
+argus record start app --selector "canvas" --out canvas.mp4
 argus click app --selector "#play"
 argus record stop app
 ```
@@ -48,7 +49,7 @@ For iframe-active extension watchers, capture commands resolve selectors inside 
 
 ```bash
 argus ext use --url portal.example --as app --iframe-url game-frame-host.example
-argus record app --duration 5s --selector "canvas" --out game.webm
+argus record app --duration 5s --selector "canvas" --out game.mp4
 ```
 
 If capture runs against the host page instead of the app, select the iframe first:
@@ -64,13 +65,13 @@ If recording fails with no frames, make the page visible and unthrottled:
 
 ```bash
 argus page show app
-argus record app --duration 3s --selector "canvas" --out canvas.webm
+argus record app --duration 3s --selector "canvas" --out canvas.mp4
 ```
 
 If recording fails because `ffmpeg` is missing, install it or point Argus at it:
 
 ```bash
-ARGUS_FFMPEG=/opt/homebrew/bin/ffmpeg argus record app --duration 3s --out demo.webm
+ARGUS_FFMPEG=/opt/homebrew/bin/ffmpeg argus record app --duration 3s --out demo.mp4
 ```
 
-Recording is WebM-only for now. Use external tooling for GIF/MP4 conversion after capture.
+MP4 output requires an ffmpeg build with `libx264`. If your ffmpeg lacks it, install a full build or record WebM with `--format webm`.

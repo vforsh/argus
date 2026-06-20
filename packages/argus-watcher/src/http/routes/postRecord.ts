@@ -1,5 +1,6 @@
 import type {
 	RecordClipRegion,
+	RecordFormat,
 	RecordRequest,
 	RecordResponse,
 	RecordStartRequest,
@@ -7,6 +8,7 @@ import type {
 	RecordStopRequest,
 	RecordStopResponse,
 } from '@vforsh/argus-core'
+import { RECORD_FORMATS } from '@vforsh/argus-core'
 import { defineJsonRoute, type WatcherRouteDefinition } from './defineRoute.js'
 
 export const recordRoutes: readonly WatcherRouteDefinition[] = [
@@ -57,12 +59,14 @@ function validateRecordStartRequest(payload: RecordStartRequest): string | null 
 		return 'fps must be between 1 and 60'
 	}
 
-	if (payload.format != null && payload.format !== 'webm') {
-		return 'format must be webm'
+	if (payload.format != null && (typeof payload.format !== 'string' || !isRecordFormat(payload.format))) {
+		return `format must be one of: ${RECORD_FORMATS.join(', ')}`
 	}
 
 	return null
 }
+
+const isRecordFormat = (value: string): value is RecordFormat => RECORD_FORMATS.includes(value as RecordFormat)
 
 function validateRecordStopRequest(payload: RecordStopRequest): string | null {
 	if (payload.recordId != null && (typeof payload.recordId !== 'string' || !payload.recordId.trim())) {
