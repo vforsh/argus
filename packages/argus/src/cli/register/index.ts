@@ -27,6 +27,7 @@ import { traceCommands } from './traceCommands.js'
 import { configCommands } from './configCommands.js'
 import { pluginCommands } from './pluginCommands.js'
 import { extensionCommands } from './extensionCommands.js'
+import { skillCommands } from './skillCommands.js'
 
 export type ProgramRegistrar = (program: Command) => void
 
@@ -57,6 +58,7 @@ const coreCommandDefinitions: readonly ArgusCommandDefinition[] = [
 	...traceCommands,
 	...configCommands,
 	...pluginCommands,
+	...skillCommands,
 	...extensionCommands,
 ]
 

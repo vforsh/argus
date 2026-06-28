@@ -16,7 +16,10 @@ Install/run:
 npm i -g @vforsh/argus
 argus --help
 npx -y @vforsh/argus --help
+argus skill
 ```
+
+`argus skill` prints the absolute path to the installed `SKILL.md`. Use it when an agent needs to locate the packaged Argus skill files.
 
 **Long-running commands:** `argus start`, `argus chrome start`, `argus watcher start`, and log tails do not exit on their own. Start them in the background when using an agent shell.
 
