@@ -1,5 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
+import { runExtensionInstall } from '../../commands/extension/install.js'
 import { runExtensionSetup } from '../../commands/extension/setup.js'
+import { runExtensionPath } from '../../commands/extension/extensionPath.js'
 import { runExtensionRemove } from '../../commands/extension/remove.js'
 import { runExtensionStatus } from '../../commands/extension/status.js'
 import { runExtensionInfo } from '../../commands/extension/info.js'
@@ -64,17 +66,40 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 		description: 'Browser extension management',
 		subcommands: [
 			{
-				name: 'setup <extensionId>',
-				description: 'Install native messaging host for the browser extension',
+				name: 'install',
+				description: 'Set up the extension end-to-end: install hosts, open chrome://extensions, wait for connect',
+				options: [
+					{ flags: '--no-open', description: 'Do not open chrome://extensions automatically' },
+					{ flags: '--no-wait', description: 'Do not wait for the extension to connect' },
+					{ flags: '--timeout <seconds>', description: 'Seconds to wait for the extension to connect (default 120)' },
+					jsonOption,
+				],
+				examples: ['argus extension install', 'argus extension install --no-open', 'argus extension install --no-wait --json'],
+				action: async (options) => {
+					await runExtensionInstall(options)
+				},
+			},
+			{
+				name: 'setup [extensionId]',
+				description: 'Install native messaging host (uses the pinned extension ID by default)',
 				options: [jsonOption],
 				configure: (command) => {
 					command.addHelpText(
 						'after',
-						'\nTo get your extension ID:\n  1. Open chrome://extensions\n  2. Enable Developer mode\n  3. Load argus-extension as unpacked\n  4. Copy the ID from the extension card\n',
+						'\nThe Argus extension pins a stable ID, so no argument is needed.\nPrefer `argus extension install` for the guided, end-to-end flow.\nPass an explicit id only when loading a differently-keyed build.\n',
 					)
 				},
 				action: async (extensionId, options) => {
 					await runExtensionSetup({ extensionId, ...options })
+				},
+			},
+			{
+				name: 'path',
+				description: 'Print the path to the unpacked extension for chrome://extensions "Load unpacked"',
+				options: [jsonOption],
+				examples: ['argus extension path', 'argus extension path --json'],
+				action: (options) => {
+					runExtensionPath(options)
 				},
 			},
 			{

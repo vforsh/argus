@@ -1,14 +1,16 @@
 import { createOutput } from '../../output/io.js'
 import { getPlatform, findArgusExecutable, installNativeHosts, shortenPath } from './nativeHost.js'
+import { ARGUS_EXTENSION_ID } from './extensionId.js'
 
 export type ExtensionSetupOptions = {
-	extensionId: string
+	/** Override the pinned extension ID. Defaults to {@link ARGUS_EXTENSION_ID}. */
+	extensionId?: string
 	json?: boolean
 }
 
 export const runExtensionSetup = async (options: ExtensionSetupOptions): Promise<void> => {
 	const output = createOutput(options)
-	const { extensionId } = options
+	const extensionId = options.extensionId ?? ARGUS_EXTENSION_ID
 
 	let platform
 	try {
@@ -69,8 +71,10 @@ export const runExtensionSetup = async (options: ExtensionSetupOptions): Promise
 		}
 		output.writeHuman('')
 		output.writeHuman('Next steps:')
-		output.writeHuman('  1. Reload the extension in chrome://extensions')
+		output.writeHuman('  1. Load the unpacked extension from `argus extension path` (if not already loaded)')
 		output.writeHuman('  2. Run `argus ext tabs` or open the extension popup and attach a tab')
+		output.writeHuman('')
+		output.writeHuman('Tip: `argus extension install` does this end-to-end and waits for the extension to connect.')
 		output.writeHuman('')
 	}
 }

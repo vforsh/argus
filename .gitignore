@@ -9,3 +9,6 @@ logs/*.log
 
 .argus/artifacts/
 package-lock.json
+
+# Argus extension signing key (derives the pinned public key + ID; back up out-of-band)
+packages/argus-extension/key.pem

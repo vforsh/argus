@@ -11,6 +11,7 @@
 	"type": "module",
 	"scripts": {
 		"build": "esbuild src/background/service-worker.ts src/popup/popup.ts --bundle --outdir=dist --format=esm --target=chrome120 --sourcemap",
+		"generate-key": "node scripts/generate-key.mjs",
 		"package:release": "node scripts/package-release.mjs",
 		"watch": "bun run build -- --watch",
 		"typecheck": "tsc --noEmit"
