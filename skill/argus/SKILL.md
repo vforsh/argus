@@ -47,6 +47,8 @@ Read:
 
 Use this for any app that needs the user's normal browser profile, cookies, local storage, extensions, or saved login state. Do **not** use `argus start`, `argus chrome start --profile temp`, headless Chrome, or a fresh CDP profile for this flow; those lose the real login/session context.
 
+First-time setup is one command: `argus extension install` (installs native hosts, opens chrome://extensions, waits for connect). The extension ID is pinned and the build ships with the CLI — see [EXTENSION.md](./reference/EXTENSION.md).
+
 ```bash
 APP_URL="https://portal.example/app"
 WATCHER_ID="app"
@@ -168,7 +170,7 @@ Keep these commands in the background in agent shells. See [START.md](./referenc
 
 ## Troubleshooting
 
-**No extension-control watcher** — Open/reload the browser extension, then run `argus ext doctor --json`.
+**No extension-control watcher** — First time? Run `argus extension install`. Otherwise open/reload the extension, then run `argus ext doctor --json`.
 
 **Multiple tabs matched** — Use `argus ext tabs --url <url> --json`, choose a `tabId`, then pass `--tab <tabId>`.
 

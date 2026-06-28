@@ -21,52 +21,40 @@ bun run package:release
 
 By default this writes `dist/release/argus-extension.zip`.
 
-## Install Extension in Chrome
+## Install
 
-### From GitHub Release
+The extension ID is **pinned** via a public `key` in `manifest.json`, so Chrome assigns the same ID on every machine — no copy/paste, and the native messaging host manifest never needs rewriting. The built extension also ships inside the `@vforsh/argus` CLI package, so end users don't build anything.
 
-1. Download `argus-extension-<tag>.zip` from the GitHub release assets
-2. Unzip it somewhere stable
-3. Open Chrome and navigate to `chrome://extensions`
-4. Enable **Developer mode** (toggle in top-right)
-5. Click **Load unpacked**
-6. Select the unzipped extension directory
-7. Note the **Extension ID** shown on the card (you'll need this for the Native Messaging host)
-
-### From Repository Checkout
-
-1. Open Chrome and navigate to `chrome://extensions`
-2. Enable **Developer mode** (toggle in top-right)
-3. Click **Load unpacked**
-4. Select the `packages/argus-extension` directory
-5. Note the **Extension ID** shown on the card (you'll need this for the Native Messaging host)
-
-## Install Native Messaging Host
-
-The extension communicates with `argus-watcher` via Chrome's Native Messaging protocol. You need to install the host manifest:
+One command does the whole setup — install the native hosts, open `chrome://extensions`, and wait for the extension to connect:
 
 ```bash
-# From the argus root directory
-bun run build
-argus extension setup <EXTENSION_ID>
+argus extension install
+#  → click "Load unpacked" and select the printed folder (enable Developer mode if hidden)
 ```
 
-Replace `<EXTENSION_ID>` with the ID shown on the extension card.
+Helpers:
 
-This creates:
+```bash
+argus extension path     # absolute folder to "Load unpacked" (ships with the CLI)
+argus extension status   # native host config + extension ID
+argus extension install --no-wait   # scripted / non-interactive
+```
+
+`install` writes the native messaging host manifests:
 
 - **macOS**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json` and `com.vforsh.argus.control.json`
 - **Linux**: `~/.config/google-chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json` and `com.vforsh.argus.control.json`
 - **Windows**: Manifest in AppData + registry key (see console output)
 
+Advanced: `argus extension setup [extensionId]` installs only the hosts (pass an id to override the pinned one for a differently-keyed build).
+
+### Regenerating the pinned key
+
+The keypair lives in `key.pem` (gitignored; back it up out-of-band). To regenerate the key + ID — e.g. for a fork — run `bun run generate-key`, which rewrites the manifest `key` and prints the matching id; paste that id into `ARGUS_EXTENSION_ID` in `packages/argus/src/commands/extension/extensionId.ts` (a test guards the two against drift).
+
 ## Usage
 
-1. **Install the native host and reload the extension**:
-
-```bash
-argus extension setup <EXTENSION_ID>
-```
-
+1. **Set up the extension** (once): `argus extension install` (see [Install](#install)).
 2. **Open Chrome with the extension loaded**. The extension starts an `extension-control` Native Messaging host for browser-level commands such as tab listing, without attaching the debugger to any tab. It also creates a dedicated Native Messaging host + watcher process for each tab you attach.
 3. **Attach to tabs**: Run `argus ext attach --tab <tabId>` / `argus ext attach --url <substring>`, or click "Attach" in the extension popup. Every attached tab gets its own watcher id in the local registry.
 4. **Connect to a specific iframe (optional)**: Once a tab is attached, the popup shows the top page plus discovered iframe targets for that tab. Selecting an iframe keeps that tab's watcher attached but switches Argus commands (`eval`, `dom *`, selector-based screenshots, etc.) to that frame.

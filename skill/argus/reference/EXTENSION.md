@@ -5,17 +5,22 @@ Debug normal Chrome session without CDP flags.
 ### One-Time Setup
 
 ```bash
-# 1) Build extension
-cd packages/argus-extension && bun run build
-
-# 2) Load in Chrome
-#    chrome://extensions → Developer mode → Load unpacked → select packages/argus-extension
-#    Copy Extension ID (e.g. kkoefnlnjlnlbohcifcbkpgmjaokmipi)
-
-# 3) Install native host
-argus extension setup <EXTENSION_ID>
-argus extension status
+# Installs native hosts, opens chrome://extensions, waits for the extension to connect:
+argus extension install
+#   → click "Load unpacked" and select the printed folder (enable Developer mode if hidden)
 ```
+
+The extension ID is **pinned** (via a `key` in the manifest), so there's no ID to copy/paste and the prebuilt extension ships with the CLI — no build step. Useful sub-commands:
+
+```bash
+argus extension path      # absolute folder to "Load unpacked"
+argus extension status    # native host config + extension ID
+argus extension install --no-wait   # scripted/non-interactive (skip the connect wait)
+```
+
+Advanced: `argus extension setup [extensionId]` installs only the native hosts (pass an id to override the pinned one for a differently-keyed build).
+
+> Migration: if you previously loaded an unkeyed build, reload the extension once at `chrome://extensions` so it picks up the pinned ID.
 
 ### Usage
 
