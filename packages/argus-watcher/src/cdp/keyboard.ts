@@ -1,3 +1,4 @@
+import type { DomKeydownEvent } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import { resolveDomSelectorMatches } from './mouse.js'
 
@@ -12,11 +13,18 @@ type KeyDefinition = {
 	text?: string
 }
 
-const buildKeyMap = (): Map<string, KeyDefinition> => {
-	const map = new Map<string, KeyDefinition>()
+type KeyMaps = {
+	byKey: Map<string, KeyDefinition>
+	byCode: Map<string, KeyDefinition>
+}
+
+const buildKeyMaps = (): KeyMaps => {
+	const byKey = new Map<string, KeyDefinition>()
+	const byCode = new Map<string, KeyDefinition>()
 
 	const put = (lookup: string, def: KeyDefinition): void => {
-		map.set(lookup.toLowerCase(), def)
+		byKey.set(lookup.toLowerCase(), def)
+		byCode.set(def.code.toLowerCase(), def)
 	}
 
 	// Letters a-z
@@ -64,17 +72,22 @@ const buildKeyMap = (): Map<string, KeyDefinition> => {
 		put(name, { key: name, code: name, keyCode: 111 + i })
 	}
 
-	return map
+	return { byKey, byCode }
 }
 
-const KEY_MAP = buildKeyMap()
+const KEY_MAPS = buildKeyMaps()
 
 /**
  * Resolve a key name to its CDP key definition.
  * Lookup is case-insensitive.
  */
 export const resolveKeyDefinition = (key: string): KeyDefinition | undefined => {
-	return KEY_MAP.get(key.toLowerCase())
+	return KEY_MAPS.byKey.get(key.toLowerCase())
+}
+
+/** Resolve a physical KeyboardEvent.code to its CDP key definition. */
+export const resolveCodeDefinition = (code: string): KeyDefinition | undefined => {
+	return KEY_MAPS.byCode.get(code.toLowerCase())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -124,16 +137,89 @@ export const parseModifiers = (input?: string): number => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type DispatchKeydownOptions = {
-	key: string
+	key?: string
+	code?: string
 	selector?: string
 	modifiers?: number
 }
 
 export type DispatchKeydownResult = {
 	key: string
+	code: string
 	modifiers: number
 	focused: boolean
+	event: DomKeydownEvent
 }
+
+type ResolveKeyboardEventOptions = {
+	key?: string
+	code?: string
+	modifiers?: number
+}
+
+/** Resolve user-facing key/code input into the exact event shape sent to Chrome. */
+export const resolveKeyboardEvent = (options: ResolveKeyboardEventOptions): DomKeydownEvent => {
+	const modifiers = options.modifiers ?? 0
+	const keyInput = normalizeOptionalString(options.key)
+	const codeInput = normalizeOptionalString(options.code)
+
+	if (!keyInput && !codeInput) {
+		throw new Error('key or code is required')
+	}
+
+	const keyDef = keyInput ? resolveKeyDefinition(keyInput) : undefined
+	const codeDef = codeInput ? resolveCodeDefinition(codeInput) : undefined
+	const baseDef = codeDef ?? keyDef
+
+	if (!baseDef) {
+		if (codeInput && !keyInput) {
+			throw new Error(`Unknown code: "${codeInput}"`)
+		}
+		throw new Error(`Unknown key: "${keyInput}"`)
+	}
+
+	const key = resolveEventKey(keyInput, baseDef, modifiers)
+	const text = resolveEventText(key, baseDef)
+
+	const event: DomKeydownEvent = {
+		key,
+		code: codeInput ?? baseDef.code,
+		keyCode: baseDef.keyCode,
+		modifiers,
+		altKey: (modifiers & MODIFIER_BITS.alt) !== 0,
+		ctrlKey: (modifiers & MODIFIER_BITS.ctrl) !== 0,
+		metaKey: (modifiers & MODIFIER_BITS.meta) !== 0,
+		shiftKey: (modifiers & MODIFIER_BITS.shift) !== 0,
+	}
+	if (text !== undefined) {
+		event.text = text
+	}
+	return event
+}
+
+const normalizeOptionalString = (value: string | undefined): string | undefined => {
+	const normalized = value?.trim()
+	return normalized ? normalized : undefined
+}
+
+const resolveEventKey = (keyInput: string | undefined, def: KeyDefinition, modifiers: number): string => {
+	const semanticKey = keyInput ?? def.key
+	if (isSingleLetter(semanticKey)) {
+		return isShift(modifiers) ? semanticKey.toUpperCase() : semanticKey.toLowerCase()
+	}
+	return semanticKey
+}
+
+const resolveEventText = (key: string, def: KeyDefinition): string | undefined => {
+	if (key.length === 1) {
+		return key
+	}
+	return def.text
+}
+
+const isSingleLetter = (value: string): boolean => /^[a-z]$/i.test(value)
+
+const isShift = (modifiers: number): boolean => (modifiers & MODIFIER_BITS.shift) !== 0
 
 /**
  * Dispatch a keyboard event sequence via CDP Input.dispatchKeyEvent.
@@ -143,7 +229,8 @@ export type DispatchKeydownResult = {
  * 3. Dispatch: printable → keyDown+char+keyUp; non-printable → rawKeyDown+keyUp
  */
 export const dispatchKeydown = async (session: CdpSessionHandle, options: DispatchKeydownOptions): Promise<DispatchKeydownResult> => {
-	const { key, selector, modifiers = 0 } = options
+	const { selector } = options
+	const event = resolveKeyboardEvent(options)
 
 	let focused = false
 
@@ -166,37 +253,25 @@ export const dispatchKeydown = async (session: CdpSessionHandle, options: Dispat
 		focused = true
 	}
 
-	// 2. Resolve key definition
-	const def = resolveKeyDefinition(key)
-	if (!def) {
-		throw new Error(`Unknown key: "${key}"`)
-	}
-
-	// Apply shift to text for single-character printable keys
-	let text = def.text
-	if (text && text.length === 1 && (modifiers & 8) !== 0) {
-		text = text.toUpperCase()
-	}
-
-	const isPrintable = text != null && text !== '\r'
+	const isPrintable = event.text != null && event.text !== '\r'
 
 	// 3. Dispatch key events
 	const baseParams = {
-		code: def.code,
-		key: def.key,
-		windowsVirtualKeyCode: def.keyCode,
-		nativeVirtualKeyCode: def.keyCode,
-		modifiers,
+		code: event.code,
+		key: event.key,
+		windowsVirtualKeyCode: event.keyCode,
+		nativeVirtualKeyCode: event.keyCode,
+		modifiers: event.modifiers,
 	}
 
 	if (isPrintable) {
-		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyDown', text })
-		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'char', text })
+		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyDown', text: event.text })
+		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'char', text: event.text })
 		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyUp' })
 	} else {
-		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'rawKeyDown', text: def.text })
+		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'rawKeyDown', text: event.text })
 		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyUp' })
 	}
 
-	return { key: def.key, modifiers, focused }
+	return { key: event.key, code: event.code, modifiers: event.modifiers, focused, event }
 }

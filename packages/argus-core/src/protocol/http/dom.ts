@@ -104,12 +104,32 @@ export type DomInfoResponse = {
  * Request payload for POST /dom/keydown.
  */
 export type DomKeydownRequest = {
-	/** Key name (e.g. "Enter", "a", "ArrowUp"). */
-	key: string
+	/** Semantic key name (e.g. "Enter", "a", "ArrowUp"). Required unless `code` is provided. */
+	key?: string
+	/** Physical KeyboardEvent.code override (e.g. "KeyG", "Digit1"). Required unless `key` is provided. */
+	code?: string
 	/** Optional CSS selector — focus element before dispatching. */
 	selector?: string
 	/** Comma-separated modifier names: "shift,ctrl,alt,meta". */
 	modifiers?: string
+}
+
+/** Resolved KeyboardEvent/CDP shape used by POST /dom/keydown. */
+export type DomKeydownEvent = {
+	/** Resolved KeyboardEvent.key value. */
+	key: string
+	/** Resolved KeyboardEvent.code value. */
+	code: string
+	/** Resolved virtual key code. */
+	keyCode: number
+	/** Text inserted by printable keys, when any. */
+	text?: string
+	/** Resolved modifier bitmask (Alt=1, Ctrl=2, Meta=4, Shift=8). */
+	modifiers: number
+	altKey: boolean
+	ctrlKey: boolean
+	metaKey: boolean
+	shiftKey: boolean
 }
 
 /**
@@ -119,10 +139,14 @@ export type DomKeydownResponse = {
 	ok: true
 	/** The key that was dispatched. */
 	key: string
+	/** The physical KeyboardEvent.code that was dispatched. */
+	code: string
 	/** Resolved modifier bitmask (Alt=1, Ctrl=2, Meta=4, Shift=8). */
 	modifiers: number
 	/** Whether a selector was focused before dispatch. */
 	focused: boolean
+	/** Full resolved event shape for debugging exact key/code/modifier dispatch. */
+	event: DomKeydownEvent
 }
 
 /** Valid positions for insertAdjacentHTML. */

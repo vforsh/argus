@@ -34,6 +34,15 @@ type DragCanvasState = {
 	events: DragCanvasEvent[]
 }
 
+type KeyEventSnapshot = {
+	key: string
+	code: string
+	shiftKey: boolean
+	ctrlKey: boolean
+	altKey: boolean
+	metaKey: boolean
+}
+
 const expectPointNear = (actual: { x: number; y: number } | null, expected: { x: number; y: number }, tolerance = 1): void => {
 	expect(actual).not.toBeNull()
 	expect(Math.abs(actual!.x - expected.x)).toBeLessThanOrEqual(tolerance)
@@ -76,6 +85,7 @@ const TEST_HTML = `
   </div>
   <script>
     window.__events = []
+    window.__keyEvents = []
     const btn = document.getElementById('btn')
     btn.addEventListener('mouseover', () => window.__events.push('hover:btn'))
     btn.addEventListener('click', () => window.__events.push('click:btn'))
@@ -85,6 +95,14 @@ const TEST_HTML = `
     })
     document.addEventListener('keydown', (e) => {
       window.__events.push(\`keydown:\${e.key}\`)
+      window.__keyEvents.push({
+        key: e.key,
+        code: e.code,
+        shiftKey: e.shiftKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        metaKey: e.metaKey,
+      })
     })
     const input = document.getElementById('input')
     input.addEventListener('keydown', (e) => {
@@ -153,6 +171,13 @@ describe('dom tree and dom info e2e', () => {
 	let watcherId: string
 
 	const runArgus = (args: string[]) => runCommand('node', [BIN_PATH, ...args], { env })
+	const resetKeyEvents = () =>
+		page.evaluate(() => {
+			const state = globalThis as { __events?: string[]; __keyEvents?: KeyEventSnapshot[] }
+			state.__events = []
+			state.__keyEvents = []
+		})
+	const readKeyEvents = () => page.evaluate(() => (globalThis as { __keyEvents?: KeyEventSnapshot[] }).__keyEvents ?? [])
 
 	beforeAll(async () => {
 		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-dom-e2e-'))
@@ -532,30 +557,29 @@ describe('dom tree and dom info e2e', () => {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('dom keydown dispatches Enter', async () => {
-		await page.evaluate(() => {
-			;(globalThis as { __events?: string[] }).__events = []
-		})
+		await resetKeyEvents()
 
 		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'Enter', '--json'])
 		const response = JSON.parse(stdout) as DomKeydownResponse
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('Enter')
+		expect(response.code).toBe('Enter')
 		expect(response.modifiers).toBe(0)
 		expect(response.focused).toBe(false)
+		expect(response.event).toMatchObject({ key: 'Enter', code: 'Enter', keyCode: 13, shiftKey: false })
 
 		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
 		expect(events).toContain('keydown:Enter')
 	})
 
 	test('dom keydown with --selector focuses element', async () => {
-		await page.evaluate(() => {
-			;(globalThis as { __events?: string[] }).__events = []
-		})
+		await resetKeyEvents()
 
 		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'])
 		const response = JSON.parse(stdout) as DomKeydownResponse
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('a')
+		expect(response.code).toBe('KeyA')
 		expect(response.focused).toBe(true)
 
 		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
@@ -567,6 +591,49 @@ describe('dom tree and dom info e2e', () => {
 		const response = JSON.parse(stdout) as DomKeydownResponse
 		expect(response.ok).toBe(true)
 		expect(response.modifiers).toBe(8)
+		expect(response.event.shiftKey).toBe(true)
+	})
+
+	test('dom keydown infers physical code for uppercase key input', async () => {
+		await resetKeyEvents()
+
+		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'G', '--json'])
+		const response = JSON.parse(stdout) as DomKeydownResponse
+		expect(response.ok).toBe(true)
+		expect(response.key).toBe('g')
+		expect(response.code).toBe('KeyG')
+		expect(response.event).toMatchObject({ key: 'g', code: 'KeyG', text: 'g', shiftKey: false })
+
+		const keyEvents = await readKeyEvents()
+		expect(keyEvents.some((event) => event.key === 'g' && event.code === 'KeyG' && event.shiftKey === false)).toBe(true)
+	})
+
+	test('dom keydown supports explicit --code without --key', async () => {
+		await resetKeyEvents()
+
+		const { stdout } = await runArgus(['keydown', watcherId, '--code', 'KeyG', '--json'])
+		const response = JSON.parse(stdout) as DomKeydownResponse
+		expect(response.ok).toBe(true)
+		expect(response.key).toBe('g')
+		expect(response.code).toBe('KeyG')
+
+		const keyEvents = await readKeyEvents()
+		expect(keyEvents.some((event) => event.key === 'g' && event.code === 'KeyG')).toBe(true)
+	})
+
+	test('dom keydown modifier flags affect resolved event', async () => {
+		await resetKeyEvents()
+
+		const { stdout } = await runArgus(['keydown', watcherId, '--code', 'KeyG', '--shift', '--json'])
+		const response = JSON.parse(stdout) as DomKeydownResponse
+		expect(response.ok).toBe(true)
+		expect(response.key).toBe('G')
+		expect(response.code).toBe('KeyG')
+		expect(response.modifiers).toBe(8)
+		expect(response.event).toMatchObject({ key: 'G', code: 'KeyG', text: 'G', shiftKey: true })
+
+		const keyEvents = await readKeyEvents()
+		expect(keyEvents.some((event) => event.key === 'G' && event.code === 'KeyG' && event.shiftKey === true)).toBe(true)
 	})
 
 	test('dom keydown unknown key returns error', async () => {
@@ -582,7 +649,14 @@ describe('dom tree and dom info e2e', () => {
 
 	test('dom keydown human output format', async () => {
 		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'Enter'])
-		expect(stdout).toMatch(/Dispatched keydown: Enter/)
+		expect(stdout).toMatch(/Dispatched keydown: Enter \(code=Enter\)/)
+	})
+
+	test('dom keydown --print-event human output includes resolved code', async () => {
+		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'G', '--print-event'])
+		expect(stdout).toMatch(/Dispatched keydown event:/)
+		expect(stdout).toMatch(/"key":"g"/)
+		expect(stdout).toMatch(/"code":"KeyG"/)
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────

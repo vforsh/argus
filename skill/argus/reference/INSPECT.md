@@ -74,8 +74,10 @@ argus fill app --selector "#username" "Bob"
 argus fill app --selector "#desc" --value-file ./description.txt
 echo "hello" | argus fill app --selector "#input" --value-stdin
 argus keydown app --key Enter
+argus keydown app --key G
+argus keydown app --code KeyG --print-event
 argus keydown app --key a --selector "#input"
-argus keydown app --key a --modifiers shift,ctrl
+argus keydown app --key a --shift --ctrl
 argus scroll-to app --selector "#footer"
 argus scroll-to app --to 0,1000
 argus scroll-to app --selector ".panel" --by 0,500

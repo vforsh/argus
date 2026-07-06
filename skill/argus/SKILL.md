@@ -136,6 +136,8 @@ argus click app --ref e5
 argus drag app --selector "canvas" --pos 320,240 --by 80,-30
 argus fill app --selector "#email" "user@example.com"
 argus keydown app --key Enter
+argus keydown app --key G
+argus keydown app --code KeyG --print-event
 argus scroll-to app --selector "#footer"
 ```
 
