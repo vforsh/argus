@@ -5,25 +5,16 @@ import type {
 	NetMockHeader,
 	NetMockRemoveResponse,
 	NetMockRule,
+	NetMockScope,
 	NetMockStatusResponse,
 } from '@vforsh/argus-core'
-import type { CdpSessionHandle } from '../cdp/connection.js'
+import { NetMockInterception, type NetMockInterceptionBinding, type NetMockPausedRequest } from './NetMockInterception.js'
 
 type NetMockError = { message: string; code?: string }
 
 type InternalRule = NetMockRule & {
 	/** Compiled URL matcher, built once when the rule is added. */
 	urlRegex: RegExp
-}
-
-type FetchRequestPausedParams = {
-	requestId?: string
-	request?: {
-		url?: string
-		method?: string
-		headers?: Record<string, string>
-	}
-	resourceType?: string
 }
 
 /**
@@ -35,27 +26,24 @@ type FetchRequestPausedParams = {
  * rule is removed, so an idle watcher adds zero request latency.
  */
 export type NetMockController = {
-	/** Subscribe to `Fetch.requestPaused` on the watcher session. Call once at startup. */
-	bind: (session: CdpSessionHandle) => void
+	/** Subscribe to `Fetch.requestPaused` and provide page/selected target routing. Call once at startup. */
+	bind: (binding: NetMockInterceptionBinding) => void
 	getStatus: (ctx: { attached: boolean }) => NetMockStatusResponse
 	addRule: (input: NetMockAddRequest, attached: boolean) => Promise<NetMockAddResponse>
 	removeRule: (id: number) => Promise<NetMockRemoveResponse>
 	clearRules: () => Promise<NetMockClearResponse>
 	/** Re-arm interception on a freshly attached target when rules exist. */
-	onAttach: (session: CdpSessionHandle) => Promise<void>
+	onAttach: () => Promise<void>
+	/** Move selected-scope interception when iframe selection changes. */
+	onTargetChanged: () => Promise<void>
 	/** Mark interception as inactive after the target detached. */
 	onDetach: () => void
 }
 
 export const createNetMockController = (): NetMockController => {
-	let session: CdpSessionHandle | null = null
-	let bound = false
-	let enabled = false
 	let lastError: NetMockError | null = null
 	let nextRuleId = 1
 	const rules: InternalRule[] = []
-
-	const hasActiveRules = (): boolean => rules.some(isRuleActive)
 
 	const recordError = (error: unknown): void => {
 		lastError = { message: error instanceof Error ? error.message : String(error) }
@@ -65,62 +53,22 @@ export const createNetMockController = (): NetMockController => {
 		}
 	}
 
-	const enableInterception = async (): Promise<boolean> => {
-		if (!session || !session.isAttached()) {
-			enabled = false
-			return false
-		}
-		try {
-			await session.sendAndWait('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
-			enabled = true
-			return true
-		} catch (error) {
-			enabled = false
-			recordError(error)
-			return false
-		}
+	const interception = new NetMockInterception((request) => void handleRequestPaused(request), recordError)
+
+	const bind = (binding: NetMockInterceptionBinding): void => {
+		interception.bind(binding)
+		void interception.reconcile(getActiveScopes(rules))
 	}
 
-	const disableInterception = async (): Promise<void> => {
-		if (!enabled) {
-			return
-		}
-		enabled = false
-		if (!session || !session.isAttached()) {
-			return
-		}
-		try {
-			await session.sendAndWait('Fetch.disable')
-		} catch (error) {
-			recordError(error)
-		}
-	}
-
-	const bind = (nextSession: CdpSessionHandle): void => {
-		session = nextSession
-		if (bound) {
-			return
-		}
-		bound = true
-		nextSession.onEvent('Fetch.requestPaused', (params) => {
-			void handleRequestPaused(params)
-		})
-	}
-
-	const handleRequestPaused = async (params: unknown): Promise<void> => {
-		const paused = params as FetchRequestPausedParams
-		const requestId = paused?.requestId
-		if (typeof requestId !== 'string' || requestId === '') {
-			return
-		}
-
-		const url = paused.request?.url ?? ''
-		const method = paused.request?.method ?? 'GET'
-		const resourceType = paused.resourceType ?? ''
-		const rule = rules.find((candidate) => ruleMatches(candidate, url, method, resourceType))
+	const handleRequestPaused = async (paused: NetMockPausedRequest): Promise<void> => {
+		const rule = rules.find(
+			(candidate) =>
+				interception.matchesScope(candidate.scope ?? 'page', paused) &&
+				ruleMatches(candidate, paused.url, paused.method, paused.resourceType),
+		)
 
 		if (!rule) {
-			await sendAction('Fetch.continueRequest', { requestId })
+			await sendAction(paused, 'Fetch.continueRequest', { requestId: paused.requestId })
 			return
 		}
 
@@ -132,37 +80,37 @@ export const createNetMockController = (): NetMockController => {
 
 		const action = rule.action
 		if (action.kind === 'block') {
-			await sendAction('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' })
+			await sendAction(paused, 'Fetch.failRequest', { requestId: paused.requestId, errorReason: 'BlockedByClient' })
 			return
 		}
 		if (action.kind === 'fail') {
-			await sendAction('Fetch.failRequest', { requestId, errorReason: action.reason })
+			await sendAction(paused, 'Fetch.failRequest', { requestId: paused.requestId, errorReason: action.reason })
 			return
 		}
 		if (action.kind === 'fulfill') {
-			const fulfillParams: Record<string, unknown> = { requestId, responseCode: action.status }
+			const fulfillParams: Record<string, unknown> = { requestId: paused.requestId, responseCode: action.status }
 			if (action.headers && action.headers.length > 0) {
 				fulfillParams.responseHeaders = action.headers
 			}
 			if (action.bodyBase64 != null) {
 				fulfillParams.body = action.bodyBase64
 			}
-			await sendAction('Fetch.fulfillRequest', fulfillParams)
+			await sendAction(paused, 'Fetch.fulfillRequest', fulfillParams)
 			return
 		}
 
 		// action.kind === 'continue'
-		const continueParams: Record<string, unknown> = { requestId }
+		const continueParams: Record<string, unknown> = { requestId: paused.requestId }
 		if (action.rewriteHost) {
-			const rewritten = rewriteUrlHost(url, action.rewriteHost)
+			const rewritten = rewriteUrlHost(paused.url, action.rewriteHost)
 			if (rewritten) {
 				continueParams.url = rewritten
 			}
 		}
 		if (action.setHeaders && action.setHeaders.length > 0) {
-			continueParams.headers = mergeHeaders(paused.request?.headers ?? {}, action.setHeaders)
+			continueParams.headers = mergeHeaders(paused.headers, action.setHeaders)
 		}
-		await sendAction('Fetch.continueRequest', continueParams)
+		await sendAction(paused, 'Fetch.continueRequest', continueParams)
 	}
 
 	/**
@@ -170,24 +118,13 @@ export const createNetMockController = (): NetMockController => {
 	 * canceled mid-flight (navigation, tab close) — those are swallowed so a
 	 * noisy page cannot poison `lastError`.
 	 */
-	const sendAction = async (cdpMethod: string, params: Record<string, unknown>): Promise<void> => {
-		if (!session || !session.isAttached()) {
-			return
-		}
-		try {
-			await session.sendAndWait(cdpMethod, params)
-		} catch (error) {
-			if (isBenignInterceptionError(error)) {
-				return
-			}
-			recordError(error)
-		}
-	}
+	const sendAction = async (request: NetMockPausedRequest, cdpMethod: string, params: Record<string, unknown>): Promise<void> =>
+		interception.sendRequestCommand(request, cdpMethod, params)
 
 	const getStatus = (ctx: { attached: boolean }): NetMockStatusResponse => ({
 		ok: true,
 		attached: ctx.attached,
-		enabled,
+		enabled: interception.enabled,
 		rules: rules.map(toPublicRule),
 		lastError,
 	})
@@ -196,6 +133,7 @@ export const createNetMockController = (): NetMockController => {
 		lastError = null
 		const rule: InternalRule = {
 			id: nextRuleId++,
+			scope: input.scope ?? 'page',
 			match: input.match,
 			action: input.action,
 			delayMs: input.delayMs,
@@ -210,7 +148,7 @@ export const createNetMockController = (): NetMockController => {
 			return { ok: true, attached: false, enabled: false, rule: toPublicRule(rule) }
 		}
 
-		const applied = enabled || (await enableInterception())
+		const applied = await interception.reconcile(getActiveScopes(rules))
 		return {
 			ok: true,
 			attached: true,
@@ -227,36 +165,39 @@ export const createNetMockController = (): NetMockController => {
 			rules.splice(index, 1)
 		}
 		if (rules.length === 0) {
-			await disableInterception()
+			await interception.reconcile(new Set())
+		} else {
+			await interception.reconcile(getActiveScopes(rules))
 		}
-		return { ok: true, removed, enabled }
+		return { ok: true, removed, enabled: interception.enabled }
 	}
 
 	const clearRules = async (): Promise<NetMockClearResponse> => {
 		const removed = rules.length
 		rules.length = 0
-		await disableInterception()
-		return { ok: true, removed, enabled }
+		await interception.reconcile(new Set())
+		return { ok: true, removed, enabled: interception.enabled }
 	}
 
-	const onAttach = async (nextSession: CdpSessionHandle): Promise<void> => {
-		session = nextSession
-		enabled = false
-		if (!hasActiveRules()) {
-			return
-		}
-		const applied = await enableInterception()
+	const onAttach = async (): Promise<void> => {
+		const applied = await interception.reconcile(getActiveScopes(rules), true)
 		if (!applied && lastError) {
 			console.warn(`[NetMock] Failed to re-enable interception on attach: ${lastError.message}`)
 		}
 	}
 
-	const onDetach = (): void => {
-		enabled = false
+	const onTargetChanged = async (): Promise<void> => {
+		await interception.reconcile(getActiveScopes(rules))
 	}
 
-	return { bind, getStatus, addRule, removeRule, clearRules, onAttach, onDetach }
+	const onDetach = (): void => {
+		interception.onDetach()
+	}
+
+	return { bind, getStatus, addRule, removeRule, clearRules, onAttach, onTargetChanged, onDetach }
 }
+
+const getActiveScopes = (rules: InternalRule[]): Set<NetMockScope> => new Set(rules.filter(isRuleActive).map((rule) => rule.scope ?? 'page'))
 
 const isRuleActive = (rule: InternalRule): boolean => rule.times == null || rule.hits < rule.times
 
@@ -315,17 +256,9 @@ const mergeHeaders = (original: Record<string, string>, overrides: NetMockHeader
 	return [...merged.values()]
 }
 
-const isBenignInterceptionError = (error: unknown): boolean => {
-	const code = (error as { code?: unknown })?.code
-	if (code === 'cdp_not_attached') {
-		return true
-	}
-	const message = error instanceof Error ? error.message : String(error)
-	return message.includes('Invalid InterceptionId') || message.includes('Inspected target navigated or closed')
-}
-
 const toPublicRule = (rule: InternalRule): NetMockRule => ({
 	id: rule.id,
+	scope: rule.scope ?? 'page',
 	match: rule.match,
 	action: rule.action,
 	delayMs: rule.delayMs,

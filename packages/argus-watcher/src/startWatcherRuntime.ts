@@ -230,7 +230,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		// forward the attach to other services so downstream flows (boot
 		// waits, indicator paints) benefit immediately.
 		await visibilityController.onAttach(sourceHandle.pageSession ?? session)
-		await netMockController.onAttach(sourceHandle.pageSession ?? session)
+		await netMockController.onAttach()
 		await networkCapture?.onAttached()
 		onIndicatorAttach(session, target)
 		await maybeInjectOnAttach(session, target)
@@ -251,6 +251,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 			},
 			reason: null,
 		})
+		void netMockController.onTargetChanged()
 		onIndicatorAttach(session, target)
 	}
 
@@ -281,7 +282,18 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		},
 	})
 
-	netMockController.bind(sourceHandle.pageSession ?? sourceHandle.session)
+	netMockController.bind({
+		pageSession: sourceHandle.pageSession ?? sourceHandle.session,
+		getSelectedTarget: () => {
+			const context = sourceHandle.getNetFilterContext?.() ?? null
+			const frameId = context?.selectedFrameId ?? null
+			return {
+				frameId,
+				topFrameId: context?.topFrameId ?? null,
+				sessionId: frameId ? (sourceHandle.getFrameSessionId?.(frameId) ?? null) : null,
+			}
+		},
+	})
 
 	const dialogSession = sourceHandle.pageSession ?? sourceHandle.session
 	dialogSession.onEvent('Page.javascriptDialogOpening', (params) => {

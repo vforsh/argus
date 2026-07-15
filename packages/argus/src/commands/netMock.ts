@@ -9,6 +9,7 @@ import type {
 	NetMockHeader,
 	NetMockRemoveResponse,
 	NetMockRule,
+	NetMockScope,
 	NetMockStatusResponse,
 } from '@vforsh/argus-core'
 import { NET_MOCK_FAIL_REASONS } from '@vforsh/argus-core'
@@ -30,6 +31,8 @@ export type NetMockAddOptions = {
 	url?: string
 	method?: string
 	resourceType?: string
+	scope?: string
+	frame?: string
 	block?: boolean
 	fail?: string
 	status?: string
@@ -124,6 +127,10 @@ const buildAddRequest = async (options: NetMockAddOptions, output: Output): Prom
 	if (!action) {
 		return null
 	}
+	const scope = resolveMockScope(options, output)
+	if (!scope) {
+		return null
+	}
 
 	const match: NetMockAddRequest['match'] = { url: urlPattern }
 	if (options.method) {
@@ -133,7 +140,24 @@ const buildAddRequest = async (options: NetMockAddOptions, output: Output): Prom
 		match.resourceType = options.resourceType
 	}
 
-	return { match, action, delayMs, times }
+	return { scope, match, action, delayMs, times }
+}
+
+const resolveMockScope = (options: Pick<NetMockAddOptions, 'scope' | 'frame'>, output: Output): NetMockScope | null => {
+	if (options.scope && options.frame) {
+		output.writeWarn('Cannot combine --scope and --frame. Use one or the other.')
+		process.exitCode = 2
+		return null
+	}
+
+	const value = (options.scope ?? options.frame ?? 'page').trim().toLowerCase()
+	if (value === 'page' || value === 'selected') {
+		return value
+	}
+
+	output.writeWarn(`Invalid mock scope: ${value}. Expected page or selected.`)
+	process.exitCode = 2
+	return null
 }
 
 const buildAction = async (
@@ -392,6 +416,9 @@ const describeRule = (rule: NetMockRule): string => {
 	}
 	if (rule.times != null) {
 		extras.push(`times ${Math.min(rule.hits, rule.times)}/${rule.times}`)
+	}
+	if (rule.scope === 'selected') {
+		extras.push('scope selected')
 	}
 	extras.push(`hits ${rule.hits}`)
 

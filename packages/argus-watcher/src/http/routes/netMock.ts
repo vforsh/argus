@@ -64,6 +64,9 @@ function validateAddRequest(body: unknown): string | null {
 	if (payload.times !== undefined && (!Number.isInteger(payload.times) || payload.times < 1)) {
 		return 'times must be an integer >= 1'
 	}
+	if (payload.scope !== undefined && payload.scope !== 'page' && payload.scope !== 'selected') {
+		return 'scope must be one of: page, selected'
+	}
 
 	return null
 }

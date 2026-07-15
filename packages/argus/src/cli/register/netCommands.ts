@@ -72,6 +72,8 @@ const netMockCommand: ArgusCommandDefinition = {
 				{ flags: '--url <pattern>', description: 'URL wildcard pattern; substring match when it contains no *' },
 				{ flags: '--method <method>', description: 'Only match this HTTP method' },
 				{ flags: '--resource-type <type>', description: 'Only match this CDP resource type (Fetch, XHR, Document, ...)' },
+				{ flags: '--scope <scope>', description: 'Intercept the top-level page or currently selected target (page|selected)' },
+				{ flags: '--frame <frame>', description: 'Alias for --scope; accepts page or selected' },
 				{ flags: '--block', description: 'Abort matching requests as BlockedByClient' },
 				{ flags: '--fail <reason>', description: 'Abort with a network error (TimedOut, ConnectionRefused, ...)' },
 				{ flags: '--status <code>', description: 'Stub a response with this HTTP status (default 200 when a body is given)' },
@@ -98,12 +100,13 @@ const netMockCommand: ArgusCommandDefinition = {
 				'argus net mock add app --url "*/analytics/*" --block',
 				'argus net mock add app --url "*/api/save" --fail ConnectionRefused --times 1',
 				'argus net mock add app --url "*/api/config" --status 200 --body-file ./fixtures/config.json',
+				'argus net mock add extension --scope selected --url "*/api/config" --status 200 --body-file ./fixtures/config.json',
 				`argus net mock add app --url "*/game/init" --status 500 --body '{"error":"maintenance"}'`,
 				'argus net mock add app --url "*/api/*" --delay 2s --method POST',
 				'argus net mock add app --url "cdn.prod.com" --rewrite-host localhost:3000',
 			],
 			action: async (id, options) => {
-				await runNetMockAdd(id, options)
+				await runNetMockAdd(id, resolveNetMockAddOptions(options))
 			},
 		},
 		{
@@ -114,7 +117,7 @@ const netMockCommand: ArgusCommandDefinition = {
 			options: [jsonOption],
 			examples: ['argus net mock ls app', 'argus net mock ls app --json'],
 			action: async (id, options) => {
-				await runNetMockList(id, options)
+				await runNetMockList(id, resolveCommandOptions(options))
 			},
 		},
 		{
@@ -128,7 +131,7 @@ const netMockCommand: ArgusCommandDefinition = {
 			options: [jsonOption],
 			examples: ['argus net mock rm 2 app', 'argus net mock rm 2 app --json'],
 			action: async (rule, id, options) => {
-				await runNetMockRemove(id, rule, options)
+				await runNetMockRemove(id, rule, resolveCommandOptions(options))
 			},
 		},
 		{
@@ -138,7 +141,7 @@ const netMockCommand: ArgusCommandDefinition = {
 			options: [jsonOption],
 			examples: ['argus net mock clear app', 'argus net mock clear app --json'],
 			action: async (id, options) => {
-				await runNetMockClear(id, options)
+				await runNetMockClear(id, resolveCommandOptions(options))
 			},
 		},
 	],
@@ -364,8 +367,8 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
  * Commander may deliver an options object or the Command instance. Re-parse the
  * raw argv as a fallback so shared filter flags are never silently dropped.
  */
-const resolveCommandOptions = (value: unknown): Record<string, unknown> => {
-	const fallback = parseNetArgv(process.argv.slice(2))
+const resolveCommandOptions = (value: unknown, argv: string[] = process.argv.slice(2)): Record<string, unknown> => {
+	const fallback = parseNetArgv(argv)
 
 	if (value && typeof value === 'object' && 'opts' in value && typeof value.opts === 'function') {
 		return {
@@ -378,6 +381,21 @@ const resolveCommandOptions = (value: unknown): Record<string, unknown> => {
 		...(value && typeof value === 'object' ? (value as Record<string, unknown>) : {}),
 		...fallback,
 	}
+}
+
+/**
+ * Mock-add reuses filter flag names whose filter form is repeatable. Restore
+ * their scalar shape after the raw-argv fallback has preserved parent options.
+ */
+export const resolveNetMockAddOptions = (value: unknown, argv: string[] = process.argv.slice(2)): Record<string, unknown> => {
+	const resolved = resolveCommandOptions(value, argv)
+	for (const key of ['method', 'status', 'resourceType'] as const) {
+		const option = resolved[key]
+		if (Array.isArray(option)) {
+			resolved[key] = option.at(-1)
+		}
+	}
+	return resolved
 }
 
 const parseNetArgv = (argv: string[]): Record<string, unknown> => {

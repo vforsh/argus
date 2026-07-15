@@ -142,6 +142,7 @@ argus scroll-to app --selector "#footer"
 ```
 
 For iframe-active extension watchers, commands run against the selected iframe target. Screenshots, recordings, selectors, and eval are resolved relative to that iframe.
+Network mocks default to the top-level page; pass `--scope selected` (or `--frame selected`) to intercept requests from the selected iframe.
 
 For deeper command lists, use [INSPECT.md](./reference/INSPECT.md). For screenshots/recording details, use [CAPTURE.md](./reference/CAPTURE.md). For eval flags, polling, file scripts, and args, use [EVAL.md](./reference/EVAL.md).
 

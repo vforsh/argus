@@ -24,6 +24,9 @@ export type NetMockMatch = {
 	resourceType?: string
 }
 
+/** CDP target scope where a mock rule intercepts requests. Defaults to the top-level page. */
+export type NetMockScope = 'page' | 'selected'
+
 /** One HTTP header entry used in fulfill/continue actions. */
 export type NetMockHeader = {
 	name: string
@@ -69,6 +72,8 @@ export type NetMockAction =
 export type NetMockRule = {
 	/** Watcher-local rule id, unique for the watcher lifetime. */
 	id: number
+	/** Target scope for this rule. Omitted by older watchers and treated as `page`. */
+	scope?: NetMockScope
 	match: NetMockMatch
 	action: NetMockAction
 	/** Delay before the action executes, in milliseconds. */
@@ -83,6 +88,8 @@ export type NetMockRule = {
 
 /** POST /net/mock/add request payload. */
 export type NetMockAddRequest = {
+	/** Target scope for this rule. Defaults to `page`. */
+	scope?: NetMockScope
 	match: NetMockMatch
 	action: NetMockAction
 	/** Delay before the action executes, in milliseconds. Must be a finite number >= 0. */

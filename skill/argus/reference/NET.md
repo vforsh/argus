@@ -87,6 +87,7 @@ argus net mock add app --url "*/analytics/*" --block
 argus net mock add app --url "*/api/save" --fail ConnectionRefused
 argus net mock add app --url "*/api/init" --fail TimedOut --times 1
 argus net mock add app --url "*/api/config" --status 200 --body-file ./fixtures/config.json
+argus net mock add extension --scope selected --url "*/api/config" --status 200 --body-file ./fixtures/config.json
 argus net mock add app --url "*/api/config" --status 500 --body '{"error":"maintenance"}'
 echo '{"flags":{"newShop":true}}' | argus net mock add app --url "*/api/flags" --body -
 argus net mock add app --url "*/api/*" --delay 2s --method POST
@@ -97,7 +98,9 @@ argus net mock rm 2 app
 argus net mock clear app
 ```
 
-Rules persist across reloads and reattach until removed. First matching rule wins. `--url` is a case-insensitive wildcard pattern over the full request URL; `*` matches anything, and no `*` means substring match. Use `--times N` for one-shot failures.
+Rules persist across reloads and reattach until removed. First matching rule wins. `--url` is a case-insensitive wildcard pattern over the full request URL; `*` matches anything, and no `*` means substring match. Use `--times N` to limit any rule, including stubbed responses.
+
+Mock scope defaults to `page`, preserving the original top-level behavior. Use `--scope selected` or its `--frame selected` alias for the currently selected iframe; selected rules follow target changes and re-arm after reload/reattach. `--scope` and `--frame` are mutually exclusive.
 
 Exactly one primary action per rule:
 
