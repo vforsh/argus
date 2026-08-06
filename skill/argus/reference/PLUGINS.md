@@ -148,6 +148,7 @@ ctx.program
 argus --plugin ./packages/argus-plugin-google-sheets/dist/index.js plugin list
 argus sheets list extension-3
 argus sheets list extension-3 --with-gid
+argus sheets resolve extension-3 "Иконки Август" --json
 argus sheets info extension-3
 argus sheets switch extension-3 "Sheet 2"
 argus sheets open extension-3 2
@@ -155,17 +156,30 @@ argus sheets add extension-3
 argus sheets rename extension-3 "Sheet 2" "Archive"
 argus sheets move extension-3 "Archive" 1
 argus sheets remove extension-3 "Sheet 3" --force
-argus sheets rows add extension-3 5 --count 2 --before
+argus sheets rows add extension-3 5 --count 2 --before --sheet "Sheet 2" --expect-cell 'A5=anchor'
 argus sheets rows remove extension-3 5 --count 2 --force
 argus sheets columns add extension-3 3 --after
 argus sheets columns remove extension-3 3 --force
 argus sheets read extension-3 --range A1:C5
 argus sheets export extension-3 --range A1:C5 --format tsv
 argus sheets find extension-3 "needle" --column ru --ignore-case
+argus sheets schema extension-3 --sheet "Sheet 2" --header-row 1 --json
+argus sheets query extension-3 --sheet "Sheet 2" --header-row 1 --where 'promoId in [872,873]' --select 'promoId,icon' --locate --json
+argus sheets diff extension-3 --sheet "Sheet 2" --against backup.csv --key promoId --columns icon
+argus sheets apply extension-3 --file changes.json --dry-run
+argus sheets apply extension-3 --file changes.json --yes --json
 argus sheets write extension-3 B12 --value "Новое значение"
 ```
 
-`sheets`/`gs` works against an attached Google Sheets tab. `list` reports visible sheet tabs; `--with-gid` briefly switches through them and restores the original sheet. `switch`/`open`, `rename`, `move`, and `remove` accept a visible sheet name, 1-based visible index, or gid. `add` creates a sheet through the live UI; `remove` requires `--force`. `rows add/remove` and `columns add/remove` mutate the active sheet by 1-based index; add commands require `--before` or `--after`, and remove commands require `--force`. Reads use authenticated CSV export from inside the tab; writes select a range in the live UI and paste TSV.
+`sheets`/`gs` works against an attached authenticated Google Sheets tab. Prefer `resolve <known-name>` over `list --with-gid` for huge documents; full traversal is guarded, internally deadline-bounded, reports progress on stderr, and restores the original tab. Multi-call UI operations hold a page-scoped lease so separate CLI processes cannot switch/select over each other.
+
+Whole-sheet GViz/CSV can collapse blank physical rows. `find` therefore returns only exact physical coordinates verified by bounded single-row reads. Query candidates always expose `exportRow`; `sheetRow`/A1 exist only after `--locate`. Read JSON keeps target sheet/gid/URL separate from browser current/restored URL.
+
+`schema` models a physical header row with normalized/duplicate/empty metadata. `query` supports equality, `in`, substring, regex, select/limit, exact-count/unique assertions, and optional exact location. `diff` validates unique keys in sheet/local CSV/TSV and reports additions/removals/changes; `--emit-plan` refuses unsafe partial plans.
+
+`apply` accepts a version-1 semantic manifest with `insertRowsAfter`, `updateByKey`, typed `setRange`, sparse `setCells`, and native `clear`. Require exactly one of `--dry-run` or `--yes`; there is no `--force` bypass. It preflights every operation before mutation, rechecks each old value, executes sequentially (never transactionally), performs mandatory typed/formula readback, and emits a journal plus rollback manifest. See the package README for the manifest schema and migration notes.
+
+Legacy `write`/`batch` remain deprecated compatibility paths. Empty writes and disabled verification are rejected; mismatches exit 1 even without `--strict`.
 
 ## No Unload
 

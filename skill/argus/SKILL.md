@@ -187,6 +187,20 @@ Keep these commands in the background in agent shells. See [START.md](./referenc
 
 **Need to keep a page unthrottled** — Use `argus page show <id>` or `argus ext show <id>`. Hide later with `argus page hide <id>`.
 
+## Google Sheets Safety Flow
+
+With the Google Sheets plugin enabled, prefer targeted, coordinate-safe commands:
+
+```bash
+argus sheets resolve extension "Known sheet name" --json
+argus sheets schema extension --sheet "Known sheet name" --header-row 1 --json
+argus sheets query extension --sheet "Known sheet name" --header-row 1 --where 'id in [872,873]' --locate --json
+argus sheets apply extension --file changes.json --dry-run
+argus sheets apply extension --file changes.json --yes --json
+```
+
+Never treat whole-export row indexes as physical sheet rows: `exportRow` is only an export coordinate, while physical A1 requires exact locator verification. Prefer `resolve <name>` to `list --with-gid` on large documents. Mutations require page lease ownership, explicit old-value preconditions, mandatory typed readback, and explicit `--yes`; apply is sequential and non-atomic. Read [PLUGINS.md](./reference/PLUGINS.md) for query/diff/manifest details.
+
 ---
 
 ## References
