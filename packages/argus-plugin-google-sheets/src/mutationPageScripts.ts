@@ -1,5 +1,6 @@
 import {
 	columnLettersToIndex,
+	canonicalSheetUrl,
 	delay,
 	expandA1RangeForShape,
 	findVisibleGridGid,
@@ -62,6 +63,7 @@ const verificationHelpers = [
 	getCurrentGid,
 	findVisibleGridGid,
 	isRenderedElement,
+	canonicalSheetUrl,
 	readSheetCsvInPage,
 	parseCsvInPage,
 	compareValues,

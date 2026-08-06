@@ -1,0 +1,13 @@
+{
+	"version": 1,
+	"operations": [
+		{
+			"op": "setCells",
+			"sheet": "__ARGUS_SMOKE_20260806__",
+			"cells": {
+				"B5": { "expect": "inserted", "set": "inserted-sparse" },
+				"C5": { "expect": true, "set": false }
+			}
+		}
+	]
+}

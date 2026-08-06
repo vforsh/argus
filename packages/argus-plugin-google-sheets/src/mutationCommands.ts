@@ -11,7 +11,7 @@ import {
 	type SheetWriteVerificationResult,
 } from './mutationPageScripts.js'
 import type { SheetTab } from './pageScripts.js'
-import { dispatchKey, evalInWatcher, type Output, selectRange, switchSheetTarget } from './sheetCommandUtils.js'
+import { clearGridRange, dispatchKey, evalInWatcher, type Output, switchSheetTarget, withSheetLease } from './sheetCommandUtils.js'
 
 type CommonOptions = {
 	json?: boolean
@@ -68,10 +68,10 @@ export const registerSheetMutationCommands = (ctx: ArgusPluginContextV1, sheets:
 		.option('--value <text>', 'Single-cell value to paste')
 		.option('--tsv <text>', 'TSV block to paste')
 		.option('--stdin', 'Read TSV from stdin')
-		.option('--strict', 'Exit non-zero when verification fails')
+		.option('--strict', 'Deprecated compatibility flag; verification failures always exit non-zero')
 		.option('--verify-timeout <duration>', 'Verification timeout, for example 500ms or 5s')
 		.option('--sheet <nameOrGidOrIndex>', 'Visible sheet name, 1-based index, or gid')
-		.option('--no-verify', 'Skip readback verification')
+		.option('--no-verify', 'Deprecated unsafe option; rejected')
 		.option('--json', 'Output JSON for automation')
 		.action(async (id: string | undefined, range: string, options: WriteOptions) => runWrite(ctx, id, range, options))
 
@@ -80,7 +80,7 @@ export const registerSheetMutationCommands = (ctx: ArgusPluginContextV1, sheets:
 		.argument('[id]', 'Watcher id for an attached Google Sheets tab')
 		.argument('<range>', 'A1 range to clear')
 		.description('Clear values from a range in the open Google Sheets tab')
-		.option('--strict', 'Exit non-zero when verification fails')
+		.option('--strict', 'Deprecated compatibility flag; verification failures always exit non-zero')
 		.option('--verify-timeout <duration>', 'Verification timeout, for example 500ms or 5s')
 		.option('--sheet <nameOrGidOrIndex>', 'Visible sheet name, 1-based index, or gid')
 		.option('--method <auto|ui>', 'Mutation method (default: auto)')
@@ -93,7 +93,7 @@ export const registerSheetMutationCommands = (ctx: ArgusPluginContextV1, sheets:
 		.description('Apply a JSON batch of Google Sheets write and clear operations')
 		.option('--file <path>', 'Read JSON batch from a file')
 		.option('--stdin', 'Read JSON batch from stdin')
-		.option('--strict', 'Exit non-zero when any verified operation fails verification')
+		.option('--strict', 'Deprecated compatibility flag; verification failures always exit non-zero')
 		.option('--verify-timeout <duration>', 'Verification timeout per operation, for example 500ms or 5s')
 		.option('--sheet <nameOrGidOrIndex>', 'Default visible sheet name, 1-based index, or gid for operations without a sheet')
 		.option('--method <auto|ui>', 'Mutation method (default: auto)')
@@ -105,6 +105,11 @@ const runWrite = async (ctx: ArgusPluginContextV1, id: string | undefined, range
 	const output = ctx.host.createOutput(options)
 	const timeoutMs = resolveVerifyTimeout(options, output)
 	if (timeoutMs == null) return
+	if (options.verify === false) {
+		output.writeWarn('--no-verify is no longer supported; every mutation requires readback verification')
+		process.exitCode = 2
+		return
+	}
 
 	const tsv = await resolveWriteTsv(options)
 	if (tsv == null) {
@@ -112,17 +117,30 @@ const runWrite = async (ctx: ArgusPluginContextV1, id: string | undefined, range
 		process.exitCode = 2
 		return
 	}
+	if (tsv === '' || parseTsv(tsv).every((row) => row.every((cell) => cell === ''))) {
+		output.writeWarn('Empty writes are unsafe and rejected; use sheets clear or null in a version-1 apply manifest')
+		process.exitCode = 2
+		return
+	}
 
-	const result = await writeValuesOperation(ctx, id, output, {
-		range,
-		sheet: options.sheet,
-		values: parseTsv(tsv),
-		verify: options.verify !== false,
-		timeoutMs,
-	})
+	const leased = await withSheetLease(
+		ctx,
+		id,
+		output,
+		{ operation: `legacy write ${range}`, restore: true },
+		async () =>
+			await writeValuesOperation(ctx, id, output, {
+				range,
+				sheet: options.sheet,
+				values: parseTsv(tsv),
+				verify: true,
+				timeoutMs,
+			}),
+	)
+	const result = leased?.value
 	if (!result) return
 
-	if (options.strict && didVerificationFail(result)) process.exitCode = 1
+	if (didVerificationFail(result)) process.exitCode = 1
 	writeWriteResult(output, options, result)
 }
 
@@ -134,10 +152,17 @@ const runClear = async (ctx: ArgusPluginContextV1, id: string | undefined, range
 	const timeoutMs = resolveVerifyTimeout(options, output)
 	if (timeoutMs == null) return
 
-	const result = await clearRangeOperation(ctx, id, output, { range, sheet: options.sheet, method, verify: true, timeoutMs })
+	const leased = await withSheetLease(
+		ctx,
+		id,
+		output,
+		{ operation: `clear ${range}`, restore: true },
+		async () => await clearRangeOperation(ctx, id, output, { range, sheet: options.sheet, method, verify: true, timeoutMs }),
+	)
+	const result = leased?.value
 	if (!result) return
 
-	if (options.strict && didVerificationFail(result)) process.exitCode = 1
+	if (didVerificationFail(result)) process.exitCode = 1
 	writeClearResult(output, options, result)
 }
 
@@ -152,18 +177,23 @@ const runBatch = async (ctx: ArgusPluginContextV1, id: string | undefined, optio
 	const operations = await loadBatchOperations(options, output, readStdin)
 	if (!operations) return
 
-	const results: MutationResult[] = []
-	for (const operation of operations) {
-		const result = await runBatchOperation(ctx, id, output, operation, {
-			sheet: options.sheet,
-			method,
-			timeoutMs,
-		})
-		if (!result) return
-		results.push(result)
-	}
+	const leased = await withSheetLease(ctx, id, output, { operation: 'legacy batch', restore: true, ttlMs: 300_000 }, async () => {
+		const results: MutationResult[] = []
+		for (const operation of operations) {
+			const result = await runBatchOperation(ctx, id, output, operation, {
+				sheet: options.sheet,
+				method,
+				timeoutMs,
+			})
+			if (!result) return null
+			results.push(result)
+		}
+		return results
+	})
+	const results = leased?.value
+	if (!results) return
 
-	if (options.strict && results.some(didVerificationFail)) process.exitCode = 1
+	if (results.some(didVerificationFail)) process.exitCode = 1
 	writeBatchResult(output, options, { ok: true, operations: results })
 }
 
@@ -241,22 +271,18 @@ const clearRangeOperation = async (
 	const sheet = await switchToSheetTarget(ctx, id, output, input.sheet)
 	if (sheet === false) return null
 
-	const selected = await selectRange(ctx, id, input.range, output)
-	if (!selected) return null
+	if (!(await clearGridRange(ctx, id, input.range, output))) return null
 
-	const cleared = await dispatchKey(ctx, id, output, { key: 'Backspace' })
-	if (!cleared) return null
-
-	const verification = input.verify ? await verifyClear(ctx, id, output, selected.range, input.timeoutMs) : null
+	const verification = input.verify ? await verifyClear(ctx, id, output, input.range, input.timeoutMs) : null
 	if (input.verify && !verification) return null
 
 	return {
 		ok: true,
 		operation: 'clear',
-		range: selected.range,
+		range: input.range,
 		method: 'ui-clear',
 		sheet,
-		verificationRange: selected.range,
+		verificationRange: input.range,
 		verified: verification?.verified ?? null,
 		attempts: verification?.attempts ?? 0,
 		mismatches: verification?.mismatches ?? [],
@@ -344,7 +370,9 @@ export const parseDurationMs = (value: string | undefined, fallback: number): nu
 	if (!match) return null
 
 	const amount = Number(match[1])
-	const multiplier = match[2] === 'm' ? 60_000 : match[2] === 's' ? 1_000 : 1
+	let multiplier = 1
+	if (match[2] === 's') multiplier = 1_000
+	if (match[2] === 'm') multiplier = 60_000
 	const ms = amount * multiplier
 	return Number.isFinite(ms) && ms > 0 ? Math.round(ms) : null
 }

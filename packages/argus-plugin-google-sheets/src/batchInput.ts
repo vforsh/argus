@@ -68,6 +68,7 @@ const parseBatchOperation = (value: unknown, index: number): BatchOperation | st
 		return `Batch operation #${index + 1} sheet must be a non-empty string`
 	}
 	if (value.verify != null && typeof value.verify !== 'boolean') return `Batch operation #${index + 1} verify must be a boolean`
+	if (value.verify === false) return `Batch operation #${index + 1} cannot disable mandatory verification`
 	const sheet = typeof value.sheet === 'string' ? value.sheet : undefined
 	const verify = typeof value.verify === 'boolean' ? value.verify : undefined
 
@@ -94,6 +95,7 @@ const parseBatchOperation = (value: unknown, index: number): BatchOperation | st
 		}
 		rows.push(cells)
 	}
+	if (rows.every((row) => row.every((cell) => cell === ''))) return `Batch operation #${index + 1} is an empty write; use clear: true`
 	return { range: value.range, sheet, values: rows, verify }
 }
 

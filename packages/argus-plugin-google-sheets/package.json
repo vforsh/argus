@@ -28,6 +28,7 @@
 	"scripts": {
 		"clean": "node ../../scripts/clean-dist.mjs",
 		"build": "npm run clean && tsc -b",
+		"test": "bun test test",
 		"typecheck": "tsc -b --pretty false --noEmit"
 	}
 }

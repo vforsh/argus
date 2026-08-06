@@ -1,0 +1,13 @@
+{
+	"version": 1,
+	"operations": [
+		{
+			"op": "insertRowsAfter",
+			"sheet": "__ARGUS_SMOKE_20260806__",
+			"headerRow": 1,
+			"match": { "column": "name", "equals": "hidden-like" },
+			"expectMatches": 1,
+			"rows": [[3, "inserted", true, 4.5, { "formula": "=D5*2" }]]
+		}
+	]
+}

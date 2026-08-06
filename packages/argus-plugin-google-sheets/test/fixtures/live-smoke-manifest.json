@@ -1,0 +1,24 @@
+{
+	"version": 1,
+	"operations": [
+		{
+			"op": "setRange",
+			"sheet": "__ARGUS_SMOKE_20260806__",
+			"range": "A1",
+			"expect": [
+				[null, null, null, null, null],
+				[null, null, null, null, null],
+				[null, null, null, null, null],
+				[null, null, null, null, null],
+				[null, null, null, null, null]
+			],
+			"values": [
+				["id", "name", "active", "score", "formula"],
+				[1, "first", true, 1.5, { "formula": "=D2*2" }],
+				[null, null, null, null, null],
+				[2, "hidden-like", false, 2.5, { "formula": "=D4*2" }],
+				[872, "promo", true, 3.5, { "formula": "=D5*2" }]
+			]
+		}
+	]
+}

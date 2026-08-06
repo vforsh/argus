@@ -1,0 +1,11 @@
+{
+	"version": 1,
+	"operations": [
+		{
+			"op": "clear",
+			"sheet": "__ARGUS_SMOKE_20260806__",
+			"range": "E5",
+			"expect": [[{ "formula": "=D5*2" }]]
+		}
+	]
+}

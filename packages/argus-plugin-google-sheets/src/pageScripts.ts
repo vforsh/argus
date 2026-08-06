@@ -1,82 +1,25 @@
-export type SheetCsvResult = {
-	ok: true
-	title: string
-	url: string
-	gid: string
-	range: string | null
-	csv: string
-}
+import { canonicalSheetUrl, delay, findVisibleGridGid, getCurrentGid, getSpreadsheetId, isRenderedElement } from './sheetDataPageScripts.js'
+import type {
+	SheetAddResult,
+	SheetInfoResult,
+	SheetListResult,
+	SheetMoveResult,
+	SheetRemoveResult,
+	SheetRenameResult,
+	SheetResolveResult,
+	SheetSwitchResult,
+	SheetTab,
+} from './sheetTabsTypes.js'
 
-export type SheetSelectResult = {
-	ok: true
-	range: string
-	nameBoxValue: string
-}
+export * from './sheetDataPageScripts.js'
+export * from './pageA1.js'
+export * from './sheetTabsTypes.js'
 
-export type SheetTab = {
-	index: number
-	name: string
-	gid: string | null
-	active: boolean
-}
+export const buildListSheetsExpression = (input: { withGid?: boolean; maxTabs?: number; force?: boolean; deadlineMs?: number }): string =>
+	buildSheetTabsExpression(listSheetsInPage, input)
 
-type SheetPageResult = {
-	ok: true
-	title: string
-	url: string
-}
-
-export type SheetListResult = SheetPageResult & {
-	activeGid: string
-	sheets: SheetTab[]
-}
-
-export type SheetInfoResult = SheetListResult & {
-	spreadsheetId: string
-	active: SheetTab | null
-}
-
-export type SheetSwitchResult = SheetPageResult & {
-	sheet: SheetTab
-}
-
-export type SheetAddResult = SheetPageResult & {
-	sheet: SheetTab
-}
-
-export type SheetRemoveResult = SheetPageResult & {
-	removed: SheetTab
-	active: SheetTab | null
-}
-
-export type SheetRenameResult = SheetPageResult & {
-	before: SheetTab
-	sheet: SheetTab
-}
-
-export type SheetMoveResult = SheetPageResult & {
-	before: SheetTab
-	sheet: SheetTab
-}
-
-export type SheetResolveResult = SheetPageResult & {
-	sheet: SheetTab
-}
-
-export type SheetClipboardResult = {
-	ok: true
-	method: string
-}
-
-export const buildReadCsvExpression = (input: { range?: string; gid?: string }): string =>
-	`(() => {
-${getSpreadsheetId.toString()}
-return (${readSheetCsvInPage.toString()})(${JSON.stringify(input)})
-})()`
-
-export const buildListSheetsExpression = (input: { withGid?: boolean }): string => buildSheetTabsExpression(listSheetsInPage, input)
-
-export const buildInfoSheetsExpression = (input: { withGid?: boolean }): string => buildSheetTabsExpression(infoSheetsInPage, input)
+export const buildInfoSheetsExpression = (input: { withGid?: boolean; maxTabs?: number; force?: boolean; deadlineMs?: number }): string =>
+	buildSheetTabsExpression(infoSheetsInPage, input)
 
 export const buildSwitchSheetExpression = (target: string): string => buildSheetTabsExpression(switchSheetInPage, { target })
 
@@ -90,10 +33,6 @@ export const buildMoveSheetExpression = (target: string, index: string): string 
 
 export const buildResolveSheetExpression = (target: string): string => buildSheetTabsExpression(resolveSheetInPage, { target })
 
-export const buildSelectRangeExpression = (range: string): string => `(${selectSheetRangeInPage.toString()})(${JSON.stringify({ range })})`
-
-export const buildClipboardExpression = (text: string): string => `(${writeClipboardInPage.toString()})(${JSON.stringify({ text })})`
-
 const sheetTabHelpers = [
 	listSheetsInPage,
 	collectSheetTabs,
@@ -105,6 +44,7 @@ const sheetTabHelpers = [
 	getRenderedElements,
 	findRenderedElement,
 	createSheetTabElement,
+	extractSheetTabGid,
 	isRenderedElement,
 	getCurrentGid,
 	findVisibleGridGid,
@@ -127,6 +67,7 @@ const sheetTabHelpers = [
 	findConfirmationButton,
 	waitForSheetTabActivation,
 	getSpreadsheetId,
+	canonicalSheetUrl,
 	stripSheetTabElement,
 	delay,
 ]
@@ -137,29 +78,20 @@ ${sheetTabHelpers.map((helper) => helper.toString()).join('\n')}
 return (${fn.toString()})(${JSON.stringify(input)})
 })()`
 
-export function readSheetCsvInPage(input: { range?: string; gid?: string }): Promise<SheetCsvResult> {
-	const gid = input.gid ?? new URL(location.href).searchParams.get('gid') ?? location.hash.match(/gid=([^&]+)/)?.[1] ?? '0'
-	const id = getSpreadsheetId()
-	const params = new URLSearchParams({ tqx: 'out:csv', gid })
-	if (input.range) params.set('range', input.range)
-
-	return fetch(`${location.origin}/spreadsheets/d/${id}/gviz/tq?${params.toString()}`, { credentials: 'include' }).then(async (response) => {
-		const csv = await response.text()
-		if (!response.ok) {
-			throw new Error(`Google Sheets CSV export failed: HTTP ${response.status} ${csv.slice(0, 200)}`)
-		}
-		return { ok: true, title: document.title, url: location.href, gid, range: input.range ?? null, csv }
-	})
-}
-
-async function listSheetsInPage(input: { withGid?: boolean }): Promise<SheetListResult> {
+async function listSheetsInPage(input: { withGid?: boolean; maxTabs?: number; force?: boolean; deadlineMs?: number }): Promise<SheetListResult> {
 	const originalGid = getCurrentGid()
 	const originalTab = getActiveSheetTab()
-	const sheets = input.withGid ? await collectSheetTabsWithGids(originalTab, originalGid) : collectSheetTabs()
+	const sheets = input.withGid
+		? await collectSheetTabsWithGids(originalTab, originalGid, {
+				maxTabs: input.maxTabs ?? 100,
+				force: input.force === true,
+				deadlineAt: Date.now() + Math.min(25_000, Math.max(1_000, input.deadlineMs ?? 20_000)),
+			})
+		: collectSheetTabs()
 	return { ok: true, title: document.title, url: location.href, activeGid: originalGid, sheets }
 }
 
-async function infoSheetsInPage(input: { withGid?: boolean }): Promise<SheetInfoResult> {
+async function infoSheetsInPage(input: { withGid?: boolean; maxTabs?: number; force?: boolean; deadlineMs?: number }): Promise<SheetInfoResult> {
 	const result = await listSheetsInPage(input)
 	return { ...result, spreadsheetId: getSpreadsheetId(), active: result.sheets.find((sheet) => sheet.active) ?? null }
 }
@@ -179,8 +111,20 @@ async function resolveSheetInPage(input: { target: string }): Promise<SheetResol
 		if (originalTab && getCurrentGid() !== originalGid) await activateSheetTab(originalTab)
 	}
 
-	if (!sheet) throw new Error(`No visible sheet matched "${input.target}".`)
-	return { ok: true, title: document.title, url: location.href, sheet }
+	if (!sheet?.gid) throw new Error(`No visible sheet matched "${input.target}".`)
+	return {
+		ok: true,
+		title: document.title,
+		url: location.href,
+		sheet,
+		target: { name: sheet.name, index: sheet.index, gid: sheet.gid, url: canonicalSheetUrl(location.href, sheet.gid) },
+		browser: {
+			currentGid: getCurrentGid(),
+			currentUrl: location.href,
+			restoredGid: getCurrentGid(),
+			restoredUrl: location.href,
+		},
+	}
 }
 
 async function addSheetInPage(): Promise<SheetAddResult> {
@@ -239,108 +183,6 @@ async function moveSheetInPage(input: { target: string; index: string }): Promis
 	return { ok: true, title: document.title, url: location.href, before: selected.sheet, sheet: stripSheetTabElement(active) }
 }
 
-export async function selectSheetRangeInPage(input: { range: string }): Promise<SheetSelectResult> {
-	const nameBox = document.querySelector<HTMLInputElement>('#t-name-box')
-	if (!nameBox) throw new Error('Google Sheets name box (#t-name-box) was not found.')
-
-	nameBox.focus()
-	nameBox.value = input.range
-	nameBox.dispatchEvent(new Event('input', { bubbles: true }))
-	nameBox.dispatchEvent(new Event('change', { bubbles: true }))
-
-	return { ok: true, range: input.range, nameBoxValue: nameBox.value }
-}
-
-export function parseCsvInPage(input: string): string[][] {
-	const rows: string[][] = []
-	let row: string[] = []
-	let cell = ''
-	let quoted = false
-
-	for (let i = 0; i < input.length; i++) {
-		const char = input[i]
-		const next = input[i + 1]
-
-		if (quoted) {
-			if (char === '"' && next === '"') {
-				cell += '"'
-				i++
-			} else if (char === '"') {
-				quoted = false
-			} else {
-				cell += char
-			}
-			continue
-		}
-
-		if (char === '"') {
-			quoted = true
-		} else if (char === ',') {
-			row.push(cell)
-			cell = ''
-		} else if (char === '\n') {
-			row.push(cell)
-			rows.push(row)
-			row = []
-			cell = ''
-		} else if (char !== '\r') {
-			cell += char
-		}
-	}
-
-	row.push(cell)
-	if (row.length > 1 || row[0] !== '' || input.endsWith(',')) rows.push(row)
-	return rows
-}
-
-export function expandA1RangeForShape(range: string, rowCount: number, columnCount: number): string {
-	const [start] = splitA1Range(range)
-	const cell = parseA1Cell(start)
-	if (!cell || rowCount <= 0 || columnCount <= 0) return range
-
-	const endColumn = indexToColumnLetters(cell.column + columnCount - 1)
-	const endRow = cell.row + rowCount
-	const sheetPrefix = cell.sheet ? `${cell.sheet}!` : ''
-	return rowCount === 1 && columnCount === 1
-		? `${sheetPrefix}${start.replace(/^.*!/, '')}`
-		: `${sheetPrefix}${cell.columnLetters}${cell.row + 1}:${endColumn}${endRow}`
-}
-
-export function splitA1Range(range: string): [string, string | undefined] {
-	const bangIndex = range.lastIndexOf('!')
-	const colonIndex = range.indexOf(':', bangIndex + 1)
-	return colonIndex >= 0 ? [range.slice(0, colonIndex), range.slice(colonIndex + 1)] : [range, undefined]
-}
-
-export function parseA1Cell(value: string): { sheet: string | null; columnLetters: string; column: number; row: number } | null {
-	const bangIndex = value.lastIndexOf('!')
-	const sheet = bangIndex >= 0 ? value.slice(0, bangIndex) : null
-	const cell = (bangIndex >= 0 ? value.slice(bangIndex + 1) : value).replace(/\$/g, '').trim()
-	const match = cell.match(/^([A-Za-z]+)(\d+)$/)
-	if (!match) return null
-	const columnLetters = match[1].toUpperCase()
-	return { sheet, columnLetters, column: columnLettersToIndex(columnLetters), row: Number(match[2]) - 1 }
-}
-
-export function columnLettersToIndex(letters: string): number {
-	let index = 0
-	for (const char of letters.toUpperCase()) {
-		index = index * 26 + (char.charCodeAt(0) - 64)
-	}
-	return index - 1
-}
-
-export function indexToColumnLetters(index: number): string {
-	let value = index + 1
-	let letters = ''
-	while (value > 0) {
-		const rem = (value - 1) % 26
-		letters = String.fromCharCode(65 + rem) + letters
-		value = Math.floor((value - 1) / 26)
-	}
-	return letters
-}
-
 type SheetTabElement = SheetTab & {
 	element: HTMLElement
 }
@@ -349,11 +191,21 @@ function collectSheetTabs(): SheetTab[] {
 	return getVisibleSheetTabs().map((tab) => stripSheetTabElement(tab))
 }
 
-async function collectSheetTabsWithGids(originalTab: SheetTabElement | null, originalGid: string): Promise<SheetTab[]> {
+async function collectSheetTabsWithGids(
+	originalTab: SheetTabElement | null,
+	originalGid: string,
+	options: { maxTabs: number; force: boolean; deadlineAt: number },
+): Promise<SheetTab[]> {
 	const tabs = getVisibleSheetTabs()
+	if (tabs.length > options.maxTabs && !options.force) {
+		throw new Error(
+			`Refusing to activate ${tabs.length} sheets (guard: ${options.maxTabs}). Use --force with a bounded --deadline, or resolve a known name directly.`,
+		)
+	}
 	const sheets: SheetTab[] = []
 	try {
 		for (const tab of tabs) {
+			if (Date.now() >= options.deadlineAt) throw new Error(`Sheet gid traversal deadline reached after ${sheets.length}/${tabs.length} tabs.`)
 			const activated = await activateSheetTab(tab)
 			sheets.push({ ...activated.sheet, active: activated.sheet.gid === originalGid })
 		}
@@ -373,7 +225,7 @@ async function resolveRequiredSheetTab(target: string, tabs = getVisibleSheetTab
 }
 
 async function resolveSheetTab(tabs: SheetTabElement[], target: string): Promise<SheetTabElement | null> {
-	return resolveSheetTabByIndex(tabs, target) ?? resolveSheetTabByName(tabs, target) ?? (await resolveSheetTabByGid(tabs, target))
+	return resolveSheetTabByName(tabs, target) ?? (await resolveSheetTabByGid(tabs, target)) ?? resolveSheetTabByIndex(tabs, target)
 }
 
 function getVisibleSheetTabs(): SheetTabElement[] {
@@ -398,29 +250,15 @@ function findRenderedElement(selector: string): HTMLElement | null {
 function createSheetTabElement(element: HTMLElement, index: number, activeGid: string): SheetTabElement {
 	const name = element.querySelector<HTMLElement>('.docs-sheet-tab-name')?.textContent?.trim() ?? element.textContent.trim()
 	const active = element.classList.contains('docs-sheet-active-tab')
-	return { index: index + 1, name, gid: active ? activeGid : null, active, element }
+	return { index: index + 1, name, gid: active ? activeGid : extractSheetTabGid(element), active, element }
 }
 
-export function isRenderedElement(element: HTMLElement): boolean {
-	// Google keeps duplicate sheet-tab DOM around; geometry is the stable signal for the live tab bar.
-	const rect = element.getBoundingClientRect()
-	const style = getComputedStyle(element)
-	return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden'
-}
-
-export function getCurrentGid(): string {
-	return new URL(location.href).searchParams.get('gid') ?? location.hash.match(/gid=([^&]+)/)?.[1] ?? findVisibleGridGid() ?? '0'
-}
-
-export function getSpreadsheetId(): string {
-	const match = location.pathname.match(/\/spreadsheets\/d\/([^/]+)/)
-	if (!match) throw new Error('Current page is not a Google Sheets document.')
-	return match[1]
-}
-
-export function findVisibleGridGid(): string | null {
-	const grid = Array.from(document.querySelectorAll<HTMLElement>('[id$="-grid-container"]')).find(isRenderedElement)
-	return grid?.id.match(/^(\d+)-grid-container$/)?.[1] ?? null
+function extractSheetTabGid(element: HTMLElement): string | null {
+	for (const value of [element.dataset.sheetId, element.getAttribute('data-sheet-id'), element.id]) {
+		const gid = value?.match(/(?:sheet-button-|^)(\d+)$/)?.[1]
+		if (gid) return gid
+	}
+	return null
 }
 
 function resolveSheetTabByIndex(tabs: SheetTabElement[], target: string): SheetTabElement | null {
@@ -443,18 +281,27 @@ function resolveSheetTabByName(tabs: SheetTabElement[], target: string): SheetTa
 
 async function resolveSheetTabByGid(tabs: SheetTabElement[], target: string): Promise<SheetTabElement | null> {
 	if (!/^\d+$/.test(target)) return null
-
 	if (target === getCurrentGid()) return getActiveSheetTab()
-
+	const known = tabs.find((tab) => tab.gid === target)
+	if (known) return known
+	if (tabs.length > 100)
+		throw new Error(`Refusing unbounded gid traversal across ${tabs.length} sheets. Resolve by sheet name or use sheets list --with-gid --force.`)
 	const originalTab = getActiveSheetTab()
-	for (const tab of tabs) {
-		const activated = await activateSheetTab(tab)
-		if (activated.sheet.gid === target) {
-			return getActiveSheetTab() ?? tab
+	const deadline = Date.now() + 20_000
+	let found: SheetTabElement | null = null
+	try {
+		for (const tab of tabs) {
+			if (Date.now() >= deadline) throw new Error(`Gid resolution deadline reached while searching for ${target}.`)
+			const activated = await activateSheetTab(tab)
+			if (activated.sheet.gid === target) {
+				found = getActiveSheetTab() ?? tab
+				break
+			}
 		}
+	} finally {
+		if (!found && originalTab && getCurrentGid() !== originalTab.gid) await activateSheetTab(originalTab)
 	}
-	if (originalTab) await activateSheetTab(originalTab)
-	return null
+	return found
 }
 
 async function activateSheetTab(tab: SheetTabElement): Promise<SheetSwitchResult> {
@@ -614,22 +461,4 @@ async function waitForSheetTabActivation(name: string): Promise<void> {
 
 function stripSheetTabElement(tab: SheetTabElement): SheetTab {
 	return { index: tab.index, name: tab.name, gid: tab.gid, active: tab.active }
-}
-
-export function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-export async function writeClipboardInPage(input: { text: string }): Promise<SheetClipboardResult> {
-	const textarea = document.createElement('textarea')
-	textarea.value = input.text
-	textarea.style.position = 'fixed'
-	textarea.style.left = '-10000px'
-	document.body.append(textarea)
-	textarea.focus()
-	textarea.select()
-	const copied = document.execCommand('copy')
-	textarea.remove()
-	if (!copied) throw new Error('Failed to copy TSV into clipboard.')
-	return { ok: true, method: 'document.execCommand(copy)' }
 }
