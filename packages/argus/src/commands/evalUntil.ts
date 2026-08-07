@@ -116,6 +116,7 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		timeoutMs: timeoutMs.value,
 		failOnException: options.failOnException ?? true,
 		retryCount: retryCount.value,
+		scenario: prepared.scenario,
 		intervalMs: pollIntervalMs,
 		count: countValue.value,
 		totalTimeoutMs: totalTimeoutMs.value,

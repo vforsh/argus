@@ -22,6 +22,11 @@ export const route = defineJsonRoute<EvalRequest, EvalResponse>({
 			replMode: normalizeBoolean(payload.replMode, true),
 			returnByValue: normalizeBoolean(payload.returnByValue, true),
 			timeoutMs: normalizeTimeout(payload.timeoutMs),
+			scenario: normalizeBoolean(payload.scenario, false),
+			scenarioServices: {
+				buffer: ctx.buffer,
+				screenshotter: ctx.screenshotter,
+			},
 		}),
 })
 

@@ -1,5 +1,6 @@
 import type {
 	EvalResponse,
+	LogCursorResponse,
 	LogsResponse,
 	NetRequestResponse,
 	NetResponse,
@@ -85,6 +86,13 @@ export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient
 				events,
 				nextAfter: response.nextAfter,
 			}
+		},
+		logCursor: async (watcherId: string) => {
+			const { data: response } = await requestWatcher<LogCursorResponse>({ registryPath, ttlMs }, watcherId, {
+				path: '/logs/cursor',
+				timeoutMs: logsTimeoutMs,
+			})
+			return { cursor: response.cursor }
 		},
 		net: async (watcherId: string, netOptions: NetOptions = {}): Promise<NetResult> => {
 			const params = buildNetParams(netOptions)

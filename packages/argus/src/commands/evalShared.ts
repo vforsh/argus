@@ -39,6 +39,8 @@ type EvalExpressionOptions = ExpressionSourceOptions &
 export type PreparedEvalExpression = {
 	expression: string
 	args?: EvalArgMap
+	/** Bundled file expressions receive the temporary watcher scenario bridge. */
+	scenario?: boolean
 }
 
 /** Resolve script input, eval args, and iframe wrapping into the payload sent to the watcher. */
@@ -52,15 +54,16 @@ export const prepareEvalExpression = async (
 		return null
 	}
 
-	const resolvedExpression = await resolveExpression(inline, options, output)
-	if (resolvedExpression == null) {
+	const resolved = await resolveExpressionSource(inline, options, output)
+	if (resolved == null) {
 		return null
 	}
 
 	if (!options.iframe) {
 		return {
-			expression: resolvedExpression,
+			expression: resolved.expression,
 			args: hasEvalArgs(args) ? args : undefined,
+			scenario: resolved.scenario,
 		}
 	}
 
@@ -71,11 +74,12 @@ export const prepareEvalExpression = async (
 	}
 
 	return {
-		expression: wrapForIframeEval(wrapExpressionWithArgs(resolvedExpression, args), {
+		expression: wrapForIframeEval(wrapExpressionWithArgs(resolved.expression, args), {
 			selector: options.iframe,
 			namespace: options.iframeNamespace ?? 'argus',
 			timeoutMs: iframeTimeoutMs.value ?? 5000,
 		}),
+		scenario: resolved.scenario,
 	}
 }
 
@@ -84,6 +88,17 @@ export const prepareEvalExpression = async (
  * Returns `null` (and writes a warning) when the input is invalid.
  */
 export const resolveExpression = async (inline: string | undefined, options: ExpressionSourceOptions, output: Output): Promise<string | null> => {
+	const resolved = await resolveExpressionSource(inline, options, output)
+	return resolved?.expression ?? null
+}
+
+type ResolvedExpressionSource = { expression: string; scenario?: true }
+
+const resolveExpressionSource = async (
+	inline: string | undefined,
+	options: ExpressionSourceOptions,
+	output: Output,
+): Promise<ResolvedExpressionSource | null> => {
 	const wantsStdin = options.stdin === true || inline === '-'
 	const hasInline = inline != null && inline !== '-'
 	const filePath = options.file
@@ -110,6 +125,7 @@ export const resolveExpression = async (inline: string | undefined, options: Exp
 	}
 
 	let expression: string
+	let scenario: true | undefined
 	if (hasFile) {
 		const fileContent = await readFileContent(filePath, options.file, output)
 		if (fileContent == null) {
@@ -134,6 +150,7 @@ export const resolveExpression = async (inline: string | undefined, options: Exp
 			}
 
 			expression = bundled.code
+			scenario = true
 		} else {
 			expression = fileContent
 		}
@@ -160,7 +177,8 @@ export const resolveExpression = async (inline: string | undefined, options: Exp
 		return null
 	}
 
-	return await prependInjectSource(expression, options.inject, output)
+	const injected = await prependInjectSource(expression, options.inject, output)
+	return injected == null ? null : { expression: injected, scenario }
 }
 
 type BundleDecision = { shouldBundle: boolean; autoEnabled: boolean }

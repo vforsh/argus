@@ -8,6 +8,7 @@ export type {
 	LogsMode,
 	LogsOptions,
 	LogsResult,
+	LogCursorResult,
 	NetOptions,
 	NetResult,
 	ScreenshotOptions,

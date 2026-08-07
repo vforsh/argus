@@ -56,6 +56,7 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			'argus eval app "window.store.getState()" --inject ./debug-hooks.js',
 			'argus eval app --file ./script.js --arg level=10 --arg mode=fast',
 			'argus eval app --file ./script.js --args ./args.json',
+			'argus eval app --file ./scenario.ts --arg level=10 --json',
 			'argus eval app "document.title" --json --out ./result.json',
 			'argus eval app "Date.now()" --interval 500 --count 10 --out ./poll.ndjson',
 			'argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rotate',

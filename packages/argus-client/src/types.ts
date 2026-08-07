@@ -65,6 +65,11 @@ export type LogsResult = {
 	nextAfter: number
 }
 
+/** Current watcher log cursor, suitable as a zero-download baseline. */
+export type LogCursorResult = {
+	cursor: number
+}
+
 /** Options for fetching network request summaries. */
 export type NetOptions = {
 	after?: number
@@ -106,6 +111,8 @@ export type EvalOptions = {
 	timeoutMs?: number
 	/** Return by value when possible. Defaults to true. */
 	returnByValue?: boolean
+	/** Install the temporary host bridge expected by bundled Argus scenario code. */
+	scenario?: boolean
 }
 
 /** Result of a remote evaluation. */
@@ -164,6 +171,8 @@ export type ArgusClient = {
 	list: (options?: ListOptions) => Promise<ListResult[]>
 	/** Fetch log events from a watcher. */
 	logs: (watcherId: string, options?: LogsOptions) => Promise<LogsResult>
+	/** Read the current log cursor without fetching buffered events. */
+	logCursor: (watcherId: string) => Promise<LogCursorResult>
 	/** Fetch network request summaries from a watcher. */
 	net: (watcherId: string, options?: NetOptions) => Promise<NetResult>
 	/** Fetch the detailed record for one buffered network request. */

@@ -1,5 +1,5 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
-import { runLogs } from '../../commands/logs.js'
+import { runLogCursor, runLogs } from '../../commands/logs.js'
 import { runTail } from '../../commands/tail.js'
 import { collectMatch, validateCaseFlags, validateMatchOptions } from '../validation.js'
 
@@ -47,6 +47,16 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 		},
 		subcommands: [
 			{
+				name: 'cursor',
+				description: 'Return the current log cursor without downloading events',
+				arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
+				options: [{ flags: '--json', description: 'Output one JSON document for automation' }],
+				examples: ['argus logs cursor app', 'argus logs cursor app --json'],
+				action: async (id, options, command) => {
+					await runLogCursor(id, command.optsWithGlobals?.() ?? options)
+				},
+			},
+			{
 				name: 'tail',
 				description: 'Stream logs via long-polling',
 				arguments: [{ flags: '[id]', description: 'Watcher id to follow' }],
@@ -64,9 +74,10 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 					'argus logs tail app --json',
 					'argus logs tail app --json-full',
 				],
-				action: async (id, options) => {
-					if (!validateLogsOptions(options)) return
-					await runTail(id, options)
+				action: async (id, options, command) => {
+					const resolvedOptions = command.optsWithGlobals?.() ?? options
+					if (!validateLogsOptions(resolvedOptions)) return
+					await runTail(id, resolvedOptions)
 				},
 			},
 		],

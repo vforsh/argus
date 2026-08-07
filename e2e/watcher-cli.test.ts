@@ -223,6 +223,18 @@ test(
 				const sourceLogs = JSON.parse(sourceOut) as Array<{ source: string; text: string }>
 				expect(sourceLogs.some((l) => l.text === testMsg && l.source === 'console')).toBe(true)
 
+				const { stdout: cursorOut } = await runCommand('bun', [BIN_PATH, 'logs', 'cursor', watcherId, '--json'], { env })
+				const cursor = (JSON.parse(cursorOut) as { cursor: number }).cursor
+				const cursorMsg = `after-cursor-${Date.now()}`
+				await page.evaluate((msg) => console.log(msg), cursorMsg)
+				await sleep(200)
+				const { stdout: afterCursorOut } = await runCommand('bun', [BIN_PATH, 'logs', watcherId, '--after', String(cursor), '--json'], {
+					env,
+				})
+				const afterCursorLogs = JSON.parse(afterCursorOut) as Array<{ text: string }>
+				expect(afterCursorLogs.some((event) => event.text === cursorMsg)).toBe(true)
+				expect(afterCursorLogs.every((event) => event.text !== testMsg)).toBe(true)
+
 				// 6. Emit page errors and assert `argus logs`
 				const exceptionMarker = `e2e-uncaught-${Date.now()}`
 				const rejectionMarker = `e2e-rejection-${Date.now()}`

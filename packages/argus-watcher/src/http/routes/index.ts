@@ -2,6 +2,7 @@ import type { WatcherRouteDefinition } from './defineRoute.js'
 
 import { route as getStatus } from './getStatus.js'
 import { route as getLogs } from './getLogs.js'
+import { route as getLogCursor } from './getLogCursor.js'
 import { route as getTail } from './getTail.js'
 import { route as getNet } from './getNet.js'
 import { route as getNetRequests } from './getNetRequests.js'
@@ -64,6 +65,7 @@ import { route as postDetach } from './postDetach.js'
  */
 export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	getStatus,
+	getLogCursor,
 	getLogs,
 	getTail,
 	getNet,

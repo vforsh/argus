@@ -10,13 +10,18 @@ let esbuildModulePromise: Promise<EsbuildModule> | undefined
 
 const loadEsbuild = (): Promise<EsbuildModule> => (esbuildModulePromise ??= import('esbuild'))
 const RESULT_BINDING = '__argusEvalBundleResult'
+const LEGACY_RESULT_BINDING = '__argusEvalLegacyResult'
+const LEGACY_RESULT_EXPORT = '__argusLegacyResult'
+const VIRTUAL_ENTRY = 'argus:eval-entry'
+const VIRTUAL_NAMESPACE = 'argus-eval-entry'
 
 /**
  * Bundle a `--file` entry and its import graph into one browser-evaluable script.
  *
  * Resolution is permissive: esbuild resolves from `process.cwd()` (any path or package
  * under `node_modules`). Only `node:` built-ins are blocked. TypeScript is transpiled
- * without typechecking. The final script must not contain top-level `export` (REPL eval).
+ * without typechecking. A default export is invoked with the scenario context;
+ * files without one retain the legacy final-expression result behavior.
  */
 export const bundleEvalEntry = async (entryPath: string): Promise<BundleEvalEntryResult> => {
 	let entryPoint: string
@@ -30,7 +35,7 @@ export const bundleEvalEntry = async (entryPath: string): Promise<BundleEvalEntr
 		const esbuild = await loadEsbuild()
 		const result = await esbuild.build({
 			absWorkingDir: process.cwd(),
-			entryPoints: [entryPoint],
+			entryPoints: [VIRTUAL_ENTRY],
 			bundle: true,
 			write: false,
 			splitting: false,
@@ -56,6 +61,12 @@ export const bundleEvalEntry = async (entryPath: string): Promise<BundleEvalEntr
 const createPageEvalBundlePlugin = (entryPoint: string): Plugin => ({
 	name: 'argus-eval-bundle',
 	setup(build) {
+		build.onResolve({ filter: /^argus:eval-entry$/ }, () => ({ path: VIRTUAL_ENTRY, namespace: VIRTUAL_NAMESPACE }))
+		build.onLoad({ filter: /.*/, namespace: VIRTUAL_NAMESPACE }, () => ({
+			contents: buildVirtualEntrySource(entryPoint),
+			loader: 'js',
+			resolveDir: process.cwd(),
+		}))
 		build.onResolve({ filter: /^node:/ }, (args) => bundleError(`Node built-in import ${JSON.stringify(args.path)} is not allowed in page eval.`))
 
 		build.onLoad({ filter: /.*/ }, async (args) => {
@@ -65,7 +76,7 @@ const createPageEvalBundlePlugin = (entryPoint: string): Plugin => ({
 
 			const source = await readFile(args.path, 'utf8')
 			return {
-				contents: captureFinalExpression(source),
+				contents: exposeLegacyResult(source),
 				loader: loaderForPath(args.path),
 			}
 		})
@@ -79,16 +90,23 @@ const createPageEvalBundlePlugin = (entryPoint: string): Plugin => ({
 			if (outputs.length !== 1) {
 				return bundleError(`Bundle produced ${outputs.length} outputs; expected exactly one script.`)
 			}
-
-			if (/\bexport\b/.test(outputs[0]?.text ?? '')) {
-				return bundleError(
-					'Bundled script contains top-level export statements, which page eval cannot run. ' +
-						'Remove exports from the entry file (helpers may still export symbols for import).',
-				)
-			}
 		})
 	},
 })
+
+const buildVirtualEntrySource = (entryPoint: string): string => `
+import * as __argusEntry from ${JSON.stringify(entryPoint)};
+const __argusDefault = __argusEntry.default;
+if (__argusDefault !== undefined && typeof __argusDefault !== 'function') {
+  throw new TypeError('The default export of an Argus scenario must be a function');
+}
+${RESULT_BINDING} = typeof __argusDefault === 'function'
+  ? await __argusDefault(__argusScenarioContext)
+  : __argusEntry.${LEGACY_RESULT_EXPORT};
+`
+
+const exposeLegacyResult = (source: string): string =>
+	`let ${LEGACY_RESULT_BINDING};\n${captureFinalExpression(source)}\nexport { ${LEGACY_RESULT_BINDING} as ${LEGACY_RESULT_EXPORT} };\n`
 
 const captureFinalExpression = (source: string): string => {
 	const lines = source.split(/\r?\n/)
@@ -104,7 +122,7 @@ const captureFinalExpression = (source: string): string => {
 	}
 
 	const indent = line.match(/^\s*/)?.[0] ?? ''
-	lines[index] = `${indent}${RESULT_BINDING} = (${expression});`
+	lines[index] = `${indent}${LEGACY_RESULT_BINDING} = (${expression});`
 	return lines.join('\n')
 }
 
@@ -120,7 +138,8 @@ const findFinalCodeLine = (lines: string[]): number | null => {
 }
 
 const isStatementLike = (source: string): boolean =>
-	/^(?:import|export|const|let|var|function|class|if|for|while|switch|try|catch|finally|return|throw|break|continue)\b/.test(source)
+	source === '}' ||
+	/^(?:[{}]|import|export|const|let|var|function|class|if|for|while|switch|try|catch|finally|return|throw|break|continue)\b/.test(source)
 
 const loaderForPath = (filePath: string): Loader => {
 	const extension = path.extname(filePath).toLowerCase()

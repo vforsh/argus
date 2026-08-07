@@ -19,6 +19,7 @@ export type EvalPollInput = {
 	timeoutMs?: number
 	failOnException: boolean
 	retryCount: number
+	scenario?: boolean
 	intervalMs: number
 	count?: number
 	totalTimeoutMs?: number
@@ -66,6 +67,7 @@ export const pollEval = async (input: EvalPollInput): Promise<EvalPollOutcome> =
 				timeoutMs: input.timeoutMs,
 				failOnException: input.failOnException,
 				retryCount: input.retryCount,
+				scenario: input.scenario,
 			})
 
 			if (!result.ok) {

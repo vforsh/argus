@@ -138,6 +138,39 @@ describe('playground smoke tests', () => {
 		expect(response.result).toBe(42)
 	})
 
+	test('default-exported TypeScript scenarios can capture artifacts and scoped logs', async () => {
+		const token = `scenario-log-${Date.now()}`
+		const checkpointName = `playground-${Date.now()}`
+		const scriptPath = path.join(tempDir, 'scenario.ts')
+		await fs.writeFile(
+			scriptPath,
+			`import type { ArgusScenarioContext } from '@vforsh/argus'
+
+export default async function scenario(ctx: ArgusScenarioContext) {
+	const logs = await ctx.logs.session()
+	console.error(${JSON.stringify(token)})
+	const checkpoint = await ctx.checkpoint(${JSON.stringify(checkpointName)}, { selector: 'body' })
+	const captured = await logs.read({ match: ${JSON.stringify(token)}, levels: ['error'] })
+	return { mode: ctx.args.mode, checkpoint, logs: captured.events.map((event) => event.text) }
+}
+`,
+			'utf8',
+		)
+
+		const { stdout, stderr } = await runCommand('bun', [BIN_PATH, 'eval', 'playground', '--file', scriptPath, '--arg', 'mode=smoke', '--json'], {
+			env,
+		})
+		const response = JSON.parse(stdout) as EvalResponse & {
+			result: { mode: string; checkpoint: ScreenshotResponse; logs: string[] }
+		}
+		expect(response.result.mode).toBe('smoke')
+		expect(response.result.logs).toContain(token)
+		expect(response.result.checkpoint.outFile).toEndWith(`scenarios/checkpoints/${checkpointName}.png`)
+		expect((await fs.stat(response.result.checkpoint.outFile)).size).toBeGreaterThan(0)
+		expect(stderr).toContain('bundling automatically')
+		expect(stdout.trim().split('\n')).toHaveLength(1)
+	})
+
 	test('eval bundles local imports from --file', async () => {
 		const scriptDir = path.join(tempDir, 'bundle-fixture')
 		await fs.mkdir(scriptDir, { recursive: true })

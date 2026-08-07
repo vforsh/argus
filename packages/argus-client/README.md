@@ -17,6 +17,10 @@ const client = createArgusClient()
 
 const list = await client.list()
 const logs = await client.logs('app', { mode: 'preview', since: '10m', levels: ['error'] })
+
+const baseline = await client.logCursor('app')
+// perform the action under test
+const actionLogs = await client.logs('app', { after: baseline.cursor })
 ```
 
 ## API
@@ -81,6 +85,10 @@ type LogsResult = {
 - `matchCase` controls regex case-sensitivity (`insensitive` by default server-side).
 - `source` filters by `LogEvent.source` substring.
 - `since` accepts a duration string (e.g. `"10m"`, `"2h"`, `"30s"`) or a duration in ms.
+
+### `client.logCursor(watcherId)`
+
+Returns `{ cursor }` from `/logs/cursor` without downloading buffered events. Use it as the `after` value for a deterministic action-scoped log read.
 
 ## Errors
 

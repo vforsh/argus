@@ -1,6 +1,7 @@
 import type { EvalResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import { serializeRemoteObject } from './remoteObject.js'
+import { installScenarioBridge, type ScenarioBridgeServices } from './scenarioBridge.js'
 
 export type EvalRequestOptions = {
 	expression: string
@@ -9,6 +10,8 @@ export type EvalRequestOptions = {
 	replMode?: boolean
 	returnByValue?: boolean
 	timeoutMs?: number
+	scenario?: boolean
+	scenarioServices?: ScenarioBridgeServices
 }
 
 type RuntimeRemoteObject = {
@@ -30,8 +33,20 @@ export const evaluateExpression = async (session: CdpSessionHandle, options: Eva
 		await installEvalArgs(session, args, options.timeoutMs)
 	}
 
+	let scenarioBridge: Awaited<ReturnType<typeof installScenarioBridge>> | undefined
 	try {
-		const recordResult = await evaluateAndAwaitRecord(session, options)
+		if (options.scenario) {
+			if (!options.scenarioServices) {
+				throw new Error('Scenario host services are unavailable')
+			}
+			scenarioBridge = await installScenarioBridge(session, options.expression, args, options.scenarioServices, options.timeoutMs)
+		}
+
+		const recordResult = await evaluateAndAwaitRecord(session, {
+			...options,
+			expression: scenarioBridge?.expression ?? options.expression,
+			replMode: scenarioBridge ? false : options.replMode,
+		})
 		if (recordResult.exception) return recordResult.response
 
 		const record = recordResult.record
@@ -44,6 +59,7 @@ export const evaluateExpression = async (session: CdpSessionHandle, options: Eva
 			exception: null,
 		}
 	} finally {
+		await scenarioBridge?.dispose()
 		if (args) {
 			await restoreEvalArgs(session, options.timeoutMs)
 		}

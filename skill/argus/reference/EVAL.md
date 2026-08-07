@@ -25,7 +25,39 @@ argus eval app --file ./script.js --bundle
 argus eval app --file ./script.js --no-bundle
 ```
 
-`--file` with leading `import`/`export` auto-enables bundling (one-line stderr note). `--bundle` forces bundling; `--no-bundle` reads the file as-is. Bundling resolves the entry and any import graph esbuild can resolve from the current working directory (including paths outside the entry directory and packages under `node_modules`). Node built-ins (`node:fs`, etc.) are rejected. TypeScript is transpiled without typechecking. Helpers may `export` symbols; the entry file must not emit top-level `export` into the bundle.
+`--file` with leading `import`/`export` auto-enables bundling (one-line stderr note). `--bundle` forces bundling; `--no-bundle` reads the file as-is. Bundling resolves the entry and any import graph esbuild can resolve from the current working directory (including paths outside the entry directory and packages under `node_modules`). Node built-ins (`node:fs`, etc.) are rejected. TypeScript is transpiled without typechecking.
+
+## TypeScript Scenario Entrypoint
+
+Bundled files may use a normal default-exported function. Argus invokes it once with a typed page-side context and returns its result:
+
+```ts
+import type { ArgusScenarioContext } from '@vforsh/argus'
+
+export default async function scenario(ctx: ArgusScenarioContext) {
+	const logs = await ctx.logs.session()
+	await openLevel(Number(ctx.args.level))
+	const checkpoint = await ctx.checkpoint('level-open', { selector: 'canvas' })
+	const errors = await logs.read({ levels: ['error', 'exception'] })
+	return { checkpoint, errors: errors.events }
+}
+```
+
+```bash
+argus eval game --file ./scenario.ts --arg level=10 --json
+```
+
+Context methods:
+
+- `ctx.screenshot(options?)`: capture to a watcher-generated unique path under `screenshots/`.
+- `ctx.checkpoint(name, options?)`: capture to `scenarios/checkpoints/<name>.png`; names are path-safe and deterministic.
+- `ctx.logs.cursor()` / `ctx.logs.read(cursor, options?)`: explicit zero-download baselines.
+- `ctx.logs.session()`: capture a baseline and return a stateful reader whose cursor advances after each `read()`.
+- `ctx.args`: frozen string args from `--arg` / `--args`.
+
+The watcher installs a nonce-scoped CDP binding only while the eval is active. Scenario actions are validated host-side, and page code cannot choose arbitrary artifact paths.
+
+Compatibility: bundled files without a default export keep the previous final-expression result behavior. Named exports are allowed. `--no-bundle` remains raw script mode. For iframe scenarios, select the iframe as the watcher target (`argus ext select ...`) instead of combining a scenario module with the legacy `--iframe` postMessage helper.
 
 Poll until condition:
 
@@ -38,7 +70,8 @@ argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rota
 ## Output
 
 - Default: compact preview
-- `--json`: JSON object (NDJSON with `--interval`)
+- `--json`: exactly one JSON document for one-shot eval; bundle/progress notes go to stderr
+- `--json --interval`: explicit streaming mode and therefore NDJSON, retained for compatibility
 - `--out <path>`: write result to file; single eval overwrites, polling appends NDJSON, `--rotate` writes one numbered file per iteration
 
 ## Behavior Flags

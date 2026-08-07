@@ -11,9 +11,12 @@ argus logs app --match "Error|Exception" --ignore-case
 argus logs app --source console
 argus logs app --json
 argus logs app --json-full
+argus logs cursor app --json
 argus logs tail app
 argus logs tail app --levels error --json
 ```
+
+`logs cursor` returns the current event id without downloading the buffer. Save it before an action, then pass it to `logs --after <cursor>` to read only newly produced events.
 
 ## Eval / Wait
 

@@ -66,6 +66,11 @@ export class LogBuffer {
 		return filtered.slice(0, limit)
 	}
 
+	/** Return the current append cursor without copying buffered events. */
+	getCursor(): number {
+		return this.nextId - 1
+	}
+
 	/** Wait for events after an id or timeout. */
 	waitForAfter(after: number, filters: LogFilters, limit: number, timeoutMs: number): Promise<LogEvent[]> {
 		const immediate = this.listAfter(after, filters, limit)

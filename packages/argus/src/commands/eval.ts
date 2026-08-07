@@ -121,6 +121,7 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 			timeoutMs: timeoutMs.value,
 			failOnException: options.failOnException ?? true,
 			retryCount: retryCount.value,
+			scenario: prepared.scenario,
 		})
 
 		if (!singleResult.ok) {
@@ -142,6 +143,7 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		timeoutMs: timeoutMs.value,
 		failOnException: options.failOnException ?? true,
 		retryCount: retryCount.value,
+		scenario: prepared.scenario,
 		intervalMs: intervalMs.value,
 		count: countValue.value,
 		onResult: async (response) => {

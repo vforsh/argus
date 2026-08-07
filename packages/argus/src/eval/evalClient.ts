@@ -13,6 +13,7 @@ export type EvalOnceInput = {
 	returnByValue: boolean
 	timeoutMs?: number
 	failOnException: boolean
+	scenario?: boolean
 }
 
 export type EvalWithRetriesInput = EvalOnceInput & {
@@ -35,6 +36,7 @@ export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 		replMode: input.replMode,
 		returnByValue: input.returnByValue,
 		timeoutMs: input.timeoutMs,
+		scenario: input.scenario,
 	}
 	const requestTimeoutMs = input.timeoutMs ? input.timeoutMs + 5_000 : DEFAULT_EVAL_REQUEST_TIMEOUT_MS
 
@@ -106,6 +108,7 @@ export const evalWithRetries = async (input: EvalWithRetriesInput): Promise<Eval
 			returnByValue: input.returnByValue,
 			timeoutMs: input.timeoutMs,
 			failOnException: input.failOnException,
+			scenario: input.scenario,
 		})
 
 		if (outcome.ok) {

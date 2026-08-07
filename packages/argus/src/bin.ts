@@ -2,6 +2,9 @@
 import { createProgram } from './cli/program.js'
 import { coreProgramRegistrars } from './cli/register/index.js'
 import { registerPlugins } from './cli/plugins/registerPlugins.js'
+import { configureMachineSafeConsole } from './output/io.js'
+
+configureMachineSafeConsole(process.argv.slice(2))
 
 const program = createProgram()
 

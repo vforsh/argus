@@ -127,6 +127,8 @@ argus dom tree app --selector body --depth 2
 argus snapshot app --interactive
 ```
 
+For deterministic multi-step suites, prefer a bundled TypeScript scenario with `export default async function scenario(ctx)`. The context can capture screenshots/checkpoints and open a log session directly; see [EVAL.md](./reference/EVAL.md).
+
 For interaction:
 
 ```bash

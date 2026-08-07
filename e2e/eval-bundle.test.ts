@@ -58,6 +58,11 @@ const runExpression = (source: string): unknown => {
 	return runScript(source)
 }
 
+const runScenarioExpression = (source: string, context: unknown): unknown => {
+	const run = new Function('__argusScenarioContext', `return (${source}\n)`) as (scenarioContext: unknown) => unknown
+	return run(context)
+}
+
 const createTestOutput = (): Output & { warnings: string[] } => {
 	const warnings: string[] = []
 	return {
@@ -81,7 +86,7 @@ describe('bundleEvalEntry', () => {
 		})
 
 		const code = await expectBundleOk(root, 'main.js')
-		expect(code).not.toMatch(/\bexport\b/)
+		expect(code).not.toMatch(/\nexport\s/)
 		expect(code).not.toMatch(/\bimport\b/)
 		expect(code).toContain('//# sourceURL=argus-file://')
 
@@ -97,7 +102,22 @@ describe('bundleEvalEntry', () => {
 
 		const code = await expectBundleOk(root, 'main.ts')
 		expect(code).toContain('await Promise.resolve')
-		expect(code).not.toMatch(/\bexport\b/)
+		expect(code).not.toMatch(/\nexport\s/)
+	})
+
+	test('invokes a default-exported TypeScript scenario with context', async () => {
+		const root = await createFixtureDir()
+		await writeFixture(root, {
+			'main.ts': `
+type Context = { args: Readonly<Record<string, string>> }
+export default async function scenario(ctx: Context) {
+	return { level: Number(ctx.args.level), ready: await Promise.resolve(true) }
+}
+`,
+		})
+
+		const code = await expectBundleOk(root, 'main.ts')
+		await expect(runScenarioExpression(code, { args: { level: '12' } })).resolves.toEqual({ level: 12, ready: true })
 	})
 
 	test('inlines dynamic import of local files', async () => {
@@ -108,14 +128,15 @@ describe('bundleEvalEntry', () => {
 		})
 
 		const code = await expectBundleOk(root, 'main.js')
-		expect(code).not.toMatch(/\bexport\b/)
+		expect(code).not.toMatch(/\nexport\s/)
 		expect(code).toContain('await')
 	})
 
-	test('rejects entry files that export bindings into the bundle', async () => {
+	test('allows named entry exports while preserving the final-expression compatibility path', async () => {
 		const root = await createFixtureDir()
 		await writeFixture(root, { 'main.js': 'export const value = 1\nvalue\n' })
-		await expectBundleError(root, 'main.js', 'top-level export')
+		const code = await expectBundleOk(root, 'main.js')
+		await expect(runExpression(code)).resolves.toBe(1)
 	})
 
 	test('rejects node built-in imports', async () => {
