@@ -203,6 +203,16 @@ argus logs app --levels error,warning --since 10m
 argus logs tail app --levels error
 ```
 
+For verification runs, capture an opaque baseline before the action and query only new errors afterward:
+
+```bash
+epoch=$(argus logs cursor app)
+# perform the action or reload the page
+argus logs app --after "$epoch" --levels error,exception --json
+```
+
+The cursor survives page reloads and counts duplicate entries independently. It is invalid after watcher restart or ring-buffer eviction, which produces an explicit `log_epoch_*` error so the runner can establish a fresh baseline.
+
 ### Watch network requests
 
 ```bash
@@ -337,7 +347,7 @@ Four packages:
 | `chrome start\|ls\|version\|status\|stop`              | Chrome lifecycle management              |
 | `watcher start\|stop\|status\|ls\|prune`               | Watcher lifecycle management             |
 | `page ls\|open\|activate\|close\|reload`               | Tab and target management                |
-| `logs` / `logs tail`                                   | Fetch or stream console logs             |
+| `logs` / `logs cursor` / `logs tail`                   | Fetch or stream console logs             |
 | `net` / `net tail`                                     | Fetch or stream network requests         |
 | `eval`                                                 | Evaluate JS expression                   |
 | `eval-until` / `wait`                                  | Poll JS expression until truthy          |

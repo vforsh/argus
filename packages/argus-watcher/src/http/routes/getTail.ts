@@ -1,4 +1,5 @@
 import type { TailResponse } from '@vforsh/argus-core'
+import { LogEpochError } from '../../buffer/LogBuffer.js'
 import { defineJsonRoute } from './defineRoute.js'
 import { emitRequest } from './types.js'
 import {
@@ -11,12 +12,16 @@ import {
 	compileMatchPatterns,
 	normalizeQueryValue,
 } from '../httpUtils.js'
+import { parseLogPosition, respondLogEpochError, waitForLogsFromPosition } from './logEpochQuery.js'
 
 export const route = defineJsonRoute<undefined, TailResponse>({
 	method: 'GET',
 	path: '/tail',
 	handle: async ({ res, url, ctx }) => {
-		const after = clampNumber(url.searchParams.get('after'), 0)
+		const position = parseLogPosition(url)
+		if ('error' in position) {
+			return respondLogEpochError(res, new LogEpochError('invalid', position.error))
+		}
 		const limit = clampNumber(url.searchParams.get('limit'), 500, 1, 5000)
 		const timeoutMs = clampNumber(url.searchParams.get('timeoutMs'), 25_000, 1000, 120_000)
 		const levels = parseLevels(url.searchParams.get('levels'))
@@ -37,10 +42,25 @@ export const route = defineJsonRoute<undefined, TailResponse>({
 		}
 
 		// Emitted manually to include query metadata in the request event.
-		emitRequest(ctx, res, 'tail', { after, limit, levels, match: matchPatterns.patterns, matchCase, source, timeoutMs })
+		emitRequest(ctx, res, 'tail', {
+			after: position.kind === 'epoch' ? position.epoch : undefined,
+			sinceEpoch: position.kind === 'epoch' ? position.epoch : undefined,
+			limit,
+			levels,
+			match: matchPatterns.patterns,
+			matchCase,
+			source,
+			timeoutMs,
+		})
 
-		const events = await ctx.buffer.waitForAfter(after, { levels, match: compiledMatch.match, source }, limit, timeoutMs)
-		const nextAfter = events.length > 0 ? (events[events.length - 1]?.id ?? after) : after
-		return { ok: true, events, nextAfter, timedOut: events.length === 0 }
+		try {
+			const result = await waitForLogsFromPosition(ctx.buffer, position, { levels, match: compiledMatch.match, source }, limit, timeoutMs)
+			return { ok: true, ...result, timedOut: result.events.length === 0 }
+		} catch (error) {
+			if (error instanceof LogEpochError) {
+				return respondLogEpochError(res, error)
+			}
+			throw error
+		}
 	},
 })

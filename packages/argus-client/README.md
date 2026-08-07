@@ -18,9 +18,9 @@ const client = createArgusClient()
 const list = await client.list()
 const logs = await client.logs('app', { mode: 'preview', since: '10m', levels: ['error'] })
 
-const baseline = await client.logCursor('app')
+const baseline = await client.beginLogEpoch('app')
 // perform the action under test
-const actionLogs = await client.logs('app', { after: baseline.cursor })
+const actionErrors = await client.logs('app', { sinceEpoch: baseline.epoch, levels: ['error', 'exception'] })
 ```
 
 ## API
@@ -67,14 +67,15 @@ type LogsOptions = {
 	match?: string | string[]
 	matchCase?: 'sensitive' | 'insensitive'
 	source?: string
-	after?: number
+	after?: LogEpoch
+	sinceEpoch?: LogEpoch
 	limit?: number
 	since?: string | number
 }
 
 type LogsResult = {
 	events: LogEvent[]
-	nextAfter: number
+	nextCursor: LogEpoch
 }
 ```
 
@@ -86,15 +87,18 @@ type LogsResult = {
 - `source` filters by `LogEvent.source` substring.
 - `since` accepts a duration string (e.g. `"10m"`, `"2h"`, `"30s"`) or a duration in ms.
 
-### `client.logCursor(watcherId)`
+### `client.beginLogEpoch(watcherId)`
 
-Returns `{ cursor }` from `/logs/cursor` without downloading buffered events. Use it as the `after` value for a deterministic action-scoped log read.
+Returns `{ epoch }` from `/logs/epoch` without downloading buffered events. Pass it as `sinceEpoch` (or `after`) for a deterministic action-scoped log read. The marker is tied to the live watcher session, not the page, so browser reloads do not reset it.
+
+`client.logCursor(watcherId)` is the same opaque marker under the `/logs/cursor` name.
 
 ## Errors
 
 - Throws on invalid inputs (`since`, `after`, `limit`).
 - Throws if the watcher id is not in the registry.
 - If the watcher is unreachable, the registry entry is removed and the call throws.
+- A cursor from another watcher session, a restarted watcher, or an evicted ring-buffer range is rejected; capture a new epoch.
 
 ## Notes
 

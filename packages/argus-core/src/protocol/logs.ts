@@ -4,6 +4,9 @@ export type LogLevel = 'log' | 'info' | 'warning' | 'error' | 'debug' | 'excepti
 /** Origin for a log event. */
 export type LogSource = 'console' | 'exception' | 'system'
 
+/** Opaque position in one watcher's log stream. Epochs are invalid after a watcher restart. */
+export type LogEpoch = string
+
 /** Normalized log payload stored in the buffer and returned via HTTP API. */
 export type LogEvent = {
 	id: number

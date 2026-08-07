@@ -30,8 +30,7 @@ test(
 		try {
 			const context = await browser.newContext()
 			const page = await context.newPage()
-			// Set title before navigating or staying on blank page
-			await page.setContent('<html><head><title>argus-e2e</title></head><body><h1>E2E Page</h1></body></html>')
+			await page.goto('data:text/html,<html><head><title>argus-e2e</title></head><body><h1>E2E Page</h1></body></html>')
 
 			// Verify title
 			const title = await page.title()
@@ -224,7 +223,7 @@ test(
 				expect(sourceLogs.some((l) => l.text === testMsg && l.source === 'console')).toBe(true)
 
 				const { stdout: cursorOut } = await runCommand('bun', [BIN_PATH, 'logs', 'cursor', watcherId, '--json'], { env })
-				const cursor = (JSON.parse(cursorOut) as { cursor: number }).cursor
+				const cursor = (JSON.parse(cursorOut) as { cursor: string }).cursor
 				const cursorMsg = `after-cursor-${Date.now()}`
 				await page.evaluate((msg) => console.log(msg), cursorMsg)
 				await sleep(200)
@@ -234,6 +233,32 @@ test(
 				const afterCursorLogs = JSON.parse(afterCursorOut) as Array<{ text: string }>
 				expect(afterCursorLogs.some((event) => event.text === cursorMsg)).toBe(true)
 				expect(afterCursorLogs.every((event) => event.text !== testMsg)).toBe(true)
+
+				const { stdout: epochOut } = await runCommand('bun', [BIN_PATH, 'logs', 'epoch', watcherId, '--json'], { env })
+				const epoch = (JSON.parse(epochOut) as { epoch: string }).epoch
+				expect(typeof epoch).toBe('string')
+				await page.reload()
+				const duplicateMsg = `duplicate-epoch-${Date.now()}`
+				await page.evaluate((msg) => {
+					console.error(msg)
+					console.error(msg)
+				}, duplicateMsg)
+				await sleep(300)
+
+				const { stdout: epochErrorsOut } = await runCommand(
+					'bun',
+					[BIN_PATH, 'logs', watcherId, '--since-epoch', epoch, '--levels', 'error', '--json'],
+					{ env },
+				)
+				const epochErrors = JSON.parse(epochErrorsOut) as Array<{ text: string }>
+				expect(epochErrors.filter((event) => event.text === duplicateMsg)).toHaveLength(2)
+
+				const { stdout: emptyEpochOut } = await runCommand('bun', [BIN_PATH, 'logs', 'epoch', watcherId, '--json'], { env })
+				const emptyEpoch = (JSON.parse(emptyEpochOut) as { epoch: string }).epoch
+				const { stdout: emptyDeltaOut } = await runCommand('bun', [BIN_PATH, 'logs', watcherId, '--since-epoch', emptyEpoch, '--json'], {
+					env,
+				})
+				expect(JSON.parse(emptyDeltaOut)).toEqual([])
 
 				// 6. Emit page errors and assert `argus logs`
 				const exceptionMarker = `e2e-uncaught-${Date.now()}`

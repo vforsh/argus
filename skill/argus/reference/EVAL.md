@@ -51,7 +51,7 @@ Context methods:
 
 - `ctx.screenshot(options?)`: capture to a watcher-generated unique path under `screenshots/`.
 - `ctx.checkpoint(name, options?)`: capture to `scenarios/checkpoints/<name>.png`; names are path-safe and deterministic.
-- `ctx.logs.cursor()` / `ctx.logs.read(cursor, options?)`: explicit zero-download baselines.
+- `ctx.logs.cursor()` / `ctx.logs.read(cursor, options?)`: explicit zero-download opaque baselines. The cursor survives page reloads while the watcher stays alive and rejects stale/restarted sessions.
 - `ctx.logs.session()`: capture a baseline and return a stateful reader whose cursor advances after each `read()`.
 - `ctx.args`: frozen string args from `--arg` / `--args`.
 

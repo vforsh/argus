@@ -6,10 +6,13 @@ type MatchCaseOptions = {
 	caseSensitive?: boolean
 }
 
-export const appendAfterLimitParams = (params: URLSearchParams, options: { after?: string; limit?: string }): void => {
-	const after = parseNumber(options.after)
-	if (after != null) {
-		params.set('after', String(after))
+export const appendAfterLimitParams = (params: URLSearchParams, options: { after?: string; limit?: string; sinceEpoch?: string }): void => {
+	if (options.after?.trim()) {
+		params.set('after', options.after.trim())
+	}
+
+	if (options.sinceEpoch?.trim()) {
+		params.set('sinceEpoch', options.sinceEpoch.trim())
 	}
 
 	const limit = parseNumber(options.limit)

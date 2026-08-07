@@ -1,4 +1,5 @@
 import type { LogsResponse } from '@vforsh/argus-core'
+import { LogEpochError } from '../../buffer/LogBuffer.js'
 import { defineJsonRoute } from './defineRoute.js'
 import { emitRequest } from './types.js'
 import {
@@ -11,12 +12,16 @@ import {
 	compileMatchPatterns,
 	normalizeQueryValue,
 } from '../httpUtils.js'
+import { listLogsFromPosition, parseLogPosition, respondLogEpochError } from './logEpochQuery.js'
 
 export const route = defineJsonRoute<undefined, LogsResponse>({
 	method: 'GET',
 	path: '/logs',
 	handle: ({ res, url, ctx }) => {
-		const after = clampNumber(url.searchParams.get('after'), 0)
+		const position = parseLogPosition(url)
+		if ('error' in position) {
+			return respondLogEpochError(res, new LogEpochError('invalid', position.error))
+		}
 		const limit = clampNumber(url.searchParams.get('limit'), 500, 1, 5000)
 		const levels = parseLevels(url.searchParams.get('levels'))
 		const match = url.searchParams.getAll('match')
@@ -37,10 +42,25 @@ export const route = defineJsonRoute<undefined, LogsResponse>({
 		}
 
 		// Emitted manually to include query metadata in the request event.
-		emitRequest(ctx, res, 'logs', { after, limit, levels, match: matchPatterns.patterns, matchCase, source, sinceTs })
+		emitRequest(ctx, res, 'logs', {
+			after: position.kind === 'epoch' && url.searchParams.has('after') ? position.epoch : undefined,
+			sinceEpoch: position.kind === 'epoch' ? position.epoch : undefined,
+			limit,
+			levels,
+			match: matchPatterns.patterns,
+			matchCase,
+			source,
+			sinceTs,
+		})
 
-		const events = ctx.buffer.listAfter(after, { levels, match: compiledMatch.match, source, sinceTs }, limit)
-		const nextAfter = events.length > 0 ? (events[events.length - 1]?.id ?? after) : after
-		return { ok: true, events, nextAfter }
+		try {
+			const result = listLogsFromPosition(ctx.buffer, position, { levels, match: compiledMatch.match, source, sinceTs }, limit)
+			return { ok: true, ...result }
+		} catch (error) {
+			if (error instanceof LogEpochError) {
+				return respondLogEpochError(res, error)
+			}
+			throw error
+		}
 	},
 })

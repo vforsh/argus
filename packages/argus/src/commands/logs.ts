@@ -1,4 +1,4 @@
-import type { LogCursorResponse, LogsResponse } from '@vforsh/argus-core'
+import type { LogCursorResponse, LogEpochResponse, LogsResponse } from '@vforsh/argus-core'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import { formatLogEvent } from '../output/format.js'
 import type { Output } from '../output/io.js'
@@ -16,16 +16,26 @@ export type LogsOptions = {
 	source?: string
 	since?: string
 	after?: string
+	sinceEpoch?: string
 	limit?: string
 }
 
 /** Options for reading the current watcher log cursor. */
 export type LogCursorOptions = { json?: boolean }
 
+/** Options for starting an opaque watcher log epoch. */
+export type LogEpochOptions = { json?: boolean }
+
 /** Return a baseline cursor without downloading buffered logs. */
 export const runLogCursor = defineWatcherCommand<LogCursorOptions, LogCursorResponse>({
 	build: () => ({ path: '/logs/cursor', timeoutMs: 5_000 }),
-	formatHuman: (response, { output }) => output.writeHuman(String(response.cursor)),
+	formatHuman: (response, { output }) => output.writeHuman(response.cursor),
+})
+
+/** Return an opaque log epoch without downloading buffered logs. */
+export const runLogEpoch = defineWatcherCommand<LogEpochOptions, LogEpochResponse>({
+	build: () => ({ path: '/logs/epoch', timeoutMs: 5_000 }),
+	formatHuman: (response, { output }) => output.writeHuman(response.epoch),
 })
 
 /** Execute the logs command for a watcher id. */

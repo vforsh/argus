@@ -12,11 +12,20 @@ argus logs app --source console
 argus logs app --json
 argus logs app --json-full
 argus logs cursor app --json
+argus logs epoch app
 argus logs tail app
 argus logs tail app --levels error --json
 ```
 
-`logs cursor` returns the current event id without downloading the buffer. Save it before an action, then pass it to `logs --after <cursor>` to read only newly produced events.
+`logs cursor` / `logs epoch` return the current opaque watcher-session cursor without downloading the buffer. Save it before an action, then pass it to `logs --after <cursor>` or `logs --since-epoch <cursor>` to read only newly produced events. Cursors survive page reloads but fail explicitly after watcher restart, foreign-session use, or ring-buffer eviction.
+
+Verification runner pattern:
+
+```bash
+epoch=$(argus logs cursor app)
+# perform the action
+argus logs app --after "$epoch" --levels error,exception --json
+```
 
 ## Eval / Wait
 

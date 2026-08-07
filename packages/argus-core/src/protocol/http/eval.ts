@@ -1,4 +1,4 @@
-import type { LogEvent, LogLevel } from '../logs.js'
+import type { LogEpoch, LogEvent, LogLevel } from '../logs.js'
 import type { ScreenshotClipRegion, ScreenshotResponse } from './screenshot.js'
 
 /** Request payload for POST /eval. */
@@ -55,13 +55,13 @@ export type ArgusScenarioLogOptions = {
 export type ArgusScenarioLogsResult = {
 	events: LogEvent[]
 	/** Cursor to use for the next read. */
-	nextCursor: number
+	nextCursor: LogEpoch
 }
 
 /** Stateful log window created at a scenario-defined baseline. */
 export type ArgusScenarioLogSession = {
 	/** Current session cursor. It advances after each successful read. */
-	readonly cursor: number
+	readonly cursor: LogEpoch
 	/** Read matching logs since the session cursor and advance it. */
 	read: (options?: ArgusScenarioLogOptions) => Promise<ArgusScenarioLogsResult>
 }
@@ -69,9 +69,9 @@ export type ArgusScenarioLogSession = {
 /** Log cursor helpers available to bundled scenario entrypoints. */
 export type ArgusScenarioLogs = {
 	/** Return the watcher's current log cursor without downloading events. */
-	cursor: () => Promise<number>
+	cursor: () => Promise<LogEpoch>
 	/** Read matching logs produced strictly after `cursor`. */
-	read: (cursor: number, options?: ArgusScenarioLogOptions) => Promise<ArgusScenarioLogsResult>
+	read: (cursor: LogEpoch, options?: ArgusScenarioLogOptions) => Promise<ArgusScenarioLogsResult>
 	/** Capture the current cursor and return a stateful log window. */
 	session: () => Promise<ArgusScenarioLogSession>
 }

@@ -16,7 +16,7 @@ import type { LogEvent } from '@vforsh/argus-core'
 
 ## Exports
 
-- Protocol types: `LogEvent`, response models
+- Protocol types: `LogEvent`, `LogEpoch`, response models
 - Registry helpers: `readRegistry`, `writeRegistry`, `pruneStaleWatchers`
 
 ## Registry

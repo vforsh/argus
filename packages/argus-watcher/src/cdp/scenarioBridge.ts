@@ -189,18 +189,12 @@ const parseCheckpointName = (value: unknown): string => {
 const readScenarioLogs = (buffer: LogBuffer, value: unknown): ArgusScenarioLogsResult => {
 	const payload = requireRecord(value, 'logs.read payload')
 	const cursor = payload.cursor
-	if (typeof cursor !== 'number' || !Number.isInteger(cursor) || cursor < 0) {
-		throw new Error('log cursor must be a non-negative integer')
+	if (typeof cursor !== 'string' || !cursor.trim()) {
+		throw new Error('log cursor must be a non-empty opaque cursor')
 	}
 
 	const { filters, limit } = parseLogOptions(payload.options)
-	const endCursor = buffer.getCursor()
-	const events = buffer.listAfter(cursor, filters, limit)
-	let nextCursor = endCursor
-	if (events.length === limit) {
-		nextCursor = events[events.length - 1]?.id ?? cursor
-	}
-	return { events, nextCursor }
+	return buffer.listAfterEpoch(cursor, filters, limit)
 }
 
 const parseLogOptions = (value: unknown): { filters: LogFilters; limit: number } => {

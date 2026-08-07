@@ -1,5 +1,6 @@
 import type {
 	LogEvent,
+	LogEpoch,
 	LogLevel,
 	NetworkRequestDetail,
 	NetworkRequestSummary,
@@ -49,7 +50,10 @@ export type LogsOptions = {
 	matchCase?: 'sensitive' | 'insensitive'
 	/** Filter by log event source substring. */
 	source?: string
-	after?: number
+	/** Opaque cursor returned by `beginLogEpoch` / `logCursor`. */
+	after?: LogEpoch
+	/** Read only events produced after this opaque watcher-session marker. */
+	sinceEpoch?: LogEpoch
 	limit?: number
 	/**
 	 * Filter by time window.
@@ -62,12 +66,17 @@ export type LogsOptions = {
 /** Logs response data with pagination cursor. */
 export type LogsResult = {
 	events: LogEvent[]
-	nextAfter: number
+	nextCursor: LogEpoch
 }
 
 /** Current watcher log cursor, suitable as a zero-download baseline. */
 export type LogCursorResult = {
-	cursor: number
+	cursor: LogEpoch
+}
+
+/** Opaque watcher-session marker suitable for action-scoped log queries. */
+export type LogEpochResult = {
+	epoch: LogEpoch
 }
 
 /** Options for fetching network request summaries. */
@@ -173,6 +182,8 @@ export type ArgusClient = {
 	logs: (watcherId: string, options?: LogsOptions) => Promise<LogsResult>
 	/** Read the current log cursor without fetching buffered events. */
 	logCursor: (watcherId: string) => Promise<LogCursorResult>
+	/** Begin an action-scoped log epoch without downloading buffered events. */
+	beginLogEpoch: (watcherId: string) => Promise<LogEpochResult>
 	/** Fetch network request summaries from a watcher. */
 	net: (watcherId: string, options?: NetOptions) => Promise<NetResult>
 	/** Fetch the detailed record for one buffered network request. */

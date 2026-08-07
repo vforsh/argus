@@ -9,6 +9,7 @@ export type {
 	LogsOptions,
 	LogsResult,
 	LogCursorResult,
+	LogEpochResult,
 	NetOptions,
 	NetResult,
 	ScreenshotOptions,
@@ -19,4 +20,5 @@ export type {
 	TraceStopResult,
 } from './types.js'
 export { createArgusClient } from './client/createArgusClient.js'
+export type { LogEpoch } from '@vforsh/argus-core'
 export type { NetworkRequestDetail } from '@vforsh/argus-core'

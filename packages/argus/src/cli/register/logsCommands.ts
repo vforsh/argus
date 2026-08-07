@@ -1,5 +1,5 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
-import { runLogCursor, runLogs } from '../../commands/logs.js'
+import { runLogCursor, runLogEpoch, runLogs } from '../../commands/logs.js'
 import { runTail } from '../../commands/tail.js'
 import { collectMatch, validateCaseFlags, validateMatchOptions } from '../validation.js'
 
@@ -35,7 +35,8 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 		options: [
 			...sharedFilterOptions,
 			{ flags: '--since <duration>', description: 'Filter by time window (e.g. 10m, 2h, 30s)' },
-			{ flags: '--after <id>', description: 'Only return events after this id' },
+			{ flags: '--after <cursor>', description: 'Only return events after this opaque cursor' },
+			{ flags: '--since-epoch <epoch>', description: 'Only return events after this opaque epoch' },
 			{ flags: '--limit <count>', description: 'Maximum number of events' },
 			{ flags: '--json', description: 'Output bounded JSON preview for automation' },
 			{ flags: '--json-full', description: 'Output full JSON (can be very large)' },
@@ -46,6 +47,16 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 			await runLogs(id, options)
 		},
 		subcommands: [
+			{
+				name: 'epoch',
+				description: 'Return an opaque watcher-session log epoch without downloading events',
+				arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
+				options: [{ flags: '--json', description: 'Output one JSON document for automation' }],
+				examples: ['argus logs epoch app', 'argus logs epoch app --json'],
+				action: async (id, options, command) => {
+					await runLogEpoch(id, command.optsWithGlobals?.() ?? options)
+				},
+			},
 			{
 				name: 'cursor',
 				description: 'Return the current log cursor without downloading events',
@@ -62,7 +73,8 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 				arguments: [{ flags: '[id]', description: 'Watcher id to follow' }],
 				options: [
 					...sharedFilterOptions,
-					{ flags: '--after <id>', description: 'Start after this event id' },
+					{ flags: '--after <cursor>', description: 'Start after this opaque cursor' },
+					{ flags: '--since-epoch <epoch>', description: 'Start after this opaque epoch' },
 					{ flags: '--limit <count>', description: 'Maximum number of events per poll' },
 					{ flags: '--timeout <ms>', description: 'Long-poll timeout in milliseconds' },
 					{ flags: '--json', description: 'Output bounded newline-delimited JSON events' },

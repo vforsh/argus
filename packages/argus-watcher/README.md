@@ -62,6 +62,17 @@ await watcher.close()
     - `ttlMs`: how long the page keeps the indicator without pings (default `6000`)
     - Works in both direct CDP mode and Chrome extension mode; it is removed on detach and also self-expires if heartbeats stop.
 
+## Action-scoped log reads
+
+The watcher exposes `GET /logs/cursor` and `GET /logs/epoch`, both returning an opaque cursor for the current watcher session. Pass it as `sinceEpoch` (or `after`) to `GET /logs` or `GET /tail`:
+
+```text
+GET /logs/epoch
+GET /logs?sinceEpoch=<cursor>&levels=error,exception
+```
+
+The cursor is monotonic within one live watcher and remains valid across page reloads, so duplicate messages remain distinct. A restarted watcher, foreign cursor, future cursor, or cursor whose unread range was evicted returns a deterministic `log_epoch_*` error; start a new epoch instead of subtracting message content.
+
 ## Directory layout
 
 All artifacts are stored under `artifacts.base` (default: `<cwd>/argus-artifacts`):

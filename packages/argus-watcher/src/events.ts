@@ -44,7 +44,10 @@ export type CdpDetachedEvent = {
  * Query parameters for log/tail requests.
  */
 export type LogRequestQuery = {
-	after?: number
+	/** Opaque cursor returned by `/logs/cursor` or `/logs/epoch`. */
+	after?: string
+	/** Alias for `after` with explicit baseline semantics. */
+	sinceEpoch?: string
 	limit?: number
 	levels?: LogLevel[]
 	match?: string[]

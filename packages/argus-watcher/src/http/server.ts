@@ -90,7 +90,8 @@ export type HttpRequestEventMetadata = {
 		id?: number
 		requestId?: string
 		part?: NetRequestBodyPart
-		after?: number
+		after?: number | string
+		sinceEpoch?: string
 		limit?: number
 		levels?: LogLevel[]
 		match?: string[]

@@ -3,9 +3,16 @@ import { parseDurationMs } from '../time/parseDurationMs.js'
 
 export const buildLogsParams = (options: LogsOptions): URLSearchParams => {
 	const params = new URLSearchParams()
-	const after = normalizeNonNegativeNumber('after', options.after)
+	const after = normalizeQueryValue(options.after)
 	if (after != null) {
-		params.set('after', String(after))
+		params.set('after', after)
+	}
+	if (after != null && options.sinceEpoch != null) {
+		throw new Error('Use either after or sinceEpoch, not both')
+	}
+	const sinceEpoch = normalizeQueryValue(options.sinceEpoch)
+	if (sinceEpoch) {
+		params.set('sinceEpoch', sinceEpoch)
 	}
 
 	const limit = normalizeNonNegativeNumber('limit', options.limit)
