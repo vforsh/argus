@@ -20,7 +20,7 @@
 		"clean:packages": "node scripts/clean-dist.mjs packages/argus-core packages/argus-client packages/argus-plugin-api packages/argus-plugin-google-sheets packages/argus-watcher packages/argus",
 		"build:packages": "npm run clean:packages && tsc -b tsconfig.json && bun run --filter @vforsh/argus bundle",
 		"chrome:start": "bun packages/argus/src/bin.ts chrome start",
-		"test:e2e": "bun run build:packages && bun test e2e/",
+		"test:e2e": "bun run build:packages && bun scripts/test-e2e.mjs",
 		"test:playground": "bun run build:packages && bun test e2e/playground-*.test.ts",
 		"playground": "bun playground/start.ts",
 		"playground:serve": "bun playground/serve.ts",
