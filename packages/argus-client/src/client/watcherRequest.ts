@@ -1,4 +1,5 @@
 import type { WatcherRecord } from '@vforsh/argus-core'
+import { isHttpResponseError } from '@vforsh/argus-core'
 import type { HttpOptions } from '../http/fetchJson.js'
 import { fetchJson } from '../http/fetchJson.js'
 import { readAndPruneRegistry, removeWatcherAndPersist } from '../registry/readAndPruneRegistry.js'
@@ -40,6 +41,13 @@ export const requestWatcher = async <T>(
 			})
 			return { watcher, data }
 		} catch (error) {
+			// The watcher answered and rejected this request, so it is demonstrably alive.
+			// Evicting it here would break every later call in the process over one bad
+			// selector or a page that happens to be mid-navigation.
+			if (isHttpResponseError(error)) {
+				throw new Error(`${watcher.id}: ${error.message}`)
+			}
+
 			await removeWatcherAndPersist(watcher.id, context.registryPath)
 			throw new Error(formatWatcherTransportError(watcher, error))
 		}

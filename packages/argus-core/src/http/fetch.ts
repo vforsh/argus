@@ -1,5 +1,30 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT'
 
+/**
+ * Thrown when the server answered with a non-2xx status.
+ *
+ * Distinct from a transport failure (connection refused, DNS, timeout): the peer is
+ * alive and rejected this specific request. Callers that treat failures as liveness
+ * signals — such as registry pruning — must not evict a peer that threw this.
+ */
+export class HttpResponseError extends Error {
+	/** HTTP status code returned by the server. */
+	readonly status: number
+
+	/** Brand, so the check survives two copies of this module in one process. */
+	readonly isHttpResponseError = true
+
+	constructor(message: string, status: number) {
+		super(message)
+		this.name = 'HttpResponseError'
+		this.status = status
+	}
+}
+
+/** Type guard for {@link HttpResponseError} that tolerates duplicate module instances. */
+export const isHttpResponseError = (error: unknown): error is HttpResponseError =>
+	error != null && typeof error === 'object' && (error as { isHttpResponseError?: unknown }).isHttpResponseError === true
+
 export type HttpOptions = {
 	timeoutMs?: number
 	method?: HttpMethod
@@ -28,7 +53,7 @@ export const fetchJson = async <T>(url: string, options: HttpOptions = {}): Prom
 			}
 
 			const errorMessage = await extractErrorMessage(response)
-			throw new Error(errorMessage ?? `Request failed (${response.status} ${response.statusText})`)
+			throw new HttpResponseError(errorMessage ?? `Request failed (${response.status} ${response.statusText})`, response.status)
 		}
 
 		return (await response.json()) as T
@@ -57,7 +82,7 @@ export const fetchText = async (url: string, options: HttpOptions = {}): Promise
 		})
 
 		if (!response.ok) {
-			throw new Error(`Request failed (${response.status} ${response.statusText})`)
+			throw new HttpResponseError(`Request failed (${response.status} ${response.statusText})`, response.status)
 		}
 
 		return await response.text()
