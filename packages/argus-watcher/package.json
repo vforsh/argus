@@ -1,6 +1,6 @@
 {
 	"name": "@vforsh/argus-watcher",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/vforsh/argus.git",
@@ -23,7 +23,7 @@
 	},
 	"dependencies": {
 		"@jridgewell/trace-mapping": "^0.3.31",
-		"@vforsh/argus-core": "^0.2.0",
+		"@vforsh/argus-core": "^0.3.0",
 		"emittery": "^1.2.0"
 	},
 	"scripts": {
