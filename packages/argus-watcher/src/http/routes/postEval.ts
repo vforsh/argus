@@ -21,6 +21,7 @@ export const route = defineJsonRoute<EvalRequest, EvalResponse>({
 			awaitPromise: normalizeBoolean(payload.awaitPromise, true),
 			replMode: normalizeBoolean(payload.replMode, true),
 			returnByValue: normalizeBoolean(payload.returnByValue, true),
+			jsonValue: normalizeBoolean(payload.jsonValue, false),
 			timeoutMs: normalizeTimeout(payload.timeoutMs),
 			scenario: normalizeBoolean(payload.scenario, false),
 			scenarioServices: {

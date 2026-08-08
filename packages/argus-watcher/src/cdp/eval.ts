@@ -10,6 +10,8 @@ export type EvalRequestOptions = {
 	replMode?: boolean
 	returnByValue?: boolean
 	timeoutMs?: number
+	/** Serialize the result inside the page and return the JSON string. See `EvalRequest.jsonValue`. */
+	jsonValue?: boolean
 	scenario?: boolean
 	scenarioServices?: ScenarioBridgeServices
 }
@@ -50,6 +52,19 @@ export const evaluateExpression = async (session: CdpSessionHandle, options: Eva
 		if (recordResult.exception) return recordResult.response
 
 		const record = recordResult.record
+
+		if (options.jsonValue) {
+			const jsonResult = await materializeJsonValue(session, record, options)
+			if (!jsonResult.ok) return jsonResult.response
+
+			return {
+				ok: true,
+				result: jsonResult.json,
+				type: record?.type ?? null,
+				exception: null,
+			}
+		}
+
 		const value = await materializeRemoteObject(session, record, options)
 
 		return {
@@ -178,6 +193,48 @@ const awaitPromiseResult = async (session: CdpSessionHandle, promiseObjectId: st
 		},
 		{ timeoutMs },
 	)) as RuntimeEvaluatePayload
+
+/** JSON envelope produced when nothing was evaluated, or when the value is `undefined`. */
+const EMPTY_JSON_ENVELOPE = '{}'
+
+/**
+ * Serialize the result inside the page so the JSON string — not a structured object —
+ * crosses the transport. See `EvalRequest.jsonValue` for why this matters.
+ *
+ * Primitives are serialized here instead: they have no key order to lose, so a second
+ * CDP round-trip would buy nothing.
+ */
+const materializeJsonValue = async (
+	session: CdpSessionHandle,
+	record: RuntimeRemoteObject | undefined,
+	options: EvalRequestOptions,
+): Promise<{ ok: true; json: string } | { ok: false; response: EvalResponse }> => {
+	if (!record) {
+		return { ok: true, json: EMPTY_JSON_ENVELOPE }
+	}
+
+	if (!record.objectId) {
+		return { ok: true, json: JSON.stringify({ v: record.value }) ?? EMPTY_JSON_ENVELOPE }
+	}
+
+	const payload = (await session.sendAndWait(
+		'Runtime.callFunctionOn',
+		{
+			objectId: record.objectId,
+			functionDeclaration: 'function () { return JSON.stringify({ v: this }) }',
+			returnByValue: true,
+		},
+		{ timeoutMs: options.timeoutMs },
+	)) as RuntimeEvaluatePayload
+
+	// Circular structures and throwing `toJSON` hooks surface here as page exceptions.
+	if (payload.exceptionDetails) {
+		return { ok: false, response: formatExceptionResponse(payload) }
+	}
+
+	const json = payload.result?.value
+	return { ok: true, json: typeof json === 'string' ? json : EMPTY_JSON_ENVELOPE }
+}
 
 const materializeRemoteObject = async (
 	session: CdpSessionHandle,
