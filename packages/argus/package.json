@@ -26,6 +26,7 @@
 		"access": "public"
 	},
 	"dependencies": {
+		"@vforsh/argus-client": "^0.2.0",
 		"@vforsh/argus-core": "^0.2.0",
 		"@vforsh/argus-plugin-api": "^0.2.0",
 		"@vforsh/argus-watcher": "^0.2.0",

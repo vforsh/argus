@@ -1,6 +1,10 @@
+import type { EvalPollOutcome as CoreEvalPollOutcome } from '@vforsh/argus-client'
+import { pollEval as pollEvalCore } from '@vforsh/argus-client'
 import type { EvalResponse, WatcherRecord } from '@vforsh/argus-core'
 import { evalWithRetries, type EvalAttemptResult } from '../eval/evalClient.js'
-import { sleep } from './evalShared.js'
+
+/** A failed eval attempt, after retries were exhausted. */
+type EvalFailure = Extract<EvalAttemptResult, { ok: false }>
 
 type PollStopContext = {
 	response: EvalResponse
@@ -27,77 +31,52 @@ export type EvalPollInput = {
 	onResult?: (response: EvalResponse, context: PollStopContext) => void | Promise<void>
 }
 
-export type EvalPollOutcome =
-	| { kind: 'matched'; response: EvalResponse; iteration: number; attempt: number }
-	| { kind: 'exhausted'; iterations: number }
-	| { kind: 'timeout'; elapsedMs: number }
-	| { kind: 'interrupted' }
-	| { kind: 'eval-error'; failure: Extract<EvalAttemptResult, { ok: false }> }
-	| { kind: 'condition-error'; error: string }
+export type EvalPollOutcome = CoreEvalPollOutcome<EvalResponse, EvalFailure>
 
-/** Shared polling engine for `eval --interval` and `eval-until` so loop semantics stay identical. */
+/**
+ * CLI adapter over the shared polling engine in `@vforsh/argus-client`, so
+ * `eval --interval` and `eval-until` keep identical loop semantics to the SDK.
+ *
+ * The shared core deliberately installs no process listeners; CLI-only concerns —
+ * SIGINT/SIGTERM handling and the retry policy — are wired in here.
+ */
 export const pollEval = async (input: EvalPollInput): Promise<EvalPollOutcome> => {
-	let running = true
-	const stop = (): void => {
-		running = false
-	}
+	const controller = new AbortController()
+	const abort = (): void => controller.abort()
 
-	process.on('SIGINT', stop)
-	process.on('SIGTERM', stop)
+	process.on('SIGINT', abort)
+	process.on('SIGTERM', abort)
 
 	try {
-		const startTime = Date.now()
-		let iteration = 0
+		return await pollEvalCore<EvalResponse, EvalFailure>({
+			intervalMs: input.intervalMs,
+			count: input.count,
+			totalTimeoutMs: input.totalTimeoutMs,
+			signal: controller.signal,
+			shouldStop: input.shouldStop,
+			onResult: input.onResult,
+			runEval: async () => {
+				const result = await evalWithRetries({
+					watcher: input.watcher,
+					expression: input.expression,
+					args: input.args,
+					awaitPromise: input.awaitPromise,
+					returnByValue: input.returnByValue,
+					timeoutMs: input.timeoutMs,
+					failOnException: input.failOnException,
+					retryCount: input.retryCount,
+					scenario: input.scenario,
+				})
 
-		while (running) {
-			if (input.totalTimeoutMs != null) {
-				const elapsed = Date.now() - startTime
-				if (elapsed >= input.totalTimeoutMs) {
-					return { kind: 'timeout', elapsedMs: elapsed }
+				if (!result.ok) {
+					return { ok: false, failure: result, attempt: result.attempt }
 				}
-			}
 
-			iteration += 1
-			const result = await evalWithRetries({
-				watcher: input.watcher,
-				expression: input.expression,
-				args: input.args,
-				awaitPromise: input.awaitPromise,
-				returnByValue: input.returnByValue,
-				timeoutMs: input.timeoutMs,
-				failOnException: input.failOnException,
-				retryCount: input.retryCount,
-				scenario: input.scenario,
-			})
-
-			if (!result.ok) {
-				return { kind: 'eval-error', failure: result }
-			}
-
-			const context = { response: result.response, iteration, attempt: result.attempt }
-			// Streaming commands print the matched iteration too, so emit before checking stop conditions.
-			await input.onResult?.(result.response, context)
-
-			const stopResult = input.shouldStop?.(context)
-			if (stopResult) {
-				if (!stopResult.ok) {
-					return { kind: 'condition-error', error: stopResult.error }
-				}
-				if (stopResult.matched) {
-					return { kind: 'matched', response: result.response, iteration, attempt: result.attempt }
-				}
-			}
-
-			if (input.count != null && iteration >= input.count) {
-				return { kind: 'exhausted', iterations: iteration }
-			}
-
-			await sleep(input.intervalMs)
-		}
-
-		return { kind: 'interrupted' }
+				return { ok: true, response: result.response, attempt: result.attempt }
+			},
+		})
 	} finally {
-		process.off('SIGINT', stop)
-		process.off('SIGTERM', stop)
+		process.off('SIGINT', abort)
+		process.off('SIGTERM', abort)
 	}
 }
