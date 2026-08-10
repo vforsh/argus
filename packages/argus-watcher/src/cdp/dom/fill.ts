@@ -22,8 +22,8 @@ export type FillElementsResult = {
  */
 const FILL_FUNCTION = `function(value) {
 	var el = this;
+	el.focus();
 	if (el.isContentEditable) {
-		el.focus();
 		el.textContent = value;
 		el.dispatchEvent(new Event('input', { bubbles: true }));
 		el.dispatchEvent(new Event('change', { bubbles: true }));

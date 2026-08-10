@@ -76,6 +76,12 @@ const TEST_HTML = `
       </article>
       <label for="input">Email</label>
       <input id="input" type="text" />
+      <label>
+        <span role="radio" aria-label="Composite choice">
+          <input id="composite-radio" type="radio" aria-label="Composite choice" />
+        </span>
+        Composite choice
+      </label>
       <button id="btn" class="action">Click me</button>
       <canvas id="drag-canvas" width="320" height="180" style="display:block;width:320px;height:180px;border:0"></canvas>
       <div id="multi-1" class="multi">Multi One</div>
@@ -105,6 +111,7 @@ const TEST_HTML = `
       })
     })
     const input = document.getElementById('input')
+    input.addEventListener('focus', () => window.__events.push('focus:input'))
     input.addEventListener('keydown', (e) => {
       window.__events.push(\`input-keydown:\${e.key}\`)
     })
@@ -474,6 +481,35 @@ describe('dom tree and dom info e2e', () => {
 
 		const value = await page.locator('#input').inputValue()
 		expect(value).toBe('agent@example.com')
+	})
+
+	test('dom fill focuses ordinary inputs before dispatching value events', async () => {
+		await page.locator('#btn').focus()
+		await page.evaluate(() => {
+			;(globalThis as { __events?: string[] }).__events = []
+		})
+
+		await runArgus(['fill', watcherId, '--value', 'focused@example.com', '--selector', '#input'])
+
+		const state = await page.evaluate(() => ({
+			activeId: document.activeElement?.id,
+			events: (globalThis as { __events?: string[] }).__events ?? [],
+		}))
+		expect(state.activeId).toBe('input')
+		expect(state.events).toContain('focus:input')
+	})
+
+	test('eval accepts --expression as an alternative input form', async () => {
+		const { stdout } = await runArgus(['eval', watcherId, '--expression', 'document.title', '--json'])
+		const response = JSON.parse(stdout) as { result: string }
+		expect(response.result).toBe('dom-e2e')
+	})
+
+	test('locate label prefers a native control over its matching ARIA wrapper', async () => {
+		const { stdout } = await runArgus(['locate', 'label', watcherId, 'Composite choice', '--exact', '--json'])
+		const response = JSON.parse(stdout) as LocateResponse
+		expect(response.matches).toBe(1)
+		expect(response.elements[0]?.tag).toBe('input')
 	})
 
 	test('dom click errors on multiple matches without --all', async () => {

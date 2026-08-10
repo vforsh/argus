@@ -18,6 +18,7 @@ const sharedEvalHeadOptions = (timeoutDescription: string): readonly ArgusComman
 
 /** Trailing input/iframe/args options shared verbatim between `eval` and `eval-until`. */
 const sharedEvalTailOptions: readonly ArgusCommandOption[] = [
+	{ flags: '--expression <js>', description: 'Expression to evaluate (alternative to the positional expression)' },
 	{ flags: '-f, --file <path>', description: 'Read expression from a file' },
 	{ flags: '--bundle', description: 'Bundle --file and its resolved imports into one script before eval' },
 	{ flags: '--no-bundle', description: 'Read --file as-is (skip bundling and auto-bundle)' },
@@ -71,7 +72,12 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			'argus eval app "document.title" --iframe "iframe" --iframe-timeout 10000',
 		],
 		action: async (id, expression, options) => {
-			await runEval(id, expression, {
+			if (expression != null && options.expression != null) {
+				console.error('Provide either a positional expression or --expression, not both.')
+				process.exitCode = 2
+				return
+			}
+			await runEval(id, expression ?? options.expression, {
 				json: options.json,
 				await: options.await,
 				timeout: options.timeout,
@@ -149,7 +155,12 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			'argus wait app --file ./ready.js --args ./args.json --out ./ready.json',
 		],
 		action: async (id, expression, options) => {
-			await runEvalUntil(id, expression, {
+			if (expression != null && options.expression != null) {
+				console.error('Provide either a positional expression or --expression, not both.')
+				process.exitCode = 2
+				return
+			}
+			await runEvalUntil(id, expression ?? options.expression, {
 				json: options.json,
 				await: options.await,
 				timeout: options.timeout,

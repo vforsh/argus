@@ -2,7 +2,7 @@ import type { LocateLabelRequest, LocatedElement, LocateResponse, LocateRoleRequ
 import type { CdpSessionHandle } from './connection.js'
 import type { ElementRefRegistry } from './elementRefs.js'
 import { listAccessibleElements, type AccessibleElementRecord } from './accessibility.js'
-import { describeNodeByBackendId, toAttributesRecord } from './dom/selector.js'
+import { describeNodeByBackendId, resolveNodeIdByBackendId, toAttributesRecord } from './dom/selector.js'
 
 const LABELABLE_ROLES = new Set(['button', 'checkbox', 'combobox', 'listbox', 'radio', 'searchbox', 'slider', 'spinbutton', 'switch', 'textbox'])
 
@@ -49,7 +49,48 @@ export const locateByLabel = async (
 		return matchesText(element.name, request.label, request.exact ?? false)
 	})
 
-	return buildLocateResponse(session, request.all ?? false, matches)
+	return buildLocateResponse(session, request.all ?? false, await removeCompositeLabelWrappers(session, matches))
+}
+
+const NATIVE_LABELABLE_TAGS = new Set(['button', 'input', 'select', 'textarea'])
+
+const removeCompositeLabelWrappers = async (session: CdpSessionHandle, matches: AccessibleElementRecord[]): Promise<AccessibleElementRecord[]> => {
+	if (matches.length < 2) return matches
+
+	const candidates = await Promise.all(
+		matches.map(async (match) => {
+			const [node, nodeId] = await Promise.all([
+				describeNodeByBackendId(session, match.backendNodeId),
+				resolveNodeIdByBackendId(session, match.backendNodeId),
+			])
+			const tag = node ? (node.localName ?? node.nodeName).toLowerCase() : ''
+			return { match, nodeId, native: NATIVE_LABELABLE_TAGS.has(tag) }
+		}),
+	)
+	const nativeCandidates = candidates.filter((candidate) => candidate.native && candidate.nodeId != null)
+	if (nativeCandidates.length === 0) return matches
+
+	const kept: AccessibleElementRecord[] = []
+	for (const candidate of candidates) {
+		if (candidate.native || candidate.nodeId == null) {
+			kept.push(candidate.match)
+			continue
+		}
+		const descendants = (await session.sendAndWait('DOM.querySelectorAll', {
+			nodeId: candidate.nodeId,
+			selector: 'button,input,select,textarea',
+		})) as { nodeIds?: number[] }
+		const descendantIds = new Set(descendants.nodeIds ?? [])
+		const wrapsMatchedNative = nativeCandidates.some(
+			(native) =>
+				native.nodeId != null &&
+				descendantIds.has(native.nodeId) &&
+				normalizeText(native.match.role) === normalizeText(candidate.match.role) &&
+				normalizeText(native.match.name) === normalizeText(candidate.match.name),
+		)
+		if (!wrapsMatchedNative) kept.push(candidate.match)
+	}
+	return kept
 }
 
 const buildLocateResponse = async (session: CdpSessionHandle, all: boolean, matches: AccessibleElementRecord[]): Promise<LocateResponse> => {

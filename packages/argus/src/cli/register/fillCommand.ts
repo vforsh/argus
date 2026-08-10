@@ -14,6 +14,7 @@ export const fillCommand: ArgusCommandDefinition = {
 		{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
 		{ flags: '--ref <elementRef>', description: 'Stable element ref from snapshot/locate output' },
 		{ flags: '--name <attr>', description: 'Shorthand for --selector "[name=<attr>]"' },
+		{ flags: '--value <text>', description: 'Value to fill (alternative to the positional value)' },
 		{ flags: '--value-file <path>', description: 'Read value from a file' },
 		{ flags: '--value-stdin', description: 'Read value from stdin (also triggered by "-" as value arg)' },
 		{ flags: '--all', description: 'Allow multiple matches (default: error if >1 match)' },
@@ -26,6 +27,7 @@ export const fillCommand: ArgusCommandDefinition = {
 		'argus fill app --testid "username" "Bob"',
 		'argus fill app --ref e7 "Bob"',
 		'argus fill app --name "title" "Hello"',
+		'argus fill app --selector "#username" --value "Bob"',
 		'argus fill app --selector "textarea" "New content"',
 		'argus fill app --selector "input[type=text]" --all "reset"',
 		'argus fill app --selector "#desc" --value-file ./description.txt',
@@ -33,12 +35,17 @@ export const fillCommand: ArgusCommandDefinition = {
 		'argus fill app --selector "#input" - < value.txt',
 	],
 	action: async (id, value, options) => {
+		if (value != null && options.value != null) {
+			console.error('Provide either a positional value or --value, not both.')
+			process.exitCode = 2
+			return
+		}
 		if (options.name && (options.testid || options.ref)) {
 			console.error('Cannot use --name with --testid or --ref.')
 			process.exitCode = 2
 			return
 		}
 		if (!resolveTestId(options)) return
-		await runDomFill(id, value, options)
+		await runDomFill(id, value ?? options.value, options)
 	},
 }

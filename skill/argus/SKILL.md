@@ -137,11 +137,14 @@ argus click app --selector "button.submit"
 argus click app --ref e5
 argus drag app --selector "canvas" --pos 320,240 --by 80,-30
 argus fill app --selector "#email" "user@example.com"
+argus fill app --selector "#email" --value "user@example.com"
 argus keydown app --key Enter
 argus keydown app --key G
 argus keydown app --code KeyG --print-event
 argus scroll-to app --selector "#footer"
 ```
+
+For generated commands, `argus eval app --expression "document.title"` is equivalent to the positional expression form.
 
 For iframe-active extension watchers, commands run against the selected iframe target. Screenshots, recordings, selectors, and eval are resolved relative to that iframe.
 Network mocks default to the top-level page; pass `--scope selected` (or `--frame selected`) to intercept requests from the selected iframe.

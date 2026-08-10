@@ -12,6 +12,7 @@ export type DomFillOptions = {
 	selector?: string
 	ref?: string
 	name?: string
+	value?: string
 	valueFile?: string
 	valueStdin?: boolean
 	all?: boolean
