@@ -31,9 +31,6 @@ type RuntimeEvaluatePayload = {
 
 export const evaluateExpression = async (session: CdpSessionHandle, options: EvalRequestOptions): Promise<EvalResponse> => {
 	const args = hasEvalArgs(options.args) ? options.args : undefined
-	if (args) {
-		await installEvalArgs(session, args, options.timeoutMs)
-	}
 
 	let scenarioBridge: Awaited<ReturnType<typeof installScenarioBridge>> | undefined
 	try {
@@ -46,7 +43,7 @@ export const evaluateExpression = async (session: CdpSessionHandle, options: Eva
 
 		const recordResult = await evaluateAndAwaitRecord(session, {
 			...options,
-			expression: scenarioBridge?.expression ?? options.expression,
+			expression: wrapExpressionWithArgs(scenarioBridge?.expression ?? options.expression, args),
 			replMode: scenarioBridge ? false : options.replMode,
 		})
 		if (recordResult.exception) return recordResult.response
@@ -75,15 +72,20 @@ export const evaluateExpression = async (session: CdpSessionHandle, options: Eva
 		}
 	} finally {
 		await scenarioBridge?.dispose()
-		if (args) {
-			await restoreEvalArgs(session, options.timeoutMs)
-		}
 	}
 }
 
 type EvalRecordResult = { record: RuntimeRemoteObject | undefined; exception: false } | { response: EvalResponse; exception: true }
 
 const hasEvalArgs = (args: Record<string, string> | undefined): args is Record<string, string> => args != null && Object.keys(args).length > 0
+
+const wrapExpressionWithArgs = (expression: string, args: Record<string, string> | undefined): string => {
+	if (!args) return expression
+
+	// A block keeps `args` lexical to this Runtime.evaluate request while preserving
+	// statement-list completion values and native top-level await in REPL mode.
+	return `{ const args = Object.freeze(${JSON.stringify(args)});\n${expression}\n}`
+}
 
 const evaluateAndAwaitRecord = async (session: CdpSessionHandle, options: EvalRequestOptions): Promise<EvalRecordResult> => {
 	const payload = await evaluateRawExpression(session, options)
@@ -113,61 +115,6 @@ const formatExceptionResponse = (payload: RuntimeEvaluatePayload): EvalResponse 
 		details: payload.exceptionDetails?.exception ?? null,
 	},
 })
-
-const EVAL_ARGS_STATE_KEY = '__argusEvalArgsPreviousDescriptor__'
-
-const installEvalArgs = async (session: CdpSessionHandle, args: Record<string, string>, timeoutMs?: number): Promise<void> => {
-	const payload = JSON.stringify(args)
-	await sendInternalEval(
-		session,
-		`(() => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'args');
-  Object.defineProperty(globalThis, ${JSON.stringify(EVAL_ARGS_STATE_KEY)}, { value: previous, configurable: true });
-  Object.defineProperty(globalThis, 'args', { value: Object.freeze(${payload}), configurable: true });
-})()`,
-		timeoutMs,
-	)
-}
-
-const restoreEvalArgs = async (session: CdpSessionHandle, timeoutMs?: number): Promise<void> => {
-	await sendInternalEval(
-		session,
-		`(() => {
-  const stateKey = ${JSON.stringify(EVAL_ARGS_STATE_KEY)};
-  const previous = Object.getOwnPropertyDescriptor(globalThis, stateKey)?.value;
-  delete globalThis[stateKey];
-  delete globalThis.args;
-  if (previous) Object.defineProperty(globalThis, 'args', previous);
-})()`,
-		timeoutMs,
-	)
-}
-
-const sendInternalEval = async (session: CdpSessionHandle, expression: string, timeoutMs?: number): Promise<void> => {
-	const payload = (await session.sendAndWait(
-		'Runtime.evaluate',
-		{
-			expression,
-			replMode: false,
-			awaitPromise: true,
-			returnByValue: true,
-		},
-		{ timeoutMs },
-	)) as RuntimeEvaluatePayload
-
-	if (payload.exceptionDetails) {
-		throw new Error(formatInternalEvalError(payload.exceptionDetails))
-	}
-}
-
-const formatInternalEvalError = (exceptionDetails: NonNullable<RuntimeEvaluatePayload['exceptionDetails']>): string => {
-	const exception = exceptionDetails.exception
-	if (exception != null && typeof exception === 'object' && 'description' in exception && typeof exception.description === 'string') {
-		return exception.description
-	}
-
-	return exceptionDetails.text ?? 'Failed to prepare eval args'
-}
 
 const evaluateRawExpression = async (session: CdpSessionHandle, options: EvalRequestOptions): Promise<RuntimeEvaluatePayload> =>
 	(await session.sendAndWait(
