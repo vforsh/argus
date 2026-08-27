@@ -19,15 +19,15 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.2.0",
+      "version": "0.3.1",
       "bin": {
         "argus": "dist/argus.js",
       },
       "dependencies": {
-        "@vforsh/argus-client": "^0.2.0",
-        "@vforsh/argus-core": "^0.2.0",
-        "@vforsh/argus-plugin-api": "^0.2.0",
-        "@vforsh/argus-watcher": "^0.2.0",
+        "@vforsh/argus-client": "^0.3.0",
+        "@vforsh/argus-core": "^0.3.0",
+        "@vforsh/argus-plugin-api": "^0.3.0",
+        "@vforsh/argus-watcher": "^0.3.1",
         "commander": "14.0.2",
         "esbuild": "0.25.12",
         "prettier": "3.7.4",
@@ -35,14 +35,14 @@
     },
     "packages/argus-client": {
       "name": "@vforsh/argus-client",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
-        "@vforsh/argus-core": "^0.2.0",
+        "@vforsh/argus-core": "^0.3.0",
       },
     },
     "packages/argus-core": {
       "name": "@vforsh/argus-core",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "devDependencies": {
         "commander": "^14.0.2",
       },
@@ -52,7 +52,7 @@
     },
     "packages/argus-extension": {
       "name": "@vforsh/argus-extension",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
         "@types/chrome": "^0.0.287",
         "esbuild": "^0.24.2",
@@ -60,25 +60,25 @@
     },
     "packages/argus-plugin-api": {
       "name": "@vforsh/argus-plugin-api",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
-        "@vforsh/argus-core": "^0.2.0",
+        "@vforsh/argus-core": "^0.3.0",
         "commander": "14.0.2",
       },
     },
     "packages/argus-plugin-google-sheets": {
       "name": "@vforsh/argus-plugin-google-sheets",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
-        "@vforsh/argus-plugin-api": "workspace:*",
+        "@vforsh/argus-plugin-api": "^0.3.0",
       },
     },
     "packages/argus-watcher": {
       "name": "@vforsh/argus-watcher",
-      "version": "0.2.0",
+      "version": "0.3.1",
       "dependencies": {
         "@jridgewell/trace-mapping": "^0.3.31",
-        "@vforsh/argus-core": "^0.2.0",
+        "@vforsh/argus-core": "^0.3.0",
         "emittery": "^1.2.0",
       },
     },
