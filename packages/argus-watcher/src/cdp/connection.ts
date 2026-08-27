@@ -26,6 +26,8 @@ export type CdpSessionHandle = {
 	onEvent: (method: string, handler: CdpEventHandler) => () => void
 	/** Active target context for commands that need frame-aware behavior. */
 	getTargetContext?: () => CdpTargetContext
+	/** Resolve the selected target after recovery; rejects if a requested iframe is still not executable. */
+	getReadyTargetContext?: () => Promise<CdpTargetContext>
 }
 
 type PendingRequest = {

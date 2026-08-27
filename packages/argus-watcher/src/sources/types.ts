@@ -31,6 +31,8 @@ export type CdpSourceTarget = {
 	faviconUrl?: string
 	/** Whether the target is currently attached. */
 	attached?: boolean
+	/** Whether the selected extension target is executable; false while its iframe is missing or booting. */
+	targetReady?: boolean
 }
 
 /** Browser-cookie query used by auth-state export to capture same-site auth outside the active page host. */

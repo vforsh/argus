@@ -55,7 +55,13 @@ describe('screenshotter', () => {
 
 			await screenshotter.capture({ outFile: path.join(artifactsDir, 'frame.png'), format: 'png' })
 
-			expect(calls).toEqual(['page:DOM.getFrameOwner', 'page:DOM.getBoxModel', 'page:Page.getLayoutMetrics', 'page:Page.captureScreenshot'])
+			expect(calls).toEqual([
+				'page:DOM.getFrameOwner',
+				'page:DOM.getBoxModel',
+				'page:Page.getLayoutMetrics',
+				'page:Page.getLayoutMetrics',
+				'page:Page.captureScreenshot',
+			])
 		} finally {
 			await fs.rm(artifactsDir, { recursive: true, force: true })
 		}
@@ -94,7 +100,7 @@ describe('screenshotter', () => {
 				clip: { x: 12, y: 24, width: 320, height: 180 },
 			})
 
-			expect(calls).toEqual(['page:Page.getLayoutMetrics', 'page:Page.captureScreenshot'])
+			expect(calls).toEqual(['page:Page.getLayoutMetrics', 'page:Page.getLayoutMetrics', 'page:Page.captureScreenshot'])
 		} finally {
 			await fs.rm(artifactsDir, { recursive: true, force: true })
 		}
@@ -139,7 +145,12 @@ describe('screenshotter', () => {
 				clip: { x: 12, y: 24, width: 320, height: 180 },
 			})
 
-			expect(calls).toEqual(['page:Page.getLayoutMetrics', 'page:Page.captureScreenshot', 'page:Page.captureScreenshot'])
+			expect(calls).toEqual([
+				'page:Page.getLayoutMetrics',
+				'page:Page.getLayoutMetrics',
+				'page:Page.captureScreenshot',
+				'page:Page.captureScreenshot',
+			])
 		} finally {
 			await fs.rm(artifactsDir, { recursive: true, force: true })
 		}
@@ -219,6 +230,7 @@ describe('screenshotter', () => {
 				'page:DOM.getFrameOwner',
 				'page:DOM.getBoxModel',
 				'page:Page.getLayoutMetrics',
+				'page:Page.getLayoutMetrics',
 				'iframe:DOM.enable',
 				'iframe:DOM.getDocument',
 				'iframe:DOM.querySelectorAll',
@@ -290,6 +302,7 @@ describe('screenshotter', () => {
 				'page:DOM.getFrameOwner',
 				'page:DOM.getBoxModel',
 				'page:Page.getLayoutMetrics',
+				'page:Page.getLayoutMetrics',
 				'iframe:Page.getLayoutMetrics',
 				'page:Page.captureScreenshot',
 			])
@@ -304,7 +317,13 @@ const createSessionStub = (options: {
 	sendAndWait: (method: string, params?: Record<string, unknown>, options?: { timeoutMs?: number; sessionId?: string }) => Promise<unknown>
 }): CdpSessionHandle => ({
 	isAttached: () => true,
-	sendAndWait: options.sendAndWait,
+	sendAndWait: async (method, params, commandOptions) => {
+		const result = await options.sendAndWait(method, params, commandOptions)
+		if (method !== 'Page.getLayoutMetrics') return result
+		// Capture planning also reads viewport dimensions; model Chrome's complete metrics response.
+		const metrics = result as { visualViewport: Record<string, number> }
+		return { ...metrics, visualViewport: { clientWidth: 1280, clientHeight: 720, ...metrics.visualViewport } }
+	},
 	onEvent: () => () => {},
 	getTargetContext: () => options.targetContext,
 })

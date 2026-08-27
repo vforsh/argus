@@ -5,7 +5,6 @@ import type { CdpSourceHandle, CdpSourceTarget, CdpSourceBaseOptions } from './t
 import type { CdpTargetContext } from '../cdp/connection.js'
 import {
 	buildFrameTargetContext,
-	buildFrameTargets,
 	buildPageTarget,
 	createEmptyFrameState,
 	createNotAttachedError,
@@ -19,6 +18,7 @@ import { createControlExtensionSource } from './extension-control-source.js'
 import { createTargetRecovery } from './extension-target-recovery.js'
 import {
 	getSelectedExtensionTarget,
+	listExtensionTargets,
 	reconcileExtensionTargetSelection,
 	refreshExtensionFrameTitle,
 	refreshExtensionFrameTree,
@@ -104,6 +104,10 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		getCurrentSession: () => currentSession,
 		requireCurrentSession: getCurrentExtensionSession,
 		getTargetContext: () => getCurrentTargetContext() ?? { kind: 'page' },
+		getReadyTargetContext: async () => {
+			const context = getCurrentTargetContext() ?? { kind: 'page' as const }
+			return context.kind === 'frame' ? targetRecovery.waitForSelectedFrameCommandTarget() : context
+		},
 		prepareCommand: async ({ method, params, targetContext }) => {
 			if (targetContext.kind !== 'frame') {
 				return undefined
@@ -157,17 +161,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			return []
 		}
 
-		const state = frameStateByTabId.get(session.tabId)
-		if (!state || state.frames.size === 0) {
-			return [buildPageTarget(session, { attached: true })]
-		}
-
-		const activeFrameId = state.activeFrameId
-		const targets: CdpSourceTarget[] = [buildPageTarget(session, { attached: activeFrameId == null })]
-		for (const frame of buildFrameTargets(state, session.tabId, activeFrameId, session.faviconUrl)) {
-			targets.push(frame)
-		}
-		return targets
+		return listExtensionTargets(session, frameStateByTabId.get(session.tabId))
 	}
 
 	const attachTarget = async (targetId: string) => {
@@ -331,11 +325,12 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		}
 
 		const state = frameStateByTabId.get(session.tabId)
-		if (!state?.activeFrameId) {
+		const frameId = state?.requestedFrameId ?? state?.activeFrameId
+		if (!state || !frameId) {
 			return { kind: 'page' }
 		}
 
-		return buildFrameTargetContext(state, state.activeFrameId)
+		return buildFrameTargetContext(state, frameId)
 	}
 
 	function getOrCreateFrameState(tabId: number): ExtensionFrameState {

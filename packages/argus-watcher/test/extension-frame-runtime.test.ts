@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test'
 import { createEmptyFrameState, type ExtensionFrame } from '../src/sources/extension-frame-state.js'
-import { reconcileExtensionTargetSelection, removeExtensionFrame, setRequestedTargetSelection } from '../src/sources/extension-frame-runtime.js'
+import {
+	getSelectedExtensionTarget,
+	listExtensionTargets,
+	reconcileExtensionTargetSelection,
+	removeExtensionFrame,
+	setRequestedTargetSelection,
+} from '../src/sources/extension-frame-runtime.js'
 
 describe('extension-frame-runtime', () => {
 	it('hydrates the requested iframe hint once a pending selection becomes active', () => {
@@ -30,7 +36,20 @@ describe('extension-frame-runtime', () => {
 
 		removeExtensionFrame(state, 'frame-old')
 		expect(state.activeFrameId).toBeNull()
-		expect(state.requestedFrameDetached).toBe(true)
+		expect(state.requestedFrameId).toBe('frame-old')
+		// Page.frameDetached reconciles immediately, before a replacement frame is discovered.
+		reconcileExtensionTargetSelection(createSessionStub(), state, () => {})
+		reconcileExtensionTargetSelection(createSessionStub(), state, () => {})
+		expect(state.requestedFrameId).toBe('frame-old')
+		expect(getSelectedExtensionTarget(createSessionStub(), state)).toMatchObject({
+			id: 'frame:1:frame-old',
+			type: 'iframe',
+			targetReady: false,
+		})
+		expect(listExtensionTargets(createSessionStub(), state)).toMatchObject([
+			{ id: 'tab:1', attached: false },
+			{ id: 'frame:1:frame-old', attached: true, targetReady: false },
+		])
 
 		state.frames.set('frame-new', createFrame({ frameId: 'frame-new', url: 'https://game.example/frame?token=fresh', title: 'Game Frame' }))
 

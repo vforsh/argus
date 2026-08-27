@@ -34,7 +34,7 @@ export const createVisualCapturePlan = async (
 	request: VisualCaptureRequest,
 ): Promise<VisualCapturePlan> => {
 	const subject = resolveVisualCaptureSubject(request)
-	const targetContext = session.getTargetContext?.()
+	const targetContext = session.getReadyTargetContext ? await session.getReadyTargetContext() : session.getTargetContext?.()
 	if (targetContext?.kind === 'frame' && pageSession) {
 		return createFrameCapturePlan({
 			frameSession: session,

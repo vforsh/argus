@@ -54,7 +54,7 @@ export type ResolvedElementTarget = SelectorMatchResult & {
 }
 
 export const getDomRootId = async (session: CdpSessionHandle): Promise<number> => {
-	const targetContext = session.getTargetContext?.()
+	const targetContext = session.getReadyTargetContext ? await session.getReadyTargetContext() : session.getTargetContext?.()
 	if (targetContext?.kind === 'frame') {
 		return getFrameDomRootId(session, targetContext)
 	}

@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'bun:test'
-import { resolveExtensionTarget, type ExtensionTarget } from '../src/commands/extension/targetSelection.js'
+import {
+	formatExtensionTargetLine,
+	renderExtensionTargetTree,
+	resolveExtensionTarget,
+	type ExtensionTarget,
+} from '../src/commands/extension/targetSelection.js'
 
 describe('extension target selection', () => {
+	it('labels the selected missing iframe as pending in list and tree output', () => {
+		const pending = { ...target('frame:1:game', 'Game', 'https://game.test', 'iframe'), parentId: 'tab:1', attached: true, targetReady: false }
+		expect(formatExtensionTargetLine(pending)).toContain('[pending]')
+		const lines: string[] = []
+		renderExtensionTargetTree([target('tab:1', 'Host', 'https://host.test', 'page'), pending], {
+			writeHuman: (line) => {
+				lines.push(line)
+			},
+		})
+		expect(lines.join('\n')).toContain('Game (iframe, frame:1:game pending)')
+	})
 	it('selects the app-like iframe for auto mode and deprioritizes VK plumbing', () => {
 		const result = resolveExtensionTarget(
 			[

@@ -9,6 +9,8 @@ export type ExtensionTarget = {
 	parentId?: string | null
 	faviconUrl?: string
 	attached?: boolean
+	/** False for a selected iframe still waiting for rediscovery or an execution context. */
+	targetReady?: boolean
 }
 
 export type ExtensionTargetSelectorOptions = {
@@ -133,7 +135,7 @@ export const hasExtensionTargetSelector = (options: ExtensionTargetSelectorOptio
 	Boolean(options.page === true || options.iframe || options.iframeUrl || options.iframeTitle)
 
 export const formatExtensionTargetLine = (target: ExtensionTarget): string => {
-	const state = target.attached ? 'attached' : 'available'
+	const state = target.targetReady === false ? 'pending' : target.attached ? 'attached' : 'available'
 	const type = target.type ?? 'target'
 	const title = target.title || '(untitled)'
 	const parent = target.parentId ? ` [parent: ${shortenId(target.parentId)}]` : ''
@@ -229,7 +231,7 @@ const renderTargetNode = (
 ): void => {
 	const connector = targetTreeConnector(isRoot, isLast)
 	const childPrefix = targetTreeChildPrefix(prefix, isRoot, isLast)
-	const state = target.attached ? ' attached' : ''
+	const state = target.targetReady === false ? ' pending' : target.attached ? ' attached' : ''
 	output.writeHuman(`${prefix}${connector}${target.title || '(untitled)'} (${target.type ?? 'target'}, ${shortenId(target.id)}${state})`)
 	output.writeHuman(`${childPrefix}${target.url}`)
 

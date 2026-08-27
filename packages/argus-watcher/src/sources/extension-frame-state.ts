@@ -13,8 +13,6 @@ export type ExtensionFrameState = {
 	topFrameId: string | null
 	requestedFrameId: string | null
 	requestedFrameHint: RequestedFrameHint | null
-	/** True once an active iframe disappears and we should report the page while waiting to rematch it safely. */
-	requestedFrameDetached: boolean
 	activeFrameId: string | null
 	activeAttachedAt: number | null
 	frames: Map<string, ExtensionFrame>
@@ -61,7 +59,6 @@ export const createEmptyFrameState = (): ExtensionFrameState => ({
 	topFrameId: null,
 	requestedFrameId: null,
 	requestedFrameHint: null,
-	requestedFrameDetached: false,
 	activeFrameId: null,
 	activeAttachedAt: null,
 	frames: new Map(),
@@ -230,9 +227,8 @@ export const resolveRequestedFrameId = (
 }
 
 /**
- * Pending iframe selections have two valid states:
- * - `pending`: the iframe has never become active in this attachment yet, so keep waiting silently.
- * - `page`: the iframe was active and then disappeared, so report the page while we wait for a safe rematch.
+ * A requested iframe stays pending while missing, including after detach. Only an explicit
+ * page selection may resolve to the page; losing a frame must never change command scope.
  */
 export const resolveRequestedTarget = (state: ExtensionFrameState): RequestedTargetResolution => {
 	if (state.requestedFrameId == null) {
@@ -244,7 +240,7 @@ export const resolveRequestedTarget = (state: ExtensionFrameState): RequestedTar
 		return { kind: 'frame', frameId: nextFrameId }
 	}
 
-	return state.requestedFrameDetached ? { kind: 'page' } : { kind: 'pending' }
+	return { kind: 'pending' }
 }
 
 /**
@@ -297,7 +293,7 @@ export const buildFrameTargetContext = (state: ExtensionFrameState, frameId: str
 const findSingleMatchingFrameId = (state: ExtensionFrameState, predicate: (frame: ExtensionFrame) => boolean): string | null => {
 	let matchId: string | null = null
 	for (const frame of state.frames.values()) {
-		if (!predicate(frame)) {
+		if (frame.frameId === state.topFrameId || !predicate(frame)) {
 			continue
 		}
 		if (matchId) {

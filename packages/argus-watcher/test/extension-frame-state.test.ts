@@ -58,14 +58,22 @@ describe('extension-frame-state', () => {
 		expect(resolveRequestedFrameId(state, 'missing-frame', requestedFrameHint)).toBe('frame-preview')
 	})
 
-	it('falls back to the page only after an active iframe detaches', () => {
+	it('resolves to the page only when no iframe is requested', () => {
 		const state = createEmptyFrameState()
 		state.requestedFrameId = 'frame-selected'
 
 		expect(resolveRequestedTarget(state)).toEqual({ kind: 'pending' })
 
-		state.requestedFrameDetached = true
+		state.requestedFrameId = null
 		expect(resolveRequestedTarget(state)).toEqual({ kind: 'page' })
+	})
+
+	it('never rematches an iframe hint to the host page', () => {
+		const state = createEmptyFrameState()
+		state.topFrameId = 'root'
+		const frame = createFrame({ frameId: 'old', url: 'https://game.test/embed' })
+		state.frames.set('root', createFrame({ frameId: 'root', url: frame.url }))
+		expect(resolveRequestedFrameId(state, 'old', createRequestedFrameHint(frame))).toBeNull()
 	})
 
 	it('keeps frame-scoped commands pending until the selected iframe becomes executable', () => {
@@ -180,6 +188,7 @@ describe('extension-frame-state', () => {
 			parentId: 'tab:42',
 			faviconUrl: 'https://vk.com/favicon.ico',
 			attached: true,
+			targetReady: false,
 		})
 	})
 })

@@ -34,6 +34,12 @@ argus logs extension
 argus eval extension "document.title"
 ```
 
+### Iframe Recovery
+
+`argus reload <id>` reloads the whole tab. A requested iframe remains selected while missing or booting; eval, DOM, and capture wait up to 3s for readiness, then fail with `extension_frame_not_ready`. They never fall back to the host page. Recovery requires a unique URL/hint match; `ext targets <id> --tree` keeps a `pending` placeholder visible (`attached: true` denotes selection, `targetReady: false` denotes pending readiness in JSON).
+
+Retry once the iframe loads, or explicitly select the host with `argus ext select <id> --page`. Use `argus ext doctor --watcher <id>` to distinguish target readiness from bridge health.
+
 ### Limitations
 
 - Debugging bar can't be hidden (Chrome security)

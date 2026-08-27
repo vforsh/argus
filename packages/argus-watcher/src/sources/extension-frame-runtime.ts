@@ -1,12 +1,14 @@
 import type { ExtensionSession } from '../native-messaging/session-manager.js'
 import type { CdpSourceTarget } from './types.js'
 import {
+	buildFrameTargets,
 	buildPageTarget,
 	collectFrameTree,
 	createRequestedFrameHint,
 	formatFrameTargetId,
 	formatPageTargetId,
 	frameToTarget,
+	isSelectedTargetReady,
 	resolveRequestedTarget,
 	type CdpFrameTreeNode,
 	type ExtensionFrameState,
@@ -32,11 +34,12 @@ export const seedExtensionFrameState = (session: ExtensionSession, state: Extens
 }
 
 export const getSelectedExtensionTarget = (session: ExtensionSession, state: ExtensionFrameState | undefined): CdpSourceTarget => {
-	if (!state?.activeFrameId) {
+	const frameId = state?.requestedFrameId ?? state?.activeFrameId
+	if (!state || !frameId) {
 		return buildPageTarget(session, { attached: true })
 	}
 
-	const frame = state.frames.get(state.activeFrameId)
+	const frame = state.frames.get(frameId)
 	if (frame) {
 		return frameToTarget(session.tabId, frame, { attached: true, faviconUrl: session.faviconUrl, topFrameId: state.topFrameId })
 	}
@@ -45,25 +48,50 @@ export const getSelectedExtensionTarget = (session: ExtensionSession, state: Ext
 }
 
 export const setRequestedTargetSelection = (state: ExtensionFrameState, frameId: string | null): void => {
+	if (state.requestedFrameId !== frameId) {
+		state.activeAttachedAt = null
+	}
+	const previousHint = state.requestedFrameId === frameId ? state.requestedFrameHint : null
 	state.requestedFrameId = frameId
-	state.requestedFrameHint = frameId ? createRequestedFrameHint(state.frames.get(frameId)) : null
-	state.requestedFrameDetached = false
+	state.requestedFrameHint = frameId ? (createRequestedFrameHint(state.frames.get(frameId)) ?? previousHint) : null
+}
+
+/** List discovered targets plus a selected, pending placeholder when the requested iframe is missing. */
+export const listExtensionTargets = (session: ExtensionSession, state: ExtensionFrameState | undefined): CdpSourceTarget[] => {
+	if (!state) {
+		return [buildPageTarget(session, { attached: true })]
+	}
+
+	const selected = getSelectedExtensionTarget(session, state)
+	selected.targetReady = isSelectedTargetReady(state)
+	const targets = [buildPageTarget(session, { attached: false }), ...buildFrameTargets(state, session.tabId, null, session.faviconUrl)]
+	const selectedIndex = targets.findIndex((target) => target.id === selected.id)
+	if (selectedIndex < 0) {
+		targets.push(selected)
+	} else {
+		targets[selectedIndex] = selected
+	}
+	return targets
 }
 
 export const reconcileExtensionTargetSelection = (session: ExtensionSession, state: ExtensionFrameState, onTargetChanged: () => void): boolean => {
 	const resolution = resolveRequestedTarget(state)
 
 	if (resolution.kind === 'page') {
-		state.requestedFrameDetached = false
 		return activatePageTarget(state, onTargetChanged)
 	}
 
 	if (resolution.kind === 'pending') {
-		return false
+		if (state.activeFrameId == null && state.activeAttachedAt != null) {
+			return false
+		}
+		state.activeFrameId = null
+		state.activeAttachedAt = Date.now()
+		onTargetChanged()
+		return true
 	}
 
 	syncRequestedFrameSelection(state, resolution.frameId)
-	state.requestedFrameDetached = false
 	if (state.activeFrameId === resolution.frameId) {
 		return false
 	}
@@ -92,7 +120,6 @@ export const removeExtensionFrame = (state: ExtensionFrameState, frameId: string
 	 * Frame ids are ephemeral, so the stored frame hint lets selection survive a fresh id after reload.
 	 */
 	if (state.activeFrameId === frameId) {
-		state.requestedFrameDetached = state.requestedFrameId === frameId
 		state.activeFrameId = null
 		state.activeAttachedAt = null
 	}
@@ -193,7 +220,7 @@ const syncRequestedFrameSelection = (state: ExtensionFrameState, frameId: string
  */
 const buildSelectedIframeFallbackTarget = (session: ExtensionSession, state: ExtensionFrameState): CdpSourceTarget => {
 	const hint = state.requestedFrameHint
-	const frameId = state.activeFrameId
+	const frameId = state.requestedFrameId ?? state.activeFrameId
 	if (!frameId) {
 		return buildPageTarget(session, { attached: true })
 	}
@@ -206,5 +233,6 @@ const buildSelectedIframeFallbackTarget = (session: ExtensionSession, state: Ext
 		parentId: formatPageTargetId(session.tabId),
 		faviconUrl: session.faviconUrl,
 		attached: true,
+		targetReady: false,
 	}
 }

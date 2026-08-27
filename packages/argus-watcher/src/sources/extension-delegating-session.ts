@@ -17,6 +17,7 @@ type CreateDelegatingSessionOptions = {
 	getCurrentSession: () => ExtensionSession | null
 	requireCurrentSession: () => ExtensionSession
 	getTargetContext: () => CdpTargetContext
+	getReadyTargetContext?: () => Promise<CdpTargetContext>
 	prepareCommand?: (command: {
 		method: string
 		params?: Record<string, unknown>
@@ -103,6 +104,7 @@ export const createDelegatingSession = (
 			}
 		},
 		getTargetContext: options.getTargetContext,
+		getReadyTargetContext: options.getReadyTargetContext,
 	}
 
 	controller.rebind()

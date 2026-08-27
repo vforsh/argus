@@ -112,6 +112,8 @@ argus ext doctor --watcher "$WATCHER_ID"
 
 `--iframe auto` is a convenience heuristic and should fail closed when multiple iframes look equally plausible. Prefer `--iframe-url` or `--iframe-title` when correctness matters.
 
+Reload remains tab-scoped. A selected iframe stays selected while detached: commands wait up to 3s for recovery, then fail with `extension_frame_not_ready` instead of running on the host. `ext targets --tree` shows the missing selection as `pending`; use `ext select <id> --page` explicitly to work on the host.
+
 ---
 
 ## Inspect Loop
