@@ -34,6 +34,8 @@ argus logs extension
 argus eval extension "document.title"
 ```
 
+Attachment failures surface Chrome's original error in both popup and CLI; no successful attachment is reported and the failed tab bridge is removed. A connected control bridge does not mean a tab is attached: `argus ext doctor --watcher <id>` flags detached, disconnected, or pending selected targets.
+
 ### Iframe Recovery
 
 `argus reload <id>` reloads the whole tab. A requested iframe remains selected while missing or booting; eval, DOM, and capture wait up to 3s for readiness, then fail with `extension_frame_not_ready`. They never fall back to the host page. Recovery requires a unique URL/hint match; `ext targets <id> --tree` keeps a `pending` placeholder visible (`attached: true` denotes selection, `targetReady: false` denotes pending readiness in JSON).

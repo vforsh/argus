@@ -66,7 +66,9 @@ export class CdpProxy {
 	 */
 	private setupMessageHandling(): void {
 		this.bridgeClient.onMessage((message) => {
-			this.handleMessage(message)
+			void this.handleMessage(message).catch((error) => {
+				console.error('[CdpProxy] Failed to handle bridge message:', error)
+			})
 		})
 	}
 
@@ -128,6 +130,7 @@ export class CdpProxy {
 				tabId: message.tabId,
 				reason: err instanceof Error ? err.message : 'attach_failed',
 			})
+			throw err
 		}
 	}
 

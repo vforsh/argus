@@ -190,6 +190,14 @@ const inspectWatcher = async (
 	}
 	if (!bridge) {
 		issues.push(`Watcher ${resolved.watcher.id} is not present in extension diagnostics.`)
+	} else if (!bridge.connected) {
+		issues.push(`Watcher ${resolved.watcher.id} native bridge is disconnected.`)
+	}
+	if (status.ok && !status.status.attached) {
+		issues.push(`Watcher ${resolved.watcher.id} has no debugger-attached target.`)
+	}
+	if (status.ok && status.status.targetReady === false) {
+		issues.push(`Watcher ${resolved.watcher.id} selected target is not ready for commands.`)
 	}
 	if (status.ok && status.status.attached && !selectedTarget) {
 		issues.push(`Watcher ${resolved.watcher.id} is attached, but no selected target was reported by /targets.`)
