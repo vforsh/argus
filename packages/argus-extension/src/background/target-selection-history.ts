@@ -1,3 +1,4 @@
+import { PageKeyedStore, createChromeStorePersistence, sortByUpdatedAtDesc } from './page-keyed-store.js'
 export type SelectionTarget = {
 	type: 'page' | 'iframe'
 	frameId: string | null
@@ -66,73 +67,32 @@ export const matchRememberedIframeTarget = (entry: RememberedTargetSelection, ta
 	return pickSingleTargetMatch(iframeTargets, (target) => normalizeTargetTitle(target.title) === rememberedIframe.title)
 }
 
-export class TargetSelectionHistoryStore {
-	private readonly persistence: TargetSelectionHistoryPersistence
-	private readonly maxEntries: number
-	private entries: RememberedTargetSelection[] = []
-	private loadPromise: Promise<void> | null = null
-	private saveChain: Promise<void> = Promise.resolve()
-
+/** Remembers which target the user last selected on each page. */
+export class TargetSelectionHistoryStore extends PageKeyedStore<RememberedTargetSelection> {
 	constructor(persistence: TargetSelectionHistoryPersistence = createChromeStoragePersistence(), options: { maxEntries?: number } = {}) {
-		this.persistence = persistence
-		this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES
+		super(persistence, options.maxEntries ?? DEFAULT_MAX_ENTRIES, 'TargetSelectionHistoryStore')
 	}
 
 	async getByPageUrl(pageUrl: string): Promise<RememberedTargetSelection | null> {
 		await this.ensureLoaded()
-		const pageKey = normalizeSelectionPageKey(pageUrl)
-		return this.entries.find((entry) => entry.pageKey === pageKey) ?? null
+		return this.findByPageKey(normalizeSelectionPageKey(pageUrl))
 	}
 
 	async remember(pageUrl: string, target: SelectionTarget): Promise<RememberedTargetSelection> {
 		await this.ensureLoaded()
 
 		const entry = buildRememberedSelection(pageUrl, target)
-		this.entries = [entry, ...this.entries.filter((candidate) => candidate.pageKey !== entry.pageKey)].slice(0, this.maxEntries)
+		this.upsert(entry)
 		await this.persist()
 		return entry
-	}
-
-	private async ensureLoaded(): Promise<void> {
-		if (!this.loadPromise) {
-			this.loadPromise = this.persistence
-				.load()
-				.then((entries) => {
-					this.entries = sanitizeRememberedSelections(entries).slice(0, this.maxEntries)
-				})
-				.catch((error) => {
-					console.error('[TargetSelectionHistoryStore] Failed to load history:', error)
-					this.entries = []
-				})
-		}
-
-		await this.loadPromise
-	}
-
-	private async persist(): Promise<void> {
-		this.saveChain = this.saveChain
-			.catch(() => undefined)
-			.then(() => this.persistence.save(this.entries))
-			.catch((error) => {
-				console.error('[TargetSelectionHistoryStore] Failed to save history:', error)
-			})
-
-		await this.saveChain
 	}
 }
 
 export const createChromeStoragePersistence = (
 	storageArea: chrome.storage.StorageArea = chrome.storage.local,
 	storageKey: string = DEFAULT_STORAGE_KEY,
-): TargetSelectionHistoryPersistence => ({
-	load: async () => {
-		const stored = await readStorageValue<unknown>(storageArea, storageKey)
-		return sanitizeRememberedSelections(Array.isArray(stored) ? stored : [])
-	},
-	save: async (entries) => {
-		await writeStorageValue(storageArea, { [storageKey]: entries })
-	},
-})
+): TargetSelectionHistoryPersistence =>
+	createChromeStorePersistence(storageKey, (value) => sanitizeRememberedSelections(Array.isArray(value) ? value : []), storageArea)
 
 const buildRememberedSelection = (pageUrl: string, target: SelectionTarget): RememberedTargetSelection => {
 	const base = {
@@ -220,32 +180,4 @@ function normalizeTargetTitle(title: string | null | undefined): string | null {
 
 function normalizeOptionalText(value: string | null | undefined): string | null {
 	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
-}
-
-const sortByUpdatedAtDesc = (left: RememberedTargetSelection, right: RememberedTargetSelection): number => right.updatedAt - left.updatedAt
-
-const readStorageValue = async <T>(storageArea: chrome.storage.StorageArea, key: string): Promise<T | undefined> => {
-	return await new Promise<T | undefined>((resolve, reject) => {
-		storageArea.get(key, (items) => {
-			const error = chrome.runtime.lastError
-			if (error) {
-				reject(new Error(error.message))
-				return
-			}
-			resolve(items[key] as T | undefined)
-		})
-	})
-}
-
-const writeStorageValue = async (storageArea: chrome.storage.StorageArea, items: Record<string, unknown>): Promise<void> => {
-	await new Promise<void>((resolve, reject) => {
-		storageArea.set(items, () => {
-			const error = chrome.runtime.lastError
-			if (error) {
-				reject(new Error(error.message))
-				return
-			}
-			resolve()
-		})
-	})
 }

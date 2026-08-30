@@ -1,4 +1,5 @@
 import { normalizeSelectionPageKey, type SelectionTarget } from './target-selection-history.js'
+import { PageKeyedStore, createChromeStorePersistence, normalizeOptionalText, sortByUpdatedAtDesc } from './page-keyed-store.js'
 
 export type HiddenTarget = {
 	type: 'iframe'
@@ -35,21 +36,14 @@ const DEFAULT_MAX_PAGE_ENTRIES = 20
  * Persists page-scoped iframe hide preferences. Frame ids are intentionally not stored:
  * Chrome regenerates them often, while URL/title signatures survive reloads well enough.
  */
-export class TargetVisibilityHistoryStore {
-	private readonly persistence: TargetVisibilityPersistence
-	private readonly maxPageEntries: number
-	private entries: HiddenTargetPageEntry[] = []
-	private loadPromise: Promise<void> | null = null
-	private saveChain: Promise<void> = Promise.resolve()
-
+export class TargetVisibilityHistoryStore extends PageKeyedStore<HiddenTargetPageEntry> {
 	constructor(persistence: TargetVisibilityPersistence = createChromeStoragePersistence(), options: { maxPageEntries?: number } = {}) {
-		this.persistence = persistence
-		this.maxPageEntries = options.maxPageEntries ?? DEFAULT_MAX_PAGE_ENTRIES
+		super(persistence, options.maxPageEntries ?? DEFAULT_MAX_PAGE_ENTRIES, 'TargetVisibilityHistoryStore')
 	}
 
 	async getHiddenTargets(pageUrl: string): Promise<HiddenTarget[]> {
 		await this.ensureLoaded()
-		return [...(this.findEntry(pageUrl)?.targets ?? [])]
+		return [...(this.findByPageKey(normalizeSelectionPageKey(pageUrl))?.targets ?? [])]
 	}
 
 	async hide(pageUrl: string, target: SelectionTarget): Promise<HiddenTargetPageEntry | null> {
@@ -60,10 +54,10 @@ export class TargetVisibilityHistoryStore {
 		}
 
 		const pageKey = normalizeSelectionPageKey(pageUrl)
-		const existing = this.findEntry(pageUrl)
+		const existing = this.findByPageKey(normalizeSelectionPageKey(pageUrl))
 		const targets = uniqueHiddenTargets([hiddenTarget, ...(existing?.targets ?? [])])
 		const entry = { pageKey, pageUrl, updatedAt: Date.now(), targets }
-		this.upsertEntry(entry)
+		this.upsert(entry)
 		await this.persist()
 		return entry
 	}
@@ -75,7 +69,7 @@ export class TargetVisibilityHistoryStore {
 			return
 		}
 
-		const existing = this.findEntry(pageUrl)
+		const existing = this.findByPageKey(normalizeSelectionPageKey(pageUrl))
 		if (!existing) {
 			return
 		}
@@ -90,56 +84,13 @@ export class TargetVisibilityHistoryStore {
 		this.entries = this.entries.map((entry) => (entry.pageKey === existing.pageKey ? { ...entry, targets, updatedAt: Date.now() } : entry))
 		await this.persist()
 	}
-
-	private findEntry(pageUrl: string): HiddenTargetPageEntry | null {
-		const pageKey = normalizeSelectionPageKey(pageUrl)
-		return this.entries.find((entry) => entry.pageKey === pageKey) ?? null
-	}
-
-	private upsertEntry(entry: HiddenTargetPageEntry): void {
-		this.entries = [entry, ...this.entries.filter((candidate) => candidate.pageKey !== entry.pageKey)].slice(0, this.maxPageEntries)
-	}
-
-	private async ensureLoaded(): Promise<void> {
-		if (!this.loadPromise) {
-			this.loadPromise = this.persistence
-				.load()
-				.then((entries) => {
-					this.entries = sanitizeHiddenTargetEntries(entries).slice(0, this.maxPageEntries)
-				})
-				.catch((error) => {
-					console.error('[TargetVisibilityHistoryStore] Failed to load history:', error)
-					this.entries = []
-				})
-		}
-
-		await this.loadPromise
-	}
-
-	private async persist(): Promise<void> {
-		this.saveChain = this.saveChain
-			.catch(() => undefined)
-			.then(() => this.persistence.save(this.entries))
-			.catch((error) => {
-				console.error('[TargetVisibilityHistoryStore] Failed to save history:', error)
-			})
-
-		await this.saveChain
-	}
 }
 
 export const createChromeStoragePersistence = (
 	storageArea: chrome.storage.StorageArea = chrome.storage.local,
 	storageKey: string = DEFAULT_STORAGE_KEY,
-): TargetVisibilityPersistence => ({
-	load: async () => {
-		const stored = await readStorageValue<unknown>(storageArea, storageKey)
-		return sanitizeHiddenTargetEntries(Array.isArray(stored) ? stored : [])
-	},
-	save: async (entries) => {
-		await writeStorageValue(storageArea, { [storageKey]: entries })
-	},
-})
+): TargetVisibilityPersistence =>
+	createChromeStorePersistence(storageKey, (value) => sanitizeHiddenTargetEntries(Array.isArray(value) ? value : []), storageArea)
 
 export function matchesHiddenTarget(hiddenTarget: HiddenTarget, target: SelectionTarget): boolean {
 	if (target.type !== 'iframe') {
@@ -222,36 +173,4 @@ function sanitizeHiddenTarget(target: unknown): HiddenTarget | null {
 	}
 
 	return { type: 'iframe', url, title }
-}
-
-function normalizeOptionalText(value: string | null | undefined): string | null {
-	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
-}
-
-const sortByUpdatedAtDesc = (left: HiddenTargetPageEntry, right: HiddenTargetPageEntry): number => right.updatedAt - left.updatedAt
-
-const readStorageValue = async <T>(storageArea: chrome.storage.StorageArea, key: string): Promise<T | undefined> => {
-	return await new Promise<T | undefined>((resolve, reject) => {
-		storageArea.get(key, (items) => {
-			const error = chrome.runtime.lastError
-			if (error) {
-				reject(new Error(error.message))
-				return
-			}
-			resolve(items[key] as T | undefined)
-		})
-	})
-}
-
-const writeStorageValue = async (storageArea: chrome.storage.StorageArea, items: Record<string, unknown>): Promise<void> => {
-	await new Promise<void>((resolve, reject) => {
-		storageArea.set(items, () => {
-			const error = chrome.runtime.lastError
-			if (error) {
-				reject(new Error(error.message))
-				return
-			}
-			resolve()
-		})
-	})
 }
