@@ -1,3 +1,4 @@
+import { escapeHtml } from './html.js'
 import { isLowInterestTarget } from './classify-target.js'
 import type { PopupTabWithTargets, PopupTarget } from '../background/popup-protocol.js'
 
@@ -124,10 +125,4 @@ function renderTargetVisibilityAction(tabId: number, target: PopupTarget, visibi
 
 function isTargetSelected(selectedFrameId: string | null | undefined, targetFrameId: string | null): boolean {
 	return selectedFrameId !== undefined && (selectedFrameId ?? null) === (targetFrameId ?? null)
-}
-
-function escapeHtml(text: string): string {
-	const div = document.createElement('div')
-	div.textContent = text
-	return div.innerHTML
 }

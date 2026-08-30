@@ -3,18 +3,13 @@
  * Displays tabs, target selection, and bridge/debugger health.
  */
 
+import { escapeHtml } from './html.js'
 import { renderTargetList } from './target-list.js'
 import { runPopupMessage, sendPopupMessage } from './popup-client.js'
-import type {
-	PopupCurrentTarget,
-	PopupStatusPayload,
-	PopupTabAction,
-	PopupTabWithTargets,
-	PopupTargetAction,
-	PopupWatcherStatus,
-} from '../background/popup-protocol.js'
-
-type TabButtonAction = 'attach' | 'detach' | 'copy-info'
+import { updateHealth } from './health-panel.js'
+import { buildAllWatchersInfoText, buildWatcherInfoText, copyTextToClipboard, findWatcherByTabId } from './watcher-info.js'
+import { clearTabFeedback, getTabFeedback, hasPendingTabFeedback, setTabFeedback, type TabButtonAction } from './tab-feedback.js'
+import type { PopupStatusPayload, PopupTabAction, PopupTabWithTargets, PopupTargetAction, PopupWatcherStatus } from '../background/popup-protocol.js'
 
 const COPY_ICON = `
 	<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -46,18 +41,24 @@ const availableSection = document.getElementById('availableSection') as HTMLDivE
 const availableContent = document.getElementById('availableContent') as HTMLDivElement
 const attachedCount = document.getElementById('attachedCount') as HTMLSpanElement
 const errorBanner = document.getElementById('errorBanner') as HTMLDivElement
-const healthSummary = document.getElementById('healthSummary') as HTMLSpanElement
-const healthNativeHost = document.getElementById('healthNativeHost') as HTMLDivElement
-const healthWatcherReady = document.getElementById('healthWatcherReady') as HTMLDivElement
-const healthWatcherId = document.getElementById('healthWatcherId') as HTMLDivElement
-const healthAttachedCount = document.getElementById('healthAttachedCount') as HTMLDivElement
-const healthSelectedTarget = document.getElementById('healthSelectedTarget') as HTMLDivElement
-const healthLastMessage = document.getElementById('healthLastMessage') as HTMLDivElement
-const healthPid = document.getElementById('healthPid') as HTMLDivElement
 const copyAllButton = document.getElementById('copyAllButton') as HTMLButtonElement
 const detachAllButton = document.getElementById('detachAllButton') as HTMLButtonElement
 
 let prevStateHash = ''
+let latestTabs: PopupTabWithTargets[] = []
+let latestActiveTabId: number | undefined
+
+/**
+ * Repaint from the last loaded tabs without a round-trip.
+ *
+ * Button feedback lives in render state, so showing "Attaching…" is a re-render rather
+ * than a mutation of the node the renderer is about to replace.
+ */
+async function renderFromLatestState(): Promise<void> {
+	if (latestTabs.length > 0) {
+		renderTabs(latestTabs, latestActiveTabId)
+	}
+}
 let currentError: string | null = null
 let latestCurrentWatcher: PopupWatcherStatus | null = null
 // Copy actions run per attached row, so keep the latest watcher list alongside the focused watcher.
@@ -77,6 +78,10 @@ detachAllButton.addEventListener('click', () => {
 document.querySelector('.health-summary-actions')?.addEventListener('click', (event) => {
 	event.stopPropagation()
 })
+
+// Bound once, for the lifetime of the popup — never per render.
+bindTabContainer(attachedContent)
+bindTabContainer(availableContent)
 
 function setEmptyState(icon: string, message: string): void {
 	availableSection.classList.remove('hidden')
@@ -99,74 +104,6 @@ function showError(message: string | null): void {
 	currentError = message
 	errorBanner.textContent = message ?? ''
 	errorBanner.classList.toggle('hidden', !message)
-}
-
-function updateHealth(status: PopupStatusPayload | undefined, watcher: PopupWatcherStatus | null): void {
-	const target = watcher?.currentTarget ?? null
-	const tabCount = status?.attachedTabs.length ?? 0
-	const nativeHostConnected = watcher?.bridgeConnected ?? status?.bridgeConnected ?? false
-	const watcherReady = watcher?.watcherReady ?? false
-	const targetState = watcher?.targetState ?? 'not-selected'
-
-	healthSummary.textContent = buildHealthSummaryText({
-		nativeHostConnected,
-		watcherReady,
-		targetState,
-		watcherId: watcher?.watcherId ?? null,
-		tabCount,
-	})
-	setHealthValueState(healthNativeHost, nativeHostConnected ? 'Connected' : 'Disconnected', nativeHostConnected ? 'connected' : 'disconnected')
-	setHealthValueState(healthWatcherReady, watcherReady ? 'Ready' : 'Not ready', watcherReady ? 'connected' : 'disconnected')
-	healthWatcherId.textContent = watcher?.watcherId ?? '-'
-	healthAttachedCount.textContent = String(tabCount)
-	setHealthValueState(healthSelectedTarget, formatTargetState(target, targetState), getTargetStateClass(targetState))
-	healthLastMessage.textContent = formatRelativeTimestamp(watcher?.lastMessageAt ?? null)
-	healthPid.textContent = watcher?.nativeHostPid ? String(watcher.nativeHostPid) : '-'
-	const hasWatchers = latestWatchers.length > 0
-	copyAllButton.disabled = !hasWatchers
-	detachAllButton.disabled = !hasWatchers
-}
-
-function buildHealthSummaryText(input: {
-	nativeHostConnected: boolean
-	watcherReady: boolean
-	targetState: PopupWatcherStatus['targetState']
-	watcherId: string | null
-	tabCount: number
-}): string {
-	const parts: string[] = []
-	if (input.watcherId) parts.push(input.watcherId)
-	parts.push(input.nativeHostConnected ? 'Host connected' : 'Host disconnected')
-	parts.push(input.watcherReady ? 'Watcher ready' : 'Watcher not ready')
-	if (input.targetState === 'rebinding') parts.push('Target rebinding')
-	if (input.tabCount > 0) parts.push(`${input.tabCount} tab${input.tabCount === 1 ? '' : 's'}`)
-	return parts.join(' · ')
-}
-
-function setHealthValueState(element: HTMLElement, text: string, stateClass: 'connected' | 'disconnected' | 'warning' | null): void {
-	element.textContent = text
-	element.classList.toggle('connected', stateClass === 'connected')
-	element.classList.toggle('disconnected', stateClass === 'disconnected')
-	element.classList.toggle('warning', stateClass === 'warning')
-}
-
-function formatTargetState(target: PopupCurrentTarget | null, state: PopupWatcherStatus['targetState']): string {
-	if (!target || state === 'not-selected') {
-		return '-'
-	}
-
-	const label = target.type === 'page' ? 'Page' : 'Iframe'
-	return state === 'ready' ? `${label} ready` : `${label} rebinding`
-}
-
-function getTargetStateClass(state: PopupWatcherStatus['targetState']): 'connected' | 'disconnected' | 'warning' | null {
-	if (state === 'ready') {
-		return 'connected'
-	}
-	if (state === 'rebinding') {
-		return 'warning'
-	}
-	return null
 }
 
 function renderTabs(tabs: PopupTabWithTargets[], currentTabId?: number): void {
@@ -220,21 +157,37 @@ function renderTabGroup(section: HTMLDivElement, content: HTMLDivElement, tabs: 
 
 	section.classList.remove('hidden')
 	content.innerHTML = `<div class="tab-list">${tabs.map((tab) => renderTabItem(tab, showTargets)).join('')}</div>`
-	bindTabInteractions(content)
 }
 
-function bindTabInteractions(root: ParentNode): void {
-	root.querySelectorAll('.tab-action').forEach((button) => {
-		button.addEventListener('click', handleTabAction)
-	})
-	root.querySelectorAll('[data-action="select-target"]').forEach((button) => {
-		button.addEventListener('click', handleTargetSelection)
-	})
-	root.querySelectorAll('[data-action="hide-target"], [data-action="show-target"]').forEach((button) => {
-		button.addEventListener('click', handleTargetVisibility)
-	})
-	root.querySelectorAll('.tab-item').forEach((item) => {
-		item.addEventListener('click', handleTabItemClick)
+/**
+ * One delegated listener per tab container, bound once.
+ *
+ * Re-attaching handlers to every button on every render is what made the renderer and the
+ * per-button mutation system fight over the same nodes; dispatching on `data-action`
+ * survives any number of re-renders.
+ */
+function bindTabContainer(container: HTMLElement): void {
+	container.addEventListener('click', (event) => {
+		const actionButton = (event.target as HTMLElement).closest<HTMLButtonElement>('.tab-action, [data-action]')
+
+		if (actionButton?.classList.contains('tab-action')) {
+			void handleTabAction(actionButton)
+			return
+		}
+		if (actionButton?.dataset.action === 'select-target') {
+			void handleTargetSelection(actionButton)
+			return
+		}
+		if (actionButton?.dataset.action === 'hide-target' || actionButton?.dataset.action === 'show-target') {
+			event.stopPropagation()
+			void handleTargetVisibility(actionButton)
+			return
+		}
+
+		const tabItem = (event.target as HTMLElement).closest<HTMLElement>('.tab-item')
+		if (tabItem) {
+			void handleTabItemClick(tabItem)
+		}
 	})
 }
 
@@ -248,46 +201,47 @@ function renderAttachedTabActions(tabId: number): string {
 }
 
 function renderAttachButton(tabId: number): string {
-	return `<button class="tab-action attach" data-tab-id="${tabId}" data-action="attach" type="button">Attach</button>`
+	const pending = getTabFeedback(tabId, 'attach')
+	const disabled = pending ? ' disabled' : ''
+	return `<button class="tab-action attach" data-tab-id="${tabId}" data-action="attach" type="button"${disabled}>${escapeHtml(pending?.label ?? 'Attach')}</button>`
 }
 
 function renderIconActionButton(tabId: number, action: Exclude<TabButtonAction, 'attach'>, variant: string, label: string, icon: string): string {
+	const pending = getTabFeedback(tabId, action)
 	return `
 		<button
 			class="tab-action icon-only ${variant}"
 			data-tab-id="${tabId}"
 			data-action="${action}"
 			type="button"
-			title="${label}"
-			aria-label="${label}"
+			title="${escapeHtml(pending?.label ?? label)}"
+			aria-label="${escapeHtml(pending?.label ?? label)}"
+			${pending ? 'disabled' : ''}
 		>
-			<span class="tab-action-icon" aria-hidden="true">${icon}</span>
+			<span class="tab-action-icon" aria-hidden="true">${pending?.icon ?? icon}</span>
 		</button>
 	`
 }
 
-async function handleTabItemClick(event: Event): Promise<void> {
-	const target = event.target as HTMLElement
-	if (target.closest('.tab-action')) {
-		return
-	}
-
-	const tabItem = event.currentTarget as HTMLElement
+async function handleTabItemClick(tabItem: HTMLElement): Promise<void> {
 	const tabId = getTabId(tabItem)
 	const action = getTabItemAction(tabItem)
 
-	tabItem.style.opacity = '0.6'
-	tabItem.style.pointerEvents = 'none'
+	setTabFeedback(tabId, 'attach', action === 'attach' ? 'Attaching...' : 'Focusing...', Infinity)
+	await renderFromLatestState()
 
 	try {
 		await runTabAction(action, tabId)
+		clearTabFeedback(tabId, 'attach')
 		if (action === 'attach') {
 			await refreshTabs(true)
+		} else {
+			await renderFromLatestState()
 		}
 	} catch (error) {
+		clearTabFeedback(tabId, 'attach')
 		showError(error instanceof Error ? error.message : `${capitalize(action)} failed`)
-		tabItem.style.opacity = '1'
-		tabItem.style.pointerEvents = 'auto'
+		await renderFromLatestState()
 	}
 }
 
@@ -298,37 +252,34 @@ function getTabItemAction(tabItem: HTMLElement): Extract<PopupTabAction, 'attach
 	return tabItem.classList.contains('attached') ? 'focusTab' : 'attach'
 }
 
-async function handleTabAction(event: Event): Promise<void> {
-	const button = (event.target as HTMLElement).closest('.tab-action') as HTMLButtonElement | null
-	if (!button) {
-		return
-	}
-
+async function handleTabAction(button: HTMLButtonElement): Promise<void> {
 	const tabId = getTabId(button)
 	const action = button.dataset.action as TabButtonAction
 
 	if (action === 'copy-info') {
 		try {
-			await copyWatcherInfo(tabId, button)
+			await copyWatcherInfo(tabId)
 		} catch (error) {
 			showError(error instanceof Error ? error.message : 'Copy failed')
 		}
 		return
 	}
 
-	const restoreButton = setBusyButtonState(button, action)
+	setTabFeedback(tabId, action, action === 'attach' ? 'Attaching...' : 'Detaching...', Infinity)
+	await renderFromLatestState()
 
 	try {
 		await runTabAction(action, tabId)
+		clearTabFeedback(tabId, action)
 		await refreshTabs(true)
 	} catch (error) {
+		clearTabFeedback(tabId, action)
 		showError(error instanceof Error ? error.message : `${capitalize(action)} failed`)
-		restoreButton()
+		await renderFromLatestState()
 	}
 }
 
-async function handleTargetSelection(event: Event): Promise<void> {
-	const button = event.currentTarget as HTMLButtonElement
+async function handleTargetSelection(button: HTMLButtonElement): Promise<void> {
 	const tabId = getTabId(button)
 	const frameId = button.dataset.frameId || null
 
@@ -343,9 +294,7 @@ async function handleTargetSelection(event: Event): Promise<void> {
 	}
 }
 
-async function handleTargetVisibility(event: Event): Promise<void> {
-	event.stopPropagation()
-	const button = event.currentTarget as HTMLButtonElement
+async function handleTargetVisibility(button: HTMLButtonElement): Promise<void> {
 	const tabId = getTabId(button)
 	const frameId = button.dataset.frameId || null
 	const action = button.dataset.action === 'show-target' ? 'showTarget' : 'hideTarget'
@@ -397,15 +346,18 @@ async function refreshTabs(forceRender = false): Promise<void> {
 			error: currentError ?? tabsError,
 		})
 
-		if (!forceRender && stateHash === prevStateHash) {
+		// Live button feedback is render state too, so a pending one must not be skipped.
+		if (!forceRender && stateHash === prevStateHash && !hasPendingTabFeedback()) {
 			return
 		}
 		prevStateHash = stateHash
 
 		updateStatus(status.bridgeConnected, status.attachedTabs.length)
-		updateHealth(status, latestCurrentWatcher)
+		updateHealth(status, latestCurrentWatcher, { copyAll: copyAllButton, detachAll: detachAllButton }, latestWatchers.length > 0)
 
 		if (tabs) {
+			latestTabs = tabs
+			latestActiveTabId = activeTab?.id
 			renderTabs(tabs, activeTab?.id)
 			showError(currentError)
 			return
@@ -419,36 +371,12 @@ async function refreshTabs(forceRender = false): Promise<void> {
 		updateStatus(false, 0)
 		latestWatchers = []
 		latestCurrentWatcher = null
-		updateHealth(undefined, null)
+		updateHealth(undefined, null, { copyAll: copyAllButton, detachAll: detachAllButton }, false)
 		setEmptyState('⚠️', message)
 	}
 }
 
-function formatRelativeTimestamp(timestamp: number | null): string {
-	if (!timestamp) {
-		return '-'
-	}
-
-	const elapsedMs = Math.max(0, Date.now() - timestamp)
-	if (elapsedMs < 1000) {
-		return 'Just now'
-	}
-
-	const elapsedSeconds = Math.floor(elapsedMs / 1000)
-	if (elapsedSeconds < 60) {
-		return `${elapsedSeconds}s ago`
-	}
-
-	const elapsedMinutes = Math.floor(elapsedSeconds / 60)
-	if (elapsedMinutes < 60) {
-		return `${elapsedMinutes}m ago`
-	}
-
-	const elapsedHours = Math.floor(elapsedMinutes / 60)
-	return `${elapsedHours}h ago`
-}
-
-async function copyWatcherInfo(tabId: number, button: HTMLButtonElement): Promise<void> {
+async function copyWatcherInfo(tabId: number): Promise<void> {
 	const watcher = findWatcherByTabId(latestWatchers, tabId)
 	const text = buildWatcherInfoText(watcher)
 	if (!text) {
@@ -457,7 +385,8 @@ async function copyWatcherInfo(tabId: number, button: HTMLButtonElement): Promis
 
 	await copyTextToClipboard(text)
 	showError(null)
-	restoreButtonFeedback(button, 'Copied!', 1500, CHECK_ICON)
+	setTabFeedback(tabId, 'copy-info', 'Copied!', 1500, CHECK_ICON)
+	await renderFromLatestState()
 }
 
 async function copyAllWatchersInfo(): Promise<void> {
@@ -469,34 +398,6 @@ async function copyAllWatchersInfo(): Promise<void> {
 	await copyTextToClipboard(text)
 	showError(null)
 	restoreButtonFeedback(copyAllButton, 'Copied!')
-}
-
-async function copyTextToClipboard(text: string): Promise<void> {
-	try {
-		await navigator.clipboard.writeText(text)
-		return
-	} catch {
-		// Chrome extension popups can lose Clipboard API access depending on focus/permission state.
-	}
-
-	const textarea = document.createElement('textarea')
-	textarea.value = text
-	textarea.setAttribute('readonly', 'true')
-	textarea.style.position = 'fixed'
-	textarea.style.opacity = '0'
-	textarea.style.pointerEvents = 'none'
-	document.body.appendChild(textarea)
-	textarea.select()
-	textarea.setSelectionRange(0, textarea.value.length)
-
-	try {
-		const copied = document.execCommand('copy')
-		if (!copied) {
-			throw new Error('Browser denied clipboard write')
-		}
-	} finally {
-		textarea.remove()
-	}
 }
 
 async function detachAllWatchers(): Promise<void> {
@@ -535,19 +436,6 @@ async function detachWatchers(tabIds: number[]): Promise<number[]> {
 	return failures
 }
 
-function setBusyButtonState(button: HTMLButtonElement, action: Extract<TabButtonAction, 'attach' | 'detach'>): () => void {
-	const previousMarkup = button.innerHTML
-	const restoreFeedback = setButtonFeedback(button, action === 'attach' ? 'Attaching...' : 'Detaching...')
-	if (action === 'attach') {
-		button.textContent = 'Attaching...'
-	}
-
-	return () => {
-		button.innerHTML = previousMarkup
-		restoreFeedback()
-	}
-}
-
 function restoreButtonFeedback(button: HTMLButtonElement, label: string, timeoutMs = 1500, iconMarkup?: string): void {
 	const restore = setButtonFeedback(button, label, iconMarkup)
 	setTimeout(restore, timeoutMs)
@@ -575,35 +463,6 @@ function setButtonFeedback(button: HTMLButtonElement, label: string, iconMarkup?
 		setButtonLabel(button, previousText)
 		setButtonIconMarkup(button, previousIcon)
 	}
-}
-
-function buildWatcherInfoText(watcher: PopupWatcherStatus | null): string | null {
-	if (!canCopyWatcherInfo(watcher)) {
-		return null
-	}
-
-	const readyWatcher = watcher!
-	const target = readyWatcher.currentTarget!
-	const attached = target.attachedAt ? new Date(target.attachedAt).toISOString() : new Date().toISOString()
-	const fields = [
-		['ID', readyWatcher.watcherId!],
-		['Host', `${readyWatcher.watcherHost!}:${readyWatcher.watcherPort!}`],
-		['PID', String(readyWatcher.nativeHostPid!)],
-		['Target', target.title || '(no title)'],
-		['URL', target.url || '(no url)'],
-		['Attached', attached],
-	]
-
-	return `Argus Watcher Info\n${fields.map(([label, value]) => `${label}: ${value}`).join('\n')}`
-}
-
-function buildAllWatchersInfoText(watchers: PopupWatcherStatus[]): string | null {
-	const watcherInfo = watchers.map((watcher) => buildWatcherInfoText(watcher)).filter((text): text is string => Boolean(text))
-	if (watcherInfo.length === 0) {
-		return null
-	}
-
-	return watcherInfo.join('\n\n')
 }
 
 function buildDetachAllError(failureCount: number): string {
@@ -640,14 +499,6 @@ function selectCurrentWatcher(status: PopupStatusPayload | null, tabs: PopupTabW
 	return status.watchers[0] ?? null
 }
 
-function canCopyWatcherInfo(watcher: PopupWatcherStatus | null | undefined): boolean {
-	return Boolean(watcher?.watcherId && watcher?.watcherHost && watcher?.watcherPort != null && watcher?.nativeHostPid && watcher?.currentTarget)
-}
-
-function findWatcherByTabId(watchers: PopupWatcherStatus[], tabId: number): PopupWatcherStatus | null {
-	return watchers.find((watcher) => watcher.tabId === tabId) ?? null
-}
-
 function getTabId(element: HTMLElement): number {
 	return parseInt(element.dataset.tabId ?? '0', 10)
 }
@@ -672,12 +523,6 @@ function setButtonIconMarkup(button: HTMLButtonElement, iconMarkup: string): voi
 	if (iconNode) {
 		iconNode.innerHTML = iconMarkup
 	}
-}
-
-function escapeHtml(text: string): string {
-	const div = document.createElement('div')
-	div.textContent = text
-	return div.innerHTML
 }
 
 async function getCurrentTab(): Promise<chrome.tabs.Tab | undefined> {
