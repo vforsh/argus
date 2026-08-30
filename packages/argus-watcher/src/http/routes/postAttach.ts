@@ -1,25 +1,23 @@
 import type { ExtensionAttachRequest, ExtensionTabActionResponse } from '@vforsh/argus-core'
+import { extensionAttachRequestSchema } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
-import { respondInvalidBody, respondJson } from '../httpUtils.js'
+import { respondJson } from '../httpUtils.js'
 import { emitRequest } from './types.js'
 
 export const route = defineJsonRoute<ExtensionAttachRequest, ExtensionTabActionResponse>({
 	method: 'POST',
 	path: '/attach',
-	parseBody: true,
+	bodySchema: extensionAttachRequestSchema,
 	extensionOnly: true,
 	handle: async ({ res, ctx, body: payload }) => {
 		if (!ctx.sourceHandle?.attachTarget) {
 			return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
 		}
 
-		const targetId = typeof payload.targetId === 'string' ? payload.targetId : typeof payload.tabId === 'number' ? String(payload.tabId) : null
-		if (!targetId) {
-			return respondInvalidBody(res, 'targetId is required')
-		}
+		const targetId = payload.targetId ?? String(payload.tabId)
 
 		emitRequest(ctx, res, 'attach')
-		return await ctx.sourceHandle.attachTarget(targetId, { watcherId: typeof payload.watcherId === 'string' ? payload.watcherId : undefined })
+		return await ctx.sourceHandle.attachTarget(targetId, { watcherId: payload.watcherId })
 	},
 	handleError: (res, error) => {
 		respondJson(

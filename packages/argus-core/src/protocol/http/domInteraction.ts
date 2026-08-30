@@ -1,3 +1,4 @@
+import { domTargetPayload } from './dom.js'
 import { defineProtocolSchema, invalidProtocolPayload, isProtocolObject, validProtocolPayload } from '../schema.js'
 import type { DomElementTarget, ElementRef } from './dom.js'
 
@@ -264,3 +265,6 @@ const optionalPoint = (value: Record<string, unknown>, key: string): OptionalPoi
 	}
 	return { ok: true, point: { x: field.x, y: field.y } }
 }
+
+/** Schema for POST /dom/hover request payloads. */
+export const domHoverRequestSchema = defineProtocolSchema<DomHoverRequest>((value) => domTargetPayload<DomHoverRequest>(value))

@@ -1,3 +1,6 @@
+import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
+import { compact, optionalInteger, optionalNonEmptyString, readFields, requireObject } from '../schemaFields.js'
+
 import type { ExtensionControlBridgeStatus, ExtensionTabBridgeStatus, ExtensionRecentEvent } from '../native-messaging.js'
 
 export type ExtensionBrowserTab = {
@@ -80,3 +83,39 @@ export type ExtensionDiagnosticsResponse = {
 	tabWatchers: ExtensionTabBridgeStatus[]
 	recentEvents: ExtensionRecentEvent[]
 }
+
+/** Read the targetId/tabId pair both extension action routes accept. */
+const readExtensionTarget = (value: unknown) =>
+	readFields(value as Record<string, unknown>, {
+		targetId: optionalNonEmptyString,
+		tabId: (source, key) => optionalInteger(source, key),
+		watcherId: optionalNonEmptyString,
+	})
+
+/** Schema for POST /attach request payloads. */
+export const extensionAttachRequestSchema = defineProtocolSchema<ExtensionAttachRequest>((value) => {
+	const invalid = requireObject<ExtensionAttachRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readExtensionTarget(value)
+	if (!fields.ok) return fields
+	if (fields.value.targetId == null && fields.value.tabId == null) {
+		return invalidProtocolPayload('targetId is required')
+	}
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /detach request payloads. */
+export const extensionDetachRequestSchema = defineProtocolSchema<ExtensionDetachRequest>((value) => {
+	const invalid = requireObject<ExtensionDetachRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readExtensionTarget(value)
+	if (!fields.ok) return fields
+	if (fields.value.targetId == null && fields.value.tabId == null) {
+		return invalidProtocolPayload('targetId is required')
+	}
+
+	return validProtocolPayload(compact({ targetId: fields.value.targetId, tabId: fields.value.tabId }))
+})

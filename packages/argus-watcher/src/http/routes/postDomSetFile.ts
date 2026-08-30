@@ -1,4 +1,5 @@
 import type { DomSetFileRequest, DomSetFileResponse } from '@vforsh/argus-core'
+import { domSetFileRequestSchema } from '@vforsh/argus-core'
 import { setFileOnResolvedNodes } from '../../cdp/dom.js'
 import { resolveSelectorTargets } from '../../cdp/dom/selector.js'
 import { defineJsonRoute } from './defineRoute.js'
@@ -7,24 +8,8 @@ import { respondMultipleMatches } from './domSelectorRoute.js'
 export const route = defineJsonRoute<DomSetFileRequest, DomSetFileResponse>({
 	method: 'POST',
 	path: '/dom/set-file',
-	parseBody: true,
+	bodySchema: domSetFileRequestSchema,
 	endpoint: 'dom/set-file',
-	validate: (payload) => {
-		if (!payload.selector || typeof payload.selector !== 'string') {
-			return 'selector is required'
-		}
-		if (!Array.isArray(payload.files) || payload.files.length === 0) {
-			return 'files array is required and must not be empty'
-		}
-		if (typeof (payload.all ?? false) !== 'boolean') {
-			return 'all must be a boolean'
-		}
-		const waitMs = payload.wait ?? 0
-		if (typeof waitMs !== 'number' || !Number.isFinite(waitMs) || waitMs < 0) {
-			return 'wait must be a non-negative number (ms)'
-		}
-		return null
-	},
 	handle: async ({ res, ctx, body: payload }) => {
 		const all = payload.all ?? false
 		const { allNodeIds, nodeIds } = await resolveSelectorTargets(ctx.cdpSession, {

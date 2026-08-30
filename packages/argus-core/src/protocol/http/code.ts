@@ -1,3 +1,6 @@
+import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
+import { compact, fieldError, optionalInteger, optionalNonEmptyString, readFields, requireObject, requiredString } from '../schemaFields.js'
+
 /** Runtime resource type exposed by the live runtime-code API. */
 export type CodeResourceType = 'script' | 'stylesheet'
 
@@ -90,3 +93,58 @@ export type CodeEditResponse = {
 	ok: true
 	resource: CodeResource
 }
+
+/** Schema for POST /code/list request payloads. */
+export const codeListRequestSchema = defineProtocolSchema<CodeListRequest>((value) => {
+	const invalid = requireObject<CodeListRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, { pattern: optionalNonEmptyString })
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /code/read request payloads. */
+export const codeReadRequestSchema = defineProtocolSchema<CodeReadRequest>((value) => {
+	const invalid = requireObject<CodeReadRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		url: requiredString,
+		offset: (source, key) => optionalInteger(source, key, { min: 0 }),
+		limit: (source, key) => optionalInteger(source, key, { min: 1 }),
+	})
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /code/grep request payloads. */
+export const codeGrepRequestSchema = defineProtocolSchema<CodeGrepRequest>((value) => {
+	const invalid = requireObject<CodeGrepRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		pattern: requiredString,
+		urlPattern: optionalNonEmptyString,
+	})
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /code/edit request payloads. */
+export const codeEditRequestSchema = defineProtocolSchema<CodeEditRequest>((value) => {
+	const invalid = requireObject<CodeEditRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		url: requiredString,
+		// Empty source is legal: it clears the resource.
+		source: (source, key) => (typeof source[key] === 'string' ? (source[key] as string) : fieldError('source must be a string')),
+	})
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(fields.value)
+})

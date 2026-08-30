@@ -1,14 +1,14 @@
 import type { DomTreeRequest, DomTreeResponse } from '@vforsh/argus-core'
+import { domTreeRequestSchema } from '@vforsh/argus-core'
 import { fetchDomSubtreeBySelector } from '../../cdp/dom.js'
 import { defineJsonRoute } from './defineRoute.js'
-import { respondMultipleMatches, validateDomTargetBody } from './domSelectorRoute.js'
+import { respondMultipleMatches } from './domSelectorRoute.js'
 
 export const route = defineJsonRoute<DomTreeRequest, DomTreeResponse>({
 	method: 'POST',
 	path: '/dom/tree',
-	parseBody: true,
+	bodySchema: domTreeRequestSchema,
 	endpoint: 'dom/tree',
-	validate: validateDomTargetBody,
 	handle: async ({ res, ctx, body: payload }) => {
 		const all = payload.all ?? false
 		const response = await fetchDomSubtreeBySelector(ctx.cdpSession, {

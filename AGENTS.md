@@ -120,7 +120,7 @@
 ## Golden Paths (checklists)
 
 - **New CLI command (no new watcher API)**: add to `register*.ts` → implement in `packages/argus/src/commands/*` → ensure `--json` → add/adjust `e2e/*` → update `skill/argus/SKILL.md`.
-- **New watcher endpoint**: add types in `packages/argus-core/src/protocol/http/<domain>.ts` → add route in `packages/argus-watcher/src/http/routes/*` + wire in `packages/argus-watcher/src/http/router.ts` → call via `requestWatcherJson` (CLI) / `createArgusClient` (client) → `e2e/*` → SKILL + (if interactive) playground UI.
+- **New watcher endpoint**: add types **and a request `ProtocolSchema`** in `packages/argus-core/src/protocol/http/<domain>.ts` → add route in `packages/argus-watcher/src/http/routes/*` + wire in `packages/argus-watcher/src/http/router.ts` → call via `requestWatcherJson` (CLI) / `createArgusClient` (client) → `e2e/*` → SKILL + (if interactive) playground UI.
 - **Protocol change rules**: additive-by-default; breaking => bump `ARGUS_PROTOCOL_VERSION`; keep `ok`/`error` shapes stable.
 
 ---
@@ -129,4 +129,4 @@
 
 - **HTTP payload shape**: success `ok: true`; failure `ok: false` with `{ error: { message, code? } }` (see `packages/argus-core/src/protocol/http/errors.ts`).
 - **Watcher route conventions**: GET vs POST, path naming, `extensionOnly` behavior in `packages/argus-watcher/src/http/router.ts`.
-- **Body parsing gotcha**: `readJsonBody` returns `{}` on empty body; routes must validate required fields explicitly.
+- **POST bodies are schema-only**: a route reads a body by declaring `bodySchema`; there is no unvalidated path. Write the `ProtocolSchema` next to the request type in `packages/argus-core/src/protocol/http/<domain>.ts`, composing the readers in `protocol/schemaFields.ts` — don't hand-roll `typeof` checks in the route. An empty body simply fails schema parse with a real message.

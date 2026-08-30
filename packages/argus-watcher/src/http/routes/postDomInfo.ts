@@ -1,14 +1,14 @@
 import type { DomInfoRequest, DomInfoResponse } from '@vforsh/argus-core'
+import { domInfoRequestSchema } from '@vforsh/argus-core'
 import { fetchDomInfoBySelector } from '../../cdp/dom.js'
 import { defineJsonRoute } from './defineRoute.js'
-import { respondMultipleMatches, respondTargetResolutionError, validateDomTargetBody } from './domSelectorRoute.js'
+import { respondMultipleMatches, respondTargetResolutionError } from './domSelectorRoute.js'
 
 export const route = defineJsonRoute<DomInfoRequest, DomInfoResponse>({
 	method: 'POST',
 	path: '/dom/info',
-	parseBody: true,
+	bodySchema: domInfoRequestSchema,
 	endpoint: 'dom/info',
-	validate: validateDomTargetBody,
 	handle: async ({ res, ctx, body: payload }) => {
 		const all = payload.all ?? false
 		const response = await fetchDomInfoBySelector(ctx.cdpSession, ctx.elementRefs, {

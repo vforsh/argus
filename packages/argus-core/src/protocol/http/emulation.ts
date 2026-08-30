@@ -1,3 +1,6 @@
+import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
+import { compact, optionalBoolean, optionalEnum, optionalNumber, optionalRecord, readFields, requireObject } from '../schemaFields.js'
+
 /** Viewport emulation parameters for device metrics override. */
 export type EmulationViewport = {
 	/** Viewport width in CSS pixels. Must be a positive integer. */
@@ -73,4 +76,103 @@ export type EmulationStatusResponse = {
 	baseline: { userAgent: string | null }
 	/** Last error from a failed apply attempt, if any. */
 	lastError?: { message: string; code?: string } | null
+}
+
+/** Actions accepted by POST /emulation. */
+export const EMULATION_ACTIONS = ['set', 'clear'] as const
+
+/** Schema for POST /emulation request payloads. */
+export const emulationRequestSchema = defineProtocolSchema<EmulationRequest>((value) => {
+	const invalid = requireObject<EmulationRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		action: (source, key) => optionalEnum(source, key, EMULATION_ACTIONS),
+		state: optionalRecord,
+	})
+	if (!fields.ok) return fields
+	const { action, state } = fields.value
+
+	if (action == null) {
+		return invalidProtocolPayload(`action must be one of: ${EMULATION_ACTIONS.join(', ')}`)
+	}
+	if (action === 'clear') {
+		return validProtocolPayload({ action })
+	}
+	if (state == null) {
+		return invalidProtocolPayload('state is required for set action')
+	}
+
+	const parsed = parseEmulationState(state)
+	if (typeof parsed === 'string') {
+		return invalidProtocolPayload(parsed)
+	}
+
+	return validProtocolPayload({ action, state: parsed })
+})
+
+/**
+ * Validate the nested emulation state.
+ *
+ * Each aspect is independently optional and `null` means "reset this one", so absence and
+ * an explicit null are not interchangeable — hence the explicit `!= null` checks rather
+ * than the flat readers used elsewhere.
+ *
+ * @returns The parsed state, or an error message.
+ */
+const parseEmulationState = (state: Record<string, unknown>): EmulationState | string => {
+	const result: EmulationState = {}
+
+	if (state.viewport !== undefined) {
+		if (state.viewport === null) {
+			result.viewport = null
+		} else {
+			const viewport = readFields(state, { viewport: optionalRecord })
+			if (!viewport.ok || viewport.value.viewport == null) {
+				return 'viewport must be an object or null'
+			}
+			const vp = viewport.value.viewport
+			const parsed = readFields(vp, {
+				width: (source, key) => optionalNumber(source, key, { min: 1 }),
+				height: (source, key) => optionalNumber(source, key, { min: 1 }),
+				deviceScaleFactor: (source, key) => optionalNumber(source, key, { min: Number.EPSILON }),
+				mobile: optionalBoolean,
+			})
+			if (!parsed.ok) {
+				return 'viewport fields must be positive numbers with a boolean mobile flag'
+			}
+			const { width, height, deviceScaleFactor, mobile } = parsed.value
+			if (width == null || !Number.isInteger(width)) return 'viewport.width must be a positive integer'
+			if (height == null || !Number.isInteger(height)) return 'viewport.height must be a positive integer'
+			if (deviceScaleFactor == null) return 'viewport.deviceScaleFactor must be a finite number > 0'
+			if (mobile == null) return 'viewport.mobile must be a boolean'
+			result.viewport = { width, height, deviceScaleFactor, mobile }
+		}
+	}
+
+	if (state.touch !== undefined) {
+		if (state.touch === null) {
+			result.touch = null
+		} else {
+			const touch = state.touch as Record<string, unknown>
+			if (typeof touch?.enabled !== 'boolean') {
+				return 'touch.enabled must be a boolean'
+			}
+			result.touch = { enabled: touch.enabled }
+		}
+	}
+
+	if (state.userAgent !== undefined) {
+		if (state.userAgent === null) {
+			result.userAgent = null
+		} else {
+			const ua = state.userAgent as Record<string, unknown>
+			if (ua?.value !== null && (typeof ua?.value !== 'string' || ua.value === '')) {
+				return 'userAgent.value must be a non-empty string or null'
+			}
+			result.userAgent = { value: ua.value as string | null }
+		}
+	}
+
+	return compact(result)
 }

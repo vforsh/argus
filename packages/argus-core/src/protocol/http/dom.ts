@@ -1,3 +1,22 @@
+import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload, type ProtocolValidationResult } from '../schema.js'
+import {
+	compact,
+	fieldError,
+	isFieldError,
+	optionalBoolean,
+	optionalEnum,
+	optionalInteger,
+	optionalNonEmptyString,
+	optionalNumber,
+	optionalRecord,
+	optionalString,
+	optionalStringArray,
+	readFields,
+	requireObject,
+	requiredString,
+	type FieldError,
+} from '../schemaFields.js'
+
 /** Stable element ref emitted by `snapshot` / `locate` and accepted by ref-aware commands. */
 export type ElementRef = string
 
@@ -374,3 +393,281 @@ export type DomFocusResponse = {
 	/** Number of elements focused. */
 	focused: number
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Request schemas
+//
+// These own body validation for the DOM routes. The watcher used to re-prove each
+// payload field by field inside the route, which is where "non-empty string" and
+// "non-negative integer" drifted between endpoints; the checks now live beside the
+// types they validate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Insert positions accepted by POST /dom/add. */
+export const DOM_INSERT_POSITIONS = ['beforebegin', 'afterbegin', 'beforeend', 'afterend'] as const
+
+/** Modification kinds accepted by POST /dom/modify. */
+export const DOM_MODIFY_TYPES = ['attr', 'class', 'style', 'text', 'html'] as const
+
+/** Readers for the selector/ref/all/text target every DOM route accepts. */
+const domTargetReaders = {
+	selector: optionalNonEmptyString,
+	ref: optionalNonEmptyString,
+	all: optionalBoolean,
+	text: optionalString,
+}
+
+/** Require exactly one of selector/ref, the rule every ref-aware DOM route enforces. */
+const requireExactlyOneTarget = (target: { selector?: string; ref?: ElementRef }): string | null =>
+	Boolean(target.selector) === Boolean(target.ref) ? 'Exactly one of selector or ref is required' : null
+
+/**
+ * Validate the selector/ref/all/text/wait body every element-target route shares.
+ *
+ * `defineDomTargetRoute` resolves the target for hover/focus/fill identically, so the
+ * body rules are identical too; routes that add fields layer them on top of this.
+ */
+export const domTargetPayload = <T extends DomElementTarget & { all?: boolean; text?: string; wait?: number }>(
+	value: unknown,
+): ProtocolValidationResult<T> => {
+	const invalid = requireObject<T>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		...domTargetReaders,
+		wait: (source, key) => optionalNumber(source, key, { min: 0 }),
+	})
+	if (!fields.ok) return fields
+
+	const targetError = requireExactlyOneTarget(fields.value)
+	if (targetError) return invalidProtocolPayload(targetError)
+
+	return validProtocolPayload(compact(fields.value) as T)
+}
+
+/** Schema for POST /dom/info request payloads. */
+export const domInfoRequestSchema = defineProtocolSchema<DomInfoRequest>((value) => {
+	const invalid = requireObject<DomInfoRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		...domTargetReaders,
+		outerHtmlMaxChars: (source, key) => optionalInteger(source, key, { min: 0 }),
+	})
+	if (!fields.ok) return fields
+
+	const targetError = requireExactlyOneTarget(fields.value)
+	if (targetError) return invalidProtocolPayload(targetError)
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /dom/remove request payloads. */
+export const domRemoveRequestSchema = defineProtocolSchema<DomRemoveRequest>((value) => {
+	const invalid = requireObject<DomRemoveRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		selector: requiredString,
+		all: optionalBoolean,
+		text: optionalString,
+	})
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /dom/tree request payloads. */
+export const domTreeRequestSchema = defineProtocolSchema<DomTreeRequest>((value) => {
+	const invalid = requireObject<DomTreeRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		selector: requiredString,
+		depth: (source, key) => optionalInteger(source, key, { min: 0 }),
+		maxNodes: (source, key) => optionalInteger(source, key, { min: 1 }),
+		all: optionalBoolean,
+		text: optionalString,
+	})
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /dom/add request payloads. */
+export const domAddRequestSchema = defineProtocolSchema<DomAddRequest>((value) => {
+	const invalid = requireObject<DomAddRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		selector: requiredString,
+		html: requiredString,
+		position: (source, key) => optionalEnum(source, key, DOM_INSERT_POSITIONS),
+		all: optionalBoolean,
+		nth: (source, key) => optionalInteger(source, key, { min: 0 }),
+		expect: (source, key) => optionalInteger(source, key, { min: 0 }),
+		text: optionalBoolean,
+	})
+	if (!fields.ok) return fields
+
+	if (fields.value.all === true && fields.value.nth != null) {
+		return invalidProtocolPayload('nth cannot be combined with all=true')
+	}
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /dom/modify request payloads. */
+export const domModifyRequestSchema = defineProtocolSchema<DomModifyRequest>((value) => {
+	const invalid = requireObject<DomModifyRequest>(value)
+	if (invalid) return invalid
+	const source = value as Record<string, unknown>
+
+	const fields = readFields(source, {
+		selector: requiredString,
+		all: optionalBoolean,
+		text: optionalString,
+		type: (input, key) => optionalEnum(input, key, DOM_MODIFY_TYPES),
+	})
+	if (!fields.ok) return fields
+	const { type } = fields.value
+
+	if (type == null) {
+		return invalidProtocolPayload(`type must be one of: ${DOM_MODIFY_TYPES.join(', ')}`)
+	}
+	if ((type === 'text' || type === 'html') && typeof source.value !== 'string') {
+		return invalidProtocolPayload('value is required for text/html modifications')
+	}
+
+	// The per-type payload (set/remove/add/toggle/value) passes through: it is a
+	// discriminated union the page-side function reads, and callers get its type checking.
+	return validProtocolPayload(compact({ ...source, ...fields.value }) as unknown as DomModifyRequest)
+})
+
+/** Schema for POST /dom/keydown request payloads. */
+export const domKeydownRequestSchema = defineProtocolSchema<DomKeydownRequest>((value) => {
+	const invalid = requireObject<DomKeydownRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		key: optionalNonEmptyString,
+		code: optionalNonEmptyString,
+		selector: optionalNonEmptyString,
+		modifiers: optionalString,
+	})
+	if (!fields.ok) return fields
+
+	if (fields.value.key == null && fields.value.code == null) {
+		return invalidProtocolPayload('key or code is required')
+	}
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /dom/focus request payloads. */
+export const domFocusRequestSchema = defineProtocolSchema<DomFocusRequest>((value) => domTargetPayload<DomFocusRequest>(value))
+
+/** Schema for POST /dom/fill request payloads. */
+export const domFillRequestSchema = defineProtocolSchema<DomFillRequest>((value) => {
+	const base = domTargetPayload<DomFillRequest>(value)
+	if (!base.ok) return base
+
+	const fillValue = (value as Record<string, unknown>).value
+	if (typeof fillValue !== 'string') {
+		return invalidProtocolPayload('value is required')
+	}
+
+	return validProtocolPayload({ ...base.value, value: fillValue })
+})
+
+/** Read a required `{ x, y }` point. */
+const requiredPoint = (source: Record<string, unknown>, key: string): { x: number; y: number } | FieldError => {
+	const point = optionalRecord(source, key)
+	if (point == null || isFieldError(point)) {
+		return fieldError(`${key} is required with { x, y } numbers`)
+	}
+	if (typeof point.x !== 'number' || typeof point.y !== 'number' || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+		return fieldError(`${key}.x and ${key}.y must be finite numbers`)
+	}
+	return { x: point.x, y: point.y }
+}
+
+/** Read an optional `{ x, y }` point. */
+const optionalPoint = (source: Record<string, unknown>, key: string): { x: number; y: number } | undefined | FieldError => {
+	if (source[key] == null) return undefined
+	return requiredPoint(source, key)
+}
+
+/** Schema for POST /dom/scroll request payloads. */
+export const domScrollRequestSchema = defineProtocolSchema<DomScrollRequest>((value) => {
+	const invalid = requireObject<DomScrollRequest>(value)
+	if (invalid) return invalid
+	const source = value as Record<string, unknown>
+
+	const fields = readFields(source, {
+		delta: requiredPoint,
+		selector: optionalNonEmptyString,
+		x: optionalNumber,
+		y: optionalNumber,
+		all: optionalBoolean,
+		text: optionalString,
+	})
+	if (!fields.ok) return fields
+	const { selector, x, y } = fields.value
+
+	const hasPosition = source.x != null || source.y != null
+	if (selector && hasPosition) {
+		return invalidProtocolPayload('selector and x/y coordinates are mutually exclusive')
+	}
+	if (hasPosition && (x == null || y == null)) {
+		return invalidProtocolPayload('x and y must both be finite numbers')
+	}
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /dom/scroll-to request payloads. */
+export const domScrollToRequestSchema = defineProtocolSchema<DomScrollToRequest>((value) => {
+	const invalid = requireObject<DomScrollToRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		selector: optionalNonEmptyString,
+		to: optionalPoint,
+		by: optionalPoint,
+		all: optionalBoolean,
+		text: optionalString,
+	})
+	if (!fields.ok) return fields
+	const { selector, to, by } = fields.value
+
+	if (!selector && to == null && by == null) {
+		return invalidProtocolPayload('at least one of selector, to, or by is required')
+	}
+	if (to != null && by != null) {
+		return invalidProtocolPayload('to and by are mutually exclusive')
+	}
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /dom/set-file request payloads. */
+export const domSetFileRequestSchema = defineProtocolSchema<DomSetFileRequest>((value) => {
+	const invalid = requireObject<DomSetFileRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		selector: requiredString,
+		files: optionalStringArray,
+		all: optionalBoolean,
+		text: optionalString,
+		wait: (source, key) => optionalNumber(source, key, { min: 0 }),
+	})
+	if (!fields.ok) return fields
+
+	if (!fields.value.files || fields.value.files.length === 0) {
+		return invalidProtocolPayload('files array is required and must not be empty')
+	}
+
+	return validProtocolPayload(compact({ ...fields.value, files: fields.value.files }))
+})

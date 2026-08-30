@@ -34,7 +34,19 @@ export const respondError = (res: http.ServerResponse, error: unknown): void => 
 	respondJson(res, { ok: false, error: { message, code } } satisfies ErrorResponse, 500)
 }
 
-export const readJsonBody = async <T>(req: http.IncomingMessage, res: http.ServerResponse): Promise<T | null> => {
+/**
+ * Read and parse a JSON request body.
+ *
+ * An absent or empty body yields `{}` rather than an error: `defineJsonRoute` hands the
+ * result straight to a protocol schema, which rejects it with a real per-field message.
+ * This used to be a documented gotcha ("routes must validate required fields explicitly")
+ * because the empty object was cast to the route's body type and reached the handler
+ * unvalidated; the schema layer now owns that proof.
+ *
+ * @returns The parsed body, or `null` when a response has already been sent (oversized
+ *   payload or malformed JSON).
+ */
+export const readJsonBody = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<unknown | null> => {
 	const chunks: Buffer[] = []
 	let size = 0
 	const maxBytes = 1_000_000
@@ -54,16 +66,16 @@ export const readJsonBody = async <T>(req: http.IncomingMessage, res: http.Serve
 	}
 
 	if (chunks.length === 0) {
-		return {} as T
+		return {}
 	}
 
 	const raw = Buffer.concat(chunks).toString('utf8')
 	if (!raw.trim()) {
-		return {} as T
+		return {}
 	}
 
 	try {
-		return JSON.parse(raw) as T
+		return JSON.parse(raw)
 	} catch {
 		respondInvalidJson(res)
 		return null

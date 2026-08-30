@@ -1,3 +1,6 @@
+import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
+import { compact, optionalEnum, optionalString, readFields, requireObject } from '../schemaFields.js'
+
 /** Browser dialog types exposed by Chrome DevTools Protocol. */
 export type DialogType = 'alert' | 'confirm' | 'prompt' | 'beforeunload'
 
@@ -29,3 +32,25 @@ export type DialogHandleResponse = {
 	action: 'accept' | 'dismiss'
 	dialog: DialogStatus
 }
+
+/** Actions accepted by POST /dialog. */
+export const DIALOG_ACTIONS = ['accept', 'dismiss'] as const
+
+/** Schema for POST /dialog request payloads. */
+export const dialogHandleRequestSchema = defineProtocolSchema<DialogHandleRequest>((value) => {
+	const invalid = requireObject<DialogHandleRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		action: (source, key) => optionalEnum(source, key, DIALOG_ACTIONS),
+		promptText: optionalString,
+	})
+	if (!fields.ok) return fields
+	const { action, promptText } = fields.value
+
+	if (action == null) {
+		return invalidProtocolPayload('Dialog action must be "accept" or "dismiss"')
+	}
+
+	return validProtocolPayload(compact({ action, promptText }))
+})

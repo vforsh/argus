@@ -1,22 +1,20 @@
 import type { ExtensionDetachRequest, ExtensionTabActionResponse } from '@vforsh/argus-core'
+import { extensionDetachRequestSchema } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
-import { respondInvalidBody, respondJson } from '../httpUtils.js'
+import { respondJson } from '../httpUtils.js'
 import { emitRequest } from './types.js'
 
 export const route = defineJsonRoute<ExtensionDetachRequest, ExtensionTabActionResponse>({
 	method: 'POST',
 	path: '/detach',
-	parseBody: true,
+	bodySchema: extensionDetachRequestSchema,
 	extensionOnly: true,
 	handle: async ({ res, ctx, body: payload }) => {
 		if (!ctx.sourceHandle?.detachTarget) {
 			return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
 		}
 
-		const targetId = typeof payload.targetId === 'string' ? payload.targetId : typeof payload.tabId === 'number' ? String(payload.tabId) : null
-		if (!targetId) {
-			return respondInvalidBody(res, 'targetId is required')
-		}
+		const targetId = payload.targetId ?? String(payload.tabId)
 
 		emitRequest(ctx, res, 'detach')
 		return await ctx.sourceHandle.detachTarget(targetId)

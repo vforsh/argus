@@ -1,4 +1,5 @@
 import type { EvalRequest, EvalResponse } from '@vforsh/argus-core'
+import { evalRequestSchema } from '@vforsh/argus-core'
 import { evaluateExpression } from '../../cdp/eval.js'
 import { defineJsonRoute } from './defineRoute.js'
 import { normalizeBoolean, normalizeTimeout } from '../httpUtils.js'
@@ -6,14 +7,8 @@ import { normalizeBoolean, normalizeTimeout } from '../httpUtils.js'
 export const route = defineJsonRoute<EvalRequest, EvalResponse>({
 	method: 'POST',
 	path: '/eval',
-	parseBody: true,
+	bodySchema: evalRequestSchema,
 	endpoint: 'eval',
-	validate: (payload) => {
-		if (!payload.expression || typeof payload.expression !== 'string') {
-			return 'expression is required'
-		}
-		return null
-	},
 	handle: ({ ctx, body: payload }) =>
 		evaluateExpression(ctx.cdpSession, {
 			expression: payload.expression,

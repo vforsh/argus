@@ -16,16 +16,16 @@ export type WatcherRouteDefinition = {
 type JsonRouteInput<TBody, TResponse extends object> = {
 	method: 'GET' | 'POST'
 	path: string
-	bodySchema?: ProtocolSchema<TBody>
-	parseBody?: boolean
 	/**
-	 * Route-specific body validation, run after schema parsing and before the
-	 * request event is emitted. Return an error message to respond 400
-	 * `invalid_request`, or null when the body is valid. Prefer `bodySchema`
-	 * when a protocol schema exists; use this for validation rules that a
-	 * schema cannot express.
+	 * Schema that parses and validates the request body.
+	 *
+	 * This is the only way to read a body. There used to be a `parseBody: true` escape
+	 * hatch that handed the route an unvalidated payload already typed as `TBody` — the
+	 * type parameter was a lie until a hand-written `validate` closure re-proved it, and
+	 * ~450 LOC of per-route `typeof` checks and casts grew in that gap. Omit this and the
+	 * handler receives no body at all.
 	 */
-	validate?: (body: TBody) => string | null
+	bodySchema?: ProtocolSchema<TBody>
 	endpoint?: HttpRequestEventMetadata['endpoint']
 	extensionOnly?: boolean
 	handle: (input: JsonRouteHandlerInput<TBody>) => Promise<TResponse | void> | TResponse | void
@@ -48,21 +48,18 @@ export const defineJsonRoute = <TBody = undefined, TResponse extends object = ob
 	path: input.path,
 	extensionOnly: input.extensionOnly,
 	handler: async (req, res, url, ctx) => {
-		const shouldReadBody = input.bodySchema != null || input.parseBody === true
-		const rawBody = shouldReadBody ? await readJsonBody<unknown>(req, res) : undefined
-		if (shouldReadBody && rawBody == null) {
-			return
-		}
+		let body = undefined as TBody
+		if (input.bodySchema) {
+			const rawBody = await readJsonBody(req, res)
+			if (rawBody == null) {
+				return
+			}
 
-		const parsedBody = input.bodySchema?.parse(rawBody)
-		if (parsedBody && !parsedBody.ok) {
-			return respondInvalidBody(res, formatProtocolValidationIssues(parsedBody.issues))
-		}
-
-		const body = (parsedBody?.value ?? rawBody) as TBody
-		const validationError = input.validate?.(body)
-		if (validationError) {
-			return respondInvalidBody(res, validationError)
+			const parsed = input.bodySchema.parse(rawBody)
+			if (!parsed.ok) {
+				return respondInvalidBody(res, formatProtocolValidationIssues(parsed.issues))
+			}
+			body = parsed.value
 		}
 
 		if (input.endpoint) {

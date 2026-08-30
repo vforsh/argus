@@ -1,3 +1,6 @@
+import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
+import { optionalEnum, readFields, requireObject } from '../schemaFields.js'
+
 /**
  * Visibility lock controls whether the attached page should behave as if
  * visible/focused even when the Chrome window is backgrounded or covered.
@@ -29,3 +32,23 @@ export type VisibilityResponse = {
 	/** Current desired visibility lock. */
 	state: VisibilityLock
 }
+
+/** Actions accepted by POST /visibility. */
+export const VISIBILITY_ACTIONS = ['show', 'hide'] as const
+
+/** Schema for POST /visibility request payloads. */
+export const visibilityRequestSchema = defineProtocolSchema<VisibilityRequest>((value) => {
+	const invalid = requireObject<VisibilityRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		action: (source, key) => optionalEnum(source, key, VISIBILITY_ACTIONS),
+	})
+	if (!fields.ok) return fields
+
+	if (fields.value.action == null) {
+		return invalidProtocolPayload('Visibility action must be "show" or "hide"')
+	}
+
+	return validProtocolPayload({ action: fields.value.action })
+})

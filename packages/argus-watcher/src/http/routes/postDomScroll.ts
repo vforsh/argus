@@ -1,5 +1,6 @@
 import { evaluateInPage } from '../../cdp/pageState.js'
 import type { DomScrollRequest, DomScrollResponse } from '@vforsh/argus-core'
+import { domScrollRequestSchema } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../../cdp/connection.js'
 import { resolveDomSelectorMatches, emulateScroll, emulateScrollOnNodes } from '../../cdp/mouse.js'
 import { defineJsonRoute } from './defineRoute.js'
@@ -8,33 +9,8 @@ import { respondMultipleMatches } from './domSelectorRoute.js'
 export const route = defineJsonRoute<DomScrollRequest, DomScrollResponse>({
 	method: 'POST',
 	path: '/dom/scroll',
-	parseBody: true,
+	bodySchema: domScrollRequestSchema,
 	endpoint: 'dom/scroll',
-	validate: (payload) => {
-		if (payload.delta == null || typeof payload.delta.x !== 'number' || typeof payload.delta.y !== 'number') {
-			return 'delta is required with { x, y } numbers'
-		}
-		if (!Number.isFinite(payload.delta.x) || !Number.isFinite(payload.delta.y)) {
-			return 'delta.x and delta.y must be finite numbers'
-		}
-
-		const hasSelector = typeof payload.selector === 'string' && payload.selector.length > 0
-		const hasPos = payload.x != null || payload.y != null
-		if (hasSelector && hasPos) {
-			return 'selector and x/y coordinates are mutually exclusive'
-		}
-		if (
-			hasPos &&
-			(typeof payload.x !== 'number' || typeof payload.y !== 'number' || !Number.isFinite(payload.x) || !Number.isFinite(payload.y))
-		) {
-			return 'x and y must both be finite numbers'
-		}
-
-		if (typeof (payload.all ?? false) !== 'boolean') {
-			return 'all must be a boolean'
-		}
-		return null
-	},
 	handle: async ({ res, ctx, body: payload }) => {
 		const all = payload.all ?? false
 		const hasSelector = typeof payload.selector === 'string' && payload.selector.length > 0

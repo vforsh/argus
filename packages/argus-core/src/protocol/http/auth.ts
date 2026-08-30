@@ -1,3 +1,19 @@
+import { normalizeCookieDomainFilter, normalizeCookieSameSite } from '../../auth/cookies.js'
+import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
+import {
+	compact,
+	fieldError,
+	optionalBoolean,
+	optionalEnum,
+	optionalNumber,
+	optionalRecord,
+	optionalString,
+	readFields,
+	requireObject,
+	requiredString,
+	type FieldError,
+} from '../schemaFields.js'
+
 /** Cookie metadata exposed by the auth cookie endpoints. */
 export type AuthCookie = {
 	name: string
@@ -180,3 +196,131 @@ export type AuthStateLoadResponse = {
 	ok: true
 	startupUrl: string | null
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Request schemas
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Scopes accepted by POST /auth/cookies/clear. */
+export const AUTH_COOKIE_CLEAR_SCOPES = ['origin', 'site', 'domain', 'browserContext'] as const
+
+/** Read the name/domain/path triple that identifies one cookie. */
+const readCookieIdentity = (source: Record<string, unknown>): AuthCookieIdentity | FieldError => {
+	const fields = readFields(source, { name: requiredString, domain: requiredString, path: requiredString })
+	if (!fields.ok) {
+		// requiredString names the field, which is the message these routes already used.
+		return fieldError(fields.issues[0]?.message ?? 'name, domain, and path are required')
+	}
+	if (!fields.value.path.startsWith('/')) {
+		return fieldError('path must start with "/"')
+	}
+	return fields.value
+}
+
+/** Schema for POST /auth/cookies/get request payloads. */
+export const authCookieGetRequestSchema = defineProtocolSchema<AuthCookieGetRequest>((value) => {
+	const invalid = requireObject<AuthCookieGetRequest>(value)
+	if (invalid) return invalid
+	const source = value as Record<string, unknown>
+
+	const identity = readCookieIdentity(source)
+	if ('__fieldError' in identity) return invalidProtocolPayload(identity.__fieldError)
+
+	const fields = readFields(source, { includeValue: optionalBoolean })
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(compact({ ...identity, ...fields.value }))
+})
+
+/** Schema for POST /auth/cookies/delete request payloads. */
+export const authCookieDeleteRequestSchema = defineProtocolSchema<AuthCookieDeleteRequest>((value) => {
+	const invalid = requireObject<AuthCookieDeleteRequest>(value)
+	if (invalid) return invalid
+
+	const identity = readCookieIdentity(value as Record<string, unknown>)
+	if ('__fieldError' in identity) return invalidProtocolPayload(identity.__fieldError)
+
+	return validProtocolPayload(identity)
+})
+
+/** Schema for POST /auth/cookies/set request payloads. */
+export const authCookieSetRequestSchema = defineProtocolSchema<AuthCookieSetRequest>((value) => {
+	const invalid = requireObject<AuthCookieSetRequest>(value)
+	if (invalid) return invalid
+
+	const outer = readFields(value as Record<string, unknown>, { cookie: optionalRecord })
+	if (!outer.ok) return outer
+	if (outer.value.cookie == null) {
+		return invalidProtocolPayload('cookie is required')
+	}
+	const source = outer.value.cookie
+
+	const identity = readCookieIdentity(source)
+	if ('__fieldError' in identity) return invalidProtocolPayload(identity.__fieldError)
+
+	const fields = readFields(source, {
+		value: optionalString,
+		secure: optionalBoolean,
+		httpOnly: optionalBoolean,
+		session: optionalBoolean,
+		sameSite: optionalString,
+		expires: (input, key) => optionalNumber(input, key),
+	})
+	if (!fields.ok) return fields
+	const { value: cookieValue, secure, httpOnly, session, sameSite, expires } = fields.value
+
+	if (typeof cookieValue !== 'string') return invalidProtocolPayload('cookie.value must be a string')
+	if (secure == null) return invalidProtocolPayload('cookie.secure must be a boolean')
+	if (httpOnly == null) return invalidProtocolPayload('cookie.httpOnly must be a boolean')
+	if (session == null) return invalidProtocolPayload('cookie.session must be a boolean')
+
+	const normalizedSameSite = sameSite ? normalizeCookieSameSite(sameSite) : null
+	if (sameSite && !normalizedSameSite) {
+		return invalidProtocolPayload('cookie.sameSite must be one of: Strict, Lax, None')
+	}
+	if (session && expires != null) {
+		return invalidProtocolPayload('cookie.expires must be null when cookie.session is true')
+	}
+	if (!session && expires == null) {
+		return invalidProtocolPayload('cookie.expires is required when cookie.session is false')
+	}
+	if (normalizedSameSite === 'None' && !secure) {
+		return invalidProtocolPayload('cookie.secure must be true when cookie.sameSite is None')
+	}
+
+	return validProtocolPayload({
+		cookie: compact({
+			...identity,
+			value: cookieValue,
+			secure,
+			httpOnly,
+			session,
+			sameSite: normalizedSameSite,
+			expires: expires ?? null,
+		}) as AuthStateCookie,
+	})
+})
+
+/** Schema for POST /auth/cookies/clear request payloads. */
+export const authCookieClearRequestSchema = defineProtocolSchema<AuthCookieClearRequest>((value) => {
+	const invalid = requireObject<AuthCookieClearRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		scope: (source, key) => optionalEnum(source, key, AUTH_COOKIE_CLEAR_SCOPES),
+		domain: optionalString,
+		sessionOnly: optionalBoolean,
+		authOnly: optionalBoolean,
+	})
+	if (!fields.ok) return fields
+	const { scope, domain } = fields.value
+
+	if (scope == null) {
+		return invalidProtocolPayload(`scope must be one of: ${AUTH_COOKIE_CLEAR_SCOPES.join(', ')}`)
+	}
+	if (scope === 'domain' && !normalizeCookieDomainFilter(domain)) {
+		return invalidProtocolPayload('domain is required when scope is "domain"')
+	}
+
+	return validProtocolPayload(compact({ ...fields.value, scope }))
+})

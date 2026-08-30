@@ -1,3 +1,5 @@
+import { defineProtocolSchema, invalidProtocolPayload, isProtocolObject, validProtocolPayload } from '../protocol/schema.js'
+import type { AuthStateLoadRequest } from '../protocol/http/auth.js'
 import {
 	AUTH_STATE_METADATA_SCHEMA_VERSION,
 	type AuthStateCookie,
@@ -247,3 +249,33 @@ const expectNullableWatcherSource = (value: unknown, source: string): 'cdp' | 'e
 	}
 	throw new Error(`Invalid ${source}: expected "cdp", "extension", or null`)
 }
+
+/**
+ * Schema for POST /auth/state/load request payloads.
+ *
+ * Defined here rather than in `protocol/http/auth.ts` to avoid a module cycle, and
+ * because the snapshot body *is* the on-disk auth-state format this module owns.
+ *
+ * The nested snapshot itself is still validated by {@link parseAuthStateSnapshot}: its
+ * `expect*` helpers thread a dotted path (`metadata.source.watcherId`) through arbitrarily
+ * nested structures, which the flat field readers cannot express. The throw is converted
+ * to a validation issue here, so the HTTP boundary has one error model.
+ */
+export const authStateLoadRequestSchema = defineProtocolSchema<AuthStateLoadRequest>((value) => {
+	if (!isProtocolObject(value)) {
+		return invalidProtocolPayload('request body must be an object')
+	}
+	if (value.snapshot == null) {
+		return invalidProtocolPayload('snapshot is required')
+	}
+	if (value.url !== undefined && typeof value.url !== 'string') {
+		return invalidProtocolPayload('url must be a string when provided')
+	}
+
+	try {
+		const snapshot = parseAuthStateSnapshot(value.snapshot, 'auth state snapshot')
+		return validProtocolPayload(value.url === undefined ? { snapshot } : { snapshot, url: value.url })
+	} catch (error) {
+		return invalidProtocolPayload(error instanceof Error ? error.message : String(error))
+	}
+})

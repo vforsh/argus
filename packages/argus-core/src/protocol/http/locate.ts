@@ -1,3 +1,6 @@
+import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
+import { compact, optionalBoolean, optionalString, readFields, requireObject, requiredString } from '../schemaFields.js'
+
 import type { ElementRef } from './dom.js'
 
 /** Common matching options for semantic element lookup commands. */
@@ -49,3 +52,34 @@ export type LocateResponse = {
 	/** Element summaries for the resolved matches. */
 	elements: LocatedElement[]
 }
+
+/**
+ * Build the schema for one `/locate/*` route.
+ *
+ * The three routes differ only in which field is required, so they share one builder
+ * rather than three near-identical validate closures.
+ */
+const defineLocateSchema = <T extends LocateMatchOptions>(requiredField: 'role' | 'text' | 'label') =>
+	defineProtocolSchema<T>((value) => {
+		const invalid = requireObject<T>(value)
+		if (invalid) return invalid
+
+		const fields = readFields(value as Record<string, unknown>, {
+			[requiredField]: requiredString,
+			name: optionalString,
+			all: optionalBoolean,
+			exact: optionalBoolean,
+		})
+		if (!fields.ok) return fields
+
+		return validProtocolPayload(compact(fields.value) as T)
+	})
+
+/** Schema for POST /locate/role request payloads. */
+export const locateRoleRequestSchema = defineLocateSchema<LocateRoleRequest>('role')
+
+/** Schema for POST /locate/text request payloads. */
+export const locateTextRequestSchema = defineLocateSchema<LocateTextRequest>('text')
+
+/** Schema for POST /locate/label request payloads. */
+export const locateLabelRequestSchema = defineLocateSchema<LocateLabelRequest>('label')

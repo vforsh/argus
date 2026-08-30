@@ -1,3 +1,6 @@
+import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
+import { compact, optionalBoolean, optionalInteger, optionalNonEmptyString, readFields, requireObject } from '../schemaFields.js'
+
 /**
  * A node in the accessibility tree.
  * Reconstructed from CDP's flat AXNode array into a nested structure.
@@ -41,3 +44,18 @@ export type SnapshotResponse = {
 	/** Number of nodes after filtering. */
 	returnedNodes: number
 }
+
+/** Schema for POST /snapshot request payloads. */
+export const snapshotRequestSchema = defineProtocolSchema<SnapshotRequest>((value) => {
+	const invalid = requireObject<SnapshotRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		selector: optionalNonEmptyString,
+		depth: (source, key) => optionalInteger(source, key, { min: 0 }),
+		interactive: optionalBoolean,
+	})
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(compact(fields.value))
+})

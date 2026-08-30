@@ -1,3 +1,6 @@
+import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
+import { compact, optionalBoolean, optionalNumber, optionalRecord, readFields, requireObject, requiredString } from '../schemaFields.js'
+
 /** Request payload for POST /eval. */
 export type EvalRequest = {
 	expression: string
@@ -42,3 +45,26 @@ export type EvalResponse = {
 	type: string | null
 	exception: { text: string; details?: unknown } | null
 }
+
+/** Schema for POST /eval request payloads. */
+export const evalRequestSchema = defineProtocolSchema<EvalRequest>((value) => {
+	const invalid = requireObject<EvalRequest>(value)
+	if (invalid) return invalid
+	const source = value as Record<string, unknown>
+
+	const fields = readFields(source, {
+		expression: requiredString,
+		awaitPromise: optionalBoolean,
+		replMode: optionalBoolean,
+		returnByValue: optionalBoolean,
+		jsonValue: optionalBoolean,
+		scenario: optionalBoolean,
+		timeoutMs: (input, key) => optionalNumber(input, key, { min: 0 }),
+		// `args` is string-only by contract; the eval runtime re-checks each entry before
+		// installing it, so the schema only rejects an outright wrong container shape.
+		args: optionalRecord,
+	})
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(compact({ ...fields.value, args: fields.value.args as Record<string, string> | undefined }))
+})

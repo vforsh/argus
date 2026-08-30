@@ -1,44 +1,15 @@
 import type { DomAddRequest, DomAddResponse } from '@vforsh/argus-core'
+import { domAddRequestSchema } from '@vforsh/argus-core'
 import { insertAdjacentHtml } from '../../cdp/dom.js'
 import { resolveDomSelectorMatches } from '../../cdp/mouse.js'
 import { defineJsonRoute } from './defineRoute.js'
 import { respondJson } from '../httpUtils.js'
 
-const validPositions = ['beforebegin', 'afterbegin', 'beforeend', 'afterend']
-
 export const route = defineJsonRoute<DomAddRequest, DomAddResponse>({
 	method: 'POST',
 	path: '/dom/add',
-	parseBody: true,
+	bodySchema: domAddRequestSchema,
 	endpoint: 'dom/add',
-	validate: (payload) => {
-		if (!payload.selector || typeof payload.selector !== 'string') {
-			return 'selector is required'
-		}
-		if (!payload.html || typeof payload.html !== 'string') {
-			return 'html is required'
-		}
-		if (payload.position && !validPositions.includes(payload.position)) {
-			return `position must be one of: ${validPositions.join(', ')}`
-		}
-		const all = payload.all ?? false
-		if (typeof all !== 'boolean') {
-			return 'all must be a boolean'
-		}
-		if (payload.nth != null && (!Number.isFinite(payload.nth) || !Number.isInteger(payload.nth) || payload.nth < 0)) {
-			return 'nth must be a non-negative integer'
-		}
-		if (payload.expect != null && (!Number.isFinite(payload.expect) || !Number.isInteger(payload.expect) || payload.expect < 0)) {
-			return 'expect must be a non-negative integer'
-		}
-		if (typeof (payload.text ?? false) !== 'boolean') {
-			return 'text must be a boolean'
-		}
-		if (all && payload.nth != null) {
-			return 'nth cannot be combined with all=true'
-		}
-		return null
-	},
 	handle: async ({ res, ctx, body: payload }) => {
 		const all = payload.all ?? false
 		const { nth, expect } = payload

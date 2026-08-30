@@ -1,14 +1,14 @@
 import type { DomRemoveRequest, DomRemoveResponse } from '@vforsh/argus-core'
+import { domRemoveRequestSchema } from '@vforsh/argus-core'
 import { removeElements } from '../../cdp/dom.js'
 import { defineJsonRoute } from './defineRoute.js'
-import { respondMultipleMatches, validateDomTargetBody } from './domSelectorRoute.js'
+import { respondMultipleMatches } from './domSelectorRoute.js'
 
 export const route = defineJsonRoute<DomRemoveRequest, DomRemoveResponse>({
 	method: 'POST',
 	path: '/dom/remove',
-	parseBody: true,
+	bodySchema: domRemoveRequestSchema,
 	endpoint: 'dom/remove',
-	validate: validateDomTargetBody,
 	handle: async ({ res, ctx, body: payload }) => {
 		const all = payload.all ?? false
 		const { allNodeIds, removedCount } = await removeElements(ctx.cdpSession, {

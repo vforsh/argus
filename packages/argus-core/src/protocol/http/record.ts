@@ -1,3 +1,7 @@
+import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
+import { compact, optionalEnum, optionalNonEmptyString, optionalNumber, optionalString, readFields, requireObject } from '../schemaFields.js'
+import { optionalClipRegion, requireSingleCaptureTarget } from './screenshot.js'
+
 import type { ScreenshotClipRegion } from './screenshot.js'
 
 /** Viewport-relative crop rectangle in CSS pixels. */
@@ -61,3 +65,61 @@ export type RecordStopResponse = {
 }
 
 export type RecordResponse = RecordStopResponse
+
+/** Readers for the outFile/selector/clip/fps/format options every record route shares. */
+const recordOptionReaders = {
+	outFile: optionalString,
+	selector: optionalNonEmptyString,
+	clip: optionalClipRegion,
+	fps: (source: Record<string, unknown>, key: string) => optionalNumber(source, key, { min: 1, max: 60 }),
+	format: (source: Record<string, unknown>, key: string) => optionalEnum(source, key, RECORD_FORMATS),
+}
+
+/** Schema for POST /record/start request payloads. */
+export const recordStartRequestSchema = defineProtocolSchema<RecordStartRequest>((value) => {
+	const invalid = requireObject<RecordStartRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, recordOptionReaders)
+	if (!fields.ok) return fields
+
+	const conflict = requireSingleCaptureTarget(fields.value)
+	if (conflict) return invalidProtocolPayload(conflict)
+
+	return validProtocolPayload(compact(fields.value))
+})
+
+/** Schema for POST /record request payloads (fixed-duration capture). */
+export const recordRequestSchema = defineProtocolSchema<RecordRequest>((value) => {
+	const invalid = requireObject<RecordRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		...recordOptionReaders,
+		durationMs: (source, key) => optionalNumber(source, key, { min: Number.EPSILON }),
+	})
+	if (!fields.ok) return fields
+
+	const conflict = requireSingleCaptureTarget(fields.value)
+	if (conflict) return invalidProtocolPayload(conflict)
+
+	if (fields.value.durationMs == null) {
+		return invalidProtocolPayload('durationMs must be greater than 0')
+	}
+
+	return validProtocolPayload(compact({ ...fields.value, durationMs: fields.value.durationMs }))
+})
+
+/** Schema for POST /record/stop request payloads. */
+export const recordStopRequestSchema = defineProtocolSchema<RecordStopRequest>((value) => {
+	const invalid = requireObject<RecordStopRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		recordId: optionalNonEmptyString,
+		outFile: optionalString,
+	})
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(compact(fields.value))
+})

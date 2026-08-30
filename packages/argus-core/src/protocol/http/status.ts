@@ -1,3 +1,6 @@
+import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
+import { compact, optionalBoolean, readFields, requireObject } from '../schemaFields.js'
+
 import type { WatcherRecord } from '../../registry/types.js'
 import type { DialogStatus } from './dialog.js'
 import type { ArgusProtocolVersion } from '../version.js'
@@ -47,3 +50,14 @@ export type ReloadRequest = {
 export type ReloadResponse = {
 	ok: true
 }
+
+/** Schema for POST /reload request payloads. */
+export const reloadRequestSchema = defineProtocolSchema<ReloadRequest>((value) => {
+	const invalid = requireObject<ReloadRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, { ignoreCache: optionalBoolean })
+	if (!fields.ok) return fields
+
+	return validProtocolPayload(compact(fields.value))
+})

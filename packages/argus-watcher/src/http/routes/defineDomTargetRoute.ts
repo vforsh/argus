@@ -1,10 +1,11 @@
+import type { ProtocolSchema } from '@vforsh/argus-core'
 import type { HttpRequestEventMetadata } from '../server.js'
 import type { DomNodeHandle } from '../../cdp/dom/selector.js'
 import type { WatcherRouteDefinition } from './defineRoute.js'
 import type { RouteContext } from './types.js'
 import { resolveElementTargets } from '../../cdp/dom/selector.js'
 import { defineJsonRoute } from './defineRoute.js'
-import { respondMissingElementRef, respondMultipleMatches, respondTargetResolutionError, validateDomTargetBody } from './domSelectorRoute.js'
+import { respondMissingElementRef, respondMultipleMatches, respondTargetResolutionError } from './domSelectorRoute.js'
 
 /**
  * Body shape required by `defineDomTargetRoute`. Routes that need extra fields
@@ -30,11 +31,8 @@ type DomTargetRouteInput<TBody extends DomTargetRequestBody, TExtra extends obje
 	 * `all` is false.
 	 */
 	action: string
-	/**
-	 * Extra body validation, run after the shared selector/ref/all checks.
-	 * Returns an error message to respond 400 `invalid_request`, or null.
-	 */
-	validate?: (payload: TBody) => string | null
+	/** Schema that validates this route's body, including the shared target fields. */
+	bodySchema: ProtocolSchema<TBody>
 	/**
 	 * Run the DOM action against the resolved handles. Receives both the
 	 * "filtered" handles (subject to `text`/`all`) and `allHandles` for routes
@@ -61,9 +59,8 @@ export const defineDomTargetRoute = <TBody extends DomTargetRequestBody, TExtra 
 	defineJsonRoute<TBody, { ok: true; matches: number } & TExtra>({
 		method: input.method ?? 'POST',
 		path: input.path,
-		parseBody: true,
+		bodySchema: input.bodySchema,
 		endpoint: input.endpoint,
-		validate: (payload) => validateDomTargetBody(payload) ?? input.validate?.(payload) ?? null,
 		handle: async ({ res, ctx, body: payload }) => {
 			const all = payload.all ?? false
 			const resolved = await resolveElementTargets(ctx.cdpSession, ctx.elementRefs, {

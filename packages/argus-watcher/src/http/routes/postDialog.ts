@@ -1,18 +1,13 @@
 import type { DialogHandleRequest, DialogHandleResponse, ErrorResponse } from '@vforsh/argus-core'
+import { dialogHandleRequestSchema } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
 import { respondJson } from '../httpUtils.js'
 
 export const route = defineJsonRoute<DialogHandleRequest, DialogHandleResponse>({
 	method: 'POST',
 	path: '/dialog',
-	parseBody: true,
+	bodySchema: dialogHandleRequestSchema,
 	endpoint: 'dialog/handle',
-	validate: (payload) => {
-		if (payload.action !== 'accept' && payload.action !== 'dismiss') {
-			return 'Dialog action must be "accept" or "dismiss"'
-		}
-		return null
-	},
 	handle: async ({ res, ctx, body: payload }) => {
 		const action = payload.action
 		const dialog = ctx.getDialog()
