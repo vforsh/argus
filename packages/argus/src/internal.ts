@@ -25,3 +25,5 @@ export {
 } from './commands/record.js'
 export { formatEvalTransportError } from './eval/evalClient.js'
 export { createOutput, type Output } from './output/io.js'
+export { ARGUS_EXTENSION_ID } from './commands/extension/extensionId.js'
+export { installNativeHostsTo, type InstalledNativeHost } from './commands/extension/nativeHost.js'

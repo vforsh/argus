@@ -30,9 +30,11 @@ export const getManifestPath = (platform: Platform, hostName: NativeHostName = B
 }
 
 export const getWrapperPath = (platform: Platform, hostName: NativeHostName = BRIDGE_HOST_NAME): string => {
-	const filename = hostName === CONTROL_HOST_NAME ? 'argus-native-control-host.sh' : 'argus-native-host.sh'
-	return path.join(getManifestDir(platform), filename)
+	return path.join(getManifestDir(platform), wrapperFilename(hostName))
 }
+
+const wrapperFilename = (hostName: NativeHostName): string =>
+	hostName === CONTROL_HOST_NAME ? 'argus-native-control-host.sh' : 'argus-native-host.sh'
 
 export const getPlatform = (): Platform => {
 	const platform = os.platform()
@@ -117,14 +119,20 @@ export const createManifest = (extensionId: string, executablePath: string, host
 }
 
 export const createWrapperScript = (platform: Platform, executablePath: string, hostName: NativeHostName = BRIDGE_HOST_NAME): string => {
-	const wrapperPath = getWrapperPath(platform, hostName)
+	return writeWrapperScript(getWrapperPath(platform, hostName), executablePath, hostName)
+}
+
+const writeWrapperScript = (wrapperPath: string, executablePath: string, hostName: NativeHostName, env?: Record<string, string>): string => {
 	const nodePath = findNodePath()
 	const args = hostName === CONTROL_HOST_NAME ? `watcher native-host --role control --id ${CONTROL_WATCHER_ID}` : 'watcher native-host --role tab'
 
-	// Create a wrapper script that launches argus in native-host mode
-	// Use absolute path to node since Chrome spawns without shell profile
+	// Chrome spawns the host without a shell profile, so the wrapper must carry everything
+	// itself: an absolute node path, and any env the host needs baked in as export lines.
+	const exports = Object.entries(env ?? {})
+		.map(([key, value]) => `export ${key}="${value}"`)
+		.join('\n')
 	const script = `#!/bin/bash
-exec "${nodePath}" "${executablePath}" ${args}
+${exports ? `${exports}\n` : ''}exec "${nodePath}" "${executablePath}" ${args}
 `
 
 	fs.writeFileSync(wrapperPath, script, { mode: 0o755 })
@@ -139,6 +147,37 @@ export const installNativeHosts = (platform: Platform, extensionId: string, exec
 		const manifest = createManifest(extensionId, wrapperPath, hostName)
 		fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
 		registerWindowsNativeHost(platform, hostName, manifestPath)
+		return { hostName, manifestPath, wrapperPath }
+	})
+}
+
+/**
+ * Install both native messaging host manifests into an explicit directory instead of the
+ * running Chrome profile's fixed location.
+ *
+ * Chromium resolves user-level native messaging hosts under the active user data dir on
+ * macOS and Linux, so pointing this at `<user-data-dir>/NativeMessagingHosts` gives a
+ * temp Chrome profile a fully isolated bridge — the real profile is never touched. Used
+ * by the extension e2e harness; not wired to any CLI command.
+ *
+ * @param manifestDir - Directory to write manifests and wrapper scripts into (created if missing).
+ * @param extensionId - Extension id allowed to connect (`allowed_origins`).
+ * @param executablePath - Absolute path to the argus CLI entry (e.g. a repo `dist/bin.js`).
+ * @param env - Env vars baked into the wrapper scripts; Chrome spawns hosts with no shell
+ *   profile, so isolation vars like `ARGUS_HOME`/`ARGUS_REGISTRY_PATH` must travel here.
+ * @returns One record per host with the written manifest and wrapper paths.
+ */
+export const installNativeHostsTo = (
+	manifestDir: string,
+	extensionId: string,
+	executablePath: string,
+	env?: Record<string, string>,
+): InstalledNativeHost[] => {
+	fs.mkdirSync(manifestDir, { recursive: true })
+	return HOST_NAMES.map((hostName) => {
+		const wrapperPath = writeWrapperScript(path.join(manifestDir, wrapperFilename(hostName)), executablePath, hostName, env)
+		const manifestPath = path.join(manifestDir, `${hostName}.json`)
+		fs.writeFileSync(manifestPath, JSON.stringify(createManifest(extensionId, wrapperPath, hostName), null, 2))
 		return { hostName, manifestPath, wrapperPath }
 	})
 }
