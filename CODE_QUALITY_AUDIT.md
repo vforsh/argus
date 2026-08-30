@@ -7,6 +7,31 @@
 
 ---
 
+## Progress
+
+Sequencing steps 1 and 2 are done (12 commits, `bf19320..a8e7803`; net −267 LOC across 93 files after adding ~500 lines of new shared modules and JSDoc). Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. Full `test:e2e` re-run at the end: 24/25 files pass; `watcher-net.test.ts` fails on a pre-existing race, reproduced identically on a clean clone at `bf19320`.
+
+**Done**
+
+| Finding                                                                                                                                                   | Commit    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| Latent bug: `GET /net/ws?requestId` always 404                                                                                                            | `09960bc` |
+| Dead weight: phantom `commander` dep, storage aliases, `ArgusScenario*` relocation, `watcherVersion` (implemented, not deleted)                           | `3b41122` |
+| Dead weight: `SessionManager` methods, `attach_tab`/`enable_domain` messages, `NetBuffer` methods, `resolveArtifactPath` pair, `netFilters` dead branches | `9aa4466` |
+| A4 (partial): `parseDurationMs` → argus-core; sheets copy's missing `h`/`d` units fixed                                                                   | `5a05f8f` |
+| Dead weight: `tab-bridge-session` duplicated waiter → `createLatch`, `getTabsForPopup`, `onConnect`, `isHidden`                                           | `fba96bf` |
+| Dead weight: frozen playground iframe helper, esbuild major split, `normalizeExportFormat`                                                                | `24058a0` |
+| **B1** — native-messaging protocol → argus-core + versioned handshake                                                                                     | `a3a33d5` |
+| **A3** — `/targets` + attach/detach request types                                                                                                         | `2d4368f` |
+| **A1** — argus-client derives from the protocol                                                                                                           | `08053fa` |
+| **A2** — popup protocol unified and typed                                                                                                                 | `634b2de` |
+| **A6** — `protocolVersion` is now checked                                                                                                                 | `43a90fa` |
+| **A5** — plugin-api dependency inverted, cast deleted                                                                                                     | `a8e7803` |
+
+**Not started** — steps 3–6 as sequenced below: A4 (typed GET query shapes), A7 (`Ok<T>`/`ApiResult<T>`/`ArgusErrorCode`), all of Theme B (B2–B11), all of Theme C, all of Theme D, plus the google-sheets and `e2e/` deep-import entries in the dead-weight table.
+
+---
+
 ## Verdict
 
 The codebase is **structurally healthy at its core**. The CLI's `defineCommand`/`defineWatcherCommand`/`domCommandBuilder` trio, the watcher's route spine (`defineJsonRoute`, `defineDomTargetRoute`, `netFilters`), the shared `CdpSessionHandle` implemented by both transports, and argus-core's HTTP protocol types are genuinely good architecture that consumers actually use (66 protocol imports across watcher routes, 67 across CLI commands — no wholesale re-declaration).
