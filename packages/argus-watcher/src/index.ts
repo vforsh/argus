@@ -174,6 +174,8 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 /** Log event shape emitted by watchers. */
 export type { LogEvent }
 
-export type { ArgusWatcherEventMap, CdpAttachedEvent, CdpDetachedEvent, HttpRequestEvent, LogRequestQuery, NetRequestQuery } from './events.js'
+export type { ArgusWatcherEventMap, CdpAttachedEvent, CdpDetachedEvent, HttpRequestEvent } from './events.js'
+export type { WatcherEndpoint, WatcherRequestQuery } from './http/endpoints.js'
+export { WATCHER_ENDPOINTS } from './http/endpoints.js'
 
 export type { PageIndicatorOptions, PageIndicatorPosition } from './cdp/pageIndicator.js'

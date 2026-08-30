@@ -1,4 +1,4 @@
-import type { LogLevel, NetRequestBodyPart } from '@vforsh/argus-core'
+import type { WatcherEndpoint, WatcherRequestQuery } from './http/endpoints.js'
 
 /**
  * Event payload for when the watcher attaches to a CDP target.
@@ -41,58 +41,6 @@ export type CdpDetachedEvent = {
 }
 
 /**
- * Query parameters for log/tail requests.
- */
-export type LogRequestQuery = {
-	/** Opaque cursor returned by `/logs/cursor` or `/logs/epoch`. */
-	after?: string
-	/** Alias for `after` with explicit baseline semantics. */
-	sinceEpoch?: string
-	limit?: number
-	levels?: LogLevel[]
-	match?: string[]
-	matchCase?: 'sensitive' | 'insensitive'
-	source?: string
-	sinceTs?: number
-	timeoutMs?: number
-}
-
-/**
- * Query parameters for network/tail requests.
- */
-export type NetRequestQuery = {
-	id?: number
-	requestId?: string
-	part?: NetRequestBodyPart
-	after?: number
-	limit?: number
-	sinceTs?: number
-	timeoutMs?: number
-	grep?: string
-	ignoreHosts?: string[]
-	ignorePatterns?: string[]
-	hosts?: string[]
-	methods?: string[]
-	statuses?: string[]
-	resourceTypes?: string[]
-	mimeTypes?: string[]
-	scope?: string
-	frame?: string
-	party?: string
-	failedOnly?: boolean
-	minDurationMs?: number
-	minTransferBytes?: number
-	origin?: string
-	domain?: string
-	includeValues?: boolean
-}
-
-export type TabListRequestQuery = {
-	url?: string
-	title?: string
-}
-
-/**
  * Event payload for when a client requests logs or tail via HTTP.
  */
 export type HttpRequestEvent = {
@@ -101,76 +49,11 @@ export type HttpRequestEvent = {
 	/** Unique watcher identifier. */
 	watcherId: string
 	/** The requested endpoint. */
-	endpoint:
-		| 'logs'
-		| 'tail'
-		| 'net'
-		| 'net/requests'
-		| 'net/request'
-		| 'net/request/body'
-		| 'net/tail'
-		| 'net/clear'
-		| 'net/mock'
-		| 'net/mock/add'
-		| 'net/mock/remove'
-		| 'net/mock/clear'
-		| 'net/ws'
-		| 'net/ws/connection'
-		| 'net/sse'
-		| 'auth/cookies'
-		| 'auth/cookies/get'
-		| 'auth/cookies/set'
-		| 'auth/cookies/delete'
-		| 'auth/cookies/clear'
-		| 'auth/state'
-		| 'auth/state/load'
-		| 'eval'
-		| 'trace/start'
-		| 'trace/stop'
-		| 'record'
-		| 'record/start'
-		| 'record/stop'
-		| 'screenshot'
-		| 'snapshot'
-		| 'locate/role'
-		| 'locate/text'
-		| 'locate/label'
-		| 'code/list'
-		| 'code/read'
-		| 'code/grep'
-		| 'code/edit'
-		| 'dom/tree'
-		| 'dom/info'
-		| 'dom/hover'
-		| 'dom/click'
-		| 'dom/drag'
-		| 'dom/keydown'
-		| 'dom/add'
-		| 'dom/remove'
-		| 'dom/modify'
-		| 'dom/set-file'
-		| 'dom/focus'
-		| 'dom/fill'
-		| 'dom/scroll'
-		| 'dom/scroll-to'
-		| 'emulation'
-		| 'throttle'
-		| 'dialog/status'
-		| 'dialog/handle'
-		| 'visibility'
-		| 'storage/local'
-		| 'storage/session'
-		| 'reload'
-		| 'shutdown'
-		| 'tabs'
-		| 'extension/diagnostics'
-		| 'targets'
-		| 'attach'
-		| 'detach'
+	endpoint: WatcherEndpoint
 	/** IP address of the requester (best-effort). */
 	remoteAddress: string | null
 	/** Parsed query parameters. */
-	query?: LogRequestQuery | NetRequestQuery | TabListRequestQuery
+	query?: WatcherRequestQuery
 }
 
 /**

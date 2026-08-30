@@ -1,5 +1,5 @@
 import http from 'node:http'
-import type { AuthStateCookie, DialogStatus, LogLevel, NetRequestBodyPart, WatcherRecord } from '@vforsh/argus-core'
+import type { AuthStateCookie, DialogStatus, WatcherRecord } from '@vforsh/argus-core'
 import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { RealtimeNetBuffer } from '../buffer/RealtimeNetBuffer.js'
@@ -14,111 +14,15 @@ import type { EmulationController } from '../emulation/EmulationController.js'
 import type { ThrottleController } from '../throttle/ThrottleController.js'
 import type { NetMockController } from '../net/NetMockController.js'
 import type { VisibilityController } from '../visibility/VisibilityController.js'
-import type { NetFilterContext, NetParty, NetScope } from '../net/filtering.js'
+import type { NetFilterContext } from '../net/filtering.js'
+import type { WatcherEndpoint, WatcherRequestQuery } from './endpoints.js'
 import { dispatch } from './router.js'
 
 /** Optional metadata for the HTTP request event. */
 export type HttpRequestEventMetadata = {
-	endpoint:
-		| 'logs'
-		| 'tail'
-		| 'net'
-		| 'net/requests'
-		| 'net/request'
-		| 'net/request/body'
-		| 'net/tail'
-		| 'net/clear'
-		| 'net/mock'
-		| 'net/mock/add'
-		| 'net/mock/remove'
-		| 'net/mock/clear'
-		| 'net/ws'
-		| 'net/ws/connection'
-		| 'net/sse'
-		| 'auth/cookies'
-		| 'auth/cookies/get'
-		| 'auth/cookies/set'
-		| 'auth/cookies/delete'
-		| 'auth/cookies/clear'
-		| 'auth/state'
-		| 'auth/state/load'
-		| 'eval'
-		| 'trace/start'
-		| 'trace/stop'
-		| 'record'
-		| 'record/start'
-		| 'record/stop'
-		| 'screenshot'
-		| 'snapshot'
-		| 'locate/role'
-		| 'locate/text'
-		| 'locate/label'
-		| 'code/list'
-		| 'code/read'
-		| 'code/grep'
-		| 'code/edit'
-		| 'dom/tree'
-		| 'dom/info'
-		| 'dom/hover'
-		| 'dom/click'
-		| 'dom/drag'
-		| 'dom/keydown'
-		| 'dom/add'
-		| 'dom/remove'
-		| 'dom/modify'
-		| 'dom/set-file'
-		| 'dom/focus'
-		| 'dom/fill'
-		| 'dom/scroll'
-		| 'dom/scroll-to'
-		| 'emulation'
-		| 'throttle'
-		| 'dialog/status'
-		| 'dialog/handle'
-		| 'visibility'
-		| 'storage/local'
-		| 'storage/session'
-		| 'reload'
-		| 'shutdown'
-		| 'tabs'
-		| 'extension/diagnostics'
-		| 'targets'
-		| 'attach'
-		| 'detach'
+	endpoint: WatcherEndpoint
 	remoteAddress: string | null
-	query?: {
-		id?: number
-		requestId?: string
-		part?: NetRequestBodyPart
-		after?: number | string
-		sinceEpoch?: string
-		limit?: number
-		levels?: LogLevel[]
-		match?: string[]
-		matchCase?: 'sensitive' | 'insensitive'
-		source?: string
-		sinceTs?: number
-		timeoutMs?: number
-		grep?: string
-		hosts?: string[]
-		methods?: string[]
-		statuses?: string[]
-		resourceTypes?: string[]
-		mimeTypes?: string[]
-		scope?: NetScope
-		frame?: string
-		party?: NetParty
-		failedOnly?: boolean
-		minDurationMs?: number
-		minTransferBytes?: number
-		ignoreHosts?: string[]
-		ignorePatterns?: string[]
-		origin?: string
-		domain?: string
-		url?: string
-		title?: string
-		includeValues?: boolean
-	}
+	query?: WatcherRequestQuery
 	ts: number
 }
 
