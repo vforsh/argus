@@ -94,30 +94,46 @@ export type ArgusRunChromeOpen = (options: ArgusChromeOpenOptions) => Promise<vo
  * command spec cannot pick the watcher (`id` comes from the CLI argument) or ask for the
  * raw error response (the runner owns failure rendering), and it never issues a PUT.
  */
-export type ArgusWatcherCommandRequestPlan = Omit<ArgusWatcherRequestInput, 'id' | 'returnErrorResponse' | 'method'> & {
+export type ArgusWatcherCommandRequestPlan<TMeta = undefined> = Omit<ArgusWatcherRequestInput, 'id' | 'returnErrorResponse' | 'method'> & {
 	/** HTTP method. Defaults to `'POST'` when `body` is set, else `'GET'`. */
 	method?: 'GET' | 'POST'
+	/**
+	 * Values `build` derived, handed back to the formatters.
+	 *
+	 * Without this a formatter could only re-derive what `build` already computed — with
+	 * non-null assertions on inputs `build` had validated — or smuggle payloads through
+	 * the positional-argument tuple, which is what several commands did.
+	 */
+	meta?: TMeta
 }
 
 /** Context passed to plugin command formatters after a successful watcher request. */
-export type ArgusWatcherCommandContext<TArgs extends readonly unknown[], TOptions> = {
+export type ArgusWatcherCommandContext<TArgs extends readonly unknown[], TOptions, TMeta = undefined> = {
 	output: ArgusOutput
 	watcher: WatcherRecord
 	args: TArgs
 	options: TOptions
+	/** Whatever `build` put on {@link ArgusWatcherCommandRequestPlan.meta}. */
+	meta: TMeta
 }
 
 /** Stable watcher-backed command spec for plugins. */
-export type ArgusWatcherCommandSpec<TArgs extends readonly unknown[], TOptions extends { json?: boolean }, TBody, TResponse extends { ok: true }> = {
+export type ArgusWatcherCommandSpec<
+	TArgs extends readonly unknown[],
+	TOptions extends { json?: boolean },
+	TBody,
+	TResponse extends { ok: true },
+	TMeta = undefined,
+> = {
 	build: (
 		args: TArgs,
 		options: TOptions,
 		output: ArgusOutput,
-	) => Promise<ArgusWatcherCommandRequestPlan | null> | ArgusWatcherCommandRequestPlan | null
+	) => Promise<ArgusWatcherCommandRequestPlan<TMeta> | null> | ArgusWatcherCommandRequestPlan<TMeta> | null
 	isJson?: (options: TOptions) => boolean
 	schema?: ProtocolSchema<TBody>
-	formatHuman?: (response: TResponse, ctx: ArgusWatcherCommandContext<TArgs, TOptions>) => void
-	formatJson?: (response: TResponse, ctx: ArgusWatcherCommandContext<TArgs, TOptions>) => unknown
+	formatHuman?: (response: TResponse, ctx: ArgusWatcherCommandContext<TArgs, TOptions, TMeta>) => void
+	formatJson?: (response: TResponse, ctx: ArgusWatcherCommandContext<TArgs, TOptions, TMeta>) => unknown
 }
 
 /** Commander-compatible action runner for a plugin watcher command. */
@@ -132,8 +148,9 @@ export type ArgusDefineWatcherCommand = <
 	TResponse extends { ok: true },
 	TBody = unknown,
 	TArgs extends readonly unknown[] = [],
+	TMeta = undefined,
 >(
-	spec: ArgusWatcherCommandSpec<TArgs, TOptions, TBody, TResponse>,
+	spec: ArgusWatcherCommandSpec<TArgs, TOptions, TBody, TResponse, TMeta>,
 ) => ArgusWatcherCommandRunner<TArgs, TOptions>
 
 /** Optional request timeout override for high-level plugin browser helpers. */

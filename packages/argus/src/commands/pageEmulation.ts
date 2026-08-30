@@ -24,11 +24,10 @@ export type PageEmulationSetOptions = {
 	json?: boolean
 }
 
-export const runPageEmulationSet = defineWatcherCommand<PageEmulationSetOptions, EmulationSetResponse>({
+export const runPageEmulationSet = defineWatcherCommand<PageEmulationSetOptions, EmulationSetResponse, unknown, [], BuiltEmulationState>({
 	build: (_args, options, output) => buildPageEmulationSetPlan(options, output),
-	formatHuman: (res, { output, options }) => {
-		const state = buildEmulationState(options)!
-		const label = formatViewportLabel(state.viewport, state.touch.enabled, state.userAgent.value)
+	formatHuman: (res, { output, meta }) => {
+		const label = formatViewportLabel(meta.viewport, meta.touch.enabled, meta.userAgent.value)
 
 		if (res.applied) {
 			output.writeHuman(`Applied emulation: ${label}`)
@@ -43,21 +42,27 @@ export const runPageEmulationSet = defineWatcherCommand<PageEmulationSetOptions,
 	},
 })
 
-const buildPageEmulationSetPlan = (options: PageEmulationSetOptions, output: Output): WatcherRequestPlan | null => {
+const buildPageEmulationSetPlan = (options: PageEmulationSetOptions, output: Output): WatcherRequestPlan<BuiltEmulationState> | null => {
 	const state = buildEmulationState(options, output)
 	if (!state) return null
-	return { path: '/emulation', method: 'POST', body: { action: 'set', state }, timeoutMs: 10_000 }
+	return { path: '/emulation', method: 'POST', body: { action: 'set', state }, timeoutMs: 10_000, meta: state }
 }
 
-const buildEmulationState = (options: PageEmulationSetOptions, output?: Output): BuiltEmulationState | null => {
+/**
+ * Resolve the desired emulation state from flags.
+ *
+ * `output` used to be optional so `formatHuman` could re-run this without repeating the
+ * warnings; the state now travels on the plan's `meta`, so this runs exactly once.
+ */
+const buildEmulationState = (options: PageEmulationSetOptions, output: Output): BuiltEmulationState | null => {
 	// Resolve base from preset (if any)
 	let base: { viewport: EmulationState['viewport']; touch: boolean; userAgent: string | null } | null = null
 
 	if (options.device) {
 		const preset = resolvePreset(options.device)
 		if (!preset) {
-			output?.writeWarn(`Unknown device: ${options.device}`)
-			output?.writeWarn(`Available: ${listPresetNames().join(', ')}`)
+			output.writeWarn(`Unknown device: ${options.device}`)
+			output.writeWarn(`Available: ${listPresetNames().join(', ')}`)
 			process.exitCode = 2
 			return null
 		}
@@ -70,17 +75,17 @@ const buildEmulationState = (options: PageEmulationSetOptions, output?: Output):
 	const dprRaw = options.dpr != null ? Number(options.dpr) : null
 
 	if (widthRaw != null && (!Number.isInteger(widthRaw) || widthRaw <= 0)) {
-		output?.writeWarn('--width must be a positive integer')
+		output.writeWarn('--width must be a positive integer')
 		process.exitCode = 2
 		return null
 	}
 	if (heightRaw != null && (!Number.isInteger(heightRaw) || heightRaw <= 0)) {
-		output?.writeWarn('--height must be a positive integer')
+		output.writeWarn('--height must be a positive integer')
 		process.exitCode = 2
 		return null
 	}
 	if (dprRaw != null && (!Number.isFinite(dprRaw) || dprRaw <= 0)) {
-		output?.writeWarn('--dpr must be a positive number')
+		output.writeWarn('--dpr must be a positive number')
 		process.exitCode = 2
 		return null
 	}
@@ -90,7 +95,7 @@ const buildEmulationState = (options: PageEmulationSetOptions, output?: Output):
 	const hasHeight = heightRaw != null
 	if ((hasWidth || hasHeight) && !base) {
 		if (!hasWidth || !hasHeight) {
-			output?.writeWarn('Both --width and --height are required when not using --device')
+			output.writeWarn('Both --width and --height are required when not using --device')
 			process.exitCode = 2
 			return null
 		}
@@ -98,8 +103,8 @@ const buildEmulationState = (options: PageEmulationSetOptions, output?: Output):
 
 	// If no preset and no viewport override → error
 	if (!base && !hasWidth) {
-		output?.writeWarn('Provide --device or --width + --height')
-		output?.writeWarn(`Available devices: ${listPresetNames().join(', ')}`)
+		output.writeWarn('Provide --device or --width + --height')
+		output.writeWarn(`Available devices: ${listPresetNames().join(', ')}`)
 		process.exitCode = 2
 		return null
 	}

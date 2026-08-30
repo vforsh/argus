@@ -51,13 +51,15 @@ export const domClickCommandDefinition: ArgusCommandDefinition = {
 }
 
 /** Execute the dom click command for a watcher id. */
-export const runDomClick = defineWatcherCommand<DomClickOptions, DomClickResponse, DomClickRequest>({
+type ClickMeta = {
+	target: { selector?: string; ref?: string } | null
+	xy: { x: number; y: number } | undefined
+}
+
+export const runDomClick = defineWatcherCommand<DomClickOptions, DomClickResponse, DomClickRequest, [], ClickMeta>({
 	schema: domClickRequestSchema,
 	build: (_args, options, output) => buildClickPlan(options, output),
-	formatHuman: (response, { output, options }) => {
-		const target = hasElementTarget(options) ? { selector: options.selector, ref: options.ref } : null
-		const xy = options.pos ? parseXY(options.pos) : null
-
+	formatHuman: (response, { output, meta: { target, xy } }) => {
 		// Coordinate-only click (no selector/ref): build never set matches/clicked beyond 1.
 		if (!target) {
 			output.writeHuman(`Clicked at (${xy?.x}, ${xy?.y})`)
@@ -77,7 +79,7 @@ export const runDomClick = defineWatcherCommand<DomClickOptions, DomClickRespons
 const hasElementTarget = (options: DomClickOptions): boolean => Boolean(options.selector?.trim() || options.ref?.trim())
 
 /** Validate options and assemble the `/dom/click` request plan. */
-const buildClickPlan = (options: DomClickOptions, output: Output): WatcherRequestPlan | null => {
+const buildClickPlan = (options: DomClickOptions, output: Output): WatcherRequestPlan<ClickMeta> | null => {
 	const target = hasElementTarget(options) ? requireElementTarget({ selector: options.selector, ref: options.ref }, output) : null
 	if (hasElementTarget(options) && !target) return null
 
@@ -117,5 +119,6 @@ const buildClickPlan = (options: DomClickOptions, output: Output): WatcherReques
 		method: 'POST',
 		body,
 		timeoutMs: Math.max(30_000, waitMs + 5_000),
+		meta: { target, xy: xy ?? undefined },
 	}
 }

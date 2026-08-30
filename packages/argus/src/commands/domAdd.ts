@@ -22,11 +22,9 @@ export type DomAddOptions = {
 }
 
 /** Execute the dom add command for a watcher id. */
-export const runDomAdd = defineWatcherCommand<DomAddOptions, DomAddResponse>({
+export const runDomAdd = defineWatcherCommand<DomAddOptions, DomAddResponse, unknown, [], { selector: string; position: string }>({
 	build: (_args, options, output) => buildDomAddPlan(options, output),
-	formatHuman: (successResp, { output, options, watcher }) => {
-		const selector = options.selector
-		const position = normalizePosition(options.position)
+	formatHuman: (successResp, { output, watcher, meta: { selector, position } }) => {
 		if (successResp.matches === 0) {
 			writeNoElementFound(selector, output, `Hint: run \`argus dom tree ${watcher.id} --selector "${selector}" --all\``)
 			return
@@ -38,7 +36,10 @@ export const runDomAdd = defineWatcherCommand<DomAddOptions, DomAddResponse>({
 	},
 })
 
-const buildDomAddPlan = async (options: DomAddOptions, output: Output): Promise<WatcherRequestPlan | null> => {
+const buildDomAddPlan = async (
+	options: DomAddOptions,
+	output: Output,
+): Promise<WatcherRequestPlan<{ selector: string; position: string }> | null> => {
 	const selector = requireSelector(options, output)
 	if (!selector) {
 		return null
@@ -100,6 +101,7 @@ const buildDomAddPlan = async (options: DomAddOptions, output: Output): Promise<
 			text: options.text ?? false,
 		},
 		timeoutMs: 30_000,
+		meta: { selector, position },
 	}
 }
 

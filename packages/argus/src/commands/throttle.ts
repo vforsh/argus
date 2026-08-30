@@ -13,7 +13,7 @@ export type ThrottleSetOptions = {
 }
 
 /** Execute `argus throttle set <id> <rate>`. */
-export const runThrottleSet = defineWatcherCommand<ThrottleSetOptions, ThrottleSetResponse, unknown, [rateRaw: string]>({
+export const runThrottleSet = defineWatcherCommand<ThrottleSetOptions, ThrottleSetResponse, unknown, [rateRaw: string], number>({
 	build: ([rateRaw], _options, output) => {
 		const rate = Number(rateRaw)
 		if (!Number.isFinite(rate) || rate < 1) {
@@ -21,10 +21,9 @@ export const runThrottleSet = defineWatcherCommand<ThrottleSetOptions, ThrottleS
 			process.exitCode = 2
 			return null
 		}
-		return { path: '/throttle', method: 'POST', body: { action: 'set', rate }, timeoutMs: TIMEOUT_WRITE_MS }
+		return { path: '/throttle', method: 'POST', body: { action: 'set', rate }, timeoutMs: TIMEOUT_WRITE_MS, meta: rate }
 	},
-	formatHuman: (response, { output, args }) => {
-		const rate = Number(args[0])
+	formatHuman: (response, { output, meta: rate }) => {
 		if (response.applied) {
 			output.writeHuman(`Applied CPU throttle: ${rate}x`)
 			return

@@ -23,22 +23,28 @@ type ModifyPayload = {
 
 type ModifySuccessMessage = (resp: DomModifyResponse) => string
 
-const executeModify = async (
+/**
+ * Options carrying what the caller wants modified.
+ *
+ * `payload` and `successMessage` used to be smuggled through the command's positional
+ * argument tuple — which the type declares as *CLI arguments* — so `formatHuman` could
+ * reach them as `args[1](response)`. They ride the options object now, and the plan's
+ * `meta` carries the message builder to the formatter.
+ */
+type ModifyRequestOptions = BaseModifyOptions & {
+	payload: ModifyPayload
+	successMessage: ModifySuccessMessage
+}
+
+const executeModify = (
 	id: string | undefined,
 	options: BaseModifyOptions,
 	payload: ModifyPayload,
 	successMessage: ModifySuccessMessage,
-): Promise<void> => {
-	await runDomModifyRequest(id, payload, successMessage, options)
-}
+): Promise<void> => runDomModifyRequest(id, { ...options, payload, successMessage })
 
-const runDomModifyRequest = defineWatcherCommand<
-	BaseModifyOptions,
-	DomModifyResponse,
-	unknown,
-	[payload: ModifyPayload, successMessage: ModifySuccessMessage]
->({
-	build: ([payload], options, output) => {
+const runDomModifyRequest = defineWatcherCommand<ModifyRequestOptions, DomModifyResponse, unknown, [], ModifySuccessMessage>({
+	build: (_args, options, output) => {
 		const selector = requireSelector(options, output)
 		if (!selector) {
 			return null
@@ -48,20 +54,21 @@ const runDomModifyRequest = defineWatcherCommand<
 			path: '/dom/modify',
 			method: 'POST',
 			body: {
-				...payload,
+				...options.payload,
 				selector,
 				...(options.text != null ? { text: options.text } : {}),
 			},
 			timeoutMs: 30_000,
+			meta: options.successMessage,
 		}
 	},
-	formatHuman: (successResp, { output, options, args }) => {
+	formatHuman: (successResp, { output, options, meta: successMessage }) => {
 		if (successResp.matches === 0) {
 			writeNoElementFound(options.selector, output)
 			return
 		}
 
-		output.writeHuman(args[1](successResp))
+		output.writeHuman(successMessage(successResp))
 	},
 })
 

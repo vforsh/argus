@@ -27,7 +27,7 @@ import {
  *
  * Declared by `@vforsh/argus-plugin-api`; see the note in `requestWatcher.ts`.
  */
-export type WatcherRequestPlan = ArgusWatcherCommandRequestPlan
+export type WatcherRequestPlan<TMeta = undefined> = ArgusWatcherCommandRequestPlan<TMeta>
 
 /** Default request timeout when a plan does not specify one. */
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -52,7 +52,7 @@ export const requestWatcherCommandJson = async <T>(input: WatcherRequestInput, o
 export const requestWatcherCommandAction = requestWatcherAction
 
 /** Context passed to `formatHuman` / `formatJson` after a successful request. */
-export type WatcherCommandContext<TArgs extends readonly unknown[], TOptions> = ArgusWatcherCommandContext<TArgs, TOptions>
+export type WatcherCommandContext<TArgs extends readonly unknown[], TOptions, TMeta = undefined> = ArgusWatcherCommandContext<TArgs, TOptions, TMeta>
 
 /**
  * Spec for a CLI command that talks to a watcher.
@@ -73,7 +73,8 @@ export type WatcherCommandSpec<
 	TOptions extends { json?: boolean },
 	TBody,
 	TResponse extends { ok: true },
-> = ArgusWatcherCommandSpec<TArgs, TOptions, TBody, TResponse>
+	TMeta = undefined,
+> = ArgusWatcherCommandSpec<TArgs, TOptions, TBody, TResponse, TMeta>
 
 /**
  * Runner produced by {@link defineWatcherCommand}. Signature is
@@ -100,8 +101,8 @@ export type WatcherCommandRunner<TArgs extends readonly unknown[], TOptions> = A
  * call sites don't need explicit generics.
  */
 export const defineWatcherCommand: ArgusDefineWatcherCommand =
-	<TOptions extends { json?: boolean }, TResponse extends { ok: true }, TBody = unknown, TArgs extends readonly unknown[] = []>(
-		spec: WatcherCommandSpec<TArgs, TOptions, TBody, TResponse>,
+	<TOptions extends { json?: boolean }, TResponse extends { ok: true }, TBody = unknown, TArgs extends readonly unknown[] = [], TMeta = undefined>(
+		spec: WatcherCommandSpec<TArgs, TOptions, TBody, TResponse, TMeta>,
 	): WatcherCommandRunner<TArgs, TOptions> =>
 	async (id, ...rest) => {
 		// `rest` ends with the options object; everything before it is positional CLI args.
@@ -130,7 +131,7 @@ export const defineWatcherCommand: ArgusDefineWatcherCommand =
 		)
 		if (!result) return
 
-		const ctx: WatcherCommandContext<TArgs, TOptions> = { output, watcher: result.watcher, args, options }
+		const ctx: WatcherCommandContext<TArgs, TOptions, TMeta> = { output, watcher: result.watcher, args, options, meta: plan.meta as TMeta }
 
 		if (output.json) {
 			output.writeJson(spec.formatJson ? spec.formatJson(result.data, ctx) : result.data)
@@ -153,7 +154,7 @@ const SCHEMA_REJECTED = Symbol('schema-rejected')
  * to send.
  */
 const validateBody = <TBody>(
-	plan: WatcherRequestPlan,
+	plan: WatcherRequestPlan<unknown>,
 	schema: ProtocolSchema<TBody> | undefined,
 	output: Output,
 ): unknown | typeof SCHEMA_REJECTED => {

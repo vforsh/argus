@@ -56,13 +56,15 @@ export const domDragCommandDefinition: ArgusCommandDefinition = {
 }
 
 /** Execute the drag command for a watcher id. */
-export const runDomDrag = defineWatcherCommand<DomDragOptions, DomDragResponse, DomDragRequest>({
+type DragMeta = {
+	target: { selector?: string; ref?: string } | null
+	start: { x: number; y: number } | null
+}
+
+export const runDomDrag = defineWatcherCommand<DomDragOptions, DomDragResponse, DomDragRequest, [], DragMeta>({
 	schema: domDragRequestSchema,
 	build: (_args, options, output) => buildDragPlan(options, output),
-	formatHuman: (response, { output, options }) => {
-		const target = hasElementTarget(options) ? { selector: options.selector, ref: options.ref } : null
-		const start = options.pos ? parseXY(options.pos) : null
-
+	formatHuman: (response, { output, options, meta: { target, start } }) => {
 		if (!target) {
 			output.writeHuman(`Dragged from (${start?.x}, ${start?.y}) ${formatDestination(options)}`)
 			return
@@ -80,7 +82,7 @@ export const runDomDrag = defineWatcherCommand<DomDragOptions, DomDragResponse, 
 const hasElementTarget = (options: DomDragOptions): boolean => Boolean(options.selector?.trim() || options.ref?.trim())
 
 /** Validate options and assemble the `/dom/drag` request plan. */
-const buildDragPlan = (options: DomDragOptions, output: Output): WatcherRequestPlan | null => {
+const buildDragPlan = (options: DomDragOptions, output: Output): WatcherRequestPlan<DragMeta> | null => {
 	const hasTarget = hasElementTarget(options)
 	const target = hasTarget ? requireElementTarget({ selector: options.selector, ref: options.ref }, output) : null
 	if (hasTarget && !target) return null
@@ -132,6 +134,7 @@ const buildDragPlan = (options: DomDragOptions, output: Output): WatcherRequestP
 		method: 'POST',
 		body,
 		timeoutMs: Math.max(30_000, waitMs + (durationMs ?? 250) + 5_000),
+		meta: { target, start: start ?? null },
 	}
 }
 

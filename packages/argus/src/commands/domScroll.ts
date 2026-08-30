@@ -13,13 +13,19 @@ export type DomScrollOptions = {
 	json?: boolean
 }
 
+type ScrollMeta = {
+	delta: { x: number; y: number }
+	selector: string | null
+	position: { x: number; y: number } | null
+}
+
 /** Execute the dom scroll command (dispatch mouse wheel input) for a watcher id. */
-export const runDomScroll = defineWatcherCommand<DomScrollOptions, DomScrollResponse>({
+export const runDomScroll = defineWatcherCommand<DomScrollOptions, DomScrollResponse, unknown, [], ScrollMeta>({
 	build: (_args, options, output) => buildDomScrollPlan(options, output),
 	formatHuman: formatDomScrollHuman,
 })
 
-const buildDomScrollPlan = (options: DomScrollOptions, output: Output): WatcherRequestPlan | null => {
+const buildDomScrollPlan = (options: DomScrollOptions, output: Output): WatcherRequestPlan<ScrollMeta> | null => {
 	if (options.by == null) {
 		output.writeWarn('--by is required (e.g. --by 0,300)')
 		process.exitCode = 2
@@ -68,23 +74,32 @@ const buildDomScrollPlan = (options: DomScrollOptions, output: Output): WatcherR
 		body.y = y
 	}
 
-	return { path: '/dom/scroll', method: 'POST', body, timeoutMs: 30_000 }
+	return {
+		path: '/dom/scroll',
+		method: 'POST',
+		body,
+		timeoutMs: 30_000,
+		meta: {
+			delta,
+			selector: hasSelector ? (options.selector ?? null) : null,
+			position: hasPos ? { x: x!, y: y! } : null,
+		},
+	}
 }
 
-function formatDomScrollHuman(successResp: DomScrollResponse, { output, options }: WatcherCommandContext<[], DomScrollOptions>): void {
-	const delta = parseXY(options.by!)!
-	const hasSelector = options.selector != null && options.selector.trim() !== ''
-	const hasPos = options.pos != null
-	if (hasSelector) {
+function formatDomScrollHuman(
+	successResp: DomScrollResponse,
+	{ output, meta: { delta, selector, position } }: WatcherCommandContext<[], DomScrollOptions, ScrollMeta>,
+): void {
+	if (selector) {
 		if (successResp.matches === 0) {
-			writeNoElementFound(options.selector!, output)
+			writeNoElementFound(selector, output)
 			return
 		}
 		const label = successResp.scrolled === 1 ? 'element' : 'elements'
 		output.writeHuman(`Emulated scroll on ${successResp.scrolled} ${label} by (${delta.x}, ${delta.y})`)
-	} else if (hasPos) {
-		const { x, y } = parseXY(options.pos!)!
-		output.writeHuman(`Emulated scroll at (${x}, ${y}) by (${delta.x}, ${delta.y})`)
+	} else if (position) {
+		output.writeHuman(`Emulated scroll at (${position.x}, ${position.y}) by (${delta.x}, ${delta.y})`)
 	} else {
 		output.writeHuman(`Emulated scroll at viewport center by (${delta.x}, ${delta.y})`)
 	}
