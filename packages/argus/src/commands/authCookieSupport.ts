@@ -38,8 +38,6 @@ type CookieSetInput = {
 	session?: boolean
 }
 
-const COOKIE_EXPORT_FORMATS = new Set(['netscape', 'json', 'header'])
-
 export const fetchAuthCookies = async (id: string | undefined, input: CookieFetchInput, output: Output): Promise<AuthCookiesResponse | null> => {
 	const result = await requestWatcherCommandJson<AuthCookiesResponse>(
 		{
@@ -158,12 +156,12 @@ export const formatCookieLine = (cookie: AuthCookie, showValues: boolean): strin
 export const formatCookieIdentityLine = (cookie: { name: string; domain: string; path: string }): string =>
 	`${cookie.name} ${cookie.domain}${cookie.path}`
 
-export const normalizeExportFormat = (format: string | undefined): 'netscape' | 'json' | 'header' | null => {
+/** Serialization formats accepted by `argus auth cookies export`. */
+export type CookieExportFormat = 'netscape' | 'json' | 'header'
+
+export const normalizeExportFormat = (format: string | undefined): CookieExportFormat | null => {
 	if (!format) {
 		return 'netscape'
-	}
-	if (!COOKIE_EXPORT_FORMATS.has(format)) {
-		return null
 	}
 
 	switch (format) {
@@ -176,7 +174,7 @@ export const normalizeExportFormat = (format: string | undefined): 'netscape' | 
 	}
 }
 
-export const serializeCookies = (cookies: AuthCookie[], format: 'netscape' | 'json' | 'header'): string => {
+export const serializeCookies = (cookies: AuthCookie[], format: CookieExportFormat): string => {
 	switch (format) {
 		case 'netscape':
 			return formatCookiesAsNetscape(cookies)

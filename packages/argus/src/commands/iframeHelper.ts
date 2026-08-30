@@ -27,13 +27,20 @@ export const runIframeHelper = async (options: IframeHelperOptions): Promise<voi
 	}
 }
 
-type GenerateConfig = {
+/** Options for {@link generateIframeHelperScript}. */
+export type GenerateConfig = {
 	log: boolean
 	iife: boolean
 	namespace: string
 }
 
-const generateIframeHelperScript = (config: GenerateConfig): string => {
+/**
+ * Build the iframe helper script text.
+ *
+ * Exported so the playground can serve the live script instead of embedding a frozen
+ * copy — a stale copy would silently keep testing an old postMessage protocol.
+ */
+export const generateIframeHelperScript = (config: GenerateConfig): string => {
 	const { log, iife, namespace } = config
 
 	const logLine = log ? `console.log('[Argus] iframe helper loaded');\n` : ''

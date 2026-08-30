@@ -3,6 +3,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import crypto from 'node:crypto'
 import { createServer as createTcpServer, type Server as TcpServer, type Socket } from 'node:net'
+import { generateIframeHelperScript } from '../packages/argus/src/commands/iframeHelper.ts'
 
 const PLAYGROUND_DIR = import.meta.dirname!
 
@@ -107,6 +108,17 @@ export const startServer = (options: ServerOptions): http.Server => {
 			]
 				.filter(Boolean)
 				.join('\n')
+			res.writeHead(200, {
+				'Content-Type': 'text/javascript; charset=utf-8',
+				'Content-Length': Buffer.byteLength(script),
+			})
+			res.end(script)
+			return
+		}
+
+		// Served live from the CLI generator so the harness can never test a stale protocol.
+		if (pathname === '/argus-iframe-helper.js') {
+			const script = generateIframeHelperScript({ log: true, iife: false, namespace: 'argus' })
 			res.writeHead(200, {
 				'Content-Type': 'text/javascript; charset=utf-8',
 				'Content-Length': Buffer.byteLength(script),
