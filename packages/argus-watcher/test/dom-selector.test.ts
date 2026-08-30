@@ -60,4 +60,5 @@ const createSessionStub = (options: {
 	sendAndWait: options.sendAndWait,
 	onEvent: () => () => {},
 	getTargetContext: () => options.targetContext,
+	getReadyTargetContext: async () => options.targetContext,
 })

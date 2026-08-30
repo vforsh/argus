@@ -1,6 +1,10 @@
 import { NATIVE_MESSAGING_PROTOCOL_VERSION } from '../src/types/messages.js'
 import { expect, it } from 'bun:test'
-import type { ExtensionToHost, HostToExtension } from '../src/types/messages.js'
+import type { ControlHostToExtension, ExtensionToControlHost, ExtensionToTabHost, HostToExtension } from '../src/types/messages.js'
+
+/** One mock port stands in for both native hosts, so it speaks both directions of both protocols. */
+type AnyHostToExtension = HostToExtension | ControlHostToExtension
+type AnyExtensionToHost = ExtensionToTabHost | ExtensionToControlHost
 import type { PopupActionMessage, PopupResponse } from '../src/background/popup-protocol.js'
 import { CONTROL_HOST_NAME } from '../src/background/native-hosts.js'
 
@@ -42,7 +46,7 @@ it('propagates Chrome attachment failures through popup/control, cleans only fai
 			expect(debuggerManager.isAttached(3)).toBe(true)
 
 			const status = await harness.popup({ action: 'getStatus' })
-			if (!status.success) throw new Error('Missing popup status')
+			if (!status.success || !('status' in status)) throw new Error('Missing popup status')
 			expect(status.status.attachedTabs.map((tab) => tab.tabId)).toEqual([3])
 
 			// Recorded events reach consumers through control diagnostics, not the popup payload.
@@ -119,17 +123,17 @@ function installChromeMock() {
 			new Promise<PopupResponse>((resolve) => {
 				onPopup(message, {}, resolve)
 			}),
-		control: (message: HostToExtension) => ports.find((port) => port.name === CONTROL_HOST_NAME)!.request(message),
+		control: (message: ControlHostToExtension) => ports.find((port) => port.name === CONTROL_HOST_NAME)!.request(message),
 	}
 }
 
 function createPort(name: string) {
-	let receive: (message: HostToExtension) => void = () => {}
-	let response: ((message: ExtensionToHost) => void) | undefined
+	let receive: (message: AnyHostToExtension) => void = () => {}
+	let response: ((message: AnyExtensionToHost) => void) | undefined
 	const port = {
 		name,
 		disconnected: false,
-		sent: [] as ExtensionToHost[],
+		sent: [] as AnyExtensionToHost[],
 		onMessage: {
 			addListener: (handler: typeof receive) => {
 				receive = handler
@@ -139,7 +143,7 @@ function createPort(name: string) {
 		disconnect: () => {
 			port.disconnected = true
 		},
-		postMessage: (message: ExtensionToHost) => {
+		postMessage: (message: AnyExtensionToHost) => {
 			port.sent.push(message)
 			if (message.type === 'init_tab_watcher') {
 				receive({ type: 'host_ready' })
@@ -154,8 +158,8 @@ function createPort(name: string) {
 			}
 			if (message.type === 'tab_action_response' || message.type === 'control_status_response') response?.(message)
 		},
-		request: (message: HostToExtension) =>
-			new Promise<ExtensionToHost>((resolve) => {
+		request: (message: AnyHostToExtension) =>
+			new Promise<AnyExtensionToHost>((resolve) => {
 				response = resolve
 				receive(message)
 			}),

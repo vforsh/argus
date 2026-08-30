@@ -43,7 +43,8 @@ const withProbeActions = (definition: Definition, capture: (options: Record<stri
 describe('net mock CLI options', () => {
 	it('the real program parses options positionally', () => {
 		// The harness above relies on this; without it a parent claims a subcommand's flags.
-		expect(createProgram()._enablePositionalOptions).toBe(true)
+		// Commander keeps the resolved setting on a private field; the public API is write-only.
+		expect((createProgram() as unknown as { _enablePositionalOptions: boolean })._enablePositionalOptions).toBe(true)
 	})
 
 	it('delivers a subcommand its own flags', () => {

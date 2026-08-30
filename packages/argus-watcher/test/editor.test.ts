@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { CdpEventHandler, CdpEventMeta, CdpSessionHandle } from '../src/cdp/connection.js'
+import type { CdpEvent, CdpEventPayload } from '../src/cdp/protocol.js'
 import { createRuntimeEditor } from '../src/cdp/editor.js'
 
 describe('runtime editor grep', () => {
@@ -112,12 +113,14 @@ const createSessionStub = () => {
 				handlers.set(method, bucket)
 			}
 
-			bucket.add(handler)
+			const erased = handler as CdpEventHandler
+			bucket.add(erased)
 			return () => {
-				bucket?.delete(handler)
+				bucket?.delete(erased)
 			}
 		},
-		getTargetContext: () => ({ kind: 'page' }),
+		getTargetContext: () => ({ kind: 'page' as const }),
+		getReadyTargetContext: async () => ({ kind: 'page' as const }),
 	}
 
 	return {
@@ -125,7 +128,7 @@ const createSessionStub = () => {
 		setSendHandler: (nextHandler: typeof sendHandler) => {
 			sendHandler = nextHandler
 		},
-		emit: (method: string, params: unknown, meta: CdpEventMeta = { sessionId: null }) => {
+		emit: (method: string, params: CdpEventPayload<CdpEvent>, meta: CdpEventMeta = { sessionId: null }) => {
 			for (const handler of handlers.get(method) ?? []) {
 				handler(params, meta)
 			}

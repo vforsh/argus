@@ -174,6 +174,8 @@ describe('extension-frame-state', () => {
 					isAttached: () => true,
 					sendAndWait: async () => undefined,
 					onEvent: () => () => {},
+					getTargetContext: () => ({ kind: 'page' as const }),
+					getReadyTargetContext: async () => ({ kind: 'page' as const }),
 				},
 			},
 			state,

@@ -66,6 +66,8 @@ function createExtensionSessionStub(overrides: { sendAndWait: NonNullable<Extens
 			isAttached: () => true,
 			sendAndWait: overrides.sendAndWait,
 			onEvent: () => () => {},
+			getTargetContext: () => ({ kind: 'page' as const }),
+			getReadyTargetContext: async () => ({ kind: 'page' as const }),
 		},
 	}
 }

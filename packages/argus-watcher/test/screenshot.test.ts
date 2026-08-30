@@ -326,4 +326,5 @@ const createSessionStub = (options: {
 	},
 	onEvent: () => () => {},
 	getTargetContext: () => options.targetContext,
+	getReadyTargetContext: async () => options.targetContext,
 })

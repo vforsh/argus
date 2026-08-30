@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import {
-	formatExtensionTargetLine,
-	renderExtensionTargetTree,
-	resolveExtensionTarget,
-	type ExtensionTarget,
-} from '../src/commands/extension/targetSelection.js'
+import type { ExtensionTargetSummary } from '@vforsh/argus-core'
+import { formatExtensionTargetLine, renderExtensionTargetTree, resolveExtensionTarget } from '../src/commands/extension/targetSelection.js'
 
 describe('extension target selection', () => {
 	it('labels the selected missing iframe as pending in list and tree output', () => {
@@ -66,4 +62,4 @@ describe('extension target selection', () => {
 	})
 })
 
-const target = (id: string, title: string, url: string, type: string): ExtensionTarget => ({ id, title, url, type })
+const target = (id: string, title: string, url: string, type: string): ExtensionTargetSummary => ({ id, title, url, type })

@@ -109,12 +109,12 @@ function createManager(): DebuggerManager {
 }
 
 function installChromeDebuggerMock(): void {
-	;(globalThis as typeof globalThis & { chrome?: unknown }).chrome = {
+	globalThis.chrome = {
 		debugger: {
 			onEvent: { addListener: () => undefined },
 			onDetach: { addListener: () => undefined },
 		},
-	} as unknown
+	} as unknown as typeof chrome
 }
 
 function createAttachedTarget(options: { frames?: FrameRecordLike[]; topFrameId?: string | null }) {

@@ -72,4 +72,6 @@ const createSessionStub = (
 		return result
 	},
 	onEvent: () => () => {},
+	getTargetContext: () => ({ kind: 'page' as const }),
+	getReadyTargetContext: async () => ({ kind: 'page' as const }),
 })

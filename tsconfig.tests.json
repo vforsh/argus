@@ -1,10 +1,10 @@
 {
-	"extends": "../tsconfig.base.json",
+	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
 		"noEmit": true,
 		"allowImportingTsExtensions": true,
-		"types": ["bun-types"],
+		"types": ["bun-types", "chrome"],
 		"lib": ["ES2022", "DOM", "DOM.Iterable"]
 	},
-	"include": ["."]
+	"include": ["e2e", "packages/*/test"]
 }

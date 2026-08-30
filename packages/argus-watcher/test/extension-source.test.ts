@@ -5,6 +5,8 @@ import { createExtensionSource } from '../src/sources/extension-source.js'
 import type { CdpSourceHandle, CdpSourceStatus } from '../src/sources/types.js'
 import { getDomRootId } from '../src/cdp/dom/selector.js'
 import { createVisualCapturePlan } from '../src/cdp/visualCapture.js'
+import { createSourcemapResolver } from '../src/sourcemaps/sourcemapResolver.js'
+import type { CdpMethod } from '../src/cdp/protocol.js'
 
 let source: CdpSourceHandle | undefined
 let messagingSpy: ReturnType<typeof spyOn> | undefined
@@ -30,7 +32,7 @@ describe('extension source selected-frame recovery', () => {
 			{ id: 'frame:1:old', attached: true, targetReady: false },
 		])
 
-		const methods = ['Runtime.evaluate', 'DOM.getDocument', 'Page.captureScreenshot']
+		const methods: CdpMethod[] = ['Runtime.evaluate', 'DOM.getDocument', 'Page.captureScreenshot']
 		const results = await Promise.allSettled([
 			...methods.map((method) => source!.session.sendAndWait(method)),
 			getDomRootId(source!.session),
@@ -40,7 +42,7 @@ describe('extension source selected-frame recovery', () => {
 			expect(result.status).toBe('rejected')
 			if (result.status === 'rejected') expect(result.reason.code).toBe('extension_frame_not_ready')
 		}
-		expect(harness.commands.filter((command) => methods.includes(command.method))).toHaveLength(0)
+		expect(harness.commands.filter((command) => methods.includes(command.method as CdpMethod))).toHaveLength(0)
 		expect(harness.commands.some((command) => command.method === 'DOM.getFrameOwner')).toBe(false)
 
 		// Reload remains deliberately tab-scoped even with a pending iframe selection.
@@ -129,8 +131,10 @@ async function createHarness() {
 			receive({ type: 'cdp_response', requestId: message.requestId, result })
 		},
 	}
-	messagingSpy = spyOn(nativeMessaging, 'createNativeMessaging').mockReturnValue(messaging)
+	// `createNativeMessaging` is generic over the message pair; the spy's return type erases to unknown.
+	messagingSpy = spyOn(nativeMessaging, 'createNativeMessaging').mockReturnValue(messaging as never)
 	source = createExtensionSource({
+		sourcemaps: createSourcemapResolver(),
 		events: {
 			onLog: () => {},
 			onStatus: (status) => {

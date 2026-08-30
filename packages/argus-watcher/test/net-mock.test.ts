@@ -185,10 +185,13 @@ const createFakeSession = (
 		},
 		onEvent: (method, handler) => {
 			const bucket = handlers.get(method) ?? new Set<CdpEventHandler>()
-			bucket.add(handler)
+			const erased = handler as CdpEventHandler
+			bucket.add(erased)
 			handlers.set(method, bucket)
-			return () => bucket.delete(handler)
+			return () => bucket.delete(erased)
 		},
+		getTargetContext: () => ({ kind: 'page' as const }),
+		getReadyTargetContext: async () => ({ kind: 'page' as const }),
 	}
 
 	return {

@@ -20,7 +20,6 @@ describe('apply preflight planner', () => {
 			],
 			locateRows: async (_target, _header, _width, candidates) => new Map([[candidates[0].exportRow, 6]]),
 			readRaw: async () => raw([['old']]),
-			readFormula: async () => null,
 		}
 		const manifest: SheetManifest = {
 			version: 1,
@@ -50,7 +49,6 @@ describe('apply preflight planner', () => {
 				reads++
 				return raw([['actual']])
 			},
-			readFormula: async () => null,
 		}
 		const manifest: SheetManifest = {
 			version: 1,

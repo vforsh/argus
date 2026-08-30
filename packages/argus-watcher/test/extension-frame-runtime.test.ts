@@ -78,6 +78,8 @@ function createSessionStub() {
 			isAttached: () => true,
 			sendAndWait: async () => undefined,
 			onEvent: () => () => {},
+			getTargetContext: () => ({ kind: 'page' as const }),
+			getReadyTargetContext: async () => ({ kind: 'page' as const }),
 		},
 	}
 }

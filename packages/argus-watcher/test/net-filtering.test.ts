@@ -207,6 +207,7 @@ const createRecord = (
 			protocol: null,
 			priority: null,
 			timingPhases: null,
+			body: { request: false, response: false },
 		},
 	}
 }

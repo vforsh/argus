@@ -200,7 +200,8 @@ const createCookieSessionStub = (sendAndWait: (method: string, params?: Record<s
 	isAttached: () => true,
 	sendAndWait,
 	onEvent: () => () => {},
-	getTargetContext: () => ({ kind: 'page' }),
+	getTargetContext: () => ({ kind: 'page' as const }),
+	getReadyTargetContext: async () => ({ kind: 'page' as const }),
 })
 
 const pageState = (url: string) => ({

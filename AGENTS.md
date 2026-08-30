@@ -12,7 +12,7 @@
 
 - **Plans (implementation/refactor)**: When the user asks for an implementation or refactor plan, always end the plan with a short “final checklist”. It must explicitly say to run `npm run typecheck` and `npm run lint` after implementation, and to fix any errors found (use `npm run lint:fix` when appropriate). Keep this checklist to 1–2 short sentences.
 
-- **Typechecking**: Use `npm run typecheck` for the full one-shot pass (CLI app + shared packages + extension + `e2e/`). Use `npm run typecheck:app`, `npm run typecheck:packages`, `npm run typecheck:extension`, or `npm run typecheck:e2e` only for focused checks. `typecheck:e2e` also covers `playground/`, since the suites import its harness. Don't use `typecheck-dev` for "quick checks" (watch mode).
+- **Typechecking**: Use `npm run typecheck` for the full one-shot pass (CLI app + shared packages + extension + every test suite). Use `npm run typecheck:app`, `npm run typecheck:packages`, `npm run typecheck:extension`, or `npm run typecheck:tests` only for focused checks. `typecheck:tests` covers `e2e/`, `packages/*/test`, and `playground/` (the suites import its harness). Don't use `typecheck-dev` for "quick checks" (watch mode).
 
 - **Runtime & deps**: Bun is the runtime and package manager (`bun install`, `bun run`). Prefer Bun/Node built-ins over new deps. Add deps to the specific package that needs them, not root. Keep `argus-core` dependency-free.
 
@@ -112,8 +112,8 @@
 ## Tests / Gate (exact commands)
 
 - **Quick**: `npm run lint` + `npm run typecheck`.
-- **Focused**: `npm run test:playground`.
-- **Full**: `npm run test:e2e`.
+- **Focused**: `npm run test:playground` (browser) or `npm run test:unit` (`packages/*/test`, no browser, ~4s).
+- **Full**: `npm run test:e2e` — builds packages, runs `test:unit`, then every `e2e/*.test.ts`.
 
 ---
 
