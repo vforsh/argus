@@ -1,6 +1,6 @@
+import { emitFailure, emitResolveFailure } from './failures.js'
 import type { ErrorResponse, ExtensionTabActionResponse } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
-import { formatWatcherLine } from '../../output/format.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
 import { runExtensionShow } from './show.js'
@@ -137,19 +137,14 @@ const runExtensionTabAction = async (action: ExtensionTabAction, options: Extens
 
 type TabActionFailure = Exclude<TabResolutionResult, { ok: true }> | Exclude<SelectorResult, { ok: true }>
 
-const writeTabResolutionFailure = (output: ReturnType<typeof createOutput>, options: ExtensionTabActionOptions, result: TabActionFailure): void => {
-	const matches = 'matches' in result ? result.matches : undefined
-	if (options.json) {
-		output.writeJson({ ok: false, error: result.reason, matches: matches ?? [] })
-	} else {
-		output.writeWarn(result.reason)
-		if (matches) {
-			for (const tab of matches) {
-				output.writeWarn(`  ${formatExtensionTabLine(tab)}`)
-			}
-		}
-	}
-	process.exitCode = result.exitCode
+const writeTabResolutionFailure = (output: ReturnType<typeof createOutput>, _options: ExtensionTabActionOptions, result: TabActionFailure): void => {
+	const matches = 'matches' in result ? (result.matches ?? []) : []
+	emitFailure(output, {
+		error: result.reason,
+		exitCode: result.exitCode,
+		hints: matches.map((tab) => `  ${formatExtensionTabLine(tab)}`),
+		details: { matches },
+	})
 }
 
 const writeResolveFailure = (
@@ -157,17 +152,7 @@ const writeResolveFailure = (
 	options: ExtensionTabActionOptions,
 	resolved: Exclude<Awaited<ReturnType<typeof resolveExtensionWatcher>>, { ok: true }>,
 ): void => {
-	if (options.json) {
-		output.writeJson({ ok: false, error: resolved.error, candidates: resolved.candidates?.map((watcher) => watcher.id) ?? [] })
-	} else {
-		output.writeWarn(resolved.error)
-		if (resolved.candidates && resolved.candidates.length > 0) {
-			for (const watcher of resolved.candidates) {
-				output.writeWarn(formatWatcherLine(watcher))
-			}
-		}
-	}
-	process.exitCode = resolved.exitCode
+	emitResolveFailure(output, resolved)
 }
 
 const writeCommandError = (

@@ -1,5 +1,6 @@
+import { getPlatformOrFail } from './failures.js'
 import { createOutput } from '../../output/io.js'
-import { getPlatform, removeNativeHosts, shortenPath } from './nativeHost.js'
+import { removeNativeHosts, shortenPath } from './nativeHost.js'
 
 export type ExtensionRemoveOptions = {
 	json?: boolean
@@ -8,18 +9,8 @@ export type ExtensionRemoveOptions = {
 export const runExtensionRemove = async (options: ExtensionRemoveOptions): Promise<void> => {
 	const output = createOutput(options)
 
-	let platform
-	try {
-		platform = getPlatform()
-	} catch (error) {
-		if (options.json) {
-			output.writeJson({ success: false, error: (error as Error).message })
-		} else {
-			console.error((error as Error).message)
-		}
-		process.exitCode = 1
-		return
-	}
+	const platform = getPlatformOrFail(output)
+	if (!platform) return
 
 	const removedHosts = removeNativeHosts(platform)
 
@@ -28,7 +19,7 @@ export const runExtensionRemove = async (options: ExtensionRemoveOptions): Promi
 
 	if (options.json) {
 		output.writeJson({
-			success: true,
+			ok: true,
 			manifestRemoved,
 			wrapperRemoved,
 			hosts: removedHosts,

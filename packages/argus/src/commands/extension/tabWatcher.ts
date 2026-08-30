@@ -1,3 +1,4 @@
+import { emitFailure } from './failures.js'
 import type { ExtensionBrowserTab, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
 import type { Output } from '../../output/io.js'
 import { formatWatcherLine } from '../../output/format.js'
@@ -114,25 +115,22 @@ const writeResolveFailure = (
 	process.exitCode = resolved.exitCode
 }
 
-const writeTabFailure = (output: Output, options: ExtensionTabWatcherOptions, result: TabActionFailure): void => {
-	if (options.json) {
-		output.writeJson({ ok: false, error: result.reason, matches: 'matches' in result ? (result.matches ?? []) : [] })
-	} else {
-		output.writeWarn(result.reason)
-		if ('matches' in result) {
-			for (const tab of result.matches ?? []) {
-				output.writeWarn(`  ${formatExtensionTabLine(tab)}`)
-			}
-		}
-	}
-	process.exitCode = result.exitCode
+const writeTabFailure = (output: Output, _options: ExtensionTabWatcherOptions, result: TabActionFailure): void => {
+	const matches = 'matches' in result ? (result.matches ?? []) : []
+	emitFailure(output, {
+		error: result.reason,
+		exitCode: result.exitCode,
+		hints: matches.map((tab) => `  ${formatExtensionTabLine(tab)}`),
+		details: { matches },
+	})
 }
 
-export const writeFailure = (output: Output, options: { json?: boolean }, error: string, exitCode: 1 | 2): void => {
-	if (options.json) {
-		output.writeJson({ ok: false, error })
-	} else {
-		output.writeWarn(error)
-	}
-	process.exitCode = exitCode
+/**
+ * Report a tab-watcher failure.
+ *
+ * Kept as a named export because several sibling commands call it; the body is now just
+ * the shared emitter, so all of them produce the canonical envelope.
+ */
+export const writeFailure = (output: Output, _options: { json?: boolean }, error: string, exitCode: 1 | 2): void => {
+	emitFailure(output, { error, exitCode })
 }

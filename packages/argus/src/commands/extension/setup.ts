@@ -1,5 +1,7 @@
+import { formatError } from '../../cli/parse.js'
+import { emitFailure, getPlatformOrFail } from './failures.js'
 import { createOutput } from '../../output/io.js'
-import { getPlatform, findArgusExecutable, installNativeHosts, shortenPath } from './nativeHost.js'
+import { findArgusExecutable, installNativeHosts, shortenPath } from './nativeHost.js'
 import { ARGUS_EXTENSION_ID } from './extensionId.js'
 
 export type ExtensionSetupOptions = {
@@ -12,30 +14,14 @@ export const runExtensionSetup = async (options: ExtensionSetupOptions): Promise
 	const output = createOutput(options)
 	const extensionId = options.extensionId ?? ARGUS_EXTENSION_ID
 
-	let platform
-	try {
-		platform = getPlatform()
-	} catch (error) {
-		if (options.json) {
-			output.writeJson({ success: false, error: (error as Error).message })
-		} else {
-			console.error((error as Error).message)
-		}
-		process.exitCode = 1
-		return
-	}
+	const platform = getPlatformOrFail(output)
+	if (!platform) return
 
-	// Find argus executable
 	let executablePath: string
 	try {
 		executablePath = findArgusExecutable()
 	} catch (error) {
-		if (options.json) {
-			output.writeJson({ success: false, error: (error as Error).message })
-		} else {
-			console.error((error as Error).message)
-		}
-		process.exitCode = 1
+		emitFailure(output, { error, code: 'argus_executable_not_found' })
 		return
 	}
 
@@ -43,18 +29,13 @@ export const runExtensionSetup = async (options: ExtensionSetupOptions): Promise
 	try {
 		installedHosts = installNativeHosts(platform, extensionId, executablePath)
 	} catch (error) {
-		if (options.json) {
-			output.writeJson({ success: false, error: `Failed to install native hosts: ${(error as Error).message}` })
-		} else {
-			console.error('Failed to install native hosts:', error)
-		}
-		process.exitCode = 1
+		emitFailure(output, { error: `Failed to install native hosts: ${formatError(error)}`, code: 'native_host_install_failed' })
 		return
 	}
 
 	if (options.json) {
 		output.writeJson({
-			success: true,
+			ok: true,
 			extensionId,
 			hosts: installedHosts,
 			argusPath: executablePath,

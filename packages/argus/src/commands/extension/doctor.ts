@@ -1,3 +1,4 @@
+import { formatError } from '../../cli/parse.js'
 import type { ErrorResponse, ExtensionDiagnosticsResponse, StatusResponse, WatcherRecord, ExtensionTargetSummary } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { formatWatcherLine } from '../../output/format.js'
@@ -223,5 +224,3 @@ const fetchWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; s
 		return { ok: false, error: `${watcher.id}: failed to read status (${formatError(error)})` }
 	}
 }
-
-const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error))

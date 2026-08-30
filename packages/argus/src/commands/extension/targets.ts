@@ -1,7 +1,7 @@
+import { emitResolveFailure } from './failures.js'
 import type { WatcherRecord, ExtensionTargetSummary } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
-import { formatWatcherLine } from '../../output/format.js'
 import { hasTabSelector } from './tabSelection.js'
 import { resolveOrAttachExtensionTabWatcher, writeFailure, type ExtensionTabWatcherOptions } from './tabWatcher.js'
 import { fetchExtensionTargets, formatExtensionTargetLine, renderExtensionTargetTree } from './targetSelection.js'
@@ -83,13 +83,5 @@ const writeResolveFailure = (
 	options: ExtensionTargetsOptions,
 	resolved: Exclude<Awaited<ReturnType<typeof resolveWatcher>>, { ok: true }>,
 ): void => {
-	if (options.json) {
-		output.writeJson({ ok: false, error: resolved.error, candidates: resolved.candidates?.map((watcher) => watcher.id) ?? [] })
-	} else {
-		output.writeWarn(resolved.error)
-		for (const watcher of resolved.candidates ?? []) {
-			output.writeWarn(formatWatcherLine(watcher))
-		}
-	}
-	process.exitCode = resolved.exitCode
+	emitResolveFailure(output, resolved)
 }

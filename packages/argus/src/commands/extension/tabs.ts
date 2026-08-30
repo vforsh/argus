@@ -1,6 +1,8 @@
-import type { ErrorResponse, ExtensionBrowserTab, ExtensionTabsResponse } from '@vforsh/argus-core'
+import { formatExtensionTabLine } from './tabSelection.js'
+import { emitFailure, emitResolveFailure } from './failures.js'
+import { formatError } from '../../cli/parse.js'
+import type { ErrorResponse, ExtensionTabsResponse } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
-import { formatWatcherLine } from '../../output/format.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
 
@@ -15,7 +17,7 @@ export const runExtensionTabs = async (options: ExtensionTabsOptions): Promise<v
 	const output = createOutput(options)
 	const resolved = await resolveExtensionWatcher({ id: options.id })
 	if (!resolved.ok) {
-		writeResolveFailure(output, options, resolved)
+		emitResolveFailure(output, resolved)
 		return
 	}
 
@@ -30,14 +32,12 @@ export const runExtensionTabs = async (options: ExtensionTabsOptions): Promise<v
 			returnErrorResponse: true,
 		})
 	} catch (error) {
-		writeCommandError(output, options, `${resolved.watcher.id}: failed to list extension tabs (${formatError(error)})`, formatError(error))
-		process.exitCode = 1
+		emitFailure(output, { error: `${resolved.watcher.id}: failed to list extension tabs (${formatError(error)})` })
 		return
 	}
 
 	if (!response.ok) {
-		writeCommandError(output, options, `Error: ${response.error.message}`, response)
-		process.exitCode = 1
+		emitFailure(output, { error: response })
 		return
 	}
 
@@ -60,12 +60,6 @@ export const runExtensionTabs = async (options: ExtensionTabsOptions): Promise<v
 	}
 }
 
-const formatExtensionTabLine = (tab: ExtensionBrowserTab): string => {
-	const state = tab.attached ? 'attached' : 'available'
-	const label = tab.title || '(untitled)'
-	return `${tab.tabId} [${state}] ${label} - ${tab.url}`
-}
-
 const buildTabsQuery = (options: ExtensionTabsOptions): URLSearchParams => {
 	const query = new URLSearchParams()
 	const url = options.url?.trim()
@@ -80,37 +74,3 @@ const buildTabsQuery = (options: ExtensionTabsOptions): URLSearchParams => {
 
 	return query
 }
-
-const writeResolveFailure = (
-	output: ReturnType<typeof createOutput>,
-	options: ExtensionTabsOptions,
-	resolved: Exclude<Awaited<ReturnType<typeof resolveExtensionWatcher>>, { ok: true }>,
-): void => {
-	if (options.json) {
-		output.writeJson({ ok: false, error: resolved.error, candidates: resolved.candidates?.map((watcher) => watcher.id) ?? [] })
-	}
-
-	output.writeWarn(resolved.error)
-	if (resolved.candidates && resolved.candidates.length > 0) {
-		for (const watcher of resolved.candidates) {
-			output.writeWarn(formatWatcherLine(watcher))
-		}
-		output.writeWarn('Hint: pass --id <watcherId> to pick one extension watcher.')
-	}
-
-	process.exitCode = resolved.exitCode
-}
-
-const writeCommandError = (
-	output: ReturnType<typeof createOutput>,
-	options: ExtensionTabsOptions,
-	humanMessage: string,
-	jsonPayload: string | ErrorResponse,
-): void => {
-	if (options.json) {
-		output.writeJson(typeof jsonPayload === 'string' ? { ok: false, error: jsonPayload } : jsonPayload)
-	}
-	output.writeWarn(humanMessage)
-}
-
-const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error))

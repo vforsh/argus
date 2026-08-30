@@ -1,3 +1,4 @@
+import { formatError } from '../../cli/parse.js'
 import type { ErrorResponse, ExtensionBrowserTab, ExtensionTabsResponse, WatcherRecord } from '@vforsh/argus-core'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 
@@ -98,5 +99,3 @@ const buildTabsQuery = (selector: TabSelector): URLSearchParams => {
 	}
 	return query
 }
-
-const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error))

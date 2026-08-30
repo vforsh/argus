@@ -1,3 +1,4 @@
+import { formatError } from '../../cli/parse.js'
 import type { ErrorResponse, ExtensionBrowserTab, ExtensionTabActionResponse, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
 import { pruneRegistry } from '../../registry.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
@@ -142,5 +143,3 @@ const targetMatchesTab = (target: NonNullable<StatusResponse['target']>, tab: Ex
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
-const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error))

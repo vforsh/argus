@@ -1,3 +1,4 @@
+import { formatError } from '../../cli/parse.js'
 import type {
 	ErrorResponse,
 	ExtensionTabActionResponse,
@@ -278,5 +279,3 @@ const originOf = (url: string | undefined): string | null => {
 const shortenId = (id: string): string => (id.length > 18 ? `${id.slice(0, 14)}...` : id)
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
-const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error))

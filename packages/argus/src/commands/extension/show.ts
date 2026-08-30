@@ -1,3 +1,5 @@
+import { emitFailure } from './failures.js'
+import { formatError } from '../../cli/parse.js'
 import type { ErrorResponse, ExtensionBrowserTab, VisibilityResponse, WatcherRecord } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
@@ -168,25 +170,16 @@ const writeWatcherFailure = (output: ReturnType<typeof createOutput>, options: E
 
 const writeFailure = (
 	output: ReturnType<typeof createOutput>,
-	options: ExtensionShowOptions,
+	_options: ExtensionShowOptions,
 	error: string,
 	exitCode: 1 | 2,
 	extra: Record<string, unknown> = {},
 ): void => {
-	if (options.json) {
-		output.writeJson({ ok: false, error, ...extra })
-	} else {
-		output.writeWarn(error)
-		const matches = extra.matches
-		if (Array.isArray(matches)) {
-			for (const match of matches) {
-				if (isExtensionTab(match)) {
-					output.writeWarn(`  ${formatExtensionTabLine(match)}`)
-				}
-			}
-		}
-	}
-	process.exitCode = exitCode
+	const matches = Array.isArray(extra.matches) ? extra.matches : []
+	emitFailure(output, {
+		error,
+		exitCode,
+		hints: matches.filter(isExtensionTab).map((tab) => `  ${formatExtensionTabLine(tab)}`),
+		details: extra,
+	})
 }
-
-const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error))

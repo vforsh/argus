@@ -5,7 +5,8 @@ import { pruneRegistry } from '../../registry.js'
 import { resolveChromeBin } from '../../utils/chromeBin.js'
 import { ARGUS_EXTENSION_ID } from './extensionId.js'
 import { resolveExtensionDir } from './extensionPath.js'
-import { CONTROL_WATCHER_ID, findArgusExecutable, getPlatform, installNativeHosts, type InstalledNativeHost } from './nativeHost.js'
+import { CONTROL_WATCHER_ID, findArgusExecutable, installNativeHosts, type InstalledNativeHost } from './nativeHost.js'
+import { emitFailure, getPlatformOrFail } from './failures.js'
 
 export type ExtensionInstallOptions = {
 	/** Open chrome://extensions automatically. Disable with --no-open. */
@@ -28,30 +29,28 @@ const POLL_INTERVAL_MS = 700
 export const runExtensionInstall = async (options: ExtensionInstallOptions): Promise<void> => {
 	const output = createOutput(options)
 
-	let platform
-	try {
-		platform = getPlatform()
-	} catch (error) {
-		return fail(output, (error as Error).message)
-	}
+	const platform = getPlatformOrFail(output)
+	if (!platform) return
 
 	const extensionDir = resolveExtensionDir()
 	if (!extensionDir) {
-		return fail(output, 'Packaged Argus extension not found. Build the CLI (npm run build:packages) or run from a built checkout.')
+		return emitFailure(output, {
+			error: 'Packaged Argus extension not found. Build the CLI (npm run build:packages) or run from a built checkout.',
+		})
 	}
 
 	let executablePath: string
 	try {
 		executablePath = findArgusExecutable()
 	} catch (error) {
-		return fail(output, (error as Error).message)
+		return emitFailure(output, { error: (error as Error).message })
 	}
 
 	let hosts: InstalledNativeHost[]
 	try {
 		hosts = installNativeHosts(platform, ARGUS_EXTENSION_ID, executablePath)
 	} catch (error) {
-		return fail(output, `Failed to install native hosts: ${(error as Error).message}`)
+		return emitFailure(output, { error: `Failed to install native hosts: ${(error as Error).message}` })
 	}
 
 	await pruneRegistry()
@@ -70,7 +69,7 @@ export const runExtensionInstall = async (options: ExtensionInstallOptions): Pro
 	}
 
 	if (output.json) {
-		output.writeJson({ success: true, extensionId: ARGUS_EXTENSION_ID, extensionPath: extensionDir, hosts, connected })
+		output.writeJson({ ok: true, extensionId: ARGUS_EXTENSION_ID, extensionPath: extensionDir, hosts, connected })
 		if (!connected && shouldWait) {
 			process.exitCode = 1
 		}
@@ -169,15 +168,6 @@ const parseTimeoutMs = (value: string | undefined): number => {
 		return DEFAULT_TIMEOUT_SECONDS * 1000
 	}
 	return seconds * 1000
-}
-
-const fail = (output: Output, message: string): void => {
-	if (output.json) {
-		output.writeJson({ success: false, error: { message } })
-	} else {
-		console.error(message)
-	}
-	process.exitCode = 1
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
