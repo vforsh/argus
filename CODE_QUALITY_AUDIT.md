@@ -9,7 +9,7 @@
 
 ## Progress
 
-Sequencing steps 1 and 2 are done (12 commits, `bf19320..a8e7803`; net −267 LOC across 93 files after adding ~500 lines of new shared modules and JSDoc). Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. Full `test:e2e` re-run at the end: 24/25 files pass; `watcher-net.test.ts` fails on a pre-existing race, reproduced identically on a clean clone at `bf19320`.
+Sequencing steps 1–3 are done (16 commits, `bf19320..2d95a10`). Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. Full `test:e2e` re-run after steps 2 and 3: 24/25 files pass both times; `watcher-net.test.ts` fails on a pre-existing race, reproduced identically on a clean clone at `bf19320`.
 
 **Done**
 
