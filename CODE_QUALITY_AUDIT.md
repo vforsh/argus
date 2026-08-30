@@ -9,7 +9,9 @@
 
 ## Progress
 
-All six sequencing steps are done except one deliberately declined item (C2, below). 34 commits, `bf19320..HEAD`. Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. **Full `test:e2e`: 25/25 files pass.**
+All six sequencing steps are done except one deliberately declined item (C2). 36 commits, `bf19320..HEAD`. **What is left is in [Remaining work](#remaining-work) below**, re-measured against the current tree. Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. **Full `test:e2e`: 25/25 files pass.**
+
+**One regression found by testing against a live extension watcher and fixed** (`d1b9e68`): merging Commander options by value let a parent's option _default_ win when a subcommand declares the same flag but the user omits it — `net --resource-type` is a repeatable filter defaulting to `[]`, `net mock add --resource-type` is a scalar, so the subcommand received the parent's empty array and the watcher schema rejected it. The rule is now "the nearest command declaring an option owns it, even when absent". The unit test added with B2 had missed this because it only covered flags that were actually typed.
 
 **Two pre-existing e2e flakes found during this work and since fixed** (both predated it — reproduced on clean clones of earlier commits):
 
@@ -54,9 +56,45 @@ All six sequencing steps are done except one deliberately declined item (C2, bel
 
 Three `AGENTS.md` entries changed with the code: the `readJsonBody` gotcha is retired (replaced by a schema-only rule), and the Golden Path now requires a request schema alongside the types.
 
-**Declined: C2 (`frame_snapshot` replacing forged CDP events).** This is a cross-process redesign of frame synchronization: the extension's forged `Page.frameNavigated`/`frameDetached` drive the watcher's incremental frame reconstruction, target-selection reconciliation, page-navigation callbacks, and title refresh. Nothing automated exercises that path end-to-end — no e2e attaches a real extension with its native host and drives iframe selection across a navigation; `extension-diagnostics.test.ts` is two tests about bridge connectivity. It is also precisely the terrain the two most recent bug fixes (`f4c449f`, `a89ef4c`) had to thread through. Shipping an unverifiable rewrite there is worse than leaving the duplication, so it is left for someone who can drive a real Chrome.
+## Remaining work
 
-**Not started** — A4 (typed GET query shapes), A7 (`Ok<T>`/`ApiResult<T>`/`ArgusErrorCode`), C1, C3, C8, D4–D7, D9, D10, D13, D15, D16, the remaining D17 sweeps, the sixteen sheets commands still to move onto `runSheetCommand`, and the `e2e/` deep-import entry.
+Counts below were re-measured against the current tree, not copied from the original findings. Ordered so each group is independently shippable; the first two are where the remaining duplication is densest.
+
+### 1. Finish what this pass started
+
+| Item    | State                                                   | What is left                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **B10** | runner exists, 2 of 18 commands on it                   | 22 `run*` functions across `commands.ts`, `applyCommands.ts`, `inspectionCommands.ts`, `diffCommands.ts`, `dimensionCommands.ts`, `mutationCommands.ts` still hand-roll the createOutput → validate → eval → json/human pipeline. Mechanical: each becomes a `runSheetCommand` spec.                                                                                                                                   |
+| **D13** | blocked on B10                                          | 11 sheets files still write `process.exitCode` from library depth. Once every command goes through `runSheetCommand`, the writes collapse to that one site and the helpers return discriminated results.                                                                                                                                                                                                               |
+| **A7**  | `ErrorDetail` + `ResponseData<T>` landed in `errors.ts` | `ok: true` is still inlined 72× across 21 protocol files, there is still no `Ok<T>`/`ApiResult<T>` union for consumers to reuse, `ArgusErrorCode` does not exist (codes stay stringly), and 8 inline `{ message: string; code?: string } \| null` re-declarations remain in `netMock.ts`, `emulation.ts`, and `throttle.ts` — all of which are now just `ErrorDetail`.                                                 |
+| **D17** | 3 adapter/helper families deleted                       | Sweeps still open, with current counts: 33 inline `error instanceof Error ? … : String(error)` in `packages/argus/src`; 12 `delay`/`sleep` one-liners; 67 copies of the `--json` option literal in register files; 10 `nextAfter` computations across net routes; 20 hand-rolled `{ ok: false, error: { … } }` literals in routes (`httpUtils` still lacks the general `respondApiError(res, status, code, message)`). |
+
+### 2. Contract seams still open
+
+- **A4 — the GET half of the protocol.** `argus/src/watchers/queryParams.ts` (205 LOC) and `argus-client/src/client/queryParams.ts` (178 LOC) remain two independent builders for one contract, and the divergence the audit found is still live: the CLI serializes 11 net filters, the client serializes 3, so **the SDK still cannot express filters the protocol supports**. `parseDurationMs` was the easy half and is done; the typed query shapes are not.
+- **C3 — CLI and SDK unwrap the same envelope differently.** `buildWatcherUrl` and `formatWatcherTransportError` are still declared in both `requestWatcher.ts` and `watcherRequest.ts`, and the client still evicts a watcher from the shared on-disk registry (`removeWatcherAndPersist`) where the CLI does not. The same outage still produces different persistent state depending on which stack saw it.
+- **D7 — the endpoint union.** Still 65 literal entries in `http/server.ts` and 65 in `events.ts`, plus two incompatible `query` models bridged through a weak-type loophole. Deriving it from the route definitions is the fix.
+- **D4 — `CdpSourceHandle` capability.** Still an 8-optional-method bag checked three times per request. Note `postAttach.ts`/`postDetach.ts` are now typed but remain byte-for-byte twins apart from the method called — a `defineExtensionRoute` wrapper would collapse them.
+
+### 3. Watcher internals
+
+- **C1 — extension mode reimplements the log pipeline** (`sources/extension-log-events.ts`, 144 LOC) and, verified again here, still never calls `resolveSourcemappedLocation`: **extension-mode watchers get unmapped minified locations while CDP-mode watchers get sourcemapped ones.** This is the one remaining item with a user-visible behavioral fork, and it is worth doing before the cosmetic ones.
+- **D5** — `cdp/auth.ts` is 510 LOC mixing cookie CRUD, snapshot export, and page-state eval, with four overlapping normalizers.
+- **D6** — `recording.ts` (493 LOC) and `tracing.ts` still duplicate the exclusive-artifact-session lifecycle; ffmpeg is still ~170 LOC of non-CDP code inside `recording.ts`.
+- **D9** — `startWatcherRuntime.ts` is still 417 LOC and `createWatcherRuntimeServices` still builds the service block twice.
+- **D10** — `editor.ts` (472 LOC) still hides the `reset()`/`rebind()` lifecycle in a closure with four coordinating flags.
+- **D15** — `LogBuffer` still runs both waiter subsystems (`waitForAfter`/`flushWaiters` alongside `waitForAfterEpoch`/`flushEpochWaiters`); the id-based path survives only as the `kind: 'all'` position query.
+- **D16** — module-level mutable state without lifecycle: the sourcemap trace-map cache is still unbounded and never invalidated, so a dev-server rebuild mid-session keeps resolving against the old map.
+- **C8** — Chrome launch/cleanup ownership still split across `launchChrome` and its two callers.
+
+### 4. Test-surface debt
+
+- **`e2e/` still deep-imports package internals** — 19 distinct `../packages/*/src/*.js` paths across the suite. Export hygiene and the "public API must be documented" rule stay unenforced, and a green e2e run still says nothing about the published surface.
+- **`boundedTraversal.ts` and `leaseModel.ts`** (google-sheets) are still test-mirror modules: their only consumer is `lease-deadline.test.ts`, while the logic that ships lives in the page scripts. Deleting them removes a test that never covered shipping code; the honest fix is to test the real path, which needs a browser.
+
+### 5. Declined
+
+**C2 — `frame_snapshot` replacing forged CDP events.** A cross-process redesign of frame synchronization: the extension's forged `Page.frameNavigated`/`frameDetached` drive the watcher's incremental frame reconstruction, target-selection reconciliation, page-navigation callbacks, and title refresh. Nothing automated exercises that path end-to-end — no e2e attaches a real extension with its native host and drives iframe selection across a navigation; `extension-diagnostics.test.ts` is two tests about bridge connectivity. It is also precisely the terrain the two most recent bug fixes (`f4c449f`, `a89ef4c`) had to thread through. Shipping an unverifiable rewrite there is worse than leaving the duplication. Doing it safely means first building an e2e that drives a real Chrome with the unpacked extension.
 
 ---
 
@@ -517,6 +555,8 @@ A failed or stale `.map` fetch is cached as the answer for the process lifetime,
 ---
 
 ## Suggested sequencing
+
+> **Historical.** All six steps below were executed — see [Progress](#progress) for the commits and [Remaining work](#remaining-work) for what is actually left. Kept because the ordering rationale still applies to the remaining items.
 
 Ordered so each step removes the template the next batch of code would have been copied from.
 
