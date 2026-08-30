@@ -171,10 +171,43 @@ describe('network workflow e2e', () => {
 		await fs.rm(tempDir, { recursive: true, force: true })
 	})
 
+	/** Block until the page reports every one-shot request has settled. */
+	const waitForPageNetIdle = async (): Promise<void> => {
+		await runCommand('node', [BIN_PATH, 'eval-until', watcherId, 'window.__netIdle === true', '--total-timeout', '15s', '--json'], { env })
+	}
+
+	/**
+	 * Block until the watcher stops receiving new non-analytics requests.
+	 *
+	 * The page being done issuing does not mean the CDP events have all reached the
+	 * watcher, so wait for two consecutive reads to agree. The `/poll` interval never
+	 * stops, hence the same --ignore-host filter the assertion uses.
+	 */
+	const waitForNetBufferQuiescence = async (): Promise<void> => {
+		let previous = -1
+		for (let attempt = 0; attempt < 40; attempt++) {
+			const { stdout } = await runCommand('node', [BIN_PATH, 'net', watcherId, '--ignore-host', 'localhost', '--json'], { env })
+			const count = (JSON.parse(stdout) as unknown[]).length
+			if (count === previous) {
+				return
+			}
+			previous = count
+			await new Promise((resolve) => setTimeout(resolve, 250))
+		}
+		throw new Error('Network buffer never settled')
+	}
+
 	test('clear, watch, and summary support the reload workflow', async () => {
 		const { stdout: initialNetOut } = await runCommand('node', [BIN_PATH, 'net', watcherId, '--json'], { env })
 		const initialRequests = JSON.parse(initialNetOut) as Array<{ url: string }>
 		expect(initialRequests.length).toBeGreaterThan(0)
+
+		// The page issues its last one-shot request 2500ms after load. Clearing before that
+		// lands leaves it in the buffer, which is what made the emptiness assertion below
+		// flaky. Wait for the page to finish issuing, then for the watcher to finish
+		// receiving, before clearing.
+		await waitForPageNetIdle()
+		await waitForNetBufferQuiescence()
 
 		const { stdout: clearOut } = await runCommand('node', [BIN_PATH, 'net', 'clear', watcherId, '--json'], { env })
 		const clearResult = JSON.parse(clearOut) as { cleared: number }
@@ -519,30 +552,58 @@ const renderAppHtml = (analyticsPort: number): string => `
 <body>
 	<script>
 		const analyticsBase = 'http://localhost:${analyticsPort}'
+		// Gate for the --settle-after tests. Deliberately set *before* /api/really-delayed
+		// fires, so those tests prove gated waiting picks up traffic a naive settle misses.
 		window.__netReady = false
+		// Set once every one-shot request has settled, so tests that need "the page is done
+		// issuing" have a signal that is not racing the 2500ms timer. The /poll interval is
+		// excluded on purpose: it never stops.
+		window.__netIdle = false
 		const run = () => {
-			fetch('/api/fast').catch(() => {})
-			fetch('/api/post', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ source: 'argus-net-e2e', count: 1 }),
-			}).catch(() => {})
-			fetch('/api/slow').catch(() => {})
-			fetch('/api/fail').catch(() => {})
-			fetch('/api/big').catch(() => {})
+			const oneShots = []
+			const track = (promise) => {
+				oneShots.push(promise.catch(() => {}))
+				return promise
+			}
+
+			track(fetch('/api/fast')).catch(() => {})
+			track(
+				fetch('/api/post', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ source: 'argus-net-e2e', count: 1 }),
+				}),
+			).catch(() => {})
+			track(fetch('/api/slow')).catch(() => {})
+			track(fetch('/api/fail')).catch(() => {})
+			track(fetch('/api/big')).catch(() => {})
+			track(fetch(analyticsBase + '/beacon')).catch(() => {})
+
+			let pendingTimers = 3
+			const afterTimer = () => {
+				pendingTimers -= 1
+				if (pendingTimers === 0) {
+					Promise.all(oneShots).then(() => {
+						window.__netIdle = true
+					})
+				}
+			}
+
 			setTimeout(() => {
-				fetch('/api/delayed').catch(() => {})
+				track(fetch('/api/delayed')).catch(() => {})
+				afterTimer()
 			}, 500)
 			setTimeout(() => {
-				fetch('/api/late-match').catch(() => {})
+				track(fetch('/api/late-match')).catch(() => {})
+				afterTimer()
 			}, 1200)
 			setTimeout(() => {
-				fetch('/api/really-delayed').catch(() => {})
+				track(fetch('/api/really-delayed')).catch(() => {})
+				afterTimer()
 			}, 2500)
 			setTimeout(() => {
 				window.__netReady = true
 			}, 2200)
-			fetch(analyticsBase + '/beacon').catch(() => {})
 			if (!window.__netPollStarted) {
 				window.__netPollStarted = true
 				setInterval(() => {
