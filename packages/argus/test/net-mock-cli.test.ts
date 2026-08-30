@@ -74,6 +74,17 @@ describe('net mock CLI options', () => {
 		expect(Array.isArray(options.status)).toBe(false)
 	})
 
+	it('does not leak the parent filter default into an omitted subcommand flag', () => {
+		// `net --resource-type` is repeatable and defaults to []; `net mock add
+		// --resource-type` is a scalar. Omitting it on the subcommand must yield undefined,
+		// not the parent's empty array — the watcher schema rejects a non-string.
+		const options = parseNetArgv(['net', 'mock', 'add', 'extension', '--url', '*/api/config', '--status', '418'])
+
+		expect(options.resourceType).toBeUndefined()
+		expect(options.method).toBeUndefined()
+		expect(options.status).toBe('418')
+	})
+
 	it('parses filter flags on the bare net command', () => {
 		const options = parseNetArgv(['net', 'app', '--grep', 'api', '--ignore-host', 'mc.yandex.ru', '--json'])
 

@@ -97,33 +97,60 @@ const createActionRunner =
  * Merge a command's options with its ancestors'.
  *
  * Not `optsWithGlobals()`: that reduces from the command outwards, so an ancestor's value
- * — including an untouched default — overwrites the subcommand's own. Here the chain is
- * walked root-to-leaf so the nearest command wins, and a value the user actually typed is
- * never replaced by a default from either direction.
+ * — including an untouched default — overwrites the subcommand's own.
+ *
+ * The rule here is that **the nearest command declaring an option owns it**, even when
+ * the user supplied no value. That matters because a parent and a subcommand can declare
+ * the same flag name with different shapes: `net --resource-type` is a repeatable filter
+ * defaulting to `[]`, while `net mock add --resource-type` is a scalar. Merging by value
+ * alone would hand the subcommand its parent's empty array, which is what the deleted
+ * shadow argv parser had to keep un-arraying.
+ *
+ * An ancestor still wins when it is the only declarer, or when the user actually typed it
+ * and the nearer command's value is only a default.
  */
 const mergeCommandOptions = (command: Command): Record<string, unknown> => {
 	const chain: Command[] = []
 	for (let current: Command | null = command; current; current = current.parent) {
-		chain.unshift(current)
+		chain.push(current)
 	}
 
 	const merged: Record<string, unknown> = {}
+	const owned = new Set<string>()
 	const typed = new Set<string>()
+
+	// Nearest first, so a subcommand claims every flag it declares.
 	for (const current of chain) {
-		for (const [key, value] of Object.entries(current.opts())) {
+		const values = current.opts() as Record<string, unknown>
+		for (const key of declaredOptionKeys(current)) {
 			const fromCli = current.getOptionValueSource(key) === 'cli'
-			if (typed.has(key) && !fromCli) {
+			if (owned.has(key) && !(fromCli && !typed.has(key))) {
 				continue
 			}
-			merged[key] = value
+			merged[key] = values[key]
+			owned.add(key)
 			if (fromCli) {
 				typed.add(key)
 			}
 		}
 	}
 
+	// Values Commander exposes without a declaration on that command (Commander stores
+	// `program.opts()` entries this way for globals) fill in whatever is still unset.
+	for (const current of chain) {
+		for (const [key, value] of Object.entries(current.opts())) {
+			if (!owned.has(key)) {
+				merged[key] = value
+				owned.add(key)
+			}
+		}
+	}
+
 	return merged
 }
+
+/** Attribute names of the options a command declares itself. */
+const declaredOptionKeys = (command: Command): string[] => command.options.map((option) => option.attributeName())
 
 /** Register a list of command definitions in order. */
 export const defineCommands = (parent: Command, definitions: readonly ArgusCommandDefinition[]): void => {
