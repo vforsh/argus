@@ -1,22 +1,15 @@
-import fs from 'node:fs/promises'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { spawn, type ChildProcessByStdio } from 'node:child_process'
-import type { Readable, Writable } from 'node:stream'
 import type { RecordFormat, RecordRequest, RecordStartRequest, RecordStartResponse, RecordStopRequest, RecordStopResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
-import { ensureArtifactsDir, ensureParentDir, resolveArtifactPath } from '../artifacts.js'
+import fs from 'node:fs/promises'
+import { ensureArtifactsDir, ensureParentDir, moveArtifactFile, resolveArtifactPath } from '../artifacts.js'
+import { createDeferred } from '../deferred.js'
+import { formatFfmpegError, readPngSize, startFfmpeg, type FfmpegProcess } from './ffmpeg.js'
 import { createVisualCapturePlan, type VisualCaptureClip, type VisualCaptureViewport } from './visualCapture.js'
 
 const DEFAULT_RECORD_FPS = 30
 const FIRST_FRAME_TIMEOUT_MS = 2_000
-
-type PngSize = { width: number; height: number }
-type FfmpegChild = ChildProcessByStdio<Writable, null, Readable>
-type FfmpegProcess = {
-	child: FfmpegChild
-	completion: Promise<void>
-}
 
 type RecordingState = {
 	recordId: string
@@ -210,18 +203,7 @@ export const createRecorder = (options: {
 			return
 		}
 
-		await ensureParentDir(absolutePath)
-		try {
-			await fs.rename(state.absolutePath, absolutePath)
-		} catch (error) {
-			const nodeError = error as NodeJS.ErrnoException
-			if (nodeError.code !== 'EXDEV') {
-				throw error
-			}
-
-			await fs.copyFile(state.absolutePath, absolutePath)
-			await fs.unlink(state.absolutePath)
-		}
+		await moveArtifactFile(state.absolutePath, absolutePath)
 
 		state.absolutePath = path.resolve(absolutePath)
 		state.outFile = absolutePath
@@ -296,83 +278,6 @@ const pumpQueuedFrames = (state: RecordingState): void => {
 	}
 }
 
-const startFfmpeg = async (options: {
-	absolutePath: string
-	fps: number
-	format: RecordFormat
-	clip: VisualCaptureClip | undefined
-	viewport: VisualCaptureViewport | undefined
-	frameSize: PngSize
-}): Promise<FfmpegProcess> => {
-	const ffmpeg = process.env.ARGUS_FFMPEG?.trim() || 'ffmpeg'
-	const filter = buildVideoFilter(options)
-	const args = [
-		'-hide_banner',
-		'-loglevel',
-		'error',
-		'-f',
-		'image2pipe',
-		'-framerate',
-		String(options.fps),
-		'-vcodec',
-		'png',
-		'-i',
-		'pipe:0',
-		'-an',
-		'-vf',
-		filter,
-		...buildEncoderArgs(options.format),
-		'-y',
-		options.absolutePath,
-	]
-	const child = spawn(ffmpeg, args, { stdio: ['pipe', 'ignore', 'pipe'] })
-	let stderr = ''
-	child.stderr.setEncoding('utf8')
-	child.stderr.on('data', (chunk) => {
-		stderr = `${stderr}${chunk}`.slice(-4000)
-	})
-
-	const completion = new Promise<void>((resolve, reject) => {
-		child.once('error', (error) => reject(formatFfmpegError(error)))
-		child.once('close', (code) => {
-			if (code === 0) {
-				resolve()
-				return
-			}
-			reject(new Error(`ffmpeg failed with exit code ${code ?? 'unknown'}${stderr ? `: ${stderr.trim()}` : ''}`))
-		})
-	})
-	void completion.catch(() => {})
-
-	await new Promise<void>((resolve, reject) => {
-		child.once('spawn', () => resolve())
-		child.once('error', (error) => reject(formatFfmpegError(error)))
-	})
-
-	return { child, completion }
-}
-
-const buildVideoFilter = (options: {
-	clip: VisualCaptureClip | undefined
-	viewport: VisualCaptureViewport | undefined
-	frameSize: PngSize
-}): string => {
-	if (!options.clip) {
-		return 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p'
-	}
-	if (!options.viewport) {
-		throw new Error('Unable to compute viewport size for recording crop')
-	}
-
-	const ratioX = options.frameSize.width / options.viewport.width
-	const ratioY = options.frameSize.height / options.viewport.height
-	const x = clampEven(options.clip.x * ratioX, 0, options.frameSize.width - 2)
-	const y = clampEven(options.clip.y * ratioY, 0, options.frameSize.height - 2)
-	const width = clampEven(options.clip.width * ratioX, 2, options.frameSize.width - x)
-	const height = clampEven(options.clip.height * ratioY, 2, options.frameSize.height - y)
-	return `crop=${width}:${height}:${x}:${y},format=yuv420p`
-}
-
 const cleanupFailedStart = async (state: RecordingState, error: unknown): Promise<void> => {
 	clearRecordingTimers(state)
 	state.removeFrameHandler()
@@ -435,59 +340,6 @@ const validateOutputPathFormat = (outFile: string, format: RecordFormat): void =
 	if (inferred && inferred !== format) {
 		throw new Error(`Output extension .${inferred} does not match recording format ${format}`)
 	}
-}
-
-const buildEncoderArgs = (format: RecordFormat): string[] => {
-	if (format === 'webm') {
-		return ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '5', '-b:v', '1M', '-f', 'webm']
-	}
-
-	// yuv420p + H.264 keeps files playable in Finder, QuickTime, iOS Photos, Slack, and browsers.
-	return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-movflags', '+faststart', '-f', 'mp4']
-}
-
-const readPngSize = (buffer: Buffer): PngSize => {
-	if (
-		buffer.length < 24 ||
-		buffer[0] !== 0x89 ||
-		buffer[1] !== 0x50 ||
-		buffer[2] !== 0x4e ||
-		buffer[3] !== 0x47 ||
-		buffer[4] !== 0x0d ||
-		buffer[5] !== 0x0a ||
-		buffer[6] !== 0x1a ||
-		buffer[7] !== 0x0a
-	) {
-		throw new Error('Expected PNG screencast frame')
-	}
-
-	return {
-		width: buffer.readUInt32BE(16),
-		height: buffer.readUInt32BE(20),
-	}
-}
-
-const clampEven = (value: number, min: number, max: number): number => {
-	const clamped = Math.min(max, Math.max(min, Math.floor(value)))
-	return Math.max(2, Math.floor(clamped / 2) * 2)
-}
-
-const formatFfmpegError = (error: unknown): Error => {
-	const nodeError = error as NodeJS.ErrnoException
-	if (nodeError.code === 'ENOENT') {
-		return new Error('ffmpeg not found. Install ffmpeg or pass ARGUS_FFMPEG=/path/to/ffmpeg.')
-	}
-	return error instanceof Error ? error : new Error(String(error))
-}
-
-const createDeferred = <T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: Error) => void } => {
-	let resolve!: (value: T) => void
-	let reject!: (error: Error) => void
-	const promise = new Promise<T>((nextResolve, nextReject) => {
-		resolve = nextResolve
-		reject = nextReject
-	})
-	return { promise, resolve, reject }
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

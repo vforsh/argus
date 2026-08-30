@@ -3,7 +3,8 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import type { TraceStartRequest, TraceStartResponse, TraceStopResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
-import { ensureArtifactsDir, ensureParentDir, resolveArtifactPath } from '../artifacts.js'
+import { ensureArtifactsDir, ensureParentDir, moveArtifactFile, resolveArtifactPath } from '../artifacts.js'
+import { createDeferred, type Deferred } from '../deferred.js'
 
 type TraceState = {
 	traceId: string
@@ -15,9 +16,8 @@ type TraceState = {
 	eventCount: number
 	startedAt: number
 	state: 'recording' | 'stopping'
-	completion: Promise<void>
-	resolveCompletion: () => void
-	rejectCompletion: (error: Error) => void
+	/** Settled when `Tracing.tracingComplete` has been written out, or the session failed. */
+	completion: Deferred<void>
 }
 
 export type TraceRecorder = {
@@ -28,16 +28,6 @@ export type TraceRecorder = {
 
 export const createTraceRecorder = (options: { session: CdpSessionHandle; artifactsDir: string }): TraceRecorder => {
 	let active: TraceState | null = null
-
-	const createDeferred = (): Pick<TraceState, 'completion' | 'resolveCompletion' | 'rejectCompletion'> => {
-		let resolveCompletion!: () => void
-		let rejectCompletion!: (error: Error) => void
-		const completion = new Promise<void>((resolve, reject) => {
-			resolveCompletion = resolve
-			rejectCompletion = reject
-		})
-		return { completion, resolveCompletion, rejectCompletion }
-	}
 
 	const finalizeTraceFile = async (state: TraceState): Promise<void> => {
 		if (state.stream.closed) {
@@ -77,18 +67,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 			return
 		}
 
-		await ensureParentDir(absolutePath)
-		try {
-			await fs.promises.rename(state.absolutePath, absolutePath)
-		} catch (error) {
-			const nodeError = error as NodeJS.ErrnoException
-			if (nodeError.code !== 'EXDEV') {
-				throw error
-			}
-
-			await fs.promises.copyFile(state.absolutePath, absolutePath)
-			await fs.promises.unlink(state.absolutePath)
-		}
+		await moveArtifactFile(state.absolutePath, absolutePath)
 
 		state.absolutePath = absolutePath
 		state.outFile = absolutePath
@@ -100,10 +79,10 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		}
 		void finalizeTraceFile(active)
 			.then(() => {
-				active?.resolveCompletion()
+				active?.completion.resolve()
 			})
 			.catch((error) => {
-				active?.rejectCompletion(error instanceof Error ? error : new Error(String(error)))
+				active?.completion.reject(error instanceof Error ? error : new Error(String(error)))
 			})
 			.finally(() => {
 				active = null
@@ -125,7 +104,6 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		const stream = fs.createWriteStream(path.resolve(absolutePath), { encoding: 'utf8' })
 		stream.write('{"traceEvents":[', 'utf8')
 
-		const deferred = createDeferred()
 		active = {
 			traceId,
 			sessionName,
@@ -136,9 +114,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 			eventCount: 0,
 			startedAt: Date.now(),
 			state: 'recording',
-			completion: deferred.completion,
-			resolveCompletion: deferred.resolveCompletion,
-			rejectCompletion: deferred.rejectCompletion,
+			completion: createDeferred(),
 		}
 
 		await options.session.sendAndWait('Tracing.start', {
@@ -159,7 +135,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		}
 		const current = active
 		if (current.state === 'stopping') {
-			await current.completion
+			await current.completion.promise
 			await resolveFinalPath(current, outFile)
 			return {
 				ok: true,
@@ -172,7 +148,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 
 		current.state = 'stopping'
 		await options.session.sendAndWait('Tracing.end', {}, { timeoutMs: 15_000 })
-		await current.completion
+		await current.completion.promise
 		await resolveFinalPath(current, outFile)
 		return {
 			ok: true,
@@ -188,7 +164,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 			return
 		}
 		const error = new Error(reason ?? 'CDP detached while tracing')
-		active.rejectCompletion(error)
+		active.completion.reject(error)
 		void finalizeTraceFile(active).finally(() => {
 			active = null
 		})

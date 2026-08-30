@@ -26,3 +26,23 @@ export const resolveArtifactPath = (artifactsDir: string, outFile: string | unde
 	const baseDir = path.resolve(artifactsDir)
 	return path.resolve(baseDir, trimmed || defaultName)
 }
+
+/**
+ * Move a finished artifact to its final path, falling back to copy+unlink across devices.
+ *
+ * The temp artifacts dir and a user-supplied `--out` often sit on different filesystems, where
+ * `rename` fails with EXDEV. Both recorders re-implemented this fallback verbatim.
+ */
+export const moveArtifactFile = async (from: string, to: string): Promise<void> => {
+	await ensureParentDir(to)
+	try {
+		await fs.rename(from, to)
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'EXDEV') {
+			throw error
+		}
+
+		await fs.copyFile(from, to)
+		await fs.unlink(from)
+	}
+}
