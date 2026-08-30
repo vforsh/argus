@@ -105,7 +105,8 @@ export const waitForWatcherReady = async (watcherPort: number, attempts = 50, de
 	return false
 }
 
-const closeServer = (server: http.Server): Promise<void> =>
+/** Structural so it closes both the HTTP servers and the raw TCP WebSocket server. */
+const closeServer = (server: { close: (callback?: () => void) => unknown }): Promise<void> =>
 	new Promise((resolve) => {
 		server.close(() => resolve())
 	})

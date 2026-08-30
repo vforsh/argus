@@ -2,6 +2,7 @@ import { test, expect } from 'bun:test'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
+import type { PageConsoleLogging } from '@vforsh/argus-core'
 import { runCommandWithExit } from './helpers/process.js'
 import { loadArgusConfig, resolveArgusConfigPath } from '../packages/argus/src/config/loadConfig.js'
 import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../packages/argus/src/config/mergeConfig.js'
@@ -92,7 +93,7 @@ test('config pageIndicator=false is honored when CLI does not override', async (
 		const configResult = loadArgusConfig(configPath)
 		expect(configResult).toBeTruthy()
 
-		const merged = mergeWatcherStartOptionsWithConfig({ pageIndicator: true }, createCommand({}), configResult!)
+		const merged = mergeWatcherStartOptionsWithConfig<{ pageIndicator?: boolean }>({ pageIndicator: true }, createCommand({}), configResult!)
 		expect(merged).toBeTruthy()
 		expect(merged!.pageIndicator).toBe(false)
 	} finally {
@@ -130,7 +131,7 @@ test('config artifacts resolve relative to the config directory', async () => {
 		const configResult = loadArgusConfig(configPath)
 		expect(configResult).toBeTruthy()
 
-		const merged = mergeWatcherStartOptionsWithConfig({}, createCommand({}), configResult!)
+		const merged = mergeWatcherStartOptionsWithConfig<{ artifacts?: string }>({}, createCommand({}), configResult!)
 		expect(merged).toBeTruthy()
 		expect(merged!.artifacts).toBe(path.resolve(configDir, 'artifacts'))
 	} finally {
@@ -192,7 +193,7 @@ test('config pageConsoleLogging is merged when CLI does not override', async () 
 		const configResult = loadArgusConfig(configPath)
 		expect(configResult).toBeTruthy()
 
-		const merged = mergeWatcherStartOptionsWithConfig({}, createCommand({}), configResult!)
+		const merged = mergeWatcherStartOptionsWithConfig<{ pageConsoleLogging?: PageConsoleLogging }>({}, createCommand({}), configResult!)
 		expect(merged).toBeTruthy()
 		expect(merged!.pageConsoleLogging).toBe('full')
 	} finally {

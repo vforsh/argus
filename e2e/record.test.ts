@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import type { CdpEventHandler, CdpSessionHandle, CdpTargetContext } from '../packages/argus-watcher/src/cdp/connection.js'
 import { createRecorder } from '../packages/argus-watcher/src/cdp/recording.js'
+import { createFakeCdpSession } from './helpers/fakeCdpSession.js'
 import {
 	inferRecordFormatFromOutFile,
 	parseRecordClipValue,
@@ -17,59 +17,21 @@ import {
 const PNG_8X8 =
 	'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAhklEQVR4nBXOQREAQQjEwJWCFKQgBSmIGAFIwclc7tlVeeS9J8eT88n15MaDFx9+L+QIOUOukBsPXnzxBylHyplypdx48OLLPyg5Ss6Sq+TGgxdf/UHz0Dw0D80DHrz4+g+Gh+FheBge8ODFN3+wPCwPy8PygAcvvv2D4+F4OB6OBzx48eEPqHqkwUku9gIAAAAASUVORK5CYII='
 
-class FakeCdpSession implements CdpSessionHandle {
-	readonly calls: string[] = []
-	private readonly handlers = new Map<string, Set<CdpEventHandler>>()
-
-	isAttached(): boolean {
-		return true
-	}
-
-	async sendAndWait(method: string): Promise<unknown> {
-		this.calls.push(method)
-		if (method === 'Page.getLayoutMetrics') {
-			return {
-				cssVisualViewport: {
-					pageX: 0,
-					pageY: 0,
-					scale: 1,
-					clientWidth: 8,
-					clientHeight: 8,
-				},
+/** Screencast-capable session: answers layout metrics and pushes one frame when recording starts. */
+const createScreencastSession = () =>
+	createFakeCdpSession({
+		respond: (method, _params, session) => {
+			if (method === 'Page.getLayoutMetrics') {
+				return { cssVisualViewport: { pageX: 0, pageY: 0, scale: 1, clientWidth: 8, clientHeight: 8 } }
 			}
-		}
-		if (method === 'Page.startScreencast') {
-			queueMicrotask(() => {
-				this.emit('Page.screencastFrame', { data: PNG_8X8, sessionId: 1 })
-			})
-		}
-		return {}
-	}
-
-	onEvent(method: string, handler: CdpEventHandler): () => void {
-		let bucket = this.handlers.get(method)
-		if (!bucket) {
-			bucket = new Set()
-			this.handlers.set(method, bucket)
-		}
-		bucket.add(handler)
-		return () => bucket?.delete(handler)
-	}
-
-	getTargetContext(): CdpTargetContext {
-		return { kind: 'page' }
-	}
-
-	async getReadyTargetContext(): Promise<CdpTargetContext> {
-		return { kind: 'page' }
-	}
-
-	private emit(method: string, params: unknown): void {
-		for (const handler of this.handlers.get(method) ?? []) {
-			handler(params, { sessionId: null })
-		}
-	}
-}
+			if (method === 'Page.startScreencast') {
+				queueMicrotask(() => {
+					session.emit('Page.screencastFrame', { data: PNG_8X8, sessionId: 1 })
+				})
+			}
+			return undefined
+		},
+	})
 
 describe('record command parsing', () => {
 	test('parses viewport clip values', () => {
@@ -125,7 +87,7 @@ describe('recorder', () => {
 	testWithMp4('records fake screencast frames to MP4 by default', async () => {
 		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-record-test-'))
 		tempDirs.push(tempDir)
-		const session = new FakeCdpSession()
+		const session = createScreencastSession()
 		const recordingStates: boolean[] = []
 		const recorder = createRecorder({
 			session,
@@ -151,15 +113,15 @@ describe('recorder', () => {
 		expect(stopped.frameCount).toBeGreaterThan(0)
 		expect(stat.size).toBeGreaterThan(0)
 		expect(recordingStates).toEqual([true, false])
-		expect(session.calls).toContain('Page.startScreencast')
-		expect(session.calls).toContain('Page.screencastFrameAck')
-		expect(session.calls).toContain('Page.stopScreencast')
+		expect(session.methods).toContain('Page.startScreencast')
+		expect(session.methods).toContain('Page.screencastFrameAck')
+		expect(session.methods).toContain('Page.stopScreencast')
 	})
 
 	testWithWebm('records fake screencast frames to WebM when requested', async () => {
 		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-record-test-'))
 		tempDirs.push(tempDir)
-		const session = new FakeCdpSession()
+		const session = createScreencastSession()
 		const recordingStates: boolean[] = []
 		const recorder = createRecorder({
 			session,
@@ -185,8 +147,8 @@ describe('recorder', () => {
 		expect(stopped.frameCount).toBeGreaterThan(0)
 		expect(stat.size).toBeGreaterThan(0)
 		expect(recordingStates).toEqual([true, false])
-		expect(session.calls).toContain('Page.startScreencast')
-		expect(session.calls).toContain('Page.screencastFrameAck')
-		expect(session.calls).toContain('Page.stopScreencast')
+		expect(session.methods).toContain('Page.startScreencast')
+		expect(session.methods).toContain('Page.screencastFrameAck')
+		expect(session.methods).toContain('Page.stopScreencast')
 	})
 })

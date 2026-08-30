@@ -152,7 +152,7 @@ export const startServer = (options: ServerOptions): http.Server => {
 export const startWebSocketServer = (port: number): TcpServer => {
 	const server = createTcpServer((socket) => {
 		let upgraded = false
-		socket.on('data', (chunk) => {
+		socket.on('data', (chunk: Buffer) => {
 			if (!upgraded) {
 				upgraded = handleWebSocketUpgrade(chunk, socket)
 				return

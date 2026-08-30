@@ -67,7 +67,7 @@ describe('evalValue', () => {
 	test('returns the raw value and omits the flag when jsonValue is false', async () => {
 		const { page, stub } = await withStub({ 'POST /eval': { payload: { ok: true, result: { raw: true }, type: 'object', exception: null } } })
 
-		expect(await page.evalValue('({raw:true})', { jsonValue: false })).toEqual({ raw: true })
+		expect(await page.evalValue<{ raw: boolean }>('({raw:true})', { jsonValue: false })).toEqual({ raw: true })
 		expect(stub.calls[0]?.body.jsonValue).toBe(false)
 	})
 
@@ -308,7 +308,7 @@ describe('registry pruning on failure', () => {
 		})
 
 		await expect(page.record({ durationMs: 100 })).rejects.toThrow(/nope/)
-		expect(await page.evalValue('"alive"')).toBe('alive')
+		expect(await page.evalValue<string>('"alive"')).toBe('alive')
 	})
 
 	test('evicts the watcher when the transport itself fails', async () => {

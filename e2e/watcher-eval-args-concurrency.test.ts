@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { chromium, type Browser, type CDPSession, type Page } from 'playwright'
 import type { CdpEventHandler, CdpSendOptions, CdpSessionHandle } from '../packages/argus-watcher/src/cdp/connection.js'
+import type { CdpEvent, CdpEventPayload, CdpResult } from '../packages/argus-watcher/src/cdp/protocol.js'
 import { evaluateExpression } from '../packages/argus-watcher/src/cdp/eval.js'
 
 describe('watcher eval argument isolation', () => {
@@ -63,10 +64,18 @@ describe('watcher eval argument isolation', () => {
 	})
 })
 
+/**
+ * Adapt a Playwright `CDPSession` to the watcher's session interface.
+ *
+ * Playwright types its protocol map independently, so the command and event payloads are cast
+ * across the boundary; the test asserts on behavior, not on those shapes.
+ */
 const createSessionHandle = (cdp: CDPSession): CdpSessionHandle => ({
 	isAttached: () => true,
-	sendAndWait: (method, params, options) => withTimeout(cdp.send(method, params), options),
-	onEvent: (method, handler) => onCdpEvent(cdp, method, handler),
+	sendAndWait: (method, params, options) => withTimeout(cdp.send(method as never, params as never), options) as Promise<CdpResult<typeof method>>,
+	onEvent: (method, handler) => onCdpEvent(cdp, method, handler as CdpEventHandler),
+	getTargetContext: () => ({ kind: 'page' }),
+	getReadyTargetContext: async () => ({ kind: 'page' }),
 })
 
 const withTimeout = async <T>(promise: Promise<T>, options?: CdpSendOptions): Promise<T> => {
@@ -86,7 +95,7 @@ const withTimeout = async <T>(promise: Promise<T>, options?: CdpSendOptions): Pr
 }
 
 const onCdpEvent = (cdp: CDPSession, method: string, handler: CdpEventHandler): (() => void) => {
-	const listener = (params: unknown): void => handler(params, {})
+	const listener = (params: unknown): void => handler(params as CdpEventPayload<CdpEvent>, { sessionId: null })
 	cdp.on(method as never, listener)
 	return () => cdp.off(method as never, listener)
 }

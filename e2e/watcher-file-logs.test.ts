@@ -15,6 +15,7 @@ test('WatcherFileLogger creates files lazily and rotates on navigation', async (
 		chrome: { host: '127.0.0.1', port: 9222 },
 		match: { url: 'example.com' },
 		maxFiles: 2,
+		includeTimestamps: false,
 	})
 
 	try {

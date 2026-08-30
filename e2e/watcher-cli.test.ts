@@ -13,9 +13,6 @@ const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
 
 test(
 	'watcher + CLI e2e',
-	{
-		timeout: 60_000,
-	},
 	async () => {
 		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-e2e-'))
 		const env = { ...process.env, ARGUS_HOME: tempDir }
@@ -479,4 +476,5 @@ test(
 			await fs.rm(tempDir, { recursive: true, force: true })
 		}
 	},
+	{ timeout: 60_000 },
 )
