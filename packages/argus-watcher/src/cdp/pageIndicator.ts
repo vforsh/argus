@@ -1,3 +1,4 @@
+import { tryEvaluateInPage } from './pageState.js'
 import type { CdpSessionHandle } from './connection.js'
 import { buildHeartbeatExpression, buildInstallExpression, buildRemoveExpression } from './pageIndicatorScript.js'
 import type { CdpTarget } from './watcherTargets.js'
@@ -213,38 +214,17 @@ const installIndicator = async (
 		state,
 	})
 
-	try {
-		await session.sendAndWait('Runtime.evaluate', {
-			expression,
-			returnByValue: true,
-		})
-	} catch {
-		// Best-effort; page may not be ready
-	}
+	await tryEvaluateInPage(session, expression)
 }
 
 const sendHeartbeat = async (session: CdpSessionHandle, info: PageIndicatorInfo, state: PageIndicatorState): Promise<void> => {
 	const expression = buildHeartbeatExpression(info, state)
 
-	try {
-		await session.sendAndWait('Runtime.evaluate', {
-			expression,
-			returnByValue: true,
-		})
-	} catch {
-		// Best-effort; CDP may be disconnected
-	}
+	await tryEvaluateInPage(session, expression)
 }
 
 const removeIndicator = async (session: CdpSessionHandle): Promise<void> => {
 	const expression = buildRemoveExpression()
 
-	try {
-		await session.sendAndWait('Runtime.evaluate', {
-			expression,
-			returnByValue: true,
-		})
-	} catch {
-		// Best-effort; CDP may be unavailable
-	}
+	await tryEvaluateInPage(session, expression)
 }

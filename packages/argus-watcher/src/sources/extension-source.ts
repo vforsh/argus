@@ -109,20 +109,24 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			const context = getCurrentTargetContext() ?? { kind: 'page' as const }
 			return context.kind === 'frame' ? targetRecovery.waitForSelectedFrameCommandTarget() : context
 		},
-		prepareCommand: async ({ method, params, targetContext }) => {
-			if (targetContext.kind !== 'frame') {
+		prepareCommand: async (command) => {
+			if (command.targetContext.kind !== 'frame') {
 				return undefined
 			}
 
 			const readyTargetContext = await targetRecovery.waitForSelectedFrameCommandTarget()
-			if (method !== 'Runtime.evaluate' || params?.contextId != null || readyTargetContext.sessionId) {
+			// Checking the method first narrows `command.params` to Runtime.evaluate's shape.
+			if (command.method !== 'Runtime.evaluate' || readyTargetContext.sessionId) {
+				return { targetContext: readyTargetContext }
+			}
+			if (command.params?.contextId != null) {
 				return { targetContext: readyTargetContext }
 			}
 
 			return {
 				targetContext: readyTargetContext,
 				params: {
-					...(params ?? {}),
+					...(command.params ?? { expression: '' }),
 					contextId: readyTargetContext.executionContextId,
 				},
 			}

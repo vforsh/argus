@@ -1,6 +1,6 @@
 import type { DomNode, DomTreeResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../connection.js'
-import type { CdpNode, CdpDescribeResult } from './types.js'
+import type { CdpNode } from '../protocol.js'
 import { getDomRootId, resolveSelectorMatches, toAttributesRecord, clamp } from './selector.js'
 
 const DEFAULT_DEPTH = 2
@@ -46,10 +46,10 @@ export const fetchDomSubtreeBySelector = async (session: CdpSessionHandle, optio
 			break
 		}
 
-		const describeResult = (await session.sendAndWait('DOM.describeNode', {
+		const describeResult = await session.sendAndWait('DOM.describeNode', {
 			nodeId,
 			depth: depth + 1, // CDP depth is from the queried node, so +1 to include that node
-		})) as CdpDescribeResult
+		})
 
 		if (!describeResult.node) {
 			continue

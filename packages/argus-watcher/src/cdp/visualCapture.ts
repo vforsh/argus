@@ -1,3 +1,4 @@
+import { evaluateInPage } from './pageState.js'
 import type { ScreenshotClipRegion } from '@vforsh/argus-core'
 import type { CdpSessionHandle, CdpTargetContext } from './connection.js'
 import { resolveFirstSelectorNodeId } from './dom/selector.js'
@@ -81,9 +82,9 @@ const createFrameCapturePlan = async (options: {
 }
 
 const resolveFrameViewportClip = async (pageSession: CdpSessionHandle, frameId: string): Promise<VisualCaptureClip> => {
-	const owner = (await pageSession.sendAndWait('DOM.getFrameOwner', {
+	const owner = await pageSession.sendAndWait('DOM.getFrameOwner', {
 		frameId,
-	})) as { backendNodeId?: number; nodeId?: number }
+	})
 
 	if (owner.backendNodeId == null && owner.nodeId == null) {
 		throw new Error(`Unable to resolve iframe owner for frame: ${frameId}`)
@@ -179,12 +180,12 @@ const resolveViewportSize = async (session: CdpSessionHandle): Promise<VisualCap
 		return { width: viewport.clientWidth, height: viewport.clientHeight }
 	}
 
-	const evaluated = (await session.sendAndWait('Runtime.evaluate', {
-		expression: '({width: window.visualViewport?.width ?? window.innerWidth, height: window.visualViewport?.height ?? window.innerHeight})',
-		returnByValue: true,
-	})) as { result?: { value?: { width?: number; height?: number } } }
-	const width = evaluated.result?.value?.width
-	const height = evaluated.result?.value?.height
+	const evaluated = await evaluateInPage<{ width?: unknown; height?: unknown }>(
+		session,
+		'({width: window.visualViewport?.width ?? window.innerWidth, height: window.visualViewport?.height ?? window.innerHeight})',
+	)
+	const width = evaluated?.width
+	const height = evaluated?.height
 	if (!isPositiveFiniteNumber(width) || !isPositiveFiniteNumber(height)) {
 		throw new Error('Unable to compute viewport size')
 	}

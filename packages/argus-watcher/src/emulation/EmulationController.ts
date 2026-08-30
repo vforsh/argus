@@ -71,10 +71,10 @@ export const createEmulationController = (): EmulationController => {
 	const onAttach = async (session: CdpSessionHandle): Promise<void> => {
 		// Capture baseline UA before any overrides
 		try {
-			const result = (await session.sendAndWait('Runtime.evaluate', {
+			const result = await session.sendAndWait('Runtime.evaluate', {
 				expression: 'navigator.userAgent',
 				returnByValue: true,
-			})) as { result?: { value?: unknown } }
+			})
 			const value = result?.result?.value
 			baselineUserAgent = typeof value === 'string' ? value : null
 		} catch {

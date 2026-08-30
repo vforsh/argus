@@ -1,15 +1,10 @@
 import type { DomElementInfo, DomInfoResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../connection.js'
 import type { ElementRefRegistry } from '../elementRefs.js'
-import type { CdpDescribeResult } from './types.js'
 import { clamp, countElementChildren, resolveElementTargets, toAttributesRecord, toDomNodeDescriptor } from './selector.js'
 
 const DEFAULT_OUTER_HTML_MAX_CHARS = 50_000
 const MAX_OUTER_HTML_CHARS = 500_000
-
-type CdpOuterHtmlResult = {
-	outerHTML?: string
-}
 
 /** Options for fetching DOM element info by selector. */
 export type FetchDomInfoOptions = {
@@ -50,10 +45,10 @@ export const fetchDomInfoBySelector = async (
 
 	for (const handle of handles) {
 		const descriptor = toDomNodeDescriptor(handle)
-		const describeResult = (await session.sendAndWait('DOM.describeNode', {
+		const describeResult = await session.sendAndWait('DOM.describeNode', {
 			...descriptor,
 			depth: 1, // Just enough to get child count
-		})) as CdpDescribeResult
+		})
 
 		if (!describeResult.node) {
 			continue
@@ -67,7 +62,7 @@ export const fetchDomInfoBySelector = async (
 		let outerHTMLTruncated = false
 
 		try {
-			const htmlResult = (await session.sendAndWait('DOM.getOuterHTML', descriptor)) as CdpOuterHtmlResult
+			const htmlResult = await session.sendAndWait('DOM.getOuterHTML', descriptor)
 			outerHTML = htmlResult.outerHTML ?? null
 
 			if (outerHTML && outerHTML.length > maxChars) {

@@ -1,3 +1,4 @@
+import type { CdpMethod, CdpParams } from '../cdp/protocol.js'
 import type { NetMockScope } from '@vforsh/argus-core'
 import type { CdpEventMeta, CdpSessionHandle } from '../cdp/connection.js'
 
@@ -94,7 +95,7 @@ export class NetMockInterception {
 		return !selectedIsChildFrame || request.frameId === selectedFrameId
 	}
 
-	public async sendRequestCommand(request: NetMockPausedRequest, method: string, params: Record<string, unknown>): Promise<void> {
+	public async sendRequestCommand<M extends CdpMethod>(request: NetMockPausedRequest, method: M, params: CdpParams<M>): Promise<void> {
 		await this.sendCommand({ key: request.sessionId ? `session:${request.sessionId}` : 'page', sessionId: request.sessionId }, method, params)
 	}
 
@@ -162,7 +163,11 @@ export class NetMockInterception {
 		return targets
 	}
 
-	private async sendCommand(target: InterceptionTarget, method: string, params: Record<string, unknown> = {}): Promise<boolean> {
+	private async sendCommand<M extends CdpMethod>(
+		target: InterceptionTarget,
+		method: M,
+		params: CdpParams<M> = {} as CdpParams<M>,
+	): Promise<boolean> {
 		const session = this.binding?.pageSession
 		if (!session?.isAttached()) {
 			return false

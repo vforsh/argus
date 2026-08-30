@@ -20,11 +20,7 @@ export const readNetworkBody = async (options: {
 	const commandOptions = options.sessionId ? { timeoutMs: 5_000, sessionId: options.sessionId } : { timeoutMs: 5_000 }
 
 	if (options.part === 'request') {
-		const result = (await options.session.sendAndWait(
-			'Network.getRequestPostData',
-			{ requestId: options.request.requestId },
-			commandOptions,
-		)) as { postData?: unknown }
+		const result = await options.session.sendAndWait('Network.getRequestPostData', { requestId: options.request.requestId }, commandOptions)
 
 		if (typeof result.postData !== 'string') {
 			throw createNetBodyError('Request body not available for this request', 'body_not_available')
@@ -37,10 +33,7 @@ export const readNetworkBody = async (options: {
 		}
 	}
 
-	const result = (await options.session.sendAndWait('Network.getResponseBody', { requestId: options.request.requestId }, commandOptions)) as {
-		body?: unknown
-		base64Encoded?: unknown
-	}
+	const result = await options.session.sendAndWait('Network.getResponseBody', { requestId: options.request.requestId }, commandOptions)
 
 	if (typeof result.body !== 'string') {
 		throw createNetBodyError('Response body not available for this request', 'body_not_available')

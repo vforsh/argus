@@ -17,8 +17,6 @@ export type PendingRequest = {
 	timeout: ReturnType<typeof setTimeout>
 }
 
-export type CdpEventMeta = {
-	sessionId?: string | null
-}
-
-export type CdpEventHandler = (params: unknown, meta: CdpEventMeta) => void
+// Event dispatch is the same contract on both transports; re-exported rather than
+// re-declared so the extension session cannot drift from the direct CDP one.
+export type { CdpEventHandler, CdpEventMeta } from '../cdp/connection.js'

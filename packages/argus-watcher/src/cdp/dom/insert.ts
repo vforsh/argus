@@ -1,3 +1,4 @@
+import { callFunctionOnNode } from '../pageState.js'
 import type { DomInsertPosition } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../connection.js'
 
@@ -31,19 +32,14 @@ export const insertAdjacentHtml = async (session: CdpSessionHandle, options: Ins
 		: 'function(pos, html) { this.insertAdjacentHTML(pos, html); }'
 
 	for (const nodeId of options.nodeIds) {
-		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
-		const objectId = resolved.object?.objectId
-		if (!objectId) {
-			continue
-		}
-
-		await session.sendAndWait('Runtime.callFunctionOn', {
-			objectId,
-			functionDeclaration,
-			arguments: [{ value: position }, { value: options.html }],
-			awaitPromise: false,
-			returnByValue: true,
-		})
+		await callFunctionOnNode(
+			session,
+			{ nodeId },
+			{
+				code: functionDeclaration,
+				args: [{ value: position }, { value: options.html }],
+			},
+		)
 	}
 
 	return { insertedCount: options.nodeIds.length }

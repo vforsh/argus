@@ -117,7 +117,7 @@ const formatExceptionResponse = (payload: RuntimeEvaluatePayload): EvalResponse 
 })
 
 const evaluateRawExpression = async (session: CdpSessionHandle, options: EvalRequestOptions): Promise<RuntimeEvaluatePayload> =>
-	(await session.sendAndWait(
+	await session.sendAndWait(
 		'Runtime.evaluate',
 		{
 			expression: options.expression,
@@ -129,17 +129,17 @@ const evaluateRawExpression = async (session: CdpSessionHandle, options: EvalReq
 			returnByValue: false,
 		},
 		{ timeoutMs: options.timeoutMs },
-	)) as RuntimeEvaluatePayload
+	)
 
 const awaitPromiseResult = async (session: CdpSessionHandle, promiseObjectId: string, timeoutMs?: number): Promise<RuntimeEvaluatePayload> =>
-	(await session.sendAndWait(
+	await session.sendAndWait(
 		'Runtime.awaitPromise',
 		{
 			promiseObjectId,
 			returnByValue: false,
 		},
 		{ timeoutMs },
-	)) as RuntimeEvaluatePayload
+	)
 
 /** JSON envelope produced when nothing was evaluated, or when the value is `undefined`. */
 const EMPTY_JSON_ENVELOPE = '{}'
@@ -164,7 +164,7 @@ const materializeJsonValue = async (
 		return { ok: true, json: JSON.stringify({ v: record.value }) ?? EMPTY_JSON_ENVELOPE }
 	}
 
-	const payload = (await session.sendAndWait(
+	const payload = await session.sendAndWait(
 		'Runtime.callFunctionOn',
 		{
 			objectId: record.objectId,
@@ -172,7 +172,7 @@ const materializeJsonValue = async (
 			returnByValue: true,
 		},
 		{ timeoutMs: options.timeoutMs },
-	)) as RuntimeEvaluatePayload
+	)
 
 	// Circular structures and throwing `toJSON` hooks surface here as page exceptions.
 	if (payload.exceptionDetails) {
@@ -192,13 +192,9 @@ const materializeRemoteObject = async (
 		return null
 	}
 
-	const runtimeClient = {
-		sendAndWait: (method: string, params?: Record<string, unknown>) => session.sendAndWait(method, params),
-	}
-
 	if ((options.returnByValue ?? true) && shouldMaterializeByValue(record)) {
 		try {
-			const byValuePayload = (await session.sendAndWait(
+			const byValuePayload = await session.sendAndWait(
 				'Runtime.callFunctionOn',
 				{
 					objectId: record.objectId,
@@ -206,17 +202,17 @@ const materializeRemoteObject = async (
 					returnByValue: true,
 				},
 				{ timeoutMs: options.timeoutMs },
-			)) as RuntimeEvaluatePayload
+			)
 
 			if (byValuePayload.result) {
-				return await serializeRemoteObject(byValuePayload.result, runtimeClient)
+				return await serializeRemoteObject(byValuePayload.result, session)
 			}
 		} catch {
 			// Fall back to shallow preview serialization when CDP cannot materialize by value.
 		}
 	}
 
-	return await serializeRemoteObject(record, runtimeClient)
+	return await serializeRemoteObject(record, session)
 }
 
 const shouldMaterializeByValue = (record: RuntimeRemoteObject): record is RuntimeRemoteObject & { objectId: string } => {

@@ -1,3 +1,4 @@
+import type { CdpMethod, CdpParams } from '../cdp/protocol.js'
 import type {
 	NetMockAddRequest,
 	NetMockAddResponse,
@@ -88,7 +89,7 @@ export const createNetMockController = (): NetMockController => {
 			return
 		}
 		if (action.kind === 'fulfill') {
-			const fulfillParams: Record<string, unknown> = { requestId: paused.requestId, responseCode: action.status }
+			const fulfillParams: CdpParams<'Fetch.fulfillRequest'> = { requestId: paused.requestId, responseCode: action.status }
 			if (action.headers && action.headers.length > 0) {
 				fulfillParams.responseHeaders = action.headers
 			}
@@ -100,7 +101,7 @@ export const createNetMockController = (): NetMockController => {
 		}
 
 		// action.kind === 'continue'
-		const continueParams: Record<string, unknown> = { requestId: paused.requestId }
+		const continueParams: CdpParams<'Fetch.continueRequest'> = { requestId: paused.requestId }
 		if (action.rewriteHost) {
 			const rewritten = rewriteUrlHost(paused.url, action.rewriteHost)
 			if (rewritten) {
@@ -118,7 +119,7 @@ export const createNetMockController = (): NetMockController => {
 	 * canceled mid-flight (navigation, tab close) — those are swallowed so a
 	 * noisy page cannot poison `lastError`.
 	 */
-	const sendAction = async (request: NetMockPausedRequest, cdpMethod: string, params: Record<string, unknown>): Promise<void> =>
+	const sendAction = async <M extends CdpMethod>(request: NetMockPausedRequest, cdpMethod: M, params: CdpParams<M>): Promise<void> =>
 		interception.sendRequestCommand(request, cdpMethod, params)
 
 	const getStatus = (ctx: { attached: boolean }): NetMockStatusResponse => ({

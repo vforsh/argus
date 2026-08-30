@@ -1,19 +1,7 @@
-import type { CdpNode } from './types.js'
+import type { CdpNode } from '../protocol.js'
 import type { CdpSessionHandle, CdpTargetContext } from '../connection.js'
 import type { ElementRefRegistry } from '../elementRefs.js'
 import { filterNodesByText } from '../text-filter.js'
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CDP response types (local to selector resolution)
-// ─────────────────────────────────────────────────────────────────────────────
-
-type CdpDocumentResult = {
-	root?: { nodeId?: number }
-}
-
-type CdpQueryAllResult = {
-	nodeIds?: number[]
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Selector resolution
@@ -70,7 +58,7 @@ export const resolveSelectorMatches = async (
 	text?: string,
 ): Promise<SelectorMatchResult> => {
 	// Always use querySelectorAll to get the true match count
-	const result = (await session.sendAndWait('DOM.querySelectorAll', { nodeId: rootId, selector })) as CdpQueryAllResult
+	const result = await session.sendAndWait('DOM.querySelectorAll', { nodeId: rootId, selector })
 	let allNodeIds = result.nodeIds ?? []
 
 	if (text != null) {
@@ -178,10 +166,10 @@ export const resolveFirstSelectorNodeId = async (session: CdpSessionHandle, sele
 }
 
 export const describeNodeByBackendId = async (session: CdpSessionHandle, backendNodeId: number): Promise<CdpNode | null> => {
-	const described = (await session.sendAndWait('DOM.describeNode', {
+	const described = await session.sendAndWait('DOM.describeNode', {
 		backendNodeId,
 		depth: 0,
-	})) as { node?: CdpNode }
+	})
 	return described.node ?? null
 }
 
@@ -194,9 +182,9 @@ export const resolveNodeIdByBackendId = async (session: CdpSessionHandle, backen
 	// Prime the document tree first so CDP can map backend ids back into frontend node ids.
 	await getDomRootId(session)
 
-	const pushed = (await session.sendAndWait('DOM.pushNodesByBackendIdsToFrontend', {
+	const pushed = await session.sendAndWait('DOM.pushNodesByBackendIdsToFrontend', {
 		backendNodeIds: [backendNodeId],
-	})) as { nodeIds?: number[] }
+	})
 	const nodeId = pushed.nodeIds?.[0]
 	return typeof nodeId === 'number' && nodeId > 0 ? nodeId : null
 }
@@ -234,18 +222,18 @@ const getFrameDomRootId = async (session: CdpSessionHandle, targetContext: Extra
 		throw new Error(`Selected frame is not ready yet: ${targetContext.frameId}`)
 	}
 
-	const evaluated = (await session.sendAndWait('Runtime.evaluate', {
+	const evaluated = await session.sendAndWait('Runtime.evaluate', {
 		expression: 'document',
 		contextId: targetContext.executionContextId,
 		returnByValue: false,
-	})) as { result?: { objectId?: string } }
+	})
 
 	const objectId = evaluated.result?.objectId
 	if (!objectId) {
 		throw new Error(`Unable to resolve DOM root for frame: ${targetContext.frameId}`)
 	}
 
-	const requested = (await session.sendAndWait('DOM.requestNode', { objectId })) as { nodeId?: number }
+	const requested = await session.sendAndWait('DOM.requestNode', { objectId })
 	if (!requested.nodeId) {
 		throw new Error(`Unable to resolve DOM root for frame: ${targetContext.frameId}`)
 	}
@@ -254,7 +242,7 @@ const getFrameDomRootId = async (session: CdpSessionHandle, targetContext: Extra
 }
 
 const getDocumentRootId = async (session: CdpSessionHandle): Promise<number> => {
-	const result = (await session.sendAndWait('DOM.getDocument', { depth: 1 })) as CdpDocumentResult
+	const result = await session.sendAndWait('DOM.getDocument', { depth: 1 })
 	const rootId = result.root?.nodeId
 	if (!rootId) {
 		throw new Error('Unable to resolve DOM root')

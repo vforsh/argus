@@ -1,3 +1,4 @@
+import { evaluateInPage } from './pageState.js'
 import {
 	AUTH_STATE_METADATA_SCHEMA_VERSION,
 	compareCookieIdentity,
@@ -109,7 +110,7 @@ export const setAuthCookie = async (
 	const pageState = await inspectPageState(session)
 	const cookie = normalizeSetCookieInput(options.cookie)
 
-	const payload = (await session.sendAndWait(
+	const payload = await session.sendAndWait(
 		'Network.setCookie',
 		{
 			name: cookie.name,
@@ -122,7 +123,7 @@ export const setAuthCookie = async (
 			expires: cookie.session ? undefined : (cookie.expires ?? undefined),
 		},
 		{ timeoutMs: 5_000 },
-	)) as { success?: boolean }
+	)
 
 	if (payload.success === false) {
 		throw new Error(`Chrome rejected cookie ${cookie.name}`)
@@ -266,13 +267,13 @@ const findContextCookie = async (
 }
 
 const readRawCookies = async (session: CdpSessionHandle): Promise<RawCookie[]> => {
-	const payload = (await session.sendAndWait('Network.getCookies', {}, { timeoutMs: 5000 })) as { cookies?: RawCookie[] }
+	const payload = await session.sendAndWait('Network.getCookies', {}, { timeoutMs: 5000 })
 	return payload.cookies ?? []
 }
 
 const readBrowserCookiesFromSession = async (session: CdpSessionHandle): Promise<AuthStateCookie[]> => {
 	try {
-		const payload = (await session.sendAndWait('Storage.getCookies', {}, { timeoutMs: 5000 })) as { cookies?: RawCookie[] }
+		const payload = await session.sendAndWait('Storage.getCookies', {}, { timeoutMs: 5000 })
 		return (payload.cookies ?? []).map(normalizeStateCookie)
 	} catch {
 		// Older/partial CDP targets may not expose Storage.getCookies. Fall back to page-scoped cookies.
@@ -351,10 +352,9 @@ const normalizeCookieExpires = (value: unknown): number | null => (typeof value 
  * first-party cookies from cross-site noise without duplicating URL resolution logic.
  */
 const inspectPageState = async (session: CdpSessionHandle): Promise<PageState> => {
-	const payload = (await session.sendAndWait(
-		'Runtime.evaluate',
-		{
-			expression: `(() => {
+	const state = await evaluateInPage<unknown>(
+		session,
+		`(() => {
 				try {
 					const url = String(location.href)
 					const origin = new URL(url).origin
@@ -382,20 +382,10 @@ const inspectPageState = async (session: CdpSessionHandle): Promise<PageState> =
 					throw new Error('Cannot determine origin: page is on a non-http URL (e.g., about:blank)')
 				}
 			})()`,
-			awaitPromise: false,
-			returnByValue: true,
-		},
-		{ timeoutMs: 5000 },
-	)) as {
-		result?: { value?: unknown }
-		exceptionDetails?: { text?: string; exception?: { description?: string } }
-	}
+		{ timeoutMs: 5000, failureMessage: 'Failed to inspect page auth state' },
+	)
 
-	if (payload.exceptionDetails) {
-		throw new Error(payload.exceptionDetails.exception?.description ?? payload.exceptionDetails.text ?? 'Failed to inspect page auth state')
-	}
-
-	return normalizePageState(payload.result?.value)
+	return normalizePageState(state)
 }
 
 const previewSecret = (value: string): string => {

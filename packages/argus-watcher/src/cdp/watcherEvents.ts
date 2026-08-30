@@ -27,8 +27,7 @@ export const toConsoleEvent = async (params: unknown, target: CdpTarget, config:
 		stackTrace?: { callFrames?: CallFrame[] }
 	}
 	const cdp = config.cdp
-	const runtimeClient = cdp ? { sendAndWait: (method: string, params?: Record<string, unknown>) => cdp.sendAndWait(method, params) } : undefined
-	const args = Array.isArray(record.args) ? await serializeRemoteObjects(record.args, runtimeClient) : []
+	const args = Array.isArray(record.args) ? await serializeRemoteObjects(record.args, cdp) : []
 	const text = formatArgs(args)
 	const baseEvent: Omit<LogEvent, 'id'> = {
 		ts: Date.now(),
@@ -62,8 +61,7 @@ export const toExceptionEvent = async (params: unknown, target: CdpTarget, confi
 	}
 	const details = record.exceptionDetails
 	const cdp = config.cdp
-	const runtimeClient = cdp ? { sendAndWait: (method: string, params?: Record<string, unknown>) => cdp.sendAndWait(method, params) } : undefined
-	const exceptionValue = details?.exception ? await serializeRemoteObject(details.exception, runtimeClient) : null
+	const exceptionValue = details?.exception ? await serializeRemoteObject(details.exception, cdp) : null
 	const args = exceptionValue != null ? [exceptionValue] : []
 	const exceptionDescription = describeExceptionValue(exceptionValue)
 	const text = formatExceptionText(details?.text, exceptionDescription)

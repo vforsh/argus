@@ -1,3 +1,4 @@
+import { callFunctionOnNode } from './pageState.js'
 import { matchesTextPattern, parseTextPattern } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 
@@ -8,17 +9,7 @@ export const filterNodesByText = async (session: CdpSessionHandle, nodeIds: numb
 	const pattern = parseTextPattern(text)
 	const filtered: number[] = []
 	for (const nodeId of nodeIds) {
-		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
-		const objectId = resolved.object?.objectId
-		if (!objectId) {
-			continue
-		}
-		const evalResult = (await session.sendAndWait('Runtime.callFunctionOn', {
-			objectId,
-			functionDeclaration: 'function() { return this.textContent?.trim(); }',
-			returnByValue: true,
-		})) as { result?: { value?: unknown } }
-		const trimmedText = evalResult.result?.value
+		const trimmedText = await callFunctionOnNode(session, { nodeId }, { code: 'function() { return this.textContent?.trim(); }' })
 		if (typeof trimmedText !== 'string') {
 			continue
 		}

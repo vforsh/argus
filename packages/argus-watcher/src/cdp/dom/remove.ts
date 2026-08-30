@@ -1,3 +1,4 @@
+import { callFunctionOnNode } from '../pageState.js'
 import type { CdpSessionHandle } from '../connection.js'
 import { getDomRootId, resolveSelectorMatches } from './selector.js'
 
@@ -28,18 +29,7 @@ export const removeElements = async (session: CdpSessionHandle, options: RemoveE
 	}
 
 	for (const nodeId of nodeIds) {
-		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
-		const objectId = resolved.object?.objectId
-		if (!objectId) {
-			continue
-		}
-
-		await session.sendAndWait('Runtime.callFunctionOn', {
-			objectId,
-			functionDeclaration: 'function() { this.remove(); }',
-			awaitPromise: false,
-			returnByValue: true,
-		})
+		await callFunctionOnNode(session, { nodeId }, { code: 'function() { this.remove(); }' })
 	}
 
 	return { allNodeIds, removedCount: nodeIds.length }

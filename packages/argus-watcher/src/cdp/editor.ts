@@ -1,3 +1,4 @@
+import type { CdpResult } from './protocol.js'
 import {
 	matchesTextPattern,
 	parseTextPattern,
@@ -33,19 +34,6 @@ type CssStyleSheetAddedParams = {
 
 type CssStyleSheetRemovedParams = {
 	styleSheetId?: string
-}
-
-type DebuggerGetScriptSourceResult = {
-	scriptSource?: string
-}
-
-type CssGetStyleSheetTextResult = {
-	text?: string
-}
-
-type DebuggerSetScriptSourceResult = {
-	status?: string
-	exceptionDetails?: { text?: string; exception?: { description?: string } }
 }
 
 const INLINE_SCRIPT_PREFIX = 'inline://'
@@ -389,20 +377,12 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 	}
 
 	async function readStylesheetSource(resource: RuntimeResource): Promise<string> {
-		const result = (await session.sendAndWait(
-			'CSS.getStyleSheetText',
-			{ styleSheetId: resource.id },
-			getSessionOptions(resource),
-		)) as CssGetStyleSheetTextResult
+		const result = await session.sendAndWait('CSS.getStyleSheetText', { styleSheetId: resource.id }, getSessionOptions(resource))
 		return result.text ?? ''
 	}
 
 	async function readScriptSource(resource: RuntimeResource): Promise<string> {
-		const result = (await session.sendAndWait(
-			'Debugger.getScriptSource',
-			{ scriptId: resource.id },
-			getSessionOptions(resource),
-		)) as DebuggerGetScriptSourceResult
+		const result = await session.sendAndWait('Debugger.getScriptSource', { scriptId: resource.id }, getSessionOptions(resource))
 		return result.scriptSource ?? ''
 	}
 }
@@ -437,13 +417,9 @@ const getSessionOptions = (resource: RuntimeResource): { sessionId?: string } | 
 const getSourceCacheKey = (resource: RuntimeResource): string => `${resource.type}:${resource.sessionId ?? 'root'}:${resource.id}`
 
 async function editScript(session: CdpSessionHandle, resource: RuntimeResource, source: string): Promise<void> {
-	let result: DebuggerSetScriptSourceResult
+	let result: CdpResult<'Debugger.setScriptSource'>
 	try {
-		result = (await session.sendAndWait(
-			'Debugger.setScriptSource',
-			{ scriptId: resource.id, scriptSource: source },
-			getSessionOptions(resource),
-		)) as DebuggerSetScriptSourceResult
+		result = await session.sendAndWait('Debugger.setScriptSource', { scriptId: resource.id, scriptSource: source }, getSessionOptions(resource))
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
 		if (/setScriptSource.*no longer available/i.test(message)) {
@@ -457,7 +433,7 @@ async function editScript(session: CdpSessionHandle, resource: RuntimeResource, 
 }
 
 /** Throw a descriptive error when V8 rejects a live script edit. */
-const assertScriptEditAccepted = (result: DebuggerSetScriptSourceResult): void => {
+const assertScriptEditAccepted = (result: CdpResult<'Debugger.setScriptSource'>): void => {
 	const status = result.status ?? 'Ok'
 	if (status === 'Ok') {
 		return

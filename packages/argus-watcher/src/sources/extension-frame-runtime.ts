@@ -10,7 +10,6 @@ import {
 	frameToTarget,
 	isSelectedTargetReady,
 	resolveRequestedTarget,
-	type CdpFrameTreeNode,
 	type ExtensionFrameState,
 } from './extension-frame-state.js'
 
@@ -104,7 +103,7 @@ export const refreshExtensionFrameTree = async (
 	state: ExtensionFrameState,
 	refreshFrameTitle: (frameId: string) => Promise<void>,
 ): Promise<void> => {
-	const frameTree = (await session.handle.sendAndWait('Page.getFrameTree')) as { frameTree?: CdpFrameTreeNode }
+	const frameTree = await session.handle.sendAndWait('Page.getFrameTree')
 	collectFrameTree(frameTree.frameTree, state)
 	await Promise.all([...state.executionContexts.keys()].map((frameId) => refreshFrameTitle(frameId)))
 }
@@ -152,7 +151,7 @@ export const refreshExtensionFrameTitle = async (
 
 	state.pendingTitleLoads.add(frameId)
 	try {
-		const evaluated = (await session.handle.sendAndWait(
+		const evaluated = await session.handle.sendAndWait(
 			'Runtime.evaluate',
 			{
 				expression: 'document.title',
@@ -161,7 +160,7 @@ export const refreshExtensionFrameTitle = async (
 				silent: true,
 			},
 			frame.sessionId ? { sessionId: frame.sessionId } : undefined,
-		)) as { result?: { value?: unknown } }
+		)
 
 		const title = typeof evaluated.result?.value === 'string' ? evaluated.result.value.trim() : ''
 		const latestFrame = state.frames.get(frameId)

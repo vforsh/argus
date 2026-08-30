@@ -1,8 +1,12 @@
+import type { CdpEvent, CdpEventPayload, CdpMethod, CdpParams, CdpResult } from './protocol.js'
+
 export type CdpEventMeta = {
-	sessionId?: string | null
+	/** Child protocol session the event arrived on, or `null` for the root target. */
+	sessionId: string | null
 }
 
-export type CdpEventHandler = (params: unknown, meta: CdpEventMeta) => void
+/** Handler for one CDP event, typed by the event it is registered for. */
+export type CdpEventHandler<E extends CdpEvent = CdpEvent> = (params: CdpEventPayload<E>, meta: CdpEventMeta) => void
 
 export type CdpSendOptions = {
 	/** Optional timeout for this CDP command (ms). */
@@ -22,8 +26,16 @@ export type CdpTargetContext =
 
 export type CdpSessionHandle = {
 	isAttached: () => boolean
-	sendAndWait: (method: string, params?: Record<string, unknown>, options?: CdpSendOptions) => Promise<unknown>
-	onEvent: (method: string, handler: CdpEventHandler) => () => void
+	/**
+	 * Send one CDP command and await its result.
+	 *
+	 * Parameters and result are looked up from {@link CdpCommandMap} by method name, so an
+	 * unknown method or a mistyped payload fails to compile. Use {@link sendUntypedCommand}
+	 * for the rare call whose method is genuinely computed at runtime.
+	 */
+	sendAndWait: <M extends CdpMethod>(method: M, params?: CdpParams<M>, options?: CdpSendOptions) => Promise<CdpResult<M>>
+	/** Subscribe to one CDP event. The handler receives that event's payload, not `unknown`. */
+	onEvent: <E extends CdpEvent>(method: E, handler: CdpEventHandler<E>) => () => void
 	/** Active target context for commands that need frame-aware behavior. */
 	getTargetContext?: () => CdpTargetContext
 	/** Resolve the selected target after recovery; rejects if a requested iframe is still not executable. */
@@ -52,7 +64,7 @@ export type CdpSessionController = {
 
 export const createCdpSessionHandle = (): CdpSessionController => {
 	let connection: CdpConnection | null = null
-	const handlers = new Map<string, Set<CdpEventHandler>>()
+	const handlers = new Map<string, Set<CdpEventHandler<never>>>()
 
 	const session: CdpSessionHandle = {
 		isAttached: () => Boolean(connection),
@@ -60,7 +72,7 @@ export const createCdpSessionHandle = (): CdpSessionController => {
 			if (!connection) {
 				throw createCdpNotAttachedError()
 			}
-			return connection.sendAndWait(method, params, options)
+			return connection.sendAndWait(method, params as Record<string, unknown> | undefined, options)
 		},
 		onEvent: (method, handler) => {
 			let bucket = handlers.get(method)
@@ -68,9 +80,9 @@ export const createCdpSessionHandle = (): CdpSessionController => {
 				bucket = new Set()
 				handlers.set(method, bucket)
 			}
-			bucket.add(handler)
+			bucket.add(handler as CdpEventHandler<never>)
 			return () => {
-				bucket?.delete(handler)
+				bucket?.delete(handler as CdpEventHandler<never>)
 			}
 		},
 	}
@@ -139,7 +151,9 @@ export const createCdpSessionHandle = (): CdpSessionController => {
 				}
 				for (const handler of bucket) {
 					try {
-						handler(payload.params, { sessionId: null })
+						// Dispatch is untyped by construction: the wire carries an arbitrary method
+						// string, and the handler's payload type was checked at registration.
+						;(handler as CdpEventHandler<CdpEvent>)(payload.params as CdpEventPayload<CdpEvent>, { sessionId: null })
 					} catch {
 						// Ignore handler errors to keep dispatch resilient.
 					}

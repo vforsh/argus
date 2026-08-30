@@ -1,37 +1,8 @@
+import type { CdpAXNode, CdpAXProperty, CdpAXValue } from './protocol.js'
 import type { AXTreeNode, SnapshotResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import type { ElementRefRegistry } from './elementRefs.js'
 import { resolveFirstSelectorNodeId } from './dom/selector.js'
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CDP response types (internal)
-// ─────────────────────────────────────────────────────────────────────────────
-
-type CdpAXValue = {
-	type: string
-	value?: unknown
-}
-
-type CdpAXProperty = {
-	name: string
-	value: CdpAXValue
-}
-
-type CdpAXNode = {
-	nodeId: string
-	parentId?: string
-	childIds?: string[]
-	ignored?: boolean
-	role?: CdpAXValue
-	name?: CdpAXValue
-	value?: CdpAXValue
-	properties?: CdpAXProperty[]
-	backendDOMNodeId?: number
-}
-
-type CdpAXTreeResult = {
-	nodes?: CdpAXNode[]
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Options
@@ -279,7 +250,7 @@ const convertNode = (nodeMap: Map<string, CdpAXNode>, nodeId: string, currentDep
 }
 
 const fetchAccessibilityNodes = async (session: CdpSessionHandle): Promise<CdpAXNode[]> => {
-	const axResult = (await session.sendAndWait('Accessibility.getFullAXTree')) as CdpAXTreeResult
+	const axResult = await session.sendAndWait('Accessibility.getFullAXTree')
 	return axResult.nodes ?? []
 }
 
@@ -303,18 +274,16 @@ const filterAccessibilityNodesBySelector = async (session: CdpSessionHandle, nod
 	// Load the subtree below the resolved root so we can translate DOM membership to AX nodes.
 	await session.sendAndWait('DOM.getDocument', { depth: -1 })
 
-	const allDescendants = (await session.sendAndWait('DOM.querySelectorAll', {
+	const allDescendants = await session.sendAndWait('DOM.querySelectorAll', {
 		nodeId: domNodeId,
 		selector: '*',
-	})) as { nodeIds?: number[] }
+	})
 	const descendantNodeIds = allDescendants.nodeIds ?? []
 
 	const backendIds = new Set<number>()
 	const allDomNodeIds = [domNodeId, ...descendantNodeIds]
 	for (const nid of allDomNodeIds) {
-		const desc = (await session.sendAndWait('DOM.describeNode', { nodeId: nid, depth: 0 })) as {
-			node?: { backendNodeId?: number }
-		}
+		const desc = await session.sendAndWait('DOM.describeNode', { nodeId: nid, depth: 0 })
 		if (desc.node?.backendNodeId != null) {
 			backendIds.add(desc.node.backendNodeId)
 		}

@@ -1,3 +1,4 @@
+import { evaluateInPage } from './pageState.js'
 import type { StorageArea, StorageRequest, StorageResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 
@@ -11,27 +12,7 @@ const storageAccessors = {
  * Throws on CDP failures or origin mismatch.
  */
 export const executeStorage = async (session: CdpSessionHandle, area: StorageArea, request: StorageRequest): Promise<StorageResponse> => {
-	const result = await session.sendAndWait(
-		'Runtime.evaluate',
-		{
-			expression: buildStorageExpression(area, request),
-			awaitPromise: false,
-			returnByValue: true,
-		},
-		{ timeoutMs: 5000 },
-	)
-
-	const payload = result as {
-		result?: { type?: string; value?: unknown }
-		exceptionDetails?: { text?: string; exception?: { description?: string } }
-	}
-
-	if (payload.exceptionDetails) {
-		const message = payload.exceptionDetails.exception?.description ?? payload.exceptionDetails.text ?? 'Unknown error'
-		throw new Error(message)
-	}
-
-	return payload.result?.value as StorageResponse
+	return await evaluateInPage<StorageResponse>(session, buildStorageExpression(area, request), { timeoutMs: 5000 })
 }
 
 const buildStorageExpression = (area: StorageArea, request: StorageRequest): string => {

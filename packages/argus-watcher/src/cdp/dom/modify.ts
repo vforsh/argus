@@ -1,3 +1,4 @@
+import { callFunctionOnNode } from '../pageState.js'
 import type { CdpSessionHandle } from '../connection.js'
 import { getDomRootId, resolveSelectorMatches } from './selector.js'
 
@@ -76,19 +77,7 @@ export const modifyElements = async (session: CdpSessionHandle, options: ModifyE
 	const fn = buildModifyFunction(options)
 
 	for (const nodeId of nodeIds) {
-		const resolved = (await session.sendAndWait('DOM.resolveNode', { nodeId })) as { object?: { objectId?: string } }
-		const objectId = resolved.object?.objectId
-		if (!objectId) {
-			continue
-		}
-
-		await session.sendAndWait('Runtime.callFunctionOn', {
-			objectId,
-			functionDeclaration: fn.code,
-			arguments: fn.args,
-			awaitPromise: false,
-			returnByValue: true,
-		})
+		await callFunctionOnNode(session, { nodeId }, fn)
 	}
 
 	return { allNodeIds, modifiedCount: nodeIds.length }

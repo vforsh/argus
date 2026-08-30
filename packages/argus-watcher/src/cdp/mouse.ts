@@ -1,3 +1,4 @@
+import { callFunctionOnNode, evaluateInPage } from './pageState.js'
 import type { CdpSessionHandle } from './connection.js'
 import { resolveSelectorTargets, toDomNodeDescriptor, type DomNodeHandle } from './dom/selector.js'
 
@@ -146,18 +147,12 @@ export const scrollIntoView = async (session: CdpSessionHandle, handle: DomNodeH
 		// Fallback to runtime evaluation if CDP cannot scroll directly.
 	}
 
-	const resolved = (await session.sendAndWait('DOM.resolveNode', descriptor)) as { object?: { objectId?: string } }
-	const objectId = resolved.object?.objectId
-	if (!objectId) {
-		throw createNotInteractableError('Unable to resolve node for scrolling')
-	}
-
-	await session.sendAndWait('Runtime.callFunctionOn', {
-		objectId,
-		functionDeclaration: 'function() { this.scrollIntoView({ block: "center", inline: "center" }); }',
-		awaitPromise: false,
-		returnByValue: true,
-	})
+	await callFunctionOnNode(
+		session,
+		descriptor,
+		{ code: 'function() { this.scrollIntoView({ block: "center", inline: "center" }); }' },
+		{ onUnresolved: () => createNotInteractableError('Unable to resolve node for scrolling') },
+	)
 }
 
 type ScrollPosition = { scrollX: number; scrollY: number }
@@ -188,39 +183,27 @@ export const scrollDomNodes = async (session: CdpSessionHandle, handles: DomNode
 export const scrollViewport = async (session: CdpSessionHandle, mode: ScrollMode): Promise<ScrollPosition> => {
 	const fn = mode.to ? `window.scrollTo(${mode.to.x}, ${mode.to.y})` : `window.scrollBy(${mode.by!.x}, ${mode.by!.y})`
 
-	await session.sendAndWait('Runtime.evaluate', {
-		expression: fn,
-		awaitPromise: false,
-		returnByValue: true,
-	})
+	await evaluateInPage(session, fn)
 
 	return getViewportScroll(session)
 }
 
 const scrollElementContainer = async (session: CdpSessionHandle, handle: DomNodeHandle, mode: ScrollMode): Promise<void> => {
-	const resolved = (await session.sendAndWait('DOM.resolveNode', toDomNodeDescriptor(handle))) as { object?: { objectId?: string } }
-	const objectId = resolved.object?.objectId
-	if (!objectId) {
-		throw createNotInteractableError('Unable to resolve node for scrolling')
-	}
-
 	const fn = mode.to ? `function() { this.scrollTo(${mode.to!.x}, ${mode.to!.y}); }` : `function() { this.scrollBy(${mode.by!.x}, ${mode.by!.y}); }`
 
-	await session.sendAndWait('Runtime.callFunctionOn', {
-		objectId,
-		functionDeclaration: fn,
-		awaitPromise: false,
-		returnByValue: true,
-	})
+	await callFunctionOnNode(
+		session,
+		toDomNodeDescriptor(handle),
+		{ code: fn },
+		{
+			onUnresolved: () => createNotInteractableError('Unable to resolve node for scrolling'),
+		},
+	)
 }
 
 const getViewportScroll = async (session: CdpSessionHandle): Promise<ScrollPosition> => {
-	const result = (await session.sendAndWait('Runtime.evaluate', {
-		expression: 'JSON.stringify({scrollX:window.scrollX,scrollY:window.scrollY})',
-		returnByValue: true,
-	})) as { result?: { value?: string } }
-
-	const parsed = result.result?.value ? JSON.parse(result.result.value) : { scrollX: 0, scrollY: 0 }
+	const serialized = await evaluateInPage<string | undefined>(session, 'JSON.stringify({scrollX:window.scrollX,scrollY:window.scrollY})')
+	const parsed: ScrollPosition = serialized ? JSON.parse(serialized) : { scrollX: 0, scrollY: 0 }
 	return { scrollX: parsed.scrollX, scrollY: parsed.scrollY }
 }
 
@@ -238,9 +221,7 @@ export const resolveNodePoint = async (session: CdpSessionHandle, handle: DomNod
 /** Uses getBoundingClientRect() to get viewport-relative coordinates (no scroll-offset ambiguity). */
 const resolveNodeRect = async (session: CdpSessionHandle, handle: DomNodeHandle): Promise<{ x: number; y: number; w: number; h: number }> => {
 	const descriptor = toDomNodeDescriptor(handle)
-	const boxModel = (await session.sendAndWait('DOM.getBoxModel', descriptor).catch(() => null)) as {
-		model?: { border?: number[]; content?: number[] }
-	} | null
+	const boxModel = await session.sendAndWait('DOM.getBoxModel', descriptor).catch(() => null)
 	const quad = boxModel?.model?.border ?? boxModel?.model?.content
 	if (quad && quad.length >= 8) {
 		const xs = [quad[0], quad[2], quad[4], quad[6]]
@@ -252,19 +233,9 @@ const resolveNodeRect = async (session: CdpSessionHandle, handle: DomNodeHandle)
 		return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
 	}
 
-	const resolved = (await session.sendAndWait('DOM.resolveNode', descriptor)) as { object?: { objectId?: string } }
-	const objectId = resolved.object?.objectId
-	if (!objectId) {
-		throw createNotInteractableError('Unable to resolve node')
-	}
-
-	const result = (await session.sendAndWait('Runtime.callFunctionOn', {
-		objectId,
-		functionDeclaration: 'function(){var r=this.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}}',
-		returnByValue: true,
-	})) as { result?: { value?: { x: number; y: number; w: number; h: number } } }
-
-	const rect = result.result?.value
+	const rect = await callFunctionOnNode<{ x: number; y: number; w: number; h: number }>(session, descriptor, {
+		code: 'function(){var r=this.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}}',
+	})
 	if (!rect || !Number.isFinite(rect.x) || !Number.isFinite(rect.y)) {
 		throw createNotInteractableError('Unable to compute element rect')
 	}

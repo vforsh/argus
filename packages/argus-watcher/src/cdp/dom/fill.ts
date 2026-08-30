@@ -1,3 +1,4 @@
+import { callFunctionOnNode } from '../pageState.js'
 import type { CdpSessionHandle } from '../connection.js'
 import { getDomRootId, resolveSelectorMatches, toDomNodeDescriptor, type DomNodeHandle } from './selector.js'
 
@@ -47,17 +48,7 @@ export const fillResolvedNodes = async (session: CdpSessionHandle, handles: DomN
 	if (handles.length === 0) return 0
 
 	for (const handle of handles) {
-		const resolved = (await session.sendAndWait('DOM.resolveNode', toDomNodeDescriptor(handle))) as { object?: { objectId?: string } }
-		const objectId = resolved.object?.objectId
-		if (!objectId) continue
-
-		await session.sendAndWait('Runtime.callFunctionOn', {
-			objectId,
-			functionDeclaration: FILL_FUNCTION,
-			arguments: [{ value }],
-			awaitPromise: false,
-			returnByValue: true,
-		})
+		await callFunctionOnNode(session, toDomNodeDescriptor(handle), { code: FILL_FUNCTION, args: [{ value }] })
 	}
 
 	return handles.length

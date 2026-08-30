@@ -76,10 +76,10 @@ const removeCompositeLabelWrappers = async (session: CdpSessionHandle, matches: 
 			kept.push(candidate.match)
 			continue
 		}
-		const descendants = (await session.sendAndWait('DOM.querySelectorAll', {
+		const descendants = await session.sendAndWait('DOM.querySelectorAll', {
 			nodeId: candidate.nodeId,
 			selector: 'button,input,select,textarea',
-		})) as { nodeIds?: number[] }
+		})
 		const descendantIds = new Set(descendants.nodeIds ?? [])
 		const wrapsMatchedNative = nativeCandidates.some(
 			(native) =>

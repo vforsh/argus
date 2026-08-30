@@ -3,6 +3,7 @@
  * Implements CdpSessionHandle interface using Native Messaging.
  */
 
+import type { CdpEvent, CdpEventPayload } from '../cdp/protocol.js'
 import type { NativeMessagingHandler } from './messaging.js'
 import type {
 	PendingRequest,
@@ -42,7 +43,7 @@ export class SessionManager {
 	private messaging: NativeMessagingHandler<ExtensionToTabHost, TabHostToExtension>
 	private sessions = new Map<number, ExtensionSession>()
 	private pendingRequests = new Map<number, PendingRequest>()
-	private eventHandlers = new Map<number, Map<string, Set<CdpEventHandler>>>()
+	private eventHandlers = new Map<number, Map<string, Set<CdpEventHandler<never>>>>()
 	private events: SessionManagerEvents
 
 	constructor(messaging: NativeMessagingHandler<ExtensionToTabHost, TabHostToExtension>, events: SessionManagerEvents) {
@@ -128,7 +129,9 @@ export class SessionManager {
 		const meta: CdpEventMeta = { sessionId: message.sessionId ?? null }
 		for (const handler of methodHandlers) {
 			try {
-				handler(message.params, meta)
+				// The wire carries an arbitrary method string; each handler's payload type was
+				// checked when it was registered against a specific event.
+				;(handler as CdpEventHandler<CdpEvent>)(message.params as CdpEventPayload<CdpEvent>, meta)
 			} catch {
 				// Ignore handler errors
 			}
@@ -170,7 +173,7 @@ export class SessionManager {
 	 */
 	private createSession(message: TabAttachedMessage): ExtensionSession {
 		const { tabId, url, title, faviconUrl } = message
-		const tabHandlers = new Map<string, Set<CdpEventHandler>>()
+		const tabHandlers = new Map<string, Set<CdpEventHandler<never>>>()
 		this.eventHandlers.set(tabId, tabHandlers)
 
 		const handle: CdpSessionHandle = {
@@ -201,10 +204,12 @@ export class SessionManager {
 					methodHandlers = new Set()
 					tabHandlers.set(method, methodHandlers)
 				}
-				methodHandlers.add(handler)
+				// The registry spans every event, so payload types are erased in storage;
+				// the method/handler pairing was checked at this call.
+				methodHandlers.add(handler as CdpEventHandler<never>)
 
 				return () => {
-					methodHandlers?.delete(handler)
+					methodHandlers?.delete(handler as CdpEventHandler<never>)
 				}
 			},
 		}

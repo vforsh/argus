@@ -1,12 +1,35 @@
 import type { ExtensionSession } from '../native-messaging/session-manager.js'
-import type { CdpSendOptions, CdpSessionHandle, CdpTargetContext } from '../cdp/connection.js'
+import type { CdpEventHandler, CdpSendOptions, CdpSessionHandle, CdpTargetContext } from '../cdp/connection.js'
+import type { CdpEvent, CdpMethod, CdpParams } from '../cdp/protocol.js'
 
+/**
+ * One re-bindable event subscription.
+ *
+ * The registry holds subscriptions for many different events at once, so the payload type
+ * is erased here and restored when re-subscribing — the pairing of `method` and `handler`
+ * was checked at the `onEvent` call that created the record.
+ */
 type DelegatingEventSubscription = {
-	method: string
-	handler: Parameters<CdpSessionHandle['onEvent']>[1]
+	method: CdpEvent
+	handler: CdpEventHandler<never>
 	off: (() => void) | null
 	unbind: () => void
 }
+
+/**
+ * A command about to be forwarded, discriminated by method.
+ *
+ * Written as a mapped union rather than `{ method: CdpMethod; params?: ... }` so that
+ * narrowing on `command.method` also narrows `command.params` to that method's shape.
+ */
+type PreparedCdpCommand = {
+	[M in CdpMethod]: {
+		method: M
+		params?: CdpParams<M>
+		commandOptions?: CdpSendOptions
+		targetContext: CdpTargetContext
+	}
+}[CdpMethod]
 
 export type DelegatingSessionController = {
 	rebind: () => void
@@ -18,19 +41,14 @@ type CreateDelegatingSessionOptions = {
 	requireCurrentSession: () => ExtensionSession
 	getTargetContext: () => CdpTargetContext
 	getReadyTargetContext?: () => Promise<CdpTargetContext>
-	prepareCommand?: (command: {
-		method: string
-		params?: Record<string, unknown>
-		commandOptions?: CdpSendOptions
-		targetContext: CdpTargetContext
-	}) =>
+	prepareCommand?: (command: PreparedCdpCommand) =>
 		| {
-				params?: Record<string, unknown>
+				params?: CdpParams<CdpMethod>
 				commandOptions?: CdpSendOptions
 				targetContext?: CdpTargetContext
 		  }
 		| Promise<{
-				params?: Record<string, unknown>
+				params?: CdpParams<CdpMethod>
 				commandOptions?: CdpSendOptions
 				targetContext?: CdpTargetContext
 		  } | void>
@@ -53,7 +71,7 @@ export const createDelegatingSession = (
 			if (!currentSession) {
 				continue
 			}
-			subscription.off = currentSession.handle.onEvent(subscription.method, subscription.handler)
+			subscription.off = currentSession.handle.onEvent(subscription.method, subscription.handler as CdpEventHandler<CdpEvent>)
 		}
 	}
 
@@ -71,7 +89,7 @@ export const createDelegatingSession = (
 
 	const session: CdpSessionHandle = {
 		isAttached: () => options.getCurrentSession()?.handle.isAttached() ?? false,
-		sendAndWait: async (method, params, commandOptions) => {
+		sendAndWait: async <M extends CdpMethod>(method: M, params?: CdpParams<M>, commandOptions?: CdpSendOptions) => {
 			const currentSession = options.requireCurrentSession()
 			let targetContext = options.getTargetContext()
 			let nextParams = params
@@ -82,8 +100,10 @@ export const createDelegatingSession = (
 					params,
 					commandOptions,
 					targetContext,
-				})
-				nextParams = prepared?.params ?? params
+				} as PreparedCdpCommand)
+				// prepareCommand returns params for whichever method it was handed, so the
+				// union it declares collapses back to this call's method.
+				nextParams = (prepared?.params as CdpParams<M> | undefined) ?? params
 				nextCommandOptions = prepared?.commandOptions ?? commandOptions
 				targetContext = prepared?.targetContext ?? targetContext
 			}
@@ -94,7 +114,7 @@ export const createDelegatingSession = (
 			return currentSession.handle.sendAndWait(method, nextParams, nextOptions)
 		},
 		onEvent: (method, handler) => {
-			const subscription = createDelegatingEventSubscription(method, handler)
+			const subscription = createDelegatingEventSubscription(method, handler as CdpEventHandler<never>)
 			subscriptions.add(subscription)
 			controller.rebind()
 
@@ -111,7 +131,7 @@ export const createDelegatingSession = (
 	return { session, controller }
 }
 
-const createDelegatingEventSubscription = (method: string, handler: Parameters<CdpSessionHandle['onEvent']>[1]): DelegatingEventSubscription => ({
+const createDelegatingEventSubscription = (method: CdpEvent, handler: CdpEventHandler<never>): DelegatingEventSubscription => ({
 	method,
 	handler,
 	off: null,

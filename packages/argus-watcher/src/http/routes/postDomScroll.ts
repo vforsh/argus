@@ -1,3 +1,4 @@
+import { evaluateInPage } from '../../cdp/pageState.js'
 import type { DomScrollRequest, DomScrollResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../../cdp/connection.js'
 import { resolveDomSelectorMatches, emulateScroll, emulateScrollOnNodes } from '../../cdp/mouse.js'
@@ -73,11 +74,7 @@ export const route = defineJsonRoute<DomScrollRequest, DomScrollResponse>({
 })
 
 const getViewportSize = async (session: CdpSessionHandle): Promise<{ width: number; height: number }> => {
-	const result = (await session.sendAndWait('Runtime.evaluate', {
-		expression: 'JSON.stringify({width:window.innerWidth,height:window.innerHeight})',
-		returnByValue: true,
-	})) as { result?: { value?: string } }
-
-	const parsed = result.result?.value ? JSON.parse(result.result.value) : { width: 800, height: 600 }
+	const serialized = await evaluateInPage<string | undefined>(session, 'JSON.stringify({width:window.innerWidth,height:window.innerHeight})')
+	const parsed: { width: number; height: number } = serialized ? JSON.parse(serialized) : { width: 800, height: 600 }
 	return { width: parsed.width, height: parsed.height }
 }

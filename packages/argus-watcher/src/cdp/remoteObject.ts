@@ -1,6 +1,12 @@
-export type CdpRuntimeClient = {
-	sendAndWait: (method: string, params?: Record<string, unknown>) => Promise<unknown>
-}
+import type { CdpSessionHandle } from './connection.js'
+/**
+ * The slice of a CDP session that remote-object serialization needs.
+ *
+ * Narrowed to `sendAndWait` so tests can supply a stub, but typed from
+ * {@link CdpSessionHandle} rather than re-declared — call sites now pass the session
+ * straight through instead of wrapping it in an adapter that only widened the types.
+ */
+export type CdpRuntimeClient = Pick<CdpSessionHandle, 'sendAndWait'>
 
 type RemoteObjectRecord = {
 	type?: string
@@ -78,10 +84,7 @@ const serializeRemoteObjectSync = (value: unknown): unknown => {
 	return record.description ?? record.subtype ?? record.type ?? 'Object'
 }
 
-const expandRemoteObjectViaGetProperties = async (
-	record: RemoteObjectRecord,
-	cdp: CdpRuntimeClient,
-): Promise<Record<string, unknown> | null> => {
+const expandRemoteObjectViaGetProperties = async (record: RemoteObjectRecord, cdp: CdpRuntimeClient): Promise<Record<string, unknown> | null> => {
 	if (!record.objectId) {
 		return null
 	}
