@@ -9,7 +9,7 @@
 
 ## Progress
 
-All six sequencing steps are done, plus a follow-up pass closing C1, A7, A4, C3, D7, C8, D6, D4, and D5 — everything except one deliberately declined item (C2). 45 commits, `bf19320..HEAD`. The nine follow-up findings were then exercised against live watchers (table below), which surfaced one pre-existing bug in sourcemap resolution. **What is left is in [Remaining work](#remaining-work) below**, re-measured against the current tree. Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. **Full `test:e2e`: 25/25 files pass.**
+Every finding in this audit is closed except **C2**, which is deliberately declined until an e2e harness can drive a real extension ([`tasks/c2-frame-snapshot.md`](tasks/c2-frame-snapshot.md)). Two passes: 45 commits `bf19320..028f1e1` closing the six sequencing steps plus C1, A7, A4, C3, D7, C8, D6, D4, D5; then 19 commits `028f1e1..HEAD` closing B10, D13, D17, D9, D10, D15, D16, and the test-surface debt — recorded in [`tasks/code-quality-remaining.md`](tasks/code-quality-remaining.md). The first pass's findings were exercised against live watchers (table below), which surfaced one pre-existing sourcemap bug; that is fixed too, reproduced before and verified after against a live watcher. Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:e2e`. **Full gate: 114 unit tests + 25/25 e2e files pass.**
 
 **One regression found by testing against a live extension watcher and fixed** (`d1b9e68`): merging Commander options by value let a parent's option _default_ win when a subcommand declares the same flag but the user omits it — `net --resource-type` is a repeatable filter defaulting to `[]`, `net mock add --resource-type` is a scalar, so the subcommand received the parent's empty array and the watcher schema rejected it. The rule is now "the nearest command declaring an option owns it, even when absent". The unit test added with B2 had missed this because it only covered flags that were actually typed.
 
@@ -85,62 +85,30 @@ The e2e suite cannot reach several of the paths this pass changed, so they were 
 
 ## Remaining work
 
-**Execution plan: [`tasks/code-quality-remaining.md`](tasks/code-quality-remaining.md)** (everything below except C2, ordered and scoped for work). C2 has its own plan in [`tasks/c2-frame-snapshot.md`](tasks/c2-frame-snapshot.md). The summary below stays as the audit's own record.
+**C2 only.** Everything else in this section is closed — see [`tasks/code-quality-remaining.md`](tasks/code-quality-remaining.md) for the record of how, including three items that landed differently than planned. 19 commits, `028f1e1..HEAD`, +3079/−2401 across 204 files. Gate at the end: `npm run typecheck`, `npm run lint`, `npm run test:e2e` — 114 unit tests + 25 e2e files, 0 failures.
 
-Counts below were re-measured against the current tree, not copied from the original findings. Ordered so each group is independently shippable; the first two are where the remaining duplication is densest.
+| Item                     | Closed by                                                                                                                                      |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Live sourcemap bug**   | `ac7eca0` — read the bundle's own annotation rather than enabling `Debugger` on every page just to learn a URL                                 |
+| **B10 + D13**            | `d1f9191` — all 22 sheets commands on `runSheetCommand`; 38 `process.exitCode` writes across 11 files became one                               |
+| **D17**                  | `0173277`…`c892f92` — every sweep in the table, plus the input-source machine, the drain loops, and the `evalShared` split                     |
+| **D9 / D10 / D15 / D16** | `63ea4e4`…`4f02ef4` — runtime 417 → 291 LOC, editor lifecycle documented, one log long-poll subsystem, one pending-request table               |
+| **Test-surface debt**    | `52e1a5a`, `dc87852`, `a7a0dcc` — `./internal` subpaths replace 21 deep imports; one typecheck project covers `e2e/` **and** `packages/*/test` |
 
-### 1. Finish what this pass started
+Two things worth carrying forward from that pass:
 
-| Item    | State                                 | What is left                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **B10** | runner exists, 2 of 18 commands on it | 22 `run*` functions across `commands.ts`, `applyCommands.ts`, `inspectionCommands.ts`, `diffCommands.ts`, `dimensionCommands.ts`, `mutationCommands.ts` still hand-roll the createOutput → validate → eval → json/human pipeline. Mechanical: each becomes a `runSheetCommand` spec.                                                                                                                                                                          |
-| **D13** | blocked on B10                        | 11 sheets files still write `process.exitCode` from library depth. Once every command goes through `runSheetCommand`, the writes collapse to that one site and the helpers return discriminated results.                                                                                                                                                                                                                                                      |
-| **D17** | 5 helper families deleted             | Sweeps still open, re-measured: 29 inline `error instanceof Error ? … : String(error)` in `packages/argus/src` (`formatError` is now canonical in argus-core); 14 `delay`/`sleep` one-liners; 69 copies of the `--json` option literal in register files; 10 `nextAfter` computations across net routes; 15 hand-rolled `{ ok: false, error: { … } }` literals in routes (`httpUtils` still lacks the general `respondApiError(res, status, code, message)`). |
+- `packages/*/test` was neither typechecked nor run by any npm script, and **seven tests had been failing at runtime** since `CdpSessionHandle.getReadyTargetContext` became required — the same failure mode that motivated typechecking `e2e/`, one directory over. `npm run test:unit` now runs all four suites and `test:e2e` runs it first.
+- The 15 hand-rolled route error envelopes had an untyped `code`, so a rename of an `ARGUS_ERROR_CODES` member would have left them compiling and emitting a code nothing recognizes. `respondApiError` closes that.
 
-### 2. Watcher internals
-
-- **D9** — `startWatcherRuntime.ts` is still 417 LOC and `createWatcherRuntimeServices` still builds the service block twice.
-- **D10** — `editor.ts` (472 LOC) still hides the `reset()`/`rebind()` lifecycle in a closure with four coordinating flags.
-- **D15** — `LogBuffer` still runs both waiter subsystems (`waitForAfter`/`flushWaiters` alongside `waitForAfterEpoch`/`flushEpochWaiters`); the id-based path survives only as the `kind: 'all'` position query.
-- **D16** — module-level mutable state without lifecycle: the sourcemap trace-map cache is still unbounded and never invalidated, so a dev-server rebuild mid-session keeps resolving against the old map. See also the live bug in group 5 — it lives in the same file and caches its failures in this same map.
-
-### 3. Test-surface debt
-
-- **`e2e/` still deep-imports package internals** — 21 distinct `../packages/*/src/*.js` paths across the suite. Export hygiene and the "public API must be documented" rule stay unenforced, and a green e2e run still says nothing about the published surface.
-- **`e2e/` is not typechecked.** `npm run typecheck` covers the app, the packages, and the extension — not `e2e/`. Making `CdpSessionHandle.getTargetContext` required during D4 therefore broke `e2e/record.test.ts`'s hand-written stub at _runtime_, in a suite that takes minutes, instead of at compile time. Adding `e2e/` to the typecheck is a small change that pays for itself the next time an interface moves; it pairs naturally with the deep-import cleanup above.
-- **`boundedTraversal.ts` and `leaseModel.ts`** (google-sheets) are still test-mirror modules: their only consumer is `lease-deadline.test.ts`, while the logic that ships lives in the page scripts. Deleting them removes a test that never covered shipping code; the honest fix is to test the real path, which needs a browser.
-
-### 4. Found while closing the nine above
-
-Each was surfaced by a type the change introduced, not by a test — the argument for the whole "derive, don't copy" direction:
-
-- **Two emitted error codes existed nowhere in the protocol.** Closing `ArgusErrorCode` immediately rejected `extension_frame_not_ready` and the three CLI-local setup codes.
-- **The SDK evicted watchers on timeouts.** Eviction fired on any non-HTTP failure, so a slow command against a healthy watcher could delete its shared-registry entry. It is now typed on `HttpTimeoutError` and narrowed to failures that were never answered — and the CLI applies the same policy, which was the point of C3.
-- **`createNetBodyError` was a pass-through** that only ever supplied `body_not_available`, visible once the code argument had to be a union member.
-
-### 5. Found by live verification — a live bug, not from this pass
-
-**Sourcemap resolution ignores `sourceMappingURL` and guesses the map URL.** [`packages/argus-watcher/src/sourcemaps/resolveLocation.ts:93`](packages/argus-watcher/src/sourcemaps/resolveLocation.ts) does ``fetch(`${scriptUrl}.map`)`` — it never reads the `//# sourceMappingURL=` comment the bundle actually carries. Reproduced in **both** CDP and extension mode, so it predates this work.
-
-It happens to work for a plain `app.js` → `app.js.map`, and fails for:
-
-- **`app.js?v=abc123`** — the cache-busting query most production bundles ship with. It fetches `app.js?v=abc123.map`; a server that ignores the query returns **200 with JavaScript**, `.json()` throws, and the failure is cached.
-- Any map not at `<script>.map` — CDN-hosted, `/maps/…`, or a hashed map filename.
-- Inline `data:` sourcemaps.
-
-It also compounds with **D16**: the `null` lands in the unbounded module-global `traceMapCache` and poisons that script URL for the whole watcher process.
-
-The consequence is that the sourcemap feature — which C1 just extended to extension mode — silently does nothing for a large share of real production bundles, and fails by reporting a plausible-looking minified location rather than an error.
-
-**Fix:** take the map URL from CDP instead of guessing. `Debugger.scriptParsed` carries `sourceMapURL` per script; resolve it against the script URL (it may be absolute, relative, or a `data:` URI) and key the cache on the script id. Pairs naturally with D16's cache lifecycle, since both live in this file.
-
-### 6. Declined
+### Declined
 
 **C2 — `frame_snapshot` replacing forged CDP events.** A cross-process redesign of frame synchronization: the extension's forged `Page.frameNavigated`/`frameDetached` drive the watcher's incremental frame reconstruction, target-selection reconciliation, page-navigation callbacks, and title refresh. Nothing automated exercises that path end-to-end — no e2e attaches a real extension with its native host and drives iframe selection across a navigation; `extension-diagnostics.test.ts` is two tests about bridge connectivity. It is also precisely the terrain the two most recent bug fixes (`f4c449f`, `a89ef4c`) had to thread through. Shipping an unverifiable rewrite there is worse than leaving the duplication. Doing it safely means first building an e2e that drives a real Chrome with the unpacked extension.
 
 ---
 
 ## Verdict
+
+> Written at audit time and kept as the original assessment. Everything it describes in the present tense has since been closed — see [Progress](#progress).
 
 The codebase is **structurally healthy at its core**. The CLI's `defineCommand`/`defineWatcherCommand`/`domCommandBuilder` trio, the watcher's route spine (`defineJsonRoute`, `defineDomTargetRoute`, `netFilters`), the shared `CdpSessionHandle` implemented by both transports, and argus-core's HTTP protocol types are genuinely good architecture that consumers actually use (66 protocol imports across watcher routes, 67 across CLI commands — no wholesale re-declaration).
 
