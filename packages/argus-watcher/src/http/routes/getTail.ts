@@ -12,7 +12,7 @@ import {
 	compileMatchPatterns,
 	normalizeQueryValue,
 } from '../httpUtils.js'
-import { parseLogPosition, respondLogEpochError, waitForLogsFromPosition } from './logEpochQuery.js'
+import { logParam, logParams, parseLogPosition, respondLogEpochError, waitForLogsFromPosition } from './logEpochQuery.js'
 
 export const route = defineJsonRoute<undefined, TailResponse>({
 	method: 'GET',
@@ -22,15 +22,15 @@ export const route = defineJsonRoute<undefined, TailResponse>({
 		if ('error' in position) {
 			return respondLogEpochError(res, new LogEpochError('invalid', position.error))
 		}
-		const limit = clampNumber(url.searchParams.get('limit'), 500, 1, 5000)
-		const timeoutMs = clampNumber(url.searchParams.get('timeoutMs'), 25_000, 1000, 120_000)
-		const levels = parseLevels(url.searchParams.get('levels'))
-		const match = url.searchParams.getAll('match')
-		const matchCase = resolveMatchCase(url.searchParams.get('matchCase'))
+		const limit = clampNumber(logParam(url, 'limit'), 500, 1, 5000)
+		const timeoutMs = clampNumber(logParam(url, 'timeoutMs'), 25_000, 1000, 120_000)
+		const levels = parseLevels(logParam(url, 'levels'))
+		const match = logParams(url, 'match')
+		const matchCase = resolveMatchCase(logParam(url, 'matchCase'))
 		if (!matchCase) {
 			return respondInvalidMatchCase(res)
 		}
-		const source = normalizeQueryValue(url.searchParams.get('source'))
+		const source = normalizeQueryValue(logParam(url, 'source'))
 
 		const matchPatterns = normalizeMatchPatterns(match)
 		if (matchPatterns.error) {

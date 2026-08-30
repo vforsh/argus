@@ -7,6 +7,7 @@ import type {
 	LogEpoch,
 	LogLevel,
 	NetClearResponse,
+	NetQuery,
 	NetResponse,
 	NetworkRequestDetail,
 	RecordRequest,
@@ -106,21 +107,15 @@ export type LogEpochResult = {
 }
 
 /** Options for fetching network request summaries. */
-export type NetOptions = {
-	after?: number
-	limit?: number
+export type NetOptions = Omit<NetQuery, 'sinceTs' | 'timeoutMs'> & {
 	/**
 	 * Filter by time window.
 	 * - If string: parsed like CLI (e.g. "10m", "2h")
 	 * - If number: treated as durationMs
+	 *
+	 * Sugar over the wire's absolute `sinceTs`.
 	 */
 	since?: string | number
-	/** Substring match over redacted URLs. */
-	grep?: string
-	/** Ignore requests by host name (exact host or subdomain match). */
-	ignoreHost?: string[]
-	/** Ignore requests whose URL contains one of these substrings. */
-	ignorePattern?: string[]
 }
 
 /** Network request summary results with pagination cursor. */

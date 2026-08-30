@@ -1,4 +1,6 @@
 import type http from 'node:http'
+import type { NetQuery } from '@vforsh/argus-core'
+import { NET_PARTIES, NET_SCOPES } from '@vforsh/argus-core'
 import type { NetFilterContext, NetFilters, NetParty, NetScope } from '../../net/filtering.js'
 import { derivePartyHost, normalizeNetUrlKey } from '../../net/filtering.js'
 import type { HttpRequestEventMetadata } from '../server.js'
@@ -29,6 +31,15 @@ type NormalizedValueResult<T> = {
 	error?: string
 }
 
+/**
+ * Read a network query param. The key is checked against {@link NetQuery}, so renaming a param in
+ * the protocol breaks this parser at compile time instead of silently dropping the filter.
+ */
+const netParam = (searchParams: URLSearchParams, key: keyof NetQuery): string | null => searchParams.get(key)
+
+/** Repeatable counterpart to {@link netParam}. */
+const netParams = (searchParams: URLSearchParams, key: keyof NetQuery): string[] => searchParams.getAll(key)
+
 /** Respond 400 `net_disabled`. Shared precondition failure for all `/net*` routes. */
 export const respondNetDisabled = (res: http.ServerResponse): void => {
 	respondJson(res, { ok: false, error: { code: 'net_disabled', message: 'Network capture is disabled for this watcher' } }, 400)
@@ -41,9 +52,9 @@ export const respondNetDisabled = (res: http.ServerResponse): void => {
  */
 export const readNetFiltersFromUrl = (url: URL, ctx: RouteContext, res: http.ServerResponse): ParsedNetFilters | null => {
 	const filters = parseNetRequestFilters(url.searchParams, {
-		after: clampNumber(url.searchParams.get('after'), 0),
-		limit: clampNumber(url.searchParams.get('limit'), 500, 1, 5000),
-		sinceTs: optionalNumber(url.searchParams.get('sinceTs')),
+		after: clampNumber(netParam(url.searchParams, 'after'), 0),
+		limit: clampNumber(netParam(url.searchParams, 'limit'), 500, 1, 5000),
+		sinceTs: optionalNumber(netParam(url.searchParams, 'sinceTs')),
 		context: ctx.getNetFilterContext?.() ?? null,
 	})
 	if (filters.error || !filters.value) {
@@ -59,12 +70,12 @@ export const readNetFiltersFromUrl = (url: URL, ctx: RouteContext, res: http.Ser
  * to guess whether an iframe is currently selected.
  */
 export const parseNetRequestFilters = (searchParams: URLSearchParams, options: ParseNetFilterOptions): ParseNetFilterResult => {
-	const scope = normalizeScope(searchParams.get('scope'))
+	const scope = normalizeScope(netParam(searchParams, 'scope'))
 	if (scope.error) {
 		return { error: scope.error }
 	}
 
-	const frame = normalizeFrame(searchParams.get('frame'))
+	const frame = normalizeFrame(netParam(searchParams, 'frame'))
 	if (frame.error) {
 		return { error: frame.error }
 	}
@@ -73,7 +84,7 @@ export const parseNetRequestFilters = (searchParams: URLSearchParams, options: P
 		return { error: 'Cannot combine scope and frame filters. Use one or the other.' }
 	}
 
-	const party = normalizeParty(searchParams.get('party'))
+	const party = normalizeParty(netParam(searchParams, 'party'))
 	if (party.error) {
 		return { error: party.error }
 	}
@@ -88,21 +99,21 @@ export const parseNetRequestFilters = (searchParams: URLSearchParams, options: P
 			after: options.after,
 			limit: options.limit,
 			sinceTs: options.sinceTs,
-			grep: normalizeQueryValue(searchParams.get('grep')),
-			ignoreHosts: normalizeRepeatedValues(searchParams.getAll('ignoreHost')),
-			ignorePatterns: normalizeRepeatedValues(searchParams.getAll('ignorePattern')),
-			hosts: normalizeRepeatedValues(searchParams.getAll('host')),
-			methods: normalizeRepeatedValues(searchParams.getAll('method')),
-			statuses: normalizeStatusValues(searchParams.getAll('status')),
-			resourceTypes: normalizeRepeatedValues(searchParams.getAll('resourceType')),
-			mimeTypes: normalizeRepeatedValues(searchParams.getAll('mime')),
+			grep: normalizeQueryValue(netParam(searchParams, 'grep')),
+			ignoreHosts: normalizeRepeatedValues(netParams(searchParams, 'ignoreHost')),
+			ignorePatterns: normalizeRepeatedValues(netParams(searchParams, 'ignorePattern')),
+			hosts: normalizeRepeatedValues(netParams(searchParams, 'host')),
+			methods: normalizeRepeatedValues(netParams(searchParams, 'method')),
+			statuses: normalizeStatusValues(netParams(searchParams, 'status')),
+			resourceTypes: normalizeRepeatedValues(netParams(searchParams, 'resourceType')),
+			mimeTypes: normalizeRepeatedValues(netParams(searchParams, 'mime')),
 			party: party.value,
 			partyHost,
 			frameId: resolvedFrameId,
 			documentUrlKey: resolveDocumentUrlKey({ frame: frame.value ?? null, scope: resolvedScope, context }),
 			failedOnly: hasTruthyFlag(searchParams, 'failedOnly'),
-			minDurationMs: optionalNumber(searchParams.get('minDurationMs'), 1),
-			minTransferBytes: optionalNumber(searchParams.get('minTransferBytes'), 1),
+			minDurationMs: optionalNumber(netParam(searchParams, 'minDurationMs'), 1),
+			minTransferBytes: optionalNumber(netParam(searchParams, 'minTransferBytes'), 1),
 			scope: resolvedScope,
 			frame: frame.value ?? null,
 		},
@@ -189,7 +200,7 @@ const resolvePartyReferenceUrl = (scope: NetScope, context: NetFilterContext | n
 const DEFAULT_NET_SCOPE: NetScope = 'tab'
 
 const normalizeScope = (value: string | null): NormalizedValueResult<NetScope> => {
-	return normalizeChoice(value, ['selected', 'page', 'tab'], 'scope filter')
+	return normalizeChoice(value, NET_SCOPES, 'scope filter')
 }
 
 const normalizeFrame = (value: string | null): NormalizedValueResult<string | null> => {
@@ -202,7 +213,7 @@ const normalizeFrame = (value: string | null): NormalizedValueResult<string | nu
 }
 
 const normalizeParty = (value: string | null): NormalizedValueResult<NetParty> => {
-	return normalizeChoice(value, ['first', 'third'], 'party filter')
+	return normalizeChoice(value, NET_PARTIES, 'party filter')
 }
 
 const normalizeChoice = <T extends string>(value: string | null, allowed: readonly T[], label: string): NormalizedValueResult<T> => {
@@ -232,8 +243,8 @@ const normalizeStatusValues = (values: string[]): string[] | undefined => {
 	return normalized
 }
 
-const hasTruthyFlag = (searchParams: URLSearchParams, key: string): boolean => {
-	const value = searchParams.get(key)
+const hasTruthyFlag = (searchParams: URLSearchParams, key: keyof NetQuery): boolean => {
+	const value = netParam(searchParams, key)
 	if (value == null) {
 		return false
 	}

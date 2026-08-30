@@ -1,14 +1,23 @@
 import type http from 'node:http'
-import type { LogEpoch, LogEvent } from '@vforsh/argus-core'
+import type { LogEpoch, LogEvent, LogsQuery } from '@vforsh/argus-core'
 import { LogEpochError, type LogBuffer, type LogEpochQueryResult, type LogFilters } from '../../buffer/LogBuffer.js'
 import { normalizeQueryValue, respondJson } from '../httpUtils.js'
 
 export type LogPositionQuery = { kind: 'all' } | { kind: 'epoch'; epoch: LogEpoch }
 
+/**
+ * Read a log query param. The key is checked against {@link LogsQuery}, so renaming a param in the
+ * protocol breaks these parsers at compile time instead of silently dropping the filter.
+ */
+export const logParam = (url: URL, key: keyof LogsQuery): string | null => url.searchParams.get(key)
+
+/** Repeatable counterpart to {@link logParam}. */
+export const logParams = (url: URL, key: keyof LogsQuery): string[] => url.searchParams.getAll(key)
+
 /** Parse the opaque epoch form, or the unbounded query with no marker. */
 export const parseLogPosition = (url: URL): LogPositionQuery | { error: string } => {
-	const after = normalizeQueryValue(url.searchParams.get('after') ?? null)
-	const sinceEpoch = normalizeQueryValue(url.searchParams.get('sinceEpoch'))
+	const after = normalizeQueryValue(logParam(url, 'after'))
+	const sinceEpoch = normalizeQueryValue(logParam(url, 'sinceEpoch'))
 	if (after && sinceEpoch) {
 		return { error: 'Use either after or sinceEpoch, not both.' }
 	}

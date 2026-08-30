@@ -1,24 +1,36 @@
-import { normalizeQueryValue, parseNumber } from '../cli/parse.js'
-import { parseDurationMs } from '@vforsh/argus-core'
+import type { LogsQuery, MatchCase, NetQuery, NetScope, QueryValue } from '@vforsh/argus-core'
+import { NET_SCOPES, normalizeMatchPatterns, normalizeQueryValue, parseDurationMs, toSearchParams } from '@vforsh/argus-core'
+import { parseNumber } from '../cli/parse.js'
+
+export { normalizeMatchPatterns }
 
 type MatchCaseOptions = {
 	ignoreCase?: boolean
 	caseSensitive?: boolean
 }
 
+/**
+ * Serialize a typed query fragment into an existing `URLSearchParams`.
+ *
+ * Callers layer route-specific params (`timeoutMs`, `part`, …) around these fragments, so each
+ * key is replaced rather than appended to — repeated values within one fragment still stack.
+ */
+const applyQuery = (params: URLSearchParams, query: Record<string, QueryValue>): void => {
+	const serialized = toSearchParams(query)
+	for (const key of new Set(serialized.keys())) {
+		params.delete(key)
+		for (const value of serialized.getAll(key)) {
+			params.append(key, value)
+		}
+	}
+}
+
 export const appendAfterLimitParams = (params: URLSearchParams, options: { after?: string; limit?: string; sinceEpoch?: string }): void => {
-	if (options.after?.trim()) {
-		params.set('after', options.after.trim())
-	}
-
-	if (options.sinceEpoch?.trim()) {
-		params.set('sinceEpoch', options.sinceEpoch.trim())
-	}
-
-	const limit = parseNumber(options.limit)
-	if (limit != null) {
-		params.set('limit', String(limit))
-	}
+	applyQuery(params, {
+		after: options.after,
+		sinceEpoch: options.sinceEpoch,
+		limit: parseNumber(options.limit),
+	} satisfies LogsQuery)
 }
 
 export const appendSinceParam = (params: URLSearchParams, since?: string): { error?: string } => {
@@ -26,11 +38,8 @@ export const appendSinceParam = (params: URLSearchParams, since?: string): { err
 	if (resolved.error) {
 		return resolved
 	}
-	if (resolved.sinceTs == null) {
-		return {}
-	}
 
-	params.set('sinceTs', String(resolved.sinceTs))
+	applyQuery(params, { sinceTs: resolved.sinceTs ?? undefined } satisfies Pick<LogsQuery, 'sinceTs'>)
 	return {}
 }
 
@@ -57,84 +66,59 @@ export const appendLogFilterParams = (
 		caseSensitive?: boolean
 	},
 ): { error?: string } => {
-	if (options.levels) {
-		params.set('levels', options.levels)
-	}
-
 	const normalizedMatch = normalizeMatchPatterns(options.match)
 	if (normalizedMatch.error) {
-		return normalizedMatch
-	}
-	for (const pattern of normalizedMatch.patterns) {
-		params.append('match', pattern)
+		return { error: 'Invalid --match value: empty pattern.' }
 	}
 
-	const matchCase = resolveMatchCase(options)
-	if (matchCase) {
-		params.set('matchCase', matchCase)
-	}
-
-	const source = normalizeQueryValue(options.source)
-	if (source) {
-		params.set('source', source)
-	}
+	applyQuery(params, {
+		levels: options.levels,
+		match: normalizedMatch.patterns,
+		matchCase: resolveMatchCase(options),
+		source: options.source,
+	} satisfies LogsQuery)
 
 	return {}
 }
 
-export const appendNetFilterParams = (
-	params: URLSearchParams,
-	options: {
-		grep?: string
-		host?: string[]
-		method?: string[]
-		status?: string[]
-		resourceType?: string[]
-		mime?: string[]
-		scope?: string
-		frame?: string
-		party?: 'first' | 'third'
-		failedOnly?: boolean
-		minDurationMs?: number
-		minTransferBytes?: number
-	},
-): void => {
-	const grep = normalizeQueryValue(options.grep)
-	if (grep) {
-		params.set('grep', grep)
+/** CLI-facing shape of the network filter flags, before validation. */
+export type NetFilterCliOptions = {
+	grep?: string
+	host?: string[]
+	method?: string[]
+	status?: string[]
+	resourceType?: string[]
+	mime?: string[]
+	scope?: string
+	frame?: string
+	party?: NetQuery['party']
+	failedOnly?: boolean
+	minDurationMs?: number
+	minTransferBytes?: number
+}
+
+export const appendNetFilterParams = (params: URLSearchParams, options: NetFilterCliOptions): { error?: string } => {
+	const scope = resolveNetScope(options.scope)
+	if (scope.error) {
+		return scope
 	}
 
-	appendRepeatedParams(params, 'host', options.host)
-	appendRepeatedParams(params, 'method', options.method)
-	appendRepeatedParams(params, 'status', options.status)
-	appendRepeatedParams(params, 'resourceType', options.resourceType)
-	appendRepeatedParams(params, 'mime', options.mime)
+	applyQuery(params, {
+		grep: options.grep,
+		host: options.host,
+		method: options.method,
+		status: options.status,
+		resourceType: options.resourceType,
+		mime: options.mime,
+		scope: scope.value,
+		frame: options.frame,
+		party: options.party,
+		failedOnly: options.failedOnly,
+		minDurationMs: options.minDurationMs,
+		minTransferBytes: options.minTransferBytes,
+	} satisfies NetQuery)
 
-	const scope = normalizeQueryValue(options.scope)
-	if (scope) {
-		params.set('scope', scope)
-	}
-
-	const frame = normalizeQueryValue(options.frame)
-	if (frame) {
-		params.set('frame', frame)
-	}
-
-	if (options.party) {
-		params.set('party', options.party)
-	}
-
-	if (options.failedOnly) {
-		params.set('failedOnly', '1')
-	}
-
-	if (options.minDurationMs != null) {
-		params.set('minDurationMs', String(options.minDurationMs))
-	}
-
-	if (options.minTransferBytes != null) {
-		params.set('minTransferBytes', String(options.minTransferBytes))
-	}
+	return {}
 }
 
 export const appendNetIgnoreParams = (params: URLSearchParams, options: { ignoreHost?: string[]; ignorePattern?: string[] }): { error?: string } => {
@@ -142,35 +126,17 @@ export const appendNetIgnoreParams = (params: URLSearchParams, options: { ignore
 	if (hosts.error) {
 		return hosts
 	}
-	for (const value of hosts.values) {
-		params.append('ignoreHost', value)
-	}
 
 	const patterns = normalizeRepeatedValues(options.ignorePattern)
 	if (patterns.error) {
 		return patterns
 	}
-	for (const value of patterns.values) {
-		params.append('ignorePattern', value)
-	}
 
+	applyQuery(params, { ignoreHost: hosts.values, ignorePattern: patterns.values } satisfies NetQuery)
 	return {}
 }
 
-export const normalizeMatchPatterns = (match?: string[]): { patterns: string[]; error?: string } => {
-	if (!match || match.length === 0) {
-		return { patterns: [] }
-	}
-
-	const patterns = match.map((value) => value.trim())
-	if (patterns.some((value) => value.length === 0)) {
-		return { patterns: [], error: 'Invalid --match value: empty pattern.' }
-	}
-
-	return { patterns }
-}
-
-export const resolveMatchCase = (options: MatchCaseOptions): 'sensitive' | 'insensitive' | undefined => {
+export const resolveMatchCase = (options: MatchCaseOptions): MatchCase | undefined => {
 	if (options.caseSensitive) {
 		return 'sensitive'
 	}
@@ -178,6 +144,20 @@ export const resolveMatchCase = (options: MatchCaseOptions): 'sensitive' | 'inse
 		return 'insensitive'
 	}
 	return undefined
+}
+
+/** Reject an unknown `--scope` here rather than round-tripping it to the watcher for a 400. */
+const resolveNetScope = (value?: string): { value?: NetScope; error?: string } => {
+	const normalized = normalizeQueryValue(value)
+	if (!normalized) {
+		return {}
+	}
+
+	if (!(NET_SCOPES as readonly string[]).includes(normalized)) {
+		return { error: `Invalid --scope value: ${value}. Expected one of: ${NET_SCOPES.join(', ')}.` }
+	}
+
+	return { value: normalized as NetScope }
 }
 
 const normalizeRepeatedValues = (values?: string[]): { values: string[]; error?: string } => {
@@ -191,15 +171,4 @@ const normalizeRepeatedValues = (values?: string[]): { values: string[]; error?:
 	}
 
 	return { values: normalized }
-}
-
-const appendRepeatedParams = (params: URLSearchParams, key: string, values?: string[]): void => {
-	const normalized = normalizeRepeatedValues(values)
-	if (normalized.error) {
-		return
-	}
-
-	for (const value of normalized.values) {
-		params.append(key, value)
-	}
 }

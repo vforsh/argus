@@ -1,8 +1,9 @@
 import type { NetworkRequestSummary } from '@vforsh/argus-core'
 
-export type NetParty = 'first' | 'third'
-
-export type NetScope = 'selected' | 'page' | 'tab'
+// The wire spelling of these lives with the query shapes in argus-core; re-exported here so the
+// filtering call sites keep their short local names.
+export type { NetParty, NetScope } from '@vforsh/argus-core'
+import type { NetParty, NetScope } from '@vforsh/argus-core'
 
 export type NetFilterContext = {
 	sourceMode: 'cdp' | 'extension'

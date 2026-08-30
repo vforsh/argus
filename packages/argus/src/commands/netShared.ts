@@ -33,21 +33,10 @@ export const appendNetCommandParams = (
 	options: NetCliListOptions,
 	config: { includeAfter?: boolean; includeLimit?: boolean } = {},
 ): { error?: string } => {
-	if (config.includeAfter !== false) {
-		const afterParams = new URLSearchParams()
-		appendAfterLimitParams(afterParams, { after: options.after })
-		for (const [key, value] of afterParams) {
-			params.set(key, value)
-		}
-	}
-
-	if (config.includeLimit !== false) {
-		const limitParams = new URLSearchParams()
-		appendAfterLimitParams(limitParams, { limit: options.limit })
-		for (const [key, value] of limitParams) {
-			params.set(key, value)
-		}
-	}
+	appendAfterLimitParams(params, {
+		after: config.includeAfter === false ? undefined : options.after,
+		limit: config.includeLimit === false ? undefined : options.limit,
+	})
 
 	if (options.scope && options.frame) {
 		return { error: 'Cannot combine --scope and --frame. Use one or the other.' }
@@ -58,7 +47,7 @@ export const appendNetCommandParams = (
 		return { error: derived.error }
 	}
 
-	appendNetFilterParams(params, {
+	const filters = appendNetFilterParams(params, {
 		grep: options.grep,
 		host: options.host,
 		method: options.method,
@@ -72,6 +61,9 @@ export const appendNetCommandParams = (
 		minDurationMs: derived.minDurationMs,
 		minTransferBytes: derived.minTransferBytes,
 	})
+	if (filters.error) {
+		return filters
+	}
 
 	const ignore = appendNetIgnoreParams(params, options)
 	if (ignore.error) {

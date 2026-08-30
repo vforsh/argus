@@ -1,81 +1,54 @@
+import type { LogsQuery, MatchCase, NetQuery } from '@vforsh/argus-core'
+import { NET_PARTIES, NET_SCOPES, normalizeMatchPatterns, parseDurationMs, toSearchParams } from '@vforsh/argus-core'
 import type { LogsOptions, NetOptions } from '../types.js'
-import { parseDurationMs } from '@vforsh/argus-core'
 
+/** Build the query string for the log listing and tail routes. */
 export const buildLogsParams = (options: LogsOptions): URLSearchParams => {
-	const params = new URLSearchParams()
-	const after = normalizeQueryValue(options.after)
-	if (after != null) {
-		params.set('after', after)
-	}
-	if (after != null && options.sinceEpoch != null) {
+	if (options.after != null && options.sinceEpoch != null) {
 		throw new Error('Use either after or sinceEpoch, not both')
 	}
-	const sinceEpoch = normalizeQueryValue(options.sinceEpoch)
-	if (sinceEpoch) {
-		params.set('sinceEpoch', sinceEpoch)
+
+	const query: LogsQuery = {
+		after: options.after,
+		sinceEpoch: options.sinceEpoch,
+		limit: requireNonNegative('limit', options.limit),
+		levels: normalizeLevels(options.levels),
+		match: requireMatchPatterns(options.match),
+		matchCase: requireMatchCase(options.matchCase),
+		source: options.source,
+		sinceTs: resolveSinceTs(options.since),
 	}
 
-	const limit = normalizeNonNegativeNumber('limit', options.limit)
-	if (limit != null) {
-		params.set('limit', String(limit))
-	}
-
-	const levels = normalizeLevels(options.levels)
-	if (levels) {
-		params.set('levels', levels)
-	}
-
-	const match = normalizeMatch(options.match)
-	if (match) {
-		for (const pattern of match) {
-			params.append('match', pattern)
-		}
-	}
-
-	const matchCase = normalizeMatchCase(options.matchCase)
-	if (matchCase) {
-		params.set('matchCase', matchCase)
-	}
-
-	const source = normalizeQueryValue(options.source)
-	if (source) {
-		params.set('source', source)
-	}
-
-	const sinceTs = resolveSinceTs(options.since)
-	if (sinceTs != null) {
-		params.set('sinceTs', String(sinceTs))
-	}
-
-	return params
+	return toSearchParams(query)
 }
 
+/** Build the query string for the network listing and tail routes. */
 export const buildNetParams = (options: NetOptions): URLSearchParams => {
-	const params = new URLSearchParams()
-	const after = normalizeNonNegativeNumber('after', options.after)
-	if (after != null) {
-		params.set('after', String(after))
+	if (options.scope != null && options.frame != null) {
+		throw new Error('Cannot combine scope and frame filters. Use one or the other.')
 	}
 
-	const limit = normalizeNonNegativeNumber('limit', options.limit)
-	if (limit != null) {
-		params.set('limit', String(limit))
+	const query: NetQuery = {
+		after: requireNonNegative('after', options.after),
+		limit: requireNonNegative('limit', options.limit),
+		sinceTs: resolveSinceTs(options.since),
+		grep: options.grep,
+		host: requireNonEmptyValues('host', options.host),
+		method: requireNonEmptyValues('method', options.method),
+		status: requireNonEmptyValues('status', options.status),
+		resourceType: requireNonEmptyValues('resourceType', options.resourceType),
+		mime: requireNonEmptyValues('mime', options.mime),
+		scope: requireChoice('scope', options.scope, NET_SCOPES),
+		frame: options.frame,
+		party: requireChoice('party', options.party, NET_PARTIES),
+		failedOnly: options.failedOnly,
+		minDurationMs: requireNonNegative('minDurationMs', options.minDurationMs),
+		minTransferBytes: requireNonNegative('minTransferBytes', options.minTransferBytes),
+		ignoreHost: requireNonEmptyValues('ignoreHost', options.ignoreHost),
+		ignorePattern: requireNonEmptyValues('ignorePattern', options.ignorePattern),
 	}
 
-	const sinceTs = resolveSinceTs(options.since)
-	if (sinceTs != null) {
-		params.set('sinceTs', String(sinceTs))
-	}
-
-	const grep = normalizeQueryValue(options.grep)
-	if (grep) {
-		params.set('grep', grep)
-	}
-
-	appendRepeatedQueryValues(params, 'ignoreHost', options.ignoreHost)
-	appendRepeatedQueryValues(params, 'ignorePattern', options.ignorePattern)
-
-	return params
+	return toSearchParams(query)
 }
 
 const normalizeLevels = (levels?: string | string[]): string | undefined => {
@@ -83,78 +56,37 @@ const normalizeLevels = (levels?: string | string[]): string | undefined => {
 		return undefined
 	}
 
-	if (Array.isArray(levels)) {
-		const normalized = levels.map((level) => level.trim()).filter(Boolean)
-		if (normalized.length === 0) {
-			return undefined
-		}
-		return normalized.join(',')
+	if (!Array.isArray(levels)) {
+		return levels
 	}
 
-	const trimmed = levels.trim()
-	return trimmed ? trimmed : undefined
+	const normalized = levels.map((level) => level.trim()).filter(Boolean)
+	return normalized.length > 0 ? normalized.join(',') : undefined
 }
 
-const normalizeMatch = (match?: string | string[]): string[] | undefined => {
+const requireMatchPatterns = (match?: string | string[]): string[] | undefined => {
 	if (match == null) {
 		return undefined
 	}
 
-	const values = Array.isArray(match) ? match : [match]
-	const normalized = values.map((value) => value.trim())
-	if (normalized.some((value) => value.length === 0)) {
-		throw new Error('Invalid match value: empty pattern.')
+	const result = normalizeMatchPatterns(Array.isArray(match) ? match : [match])
+	if (result.error) {
+		throw new Error(result.error)
 	}
 
-	return normalized
+	return result.patterns
 }
 
-const normalizeMatchCase = (matchCase?: 'sensitive' | 'insensitive'): 'sensitive' | 'insensitive' | undefined => {
-	if (matchCase == null) {
-		return undefined
-	}
-
-	if (matchCase !== 'sensitive' && matchCase !== 'insensitive') {
-		throw new Error(`Invalid matchCase value: ${matchCase}`)
-	}
-
-	return matchCase
-}
+const requireMatchCase = (matchCase?: MatchCase): MatchCase | undefined =>
+	requireChoice('matchCase', matchCase, ['sensitive', 'insensitive'] as const)
 
 const resolveSinceTs = (value?: string | number): number | undefined => {
 	if (value == null) {
 		return undefined
 	}
 
-	const durationMs = typeof value === 'number' ? normalizeNonNegativeNumber('since', value) : parseDurationOrThrow(value)
-	if (durationMs == null) {
-		return undefined
-	}
-
-	return Date.now() - durationMs
-}
-
-const normalizeQueryValue = (value?: string): string | undefined => {
-	if (value == null) {
-		return undefined
-	}
-
-	const trimmed = value.trim()
-	return trimmed ? trimmed : undefined
-}
-
-const appendRepeatedQueryValues = (params: URLSearchParams, key: string, values?: string[]): void => {
-	if (!values || values.length === 0) {
-		return
-	}
-
-	for (const value of values) {
-		const normalized = normalizeQueryValue(value)
-		if (!normalized) {
-			throw new Error(`Invalid ${key} value: ${value}`)
-		}
-		params.append(key, normalized)
-	}
+	const durationMs = typeof value === 'number' ? requireNonNegative('since', value) : parseDurationOrThrow(value)
+	return durationMs == null ? undefined : Date.now() - durationMs
 }
 
 const parseDurationOrThrow = (value: string): number => {
@@ -165,7 +97,7 @@ const parseDurationOrThrow = (value: string): number => {
 	return duration
 }
 
-const normalizeNonNegativeNumber = (label: string, value?: number): number | undefined => {
+const requireNonNegative = (label: string, value?: number): number | undefined => {
 	if (value == null) {
 		return undefined
 	}
@@ -175,4 +107,30 @@ const normalizeNonNegativeNumber = (label: string, value?: number): number | und
 	}
 
 	return value
+}
+
+const requireNonEmptyValues = (label: string, values?: string[]): string[] | undefined => {
+	if (!values || values.length === 0) {
+		return undefined
+	}
+
+	for (const value of values) {
+		if (!value.trim()) {
+			throw new Error(`Invalid ${label} value: ${value}`)
+		}
+	}
+
+	return values
+}
+
+const requireChoice = <T extends string>(label: string, value: string | undefined, allowed: readonly T[]): T | undefined => {
+	if (value == null) {
+		return undefined
+	}
+
+	if (!allowed.includes(value as T)) {
+		throw new Error(`Invalid ${label} value: ${value}`)
+	}
+
+	return value as T
 }
