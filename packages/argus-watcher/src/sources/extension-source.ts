@@ -14,6 +14,7 @@ import {
 	type ExtensionFrameState,
 } from './extension-frame-state.js'
 import { createDelegatingSession, type DelegatingSessionController } from './extension-delegating-session.js'
+import type { IgnoreMatcher } from '../cdp/ignoreList.js'
 import { registerExtensionSessionEventHandlers } from './extension-session-events.js'
 import { createControlExtensionSource } from './extension-control-source.js'
 import { createTargetRecovery } from './extension-target-recovery.js'
@@ -42,6 +43,9 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	}
 
 	const { events, ignoreMatcher, stripUrlPrefixes, watcherId, watcherHost, watcherPort } = options
+
+	// The shared log mapper takes the matcher object shape (mirrors createCdpSource).
+	const ignoreMatcherObj: IgnoreMatcher | null = ignoreMatcher ? { matches: ignoreMatcher } : null
 
 	const messaging = createNativeMessaging<ExtensionToTabHost, TabHostToExtension>()
 	const hostInfo = {
@@ -277,7 +281,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			registerExtensionSessionEventHandlers({
 				session,
 				events,
-				ignoreMatcher,
+				ignoreMatcher: ignoreMatcherObj,
 				stripUrlPrefixes,
 				getOrCreateFrameState,
 				reconcileTargetSelection,

@@ -7,11 +7,21 @@ import { selectBestFrame } from './selectBestFrame.js'
 import { resolveSourcemappedLocation } from '../sourcemaps/resolveLocation.js'
 import type { CdpSessionHandle } from './connection.js'
 import { serializeRemoteObject, serializeRemoteObjects } from './remoteObject.js'
-import type { CdpTarget } from './watcherTargets.js'
 
 export type PageIntlInfo = {
 	timezone: string | null
 	locale: string | null
+}
+
+/**
+ * The page identity stamped onto every log event.
+ *
+ * Deliberately structural rather than `CdpTarget`: extension-backed sessions carry the same
+ * `url`/`title` pair, and both sources feed this one mapper (see {@link toConsoleEvent}).
+ */
+export type LogEventPageInfo = {
+	url?: string | null
+	title?: string | null
 }
 
 type WatcherEventConfig = {
@@ -20,39 +30,47 @@ type WatcherEventConfig = {
 	cdp?: CdpSessionHandle
 }
 
-export const toConsoleEvent = async (params: unknown, target: CdpTarget, config: WatcherEventConfig): Promise<Omit<LogEvent, 'id'>> => {
+/**
+ * Map a `Runtime.consoleAPICalled` payload to a `LogEvent`.
+ *
+ * Source-agnostic: the direct-CDP watcher and the extension bridge both call this, so sourcemap
+ * resolution, remote-object serialization, and ignore-list frame selection behave identically in
+ * both modes. Pass `config.cdp` to allow serialization round-trips for objects Chrome only sent
+ * an `objectId` for; without it the args degrade to their previews.
+ */
+export const toConsoleEvent = async (params: unknown, page: LogEventPageInfo, config: WatcherEventConfig): Promise<Omit<LogEvent, 'id'>> => {
 	const record = params as {
 		type?: LogLevel
 		args?: unknown[]
+		timestamp?: number
 		stackTrace?: { callFrames?: CallFrame[] }
 	}
 	const cdp = config.cdp
 	const args = Array.isArray(record.args) ? await serializeRemoteObjects(record.args, cdp) : []
 	const text = formatArgs(args)
 	const baseEvent: Omit<LogEvent, 'id'> = {
-		ts: Date.now(),
+		ts: resolveTimestamp(record.timestamp),
 		level: normalizeLevel(record.type ?? 'log'),
 		text,
 		args,
 		file: null,
 		line: null,
 		column: null,
-		pageUrl: target.url ?? null,
-		pageTitle: target.title ?? null,
+		pageUrl: page.url ?? null,
+		pageTitle: page.title ?? null,
 		source: 'console',
 	}
 
-	const selected = await selectLocationFromFrames(record.stackTrace?.callFrames, config.ignoreMatcher ?? null)
-	if (selected) {
-		return applyLocationCleanup({ ...baseEvent, ...selected }, config.stripUrlPrefixes)
-	}
-
-	const fallback = await applySourcemap(applyFirstFrame(baseEvent, record.stackTrace?.callFrames))
-	return applyLocationCleanup(fallback, config.stripUrlPrefixes)
+	return applyLocation(baseEvent, record.stackTrace?.callFrames, config)
 }
 
-export const toExceptionEvent = async (params: unknown, target: CdpTarget, config: WatcherEventConfig): Promise<Omit<LogEvent, 'id'>> => {
+/**
+ * Map a `Runtime.exceptionThrown` payload to a `LogEvent`. Shares every helper with
+ * {@link toConsoleEvent}, including sourcemap resolution.
+ */
+export const toExceptionEvent = async (params: unknown, page: LogEventPageInfo, config: WatcherEventConfig): Promise<Omit<LogEvent, 'id'>> => {
 	const record = params as {
+		timestamp?: number
 		exceptionDetails?: {
 			text?: string
 			exception?: unknown
@@ -66,25 +84,19 @@ export const toExceptionEvent = async (params: unknown, target: CdpTarget, confi
 	const exceptionDescription = describeExceptionValue(exceptionValue)
 	const text = formatExceptionText(details?.text, exceptionDescription)
 	const baseEvent: Omit<LogEvent, 'id'> = {
-		ts: Date.now(),
+		ts: resolveTimestamp(record.timestamp),
 		level: 'exception',
 		text,
 		args,
 		file: null,
 		line: null,
 		column: null,
-		pageUrl: target.url ?? null,
-		pageTitle: target.title ?? null,
+		pageUrl: page.url ?? null,
+		pageTitle: page.title ?? null,
 		source: 'exception',
 	}
 
-	const selected = await selectLocationFromFrames(details?.stackTrace?.callFrames, config.ignoreMatcher ?? null)
-	if (selected) {
-		return applyLocationCleanup({ ...baseEvent, ...selected }, config.stripUrlPrefixes)
-	}
-
-	const fallback = await applySourcemap(applyFirstFrame(baseEvent, details?.stackTrace?.callFrames))
-	return applyLocationCleanup(fallback, config.stripUrlPrefixes)
+	return applyLocation(baseEvent, details?.stackTrace?.callFrames, config)
 }
 
 export const fetchPageIntl = async (session: CdpSessionHandle): Promise<PageIntlInfo | null> => {
@@ -107,6 +119,28 @@ export const fetchPageIntl = async (session: CdpSessionHandle): Promise<PageIntl
 		return null
 	}
 }
+
+/**
+ * Pick the reported frame for an event, preferring an ignore-list-filtered, sourcemapped frame and
+ * falling back to the top frame. Always strips configured URL prefixes last.
+ */
+const applyLocation = async (
+	event: Omit<LogEvent, 'id'>,
+	callFrames: CallFrame[] | undefined,
+	config: WatcherEventConfig,
+): Promise<Omit<LogEvent, 'id'>> => {
+	const selected = await selectLocationFromFrames(callFrames, config.ignoreMatcher ?? null)
+	if (selected) {
+		return applyLocationCleanup({ ...event, ...selected }, config.stripUrlPrefixes)
+	}
+
+	const fallback = await applySourcemap(applyFirstFrame(event, callFrames))
+	return applyLocationCleanup(fallback, config.stripUrlPrefixes)
+}
+
+/** CDP reports `Runtime.Timestamp` as milliseconds since epoch; fall back to arrival time. */
+const resolveTimestamp = (timestamp: number | undefined): number =>
+	typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : Date.now()
 
 const applySourcemap = async (event: Omit<LogEvent, 'id'>): Promise<Omit<LogEvent, 'id'>> => {
 	if (!event.file || event.line == null || event.column == null) {
@@ -198,6 +232,11 @@ const formatExceptionText = (baseText: string | undefined, description: string |
 const normalizeLevel = (level: LogLevel | string): LogLevel => {
 	if (level === 'warn' || level === 'warning') {
 		return 'warning'
+	}
+
+	// console.assert failures arrive as type 'assert'; they are errors, not plain logs.
+	if (level === 'assert') {
+		return 'error'
 	}
 
 	if (level === 'error' || level === 'info' || level === 'debug' || level === 'exception' || level === 'log') {
