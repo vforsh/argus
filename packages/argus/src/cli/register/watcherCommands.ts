@@ -7,7 +7,7 @@ import { runWatcherStatus } from '../../commands/watcherStatus.js'
 import { runWatcherStop } from '../../commands/watcherStop.js'
 import { runWatcherPrune } from '../../commands/watcherPrune.js'
 import { runWatcherNativeHost } from '../../commands/watcherNativeHost.js'
-import { loadArgusConfig, resolveArgusConfigPath } from '../../config/loadConfig.js'
+import { resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
 
 export const watcherCommands: readonly ArgusCommandDefinition[] = [
@@ -55,24 +55,10 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 						...rest,
 						inject: inject ? { file: inject } : undefined,
 					}
-					const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
-					if (!resolvedPath) {
-						if (configPath) {
-							return
-						}
-						await runWatcherStart(cliOptions)
-						return
-					}
-
-					const configResult = loadArgusConfig(resolvedPath)
-					if (!configResult) {
-						return
-					}
-
-					const merged = mergeWatcherStartOptionsWithConfig(cliOptions, command, configResult)
-					if (!merged) {
-						return
-					}
+					const merged = resolveOptionsWithConfig(command, cliOptions, configPath, (options, sources, config) =>
+						mergeWatcherStartOptionsWithConfig(options, sources, config),
+					)
+					if (!merged) return
 
 					await runWatcherStart(merged)
 				},

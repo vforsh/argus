@@ -3,7 +3,7 @@ import type { ArgusCommandDefinition } from '../defineCommand.js'
 import type { ChromeStartOptions } from '../../commands/chromeStart.js'
 import { runChromeStart } from '../../commands/chromeStart.js'
 import { runChromeVersion, runChromeStatus, runChromeList, runChromeStop } from '../../commands/chrome.js'
-import { loadArgusConfig, resolveArgusConfigPath } from '../../config/loadConfig.js'
+import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig } from '../../config/mergeConfig.js'
 
 const cdpTargetOptions = [
@@ -115,7 +115,7 @@ const normalizeAuthStateProfileOptions = (command: Command, options: { authState
 		return true
 	}
 
-	if (getOptionValueSource(command, 'profile') === 'cli') {
+	if (isCliProvided(command, 'profile')) {
 		if (options.profile && options.profile !== 'temp') {
 			console.error('Cannot combine --auth-state with a copied Chrome profile. Use --profile temp or omit --profile.')
 			process.exitCode = 2
@@ -129,22 +129,11 @@ const normalizeAuthStateProfileOptions = (command: Command, options: { authState
 }
 
 const resolveChromeStartOptions = (command: Command, cliOptions: ChromeStartOptions, configPath: string | undefined): ChromeStartOptions | null => {
-	const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
-	if (!resolvedPath) {
-		return configPath ? null : applyAuthStateOptionOverrides(command, cliOptions)
-	}
+	const merged = resolveOptionsWithConfig(command, cliOptions, configPath, (options, sources, config) =>
+		mergeChromeStartOptionsWithConfig(options, sources, config),
+	)
 
-	const configResult = loadArgusConfig(resolvedPath)
-	if (!configResult) {
-		return null
-	}
-
-	const merged = mergeChromeStartOptionsWithConfig(cliOptions, createOptionSourceProvider(command), configResult)
-	if (!merged) {
-		return null
-	}
-
-	return applyAuthStateOptionOverrides(command, merged)
+	return merged ? applyAuthStateOptionOverrides(command, merged) : null
 }
 
 const applyAuthStateOptionOverrides = <T extends { authState?: string; profile?: string; url?: string; fromWatcher?: string }>(
@@ -156,17 +145,11 @@ const applyAuthStateOptionOverrides = <T extends { authState?: string; profile?:
 	}
 
 	options.profile = 'temp'
-	if (getOptionValueSource(command, 'url') !== 'cli') {
+	if (!isCliProvided(command, 'url')) {
 		options.url = undefined
 	}
-	if (getOptionValueSource(command, 'fromWatcher') !== 'cli') {
+	if (!isCliProvided(command, 'fromWatcher')) {
 		options.fromWatcher = undefined
 	}
 	return options
 }
-
-const createOptionSourceProvider = (command: Command): { getOptionValueSource: (key: string) => string } => ({
-	getOptionValueSource: (key) => getOptionValueSource(command, key),
-})
-
-const getOptionValueSource = (command: Command, key: string): string => command.getOptionValueSource(key) ?? ''

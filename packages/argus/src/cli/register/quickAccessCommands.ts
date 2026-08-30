@@ -4,7 +4,7 @@ import { runList } from '../../commands/list.js'
 import { runStart } from '../../commands/start.js'
 import { runDoctor } from '../../commands/doctor.js'
 import { runReload } from '../../commands/reload.js'
-import { loadArgusConfig, resolveArgusConfigPath } from '../../config/loadConfig.js'
+import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
 
 export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
@@ -66,31 +66,13 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 			if (!normalizeStartAuthOptions(command, cliOptions)) {
 				return
 			}
-			const resolvedPath = resolveArgusConfigPath({ cliPath: configPath, cwd: process.cwd() })
-			if (!resolvedPath) {
-				if (configPath) {
-					return
-				}
-				await runStart(applyStartAuthOverrides(command, cliOptions))
-				return
-			}
+			const merged = resolveOptionsWithConfig(command, cliOptions, configPath, (options, sources, config) => {
+				const withChrome = mergeChromeStartOptionsWithConfig(options, sources, config)
+				return withChrome ? mergeWatcherStartOptionsWithConfig(withChrome, sources, config) : null
+			})
+			if (!merged) return
 
-			const configResult = loadArgusConfig(resolvedPath)
-			if (!configResult) {
-				return
-			}
-
-			const mergedChrome = mergeChromeStartOptionsWithConfig(cliOptions, command, configResult)
-			if (!mergedChrome) {
-				return
-			}
-
-			const mergedWatcher = mergeWatcherStartOptionsWithConfig(mergedChrome, command, configResult)
-			if (!mergedWatcher) {
-				return
-			}
-
-			await runStart(applyStartAuthOverrides(command, mergedWatcher))
+			await runStart(applyStartAuthOverrides(command, merged))
 		},
 	},
 	{
@@ -122,7 +104,7 @@ const normalizeStartAuthOptions = (command: Command, options: { authFrom?: strin
 		return true
 	}
 
-	if (getOptionValueSource(command, 'profile') === 'cli') {
+	if (isCliProvided(command, 'profile')) {
 		if (options.profile && options.profile !== 'temp') {
 			console.error('Cannot combine --auth-from with a copied Chrome profile. Use --profile temp or omit --profile.')
 			process.exitCode = 2
@@ -141,10 +123,8 @@ const applyStartAuthOverrides = <T extends { authFrom?: string; profile?: string
 	}
 
 	options.profile = 'temp'
-	if (getOptionValueSource(command, 'url') !== 'cli') {
+	if (!isCliProvided(command, 'url')) {
 		options.url = undefined
 	}
 	return options
 }
-
-const getOptionValueSource = (command: Command, key: string): string => command.getOptionValueSource(key) ?? ''

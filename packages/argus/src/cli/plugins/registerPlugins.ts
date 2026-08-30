@@ -5,7 +5,8 @@ import os from 'node:os'
 import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginContextV1, type ArgusPluginV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 
-import { resolveArgusConfigPath, loadArgusConfig } from '../../config/loadConfig.js'
+import { resolveArgusConfigPath } from '../../config/loadConfig.js'
+import { loadArgusConfigOnce } from '../../config/configContext.js'
 import { getGlobalArgusConfigPath } from '../../config/argusHome.js'
 import { createOutput } from '../../output/io.js'
 import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from './pluginAliases.js'
@@ -229,9 +230,9 @@ export const registerPlugins = async (program: Command, argv: readonly string[] 
 	const cwd = process.cwd()
 
 	const globalConfigPath = getGlobalArgusConfigPath()
-	const globalConfigResult = existsSync(globalConfigPath) ? loadArgusConfig(globalConfigPath) : null
+	const globalConfigResult = existsSync(globalConfigPath) ? loadArgusConfigOnce(globalConfigPath) : null
 	const configPath = resolveArgusConfigPath({ cwd })
-	const configResult = configPath ? loadArgusConfig(configPath) : null
+	const configResult = configPath ? loadArgusConfigOnce(configPath) : null
 	const globalAliases = { ...BUILTIN_PLUGIN_ALIASES, ...(globalConfigResult?.config.pluginAliases ?? {}) }
 	const localAliases = { ...globalAliases, ...(configResult?.config.pluginAliases ?? {}) }
 
