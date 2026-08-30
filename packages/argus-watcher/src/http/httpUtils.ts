@@ -1,6 +1,6 @@
 import { getErrorCode } from '../errors.js'
 import http from 'node:http'
-import { formatError, type ErrorResponse, type LogLevel } from '@vforsh/argus-core'
+import { formatError, type ArgusErrorCode, type ErrorResponse, type LogLevel } from '@vforsh/argus-core'
 
 export const respondJson = <T extends object>(res: http.ServerResponse, body: T, status = 200): void => {
 	const payload = JSON.stringify(body)
@@ -9,30 +9,41 @@ export const respondJson = <T extends object>(res: http.ServerResponse, body: T,
 	res.end(payload)
 }
 
+/**
+ * Send an `ok: false` failure envelope.
+ *
+ * The only way a route should build one. Routes used to hand-roll the object literal without a
+ * `satisfies ErrorResponse`, so their `code` was an unchecked string and a rename of an
+ * {@link ArgusErrorCode} member would not have broken them — the typed `code` parameter here closes
+ * that hole for every caller at once. `undefined` is allowed only because an arbitrary thrown error
+ * may not map to a known code (see {@link respondError}).
+ */
+export const respondApiError = (res: http.ServerResponse, status: number, code: ArgusErrorCode | undefined, message: string): void => {
+	respondJson(res, { ok: false, error: { message, code } } satisfies ErrorResponse, status)
+}
+
 export const respondInvalidMatch = (res: http.ServerResponse, message: string): void => {
-	respondJson(res, { ok: false, error: { message, code: 'invalid_match' } } satisfies ErrorResponse, 400)
+	respondApiError(res, 400, 'invalid_match', message)
 }
 
 export const respondInvalidMatchCase = (res: http.ServerResponse): void => {
-	respondJson(res, { ok: false, error: { message: 'Invalid matchCase value', code: 'invalid_match_case' } } satisfies ErrorResponse, 400)
+	respondApiError(res, 400, 'invalid_match_case', 'Invalid matchCase value')
 }
 
 export const respondInvalidBody = (res: http.ServerResponse, message: string): void => {
-	respondJson(res, { ok: false, error: { message, code: 'invalid_request' } } satisfies ErrorResponse, 400)
+	respondApiError(res, 400, 'invalid_request', message)
 }
 
 export const respondInvalidJson = (res: http.ServerResponse): void => {
-	respondJson(res, { ok: false, error: { message: 'Invalid JSON body', code: 'invalid_json' } } satisfies ErrorResponse, 400)
+	respondApiError(res, 400, 'invalid_json', 'Invalid JSON body')
 }
 
 export const respondPayloadTooLarge = (res: http.ServerResponse): void => {
-	respondJson(res, { ok: false, error: { message: 'Request body too large', code: 'payload_too_large' } } satisfies ErrorResponse, 413)
+	respondApiError(res, 413, 'payload_too_large', 'Request body too large')
 }
 
 export const respondError = (res: http.ServerResponse, error: unknown): void => {
-	const message = formatError(error)
-	const code = getErrorCode(error)
-	respondJson(res, { ok: false, error: { message, code } } satisfies ErrorResponse, 500)
+	respondApiError(res, 500, getErrorCode(error), formatError(error))
 }
 
 /**

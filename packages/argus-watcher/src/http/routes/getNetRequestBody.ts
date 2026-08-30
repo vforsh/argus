@@ -6,7 +6,7 @@ import { emitRequest } from './types.js'
 import { normalizeNetBodyError, readNetworkBody } from '../../cdp/networkBody.js'
 import { respondNetDisabled } from './netFilters.js'
 import { parseNetRequestLookup, resolveNetRequestLookupRecord } from './netRequestLookup.js'
-import { respondJson } from '../httpUtils.js'
+import { respondApiError } from '../httpUtils.js'
 
 export const route = defineJsonRoute<undefined, NetRequestBodyResponse>({
 	method: 'GET',
@@ -18,28 +18,24 @@ export const route = defineJsonRoute<undefined, NetRequestBodyResponse>({
 
 		const lookup = parseNetRequestLookup(url.searchParams)
 		if (!lookup) {
-			return respondJson(res, { ok: false, error: { code: 'invalid_request', message: 'Either id or requestId is required' } }, 400)
+			return respondApiError(res, 400, 'invalid_request', 'Either id or requestId is required')
 		}
 
 		const part = parseBodyPart(url.searchParams.get('part'))
 		if (!part) {
-			return respondJson(res, { ok: false, error: { code: 'invalid_request', message: 'part must be "request" or "response"' } }, 400)
+			return respondApiError(res, 400, 'invalid_request', 'part must be "request" or "response"')
 		}
 
 		emitRequest(ctx, res, 'net/request/body', { id: lookup.id, requestId: lookup.requestId, part })
 
 		const record = resolveNetRequestLookupRecord(ctx.netBuffer, lookup)
 		if (!record) {
-			return respondJson(res, { ok: false, error: { code: 'not_found', message: 'Network request not found' } }, 404)
+			return respondApiError(res, 404, 'not_found', 'Network request not found')
 		}
 		const { detail: request, bodySessionId } = record
 
 		if (!request.body[part]) {
-			return respondJson(
-				res,
-				{ ok: false, error: { code: 'body_not_available', message: `${capitalizePart(part)} body not available for this request` } },
-				404,
-			)
+			return respondApiError(res, 404, 'body_not_available', `${capitalizePart(part)} body not available for this request`)
 		}
 
 		try {
@@ -63,7 +59,7 @@ export const route = defineJsonRoute<undefined, NetRequestBodyResponse>({
 			// normalizeNetBodyError maps CDP failures onto stable codes; body_not_available stays a 404.
 			const normalizedError = normalizeNetBodyError(error, part)
 			if (hasErrorCode(normalizedError, 'body_not_available')) {
-				return respondJson(res, { ok: false, error: { code: 'body_not_available', message: normalizedError.message } }, 404)
+				return respondApiError(res, 404, 'body_not_available', normalizedError.message)
 			}
 			throw normalizedError
 		}

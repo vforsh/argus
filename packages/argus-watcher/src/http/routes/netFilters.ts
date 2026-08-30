@@ -5,7 +5,7 @@ import type { NetFilterContext, NetFilters, NetParty, NetScope } from '../../net
 import { derivePartyHost, normalizeNetUrlKey } from '../../net/filtering.js'
 import type { HttpRequestEventMetadata } from '../server.js'
 import type { RouteContext } from './types.js'
-import { clampNumber, normalizeQueryValue, optionalNumber, respondJson } from '../httpUtils.js'
+import { clampNumber, normalizeQueryValue, optionalNumber, respondApiError } from '../httpUtils.js'
 
 export type ParsedNetFilters = NetFilters & {
 	after: number
@@ -42,7 +42,7 @@ const netParams = (searchParams: URLSearchParams, key: keyof NetQuery): string[]
 
 /** Respond 400 `net_disabled`. Shared precondition failure for all `/net*` routes. */
 export const respondNetDisabled = (res: http.ServerResponse): void => {
-	respondJson(res, { ok: false, error: { code: 'net_disabled', message: 'Network capture is disabled for this watcher' } }, 400)
+	respondApiError(res, 400, 'net_disabled', 'Network capture is disabled for this watcher')
 }
 
 /**
@@ -58,7 +58,7 @@ export const readNetFiltersFromUrl = (url: URL, ctx: RouteContext, res: http.Ser
 		context: ctx.getNetFilterContext?.() ?? null,
 	})
 	if (filters.error || !filters.value) {
-		respondJson(res, { ok: false, error: { code: 'invalid_net_filter', message: filters.error ?? 'Invalid network filter' } }, 400)
+		respondApiError(res, 400, 'invalid_net_filter', filters.error ?? 'Invalid network filter')
 		return null
 	}
 	return filters.value

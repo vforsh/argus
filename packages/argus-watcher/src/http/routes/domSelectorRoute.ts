@@ -1,6 +1,6 @@
 import { hasErrorCode } from '../../errors.js'
 import type http from 'node:http'
-import { respondJson } from '../httpUtils.js'
+import { respondApiError, respondJson } from '../httpUtils.js'
 
 type SelectorPayload = {
 	selector?: unknown
@@ -61,6 +61,6 @@ export const respondTargetResolutionError = (res: http.ServerResponse, error: un
 	}
 
 	const message = error instanceof Error && error.message ? error.message : 'Unknown or stale element ref. Run argus snapshot or locate again.'
-	respondJson(res, { ok: false, error: { message, code: 'invalid_ref' } }, 400)
+	respondApiError(res, 400, 'invalid_ref', message)
 	return true
 }

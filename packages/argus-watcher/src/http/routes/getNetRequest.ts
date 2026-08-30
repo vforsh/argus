@@ -3,7 +3,7 @@ import { defineJsonRoute } from './defineRoute.js'
 import { emitRequest } from './types.js'
 import { respondNetDisabled } from './netFilters.js'
 import { parseNetRequestLookup, resolveNetRequestLookup } from './netRequestLookup.js'
-import { respondJson } from '../httpUtils.js'
+import { respondApiError } from '../httpUtils.js'
 
 export const route = defineJsonRoute<undefined, NetRequestResponse>({
 	method: 'GET',
@@ -15,14 +15,14 @@ export const route = defineJsonRoute<undefined, NetRequestResponse>({
 
 		const lookup = parseNetRequestLookup(url.searchParams)
 		if (!lookup) {
-			return respondJson(res, { ok: false, error: { code: 'invalid_request', message: 'Either id or requestId is required' } }, 400)
+			return respondApiError(res, 400, 'invalid_request', 'Either id or requestId is required')
 		}
 
 		emitRequest(ctx, res, 'net/request', { id: lookup.id, requestId: lookup.requestId })
 
 		const request = resolveNetRequestLookup(ctx.netBuffer, lookup)
 		if (!request) {
-			return respondJson(res, { ok: false, error: { code: 'not_found', message: 'Network request not found' } }, 404)
+			return respondApiError(res, 404, 'not_found', 'Network request not found')
 		}
 
 		return { ok: true, request }

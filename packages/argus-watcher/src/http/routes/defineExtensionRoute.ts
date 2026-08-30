@@ -1,7 +1,7 @@
 import type http from 'node:http'
 import type { CdpSourceHandle } from '../../sources/types.js'
 import { formatError } from '@vforsh/argus-core'
-import { respondJson } from '../httpUtils.js'
+import { respondApiError } from '../httpUtils.js'
 import { defineJsonRoute, type JsonRouteHandlerInput, type WatcherRouteDefinition } from './defineRoute.js'
 
 /** The optional members of {@link CdpSourceHandle} that only an extension-backed source provides. */
@@ -55,11 +55,11 @@ export const defineExtensionRoute = <
 			return input.handle({ ...handlerInput, capability })
 		},
 		handleError: (res, error) => {
-			respondJson(res, { ok: false, error: { message: formatError(error), code: 'extension_action_failed' } }, 400)
+			respondApiError(res, 400, 'extension_action_failed', formatError(error))
 			return true
 		},
 	})
 
 const respondNotAvailable = (res: http.ServerResponse): void => {
-	respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
+	respondApiError(res, 400, 'not_available', 'Not available')
 }

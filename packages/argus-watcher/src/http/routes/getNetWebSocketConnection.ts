@@ -3,7 +3,7 @@ import { defineJsonRoute } from './defineRoute.js'
 import { emitRequest } from './types.js'
 import { respondNetDisabled } from './netFilters.js'
 import { parseNetRequestLookup } from './netRequestLookup.js'
-import { respondJson } from '../httpUtils.js'
+import { respondApiError } from '../httpUtils.js'
 
 export const route = defineJsonRoute<undefined, NetWebSocketResponse>({
 	method: 'GET',
@@ -15,7 +15,7 @@ export const route = defineJsonRoute<undefined, NetWebSocketResponse>({
 
 		const lookup = parseNetRequestLookup(url.searchParams)
 		if (!lookup) {
-			return respondJson(res, { ok: false, error: { code: 'invalid_net_request', message: 'Missing WebSocket connection id' } }, 400)
+			return respondApiError(res, 400, 'invalid_net_request', 'Missing WebSocket connection id')
 		}
 
 		emitRequest(ctx, res, 'net/ws/connection', { id: lookup.id, requestId: lookup.requestId })
@@ -23,7 +23,7 @@ export const route = defineJsonRoute<undefined, NetWebSocketResponse>({
 		const connection =
 			lookup.id != null ? ctx.realtimeNetBuffer.getWebSocketById(lookup.id) : ctx.realtimeNetBuffer.getWebSocketByRequestId(lookup.requestId!)
 		if (!connection) {
-			return respondJson(res, { ok: false, error: { code: 'net_request_not_found', message: 'WebSocket connection not found' } }, 404)
+			return respondApiError(res, 404, 'net_request_not_found', 'WebSocket connection not found')
 		}
 
 		return { ok: true, connection }

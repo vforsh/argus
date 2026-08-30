@@ -1,7 +1,7 @@
-import type { DialogHandleRequest, DialogHandleResponse, ErrorResponse } from '@vforsh/argus-core'
+import type { DialogHandleRequest, DialogHandleResponse } from '@vforsh/argus-core'
 import { dialogHandleRequestSchema } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
-import { respondJson } from '../httpUtils.js'
+import { respondApiError } from '../httpUtils.js'
 
 export const route = defineJsonRoute<DialogHandleRequest, DialogHandleResponse>({
 	method: 'POST',
@@ -12,19 +12,12 @@ export const route = defineJsonRoute<DialogHandleRequest, DialogHandleResponse>(
 		const action = payload.action
 		const dialog = ctx.getDialog()
 		if (!dialog) {
-			respondJson(res, { ok: false, error: { message: 'No active browser dialog', code: 'no_active_dialog' } } satisfies ErrorResponse, 409)
+			respondApiError(res, 409, 'no_active_dialog', 'No active browser dialog')
 			return
 		}
 
 		if (payload.promptText != null && dialog.type !== 'prompt') {
-			respondJson(
-				res,
-				{
-					ok: false,
-					error: { message: 'Prompt text can only be sent to prompt dialogs', code: 'dialog_not_prompt' },
-				} satisfies ErrorResponse,
-				409,
-			)
+			respondApiError(res, 409, 'dialog_not_prompt', 'Prompt text can only be sent to prompt dialogs')
 			return
 		}
 
