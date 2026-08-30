@@ -1,13 +1,5 @@
-/** Extract an error message from an unknown thrown value. */
-export const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}
+// Canonical in argus-core so the SDK's transport can phrase failures the same way.
+export { formatError } from '@vforsh/argus-core'
 
 /** Parse a string to a finite number, or return `undefined`. */
 export const parseNumber = (value?: string): number | undefined => {

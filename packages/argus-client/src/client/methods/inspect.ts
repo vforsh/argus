@@ -1,4 +1,4 @@
-import { describeProtocolMismatch } from '@vforsh/argus-core'
+import { describeProtocolMismatch, readAndPruneRegistry } from '@vforsh/argus-core'
 import type {
 	LogCursorResponse,
 	LogEpochResponse,
@@ -11,7 +11,6 @@ import type {
 } from '@vforsh/argus-core'
 import type { ListOptions, ListResult, LogsOptions, LogsResult, NetOptions, NetResult } from '../../types.js'
 import { previewLogEvent } from '../../logs/previewLogEvent.js'
-import { readAndPruneRegistry } from '../../registry/readAndPruneRegistry.js'
 import type { ClientContext } from '../context.js'
 import { buildLogsParams, buildNetParams } from '../queryParams.js'
 import { requestWatcher } from '../watcherRequest.js'

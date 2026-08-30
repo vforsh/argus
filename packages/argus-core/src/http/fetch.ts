@@ -25,6 +25,33 @@ export class HttpResponseError extends Error {
 export const isHttpResponseError = (error: unknown): error is HttpResponseError =>
 	error != null && typeof error === 'object' && (error as { isHttpResponseError?: unknown }).isHttpResponseError === true
 
+/**
+ * Thrown when a request exceeded its timeout budget.
+ *
+ * Distinct from a connection failure: a slow endpoint on a perfectly healthy peer produces this,
+ * so callers that treat failures as liveness signals — registry pruning — must not evict on it.
+ * Typed rather than message-matched because `fetch`'s connection errors carry runtime-specific
+ * shapes (Bun sets `code: 'ConnectionRefused'`, Node nests an errno under `cause`), so the timeout
+ * is the one failure we can identify reliably ourselves.
+ */
+export class HttpTimeoutError extends Error {
+	/** The budget that elapsed, in milliseconds. */
+	readonly timeoutMs: number
+
+	/** Brand, so the check survives two copies of this module in one process. */
+	readonly isHttpTimeoutError = true
+
+	constructor(timeoutMs: number) {
+		super(`Request timed out after ${timeoutMs}ms`)
+		this.name = 'HttpTimeoutError'
+		this.timeoutMs = timeoutMs
+	}
+}
+
+/** Type guard for {@link HttpTimeoutError} that tolerates duplicate module instances. */
+export const isHttpTimeoutError = (error: unknown): error is HttpTimeoutError =>
+	error != null && typeof error === 'object' && (error as { isHttpTimeoutError?: unknown }).isHttpTimeoutError === true
+
 export type HttpOptions = {
 	timeoutMs?: number
 	method?: HttpMethod
@@ -59,7 +86,7 @@ export const fetchJson = async <T>(url: string, options: HttpOptions = {}): Prom
 		return (await response.json()) as T
 	} catch (error) {
 		if (isAbortError(error)) {
-			throw new Error(`Request timed out after ${timeoutMs}ms`)
+			throw new HttpTimeoutError(timeoutMs)
 		}
 		throw error
 	} finally {
@@ -88,7 +115,7 @@ export const fetchText = async (url: string, options: HttpOptions = {}): Promise
 		return await response.text()
 	} catch (error) {
 		if (isAbortError(error)) {
-			throw new Error(`Request timed out after ${timeoutMs}ms`)
+			throw new HttpTimeoutError(timeoutMs)
 		}
 		throw error
 	} finally {

@@ -5,9 +5,15 @@ import type {
 	ArgusWatcherRequestSuccess,
 } from '@vforsh/argus-plugin-api'
 import type { ErrorResponse, WatcherRecord, ApiResult } from '@vforsh/argus-core'
+import {
+	buildWatcherUrl,
+	classifyWatcherFailure,
+	formatWatcherTransportError,
+	removeWatcherAndPersist,
+	shouldEvictWatcherOnFailure,
+} from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
 import { fetchJson } from '../httpClient.js'
-import { formatError } from '../cli/parse.js'
 import { formatWatcherLine } from '../output/format.js'
 import { resolveWatcher } from './resolveWatcher.js'
 
@@ -30,13 +36,9 @@ export type WatcherRequestError = ArgusWatcherRequestError
 
 export type WatcherRequestResult<T> = ArgusWatcherRequestResult<T>
 
-export const buildWatcherUrl = (watcher: Pick<WatcherRecord, 'host' | 'port'>, path: string, query?: URLSearchParams): string => {
-	const qs = query?.toString()
-	return `http://${watcher.host}:${watcher.port}${path}${qs ? `?${qs}` : ''}`
-}
-
-export const formatWatcherTransportError = (watcher: Pick<WatcherRecord, 'id'>, error: unknown): string =>
-	`${watcher.id}: failed to reach watcher (${formatError(error)})`
+// URL building and transport-error phrasing are shared with the SDK via argus-core; re-exported
+// here so the CLI's many importers keep one import site.
+export { buildWatcherUrl, formatWatcherTransportError }
 
 export async function fetchWatcherJson<T>(watcher: Pick<WatcherRecord, 'host' | 'port'>, input: Omit<WatcherRequestInput, 'id'>): Promise<T> {
 	return fetchJson<T>(buildWatcherUrl(watcher, input.path, input.query), {
@@ -68,6 +70,12 @@ export async function requestWatcherJson<T>(input: WatcherRequestInput): Promise
 		const data = await fetchWatcherJson<T>(watcher, input)
 		return { ok: true, watcher, data }
 	} catch (error) {
+		// Same classifier and eviction policy the SDK uses — the registry is shared, so one stack
+		// must not leave it in a state the other would not have produced.
+		if (shouldEvictWatcherOnFailure(classifyWatcherFailure(error))) {
+			await removeWatcherAndPersist(watcher.id)
+		}
+
 		return {
 			ok: false,
 			watcher,

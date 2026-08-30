@@ -1,8 +1,15 @@
 import type { WatcherRecord, ResponseData } from '@vforsh/argus-core'
-import { isHttpResponseError } from '@vforsh/argus-core'
+import {
+	buildWatcherUrl,
+	classifyWatcherFailure,
+	formatError,
+	formatWatcherTransportError,
+	readAndPruneRegistry,
+	removeWatcherAndPersist,
+	shouldEvictWatcherOnFailure,
+} from '@vforsh/argus-core'
 import type { HttpOptions } from '../http/fetchJson.js'
 import { fetchJson } from '../http/fetchJson.js'
-import { readAndPruneRegistry, removeWatcherAndPersist } from '../registry/readAndPruneRegistry.js'
 
 type RegistryContext = {
 	registryPath?: string
@@ -41,35 +48,20 @@ export const requestWatcher = async <T>(
 			})
 			return { watcher, data }
 		} catch (error) {
-			// The watcher answered and rejected this request, so it is demonstrably alive.
-			// Evicting it here would break every later call in the process over one bad
-			// selector or a page that happens to be mid-navigation.
-			if (isHttpResponseError(error)) {
-				throw new Error(`${watcher.id}: ${error.message}`)
+			// One classifier and one eviction policy, shared with the CLI: the same outage must not
+			// leave the shared registry in a different state depending on which stack observed it.
+			const failure = classifyWatcherFailure(error)
+			if (failure === 'api-rejection') {
+				throw new Error(`${watcher.id}: ${formatError(error)}`)
 			}
 
-			await removeWatcherAndPersist(watcher.id, context.registryPath)
+			if (shouldEvictWatcherOnFailure(failure)) {
+				await removeWatcherAndPersist(watcher.id, context.registryPath)
+			}
+
 			throw new Error(formatWatcherTransportError(watcher, error))
 		}
 	})
-
-const buildWatcherUrl = (watcher: Pick<WatcherRecord, 'host' | 'port'>, path: string, query?: URLSearchParams): string => {
-	const qs = query?.toString()
-	return `http://${watcher.host}:${watcher.port}${path}${qs ? `?${qs}` : ''}`
-}
-
-const formatWatcherTransportError = (watcher: Pick<WatcherRecord, 'id'>, error: unknown): string =>
-	`${watcher.id}: failed to reach watcher (${formatUnknownError(error)})`
-
-const formatUnknownError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}
 
 /**
  * Issue a watcher request and return the response payload without its `ok` discriminant.

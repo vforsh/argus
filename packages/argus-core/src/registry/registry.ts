@@ -183,3 +183,28 @@ const isRegistryV1 = (value: unknown): value is RegistryV1 => {
 
 	return typeof record.updatedAt === 'number'
 }
+
+/**
+ * Read the registry, pruning heartbeat-stale entries in the same locked read-modify-write.
+ *
+ * This is the only automatic path that removes entries: the registry is shared between the CLI
+ * and the SDK, so both read through here rather than each keeping its own wrapper.
+ */
+export const readAndPruneRegistry = async (options: { registryPath?: string; ttlMs?: number } = {}): Promise<RegistryV1> => {
+	const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS
+	return updateRegistry((registry) => pruneStaleWatchers(registry, Date.now(), ttlMs).registry, options.registryPath)
+}
+
+/** Remove a watcher entry atomically (locked read-modify-write). */
+export const removeWatcherAndPersist = async (id: string, registryPath?: string): Promise<RegistryV1> =>
+	updateRegistry((registry) => removeWatcherEntry(registry, id), registryPath)
+
+/** Remove several watcher entries in one locked read-modify-write. */
+export const removeWatchersAndPersist = async (ids: string[], registryPath?: string): Promise<RegistryV1> => {
+	if (ids.length === 0) {
+		const { registry } = await readRegistry(registryPath)
+		return registry
+	}
+
+	return updateRegistry((registry) => ids.reduce((next, id) => removeWatcherEntry(next, id), registry), registryPath)
+}
