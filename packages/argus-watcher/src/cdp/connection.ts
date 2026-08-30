@@ -209,3 +209,62 @@ const parseMessage = (data: unknown): unknown => {
 
 	return null
 }
+
+/** A short-lived connection to one CDP endpoint, for commands that need no session. */
+export type OneShotCdpConnection = {
+	sendAndWait: <M extends CdpMethod>(method: M, params?: CdpParams<M>, options?: CdpSendOptions) => Promise<CdpResult<M>>
+	close: () => void
+}
+
+/**
+ * Open a CDP WebSocket and return a connection for issuing a few commands.
+ *
+ * `browserCookies.ts` used to carry a second, bespoke CDP-over-WebSocket transport
+ * alongside this one — its own duck-typed WebSocket types, its own pending/timeout/cleanup
+ * machinery, its own message parsing, and hardcoded per-call request ids that existed only
+ * because it had no id allocator. Two transports in one directory meant every transport
+ * fix had to be made twice.
+ *
+ * Callers must `close()`; nothing reconnects a one-shot connection.
+ */
+export const openCdpConnection = async (wsUrl: string, connectTimeoutMs = 5_000): Promise<OneShotCdpConnection> => {
+	const WebSocketConstructor = (globalThis as { WebSocket?: typeof WebSocket }).WebSocket
+	if (!WebSocketConstructor) {
+		throw new Error('WebSocket unavailable. Node 18+ required.')
+	}
+
+	const socket = new WebSocketConstructor(wsUrl)
+	const controller = createCdpSessionHandle()
+	const connection = controller.attach(socket)
+
+	socket.addEventListener('message', (event) => {
+		connection.handleMessage(event.data)
+	})
+	socket.addEventListener('close', () => {
+		connection.close('socket_closed')
+	})
+
+	await new Promise<void>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(`CDP connection timed out after ${connectTimeoutMs}ms`)), connectTimeoutMs)
+		socket.addEventListener('open', () => {
+			clearTimeout(timer)
+			resolve()
+		})
+		socket.addEventListener('error', () => {
+			clearTimeout(timer)
+			reject(new Error('WebSocket error'))
+		})
+	})
+
+	return {
+		sendAndWait: controller.session.sendAndWait,
+		close: () => {
+			controller.detach('closed')
+			try {
+				socket.close()
+			} catch {
+				// Already closed; nothing to unwind.
+			}
+		},
+	}
+}

@@ -312,7 +312,10 @@ export type CdpCommandMap = {
 	'Storage.getCookies': Command<{ browserContextId?: string }, { cookies?: CdpCookie[] }>
 
 	// --- Target (browser-level) ---
-	'Target.getTargetInfo': Command<{ targetId?: string }, { targetInfo?: { targetId: string; type: string; url: string; title: string } }>
+	'Target.getTargetInfo': Command<
+		{ targetId?: string },
+		{ targetInfo?: { targetId: string; type: string; url: string; title: string; browserContextId?: string } }
+	>
 
 	// --- Tracing ---
 	'Tracing.end': Command<NoParams, unknown>

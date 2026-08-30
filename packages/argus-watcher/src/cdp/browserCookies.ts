@@ -1,6 +1,7 @@
 import type { AuthStateCookie, WatcherChrome } from '@vforsh/argus-core'
 import { matchesCookieDomain, normalizeCookieDomainFilter } from '@vforsh/argus-core'
 import type { CdpSourceCookieQuery } from '../sources/types.js'
+import { openCdpConnection, type OneShotCdpConnection } from './connection.js'
 
 type ChromeVersionResponse = {
 	webSocketDebuggerUrl?: string
@@ -22,18 +23,6 @@ type RawBrowserCookie = {
 	sameSite?: string
 }
 
-type WebSocketLike = {
-	addEventListener: (event: 'open' | 'message' | 'error' | 'close', listener: (event: { data?: unknown }) => void) => void
-	removeEventListener?: (event: 'open' | 'message' | 'error' | 'close', listener: (event: { data?: unknown }) => void) => void
-	send: (data: string) => void
-	close: () => void
-}
-
-type WebSocketCtor = new (url: string) => WebSocketLike
-const TARGET_INFO_REQUEST_ID = 1
-const STORAGE_GET_COOKIES_REQUEST_ID = 2
-const STORAGE_GET_COOKIES_FALLBACK_REQUEST_ID = 3
-
 /**
  * Browser-target cookies are the only reliable way to capture sibling subdomain auth in CDP mode.
  * Page-target `Network.getCookies` only sees the current document's request scope.
@@ -49,11 +38,16 @@ export const createCdpBrowserCookieReader =
 			throw new Error(`Chrome browser websocket missing at ${host}:${port}`)
 		}
 
-		const browserContextId = await readTargetBrowserContextId(wsUrl, getTargetId())
-		const payload = await readBrowserCookiesPayload(wsUrl, browserContextId)
-		const normalizedDomain = normalizeCookieDomainFilter(query.domain ?? null)
+		const connection = await openCdpConnection(wsUrl)
+		try {
+			const browserContextId = await readTargetBrowserContextId(connection, getTargetId())
+			const payload = await readBrowserCookiesPayload(connection, browserContextId)
+			const normalizedDomain = normalizeCookieDomainFilter(query.domain ?? null)
 
-		return (payload.cookies ?? []).map(normalizeBrowserCookie).filter((cookie) => matchesCookieDomain(cookie.domain, normalizedDomain))
+			return (payload.cookies ?? []).map(normalizeBrowserCookie).filter((cookie) => matchesCookieDomain(cookie.domain, normalizedDomain))
+		} finally {
+			connection.close()
+		}
 	}
 
 const fetchChromeVersion = async (host: string, port: number): Promise<ChromeVersionResponse> => {
@@ -78,143 +72,27 @@ const normalizeBrowserCookie = (cookie: RawBrowserCookie): AuthStateCookie => ({
 	sameSite: cookie.sameSite ?? null,
 })
 
-const readTargetBrowserContextId = async (wsUrl: string, targetId: string | null): Promise<string | null> => {
+const readTargetBrowserContextId = async (connection: OneShotCdpConnection, targetId: string | null): Promise<string | null> => {
 	if (!targetId) {
 		return null
 	}
 
-	const response = await sendBrowserCommand<{ targetInfo?: { browserContextId?: string } }>(wsUrl, {
-		id: TARGET_INFO_REQUEST_ID,
-		method: 'Target.getTargetInfo',
-		params: { targetId },
-	})
-
+	const response = await connection.sendAndWait('Target.getTargetInfo', { targetId }, { timeoutMs: 5_000 })
 	return response.targetInfo?.browserContextId ?? null
 }
 
-const readBrowserCookiesPayload = async (wsUrl: string, browserContextId: string | null): Promise<BrowserCookiePayload> => {
+const readBrowserCookiesPayload = async (connection: OneShotCdpConnection, browserContextId: string | null): Promise<BrowserCookiePayload> => {
+	const options = { timeoutMs: 5_000 }
 	try {
-		return await sendBrowserCommand<BrowserCookiePayload>(wsUrl, {
-			id: STORAGE_GET_COOKIES_REQUEST_ID,
-			method: 'Storage.getCookies',
-			params: browserContextId ? { browserContextId } : undefined,
-		})
+		return await connection.sendAndWait('Storage.getCookies', browserContextId ? { browserContextId } : {}, options)
 	} catch (error) {
 		if (!browserContextId || !isMissingBrowserContextError(error)) {
 			throw error
 		}
 
-		return await sendBrowserCommand<BrowserCookiePayload>(wsUrl, {
-			id: STORAGE_GET_COOKIES_FALLBACK_REQUEST_ID,
-			method: 'Storage.getCookies',
-		})
+		// Chrome drops the context between our two calls when the target closes mid-read.
+		return await connection.sendAndWait('Storage.getCookies', {}, options)
 	}
 }
 
 const isMissingBrowserContextError = (error: unknown): boolean => error instanceof Error && /browser context/i.test(error.message)
-
-const sendBrowserCommand = async <T>(
-	wsUrl: string,
-	payload: {
-		id: number
-		method: string
-		params?: Record<string, unknown>
-	},
-	timeoutMs = 5_000,
-): Promise<T> => {
-	const WebSocketConstructor = getWebSocketCtor()
-	if (!WebSocketConstructor) {
-		throw new Error('WebSocket unavailable. Node 18+ required.')
-	}
-
-	const ws = new WebSocketConstructor(wsUrl)
-
-	return await new Promise<T>((resolve, reject) => {
-		let settled = false
-		const timer = setTimeout(() => finish(undefined, new Error(`CDP command timed out after ${timeoutMs}ms`)), timeoutMs)
-
-		const cleanup = (): void => {
-			clearTimeout(timer)
-			ws.removeEventListener?.('open', onOpen)
-			ws.removeEventListener?.('message', onMessage)
-			ws.removeEventListener?.('error', onError)
-			ws.removeEventListener?.('close', onClose)
-		}
-
-		const finish = (result?: T, error?: Error): void => {
-			if (settled) {
-				return
-			}
-			settled = true
-			cleanup()
-			try {
-				ws.close()
-			} catch {}
-			if (error) {
-				reject(error)
-				return
-			}
-			resolve(result as T)
-		}
-
-		const onOpen = (): void => {
-			try {
-				ws.send(JSON.stringify(payload))
-			} catch (error) {
-				finish(undefined, error instanceof Error ? error : new Error(String(error)))
-			}
-		}
-
-		const onMessage = (event: { data?: unknown }): void => {
-			const text = toMessageText(event.data)
-			if (!text) {
-				return
-			}
-
-			try {
-				const message = JSON.parse(text) as { id?: number; result?: T; error?: { message?: string } }
-				if (message.id !== payload.id) {
-					return
-				}
-				if (message.error?.message) {
-					finish(undefined, new Error(message.error.message))
-					return
-				}
-				finish(message.result as T)
-			} catch (error) {
-				finish(undefined, error instanceof Error ? error : new Error(String(error)))
-			}
-		}
-
-		const onError = (): void => {
-			finish(undefined, new Error('WebSocket error'))
-		}
-
-		const onClose = (): void => {
-			finish(undefined, new Error('WebSocket closed before response'))
-		}
-
-		ws.addEventListener('open', onOpen)
-		ws.addEventListener('message', onMessage)
-		ws.addEventListener('error', onError)
-		ws.addEventListener('close', onClose)
-	})
-}
-
-const getWebSocketCtor = (): WebSocketCtor | null => {
-	const ctor = (globalThis as { WebSocket?: WebSocketCtor }).WebSocket
-	return ctor ?? null
-}
-
-const toMessageText = (data: unknown): string | null => {
-	if (typeof data === 'string') {
-		return data
-	}
-	if (data instanceof ArrayBuffer) {
-		return Buffer.from(data).toString('utf8')
-	}
-	if (Buffer.isBuffer(data)) {
-		return data.toString('utf8')
-	}
-	return null
-}
