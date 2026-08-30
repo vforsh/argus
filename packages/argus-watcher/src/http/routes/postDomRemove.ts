@@ -11,7 +11,7 @@ export const route = defineJsonRoute<DomRemoveRequest, DomRemoveResponse>({
 	endpoint: 'dom/remove',
 	handle: async ({ res, ctx, body: payload }) => {
 		const all = payload.all ?? false
-		const { allNodeIds, removedCount } = await removeElements(ctx.cdpSession, {
+		const { allNodeIds, mutatedCount } = await removeElements(ctx.cdpSession, {
 			selector: payload.selector,
 			all,
 			text: payload.text,
@@ -21,6 +21,6 @@ export const route = defineJsonRoute<DomRemoveRequest, DomRemoveResponse>({
 			return respondMultipleMatches(res, allNodeIds.length, 'remove')
 		}
 
-		return { ok: true, matches: allNodeIds.length, removed: removedCount }
+		return { ok: true, matches: allNodeIds.length, removed: mutatedCount }
 	},
 })

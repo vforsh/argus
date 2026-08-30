@@ -11,12 +11,12 @@ export const route = defineJsonRoute<DomModifyRequest, DomModifyResponse>({
 	endpoint: 'dom/modify',
 	handle: async ({ res, ctx, body: payload }) => {
 		const all = payload.all ?? false
-		const { allNodeIds, modifiedCount } = await modifyElements(ctx.cdpSession, { ...payload, all })
+		const { allNodeIds, mutatedCount } = await modifyElements(ctx.cdpSession, { ...payload, all })
 
 		if (!all && allNodeIds.length > 1) {
 			return respondMultipleMatches(res, allNodeIds.length, 'modify')
 		}
 
-		return { ok: true, matches: allNodeIds.length, modified: modifiedCount }
+		return { ok: true, matches: allNodeIds.length, modified: mutatedCount }
 	},
 })

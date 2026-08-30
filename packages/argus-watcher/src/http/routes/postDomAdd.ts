@@ -62,7 +62,7 @@ export const route = defineJsonRoute<DomAddRequest, DomAddResponse>({
 		}
 
 		const nodeIds = selectDomAddNodeIds(allNodeIds, { all, nth })
-		const { insertedCount } = await insertAdjacentHtml(ctx.cdpSession, {
+		const insertedCount = await insertAdjacentHtml(ctx.cdpSession, {
 			nodeIds,
 			html: payload.html,
 			position: payload.position,
