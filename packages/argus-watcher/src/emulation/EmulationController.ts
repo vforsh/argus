@@ -1,8 +1,8 @@
 import type { EmulationState, EmulationStatusResponse, EmulationSetResponse, EmulationClearResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 import { applyEmulation, clearEmulation } from '../cdp/emulation.js'
-
-type EmulationError = { message: string; code?: string }
+import { evaluateInPage } from '../cdp/pageState.js'
+import { createStickyController } from '../stickyController.js'
 
 export type EmulationController = {
 	getStatus: (ctx: { attached: boolean }) => EmulationStatusResponse
@@ -11,92 +11,40 @@ export type EmulationController = {
 	onAttach: (session: CdpSessionHandle) => Promise<void>
 }
 
+/**
+ * Desired viewport/touch/user-agent emulation, re-applied on every attach until cleared.
+ *
+ * Unlike the other sticky controllers this carries a baseline: the pre-override user-agent
+ * has to be sampled from a fresh session before anything is applied, so clearing can
+ * restore it.
+ */
 export const createEmulationController = (): EmulationController => {
-	let desired: EmulationState | null = null
-	let applied = false
 	let baselineUserAgent: string | null = null
-	let lastError: EmulationError | null = null
-
 	const getBaseline = () => ({ userAgent: baselineUserAgent })
 
-	const getStatus = (ctx: { attached: boolean }): EmulationStatusResponse => ({
-		ok: true,
-		attached: ctx.attached,
-		applied,
-		state: desired,
-		baseline: { userAgent: baselineUserAgent },
-		lastError,
+	const sticky = createStickyController<EmulationState>({
+		label: 'Emulation',
+		apply: (session, state) => applyEmulation(session, state, getBaseline()),
+		clear: (session) => clearEmulation(session, getBaseline()),
+		onBeforeReapply: async (session) => {
+			const value = await evaluateInPage<unknown>(session, 'navigator.userAgent').catch(() => null)
+			baselineUserAgent = typeof value === 'string' ? value : null
+		},
 	})
 
-	const setDesired = async (state: EmulationState, session: CdpSessionHandle | null): Promise<EmulationSetResponse> => {
-		desired = state
-		lastError = null
-
-		if (!session || !session.isAttached()) {
-			applied = false
-			return { ok: true, attached: false, applied: false, state: desired }
-		}
-
-		try {
-			await applyEmulation(session, state, getBaseline())
-			applied = true
-			return { ok: true, attached: true, applied: true, state: desired }
-		} catch (error) {
-			applied = false
-			lastError = { message: error instanceof Error ? error.message : String(error) }
-			return { ok: true, attached: true, applied: false, state: desired, error: lastError }
-		}
+	return {
+		getStatus: (ctx) => {
+			const { applied, state, lastError } = sticky.getState()
+			return { ok: true, attached: ctx.attached, applied, state, baseline: getBaseline(), lastError }
+		},
+		setDesired: async (state, session) => {
+			const { attached, applied, state: next, lastError } = await sticky.setDesired(state, session)
+			return { ok: true, attached, applied, state: next, ...(lastError ? { error: lastError } : {}) }
+		},
+		clearDesired: async (session) => {
+			const { attached, applied, lastError } = await sticky.clearDesired(session)
+			return { ok: true, attached, applied, state: null, ...(lastError ? { error: lastError } : {}) }
+		},
+		onAttach: sticky.onAttach,
 	}
-
-	const clearDesired = async (session: CdpSessionHandle | null): Promise<EmulationClearResponse> => {
-		desired = null
-		lastError = null
-
-		if (!session || !session.isAttached()) {
-			applied = false
-			return { ok: true, attached: false, applied: false, state: null }
-		}
-
-		try {
-			await clearEmulation(session, getBaseline())
-			applied = false
-			return { ok: true, attached: true, applied: true, state: null }
-		} catch (error) {
-			applied = false
-			lastError = { message: error instanceof Error ? error.message : String(error) }
-			return { ok: true, attached: true, applied: false, state: null, error: lastError }
-		}
-	}
-
-	const onAttach = async (session: CdpSessionHandle): Promise<void> => {
-		// Capture baseline UA before any overrides
-		try {
-			const result = await session.sendAndWait('Runtime.evaluate', {
-				expression: 'navigator.userAgent',
-				returnByValue: true,
-			})
-			const value = result?.result?.value
-			baselineUserAgent = typeof value === 'string' ? value : null
-		} catch {
-			baselineUserAgent = null
-		}
-
-		// Re-apply desired state if set (persist-until-clear semantics)
-		if (!desired) {
-			applied = false
-			return
-		}
-
-		try {
-			await applyEmulation(session, desired, getBaseline())
-			applied = true
-			lastError = null
-		} catch (error) {
-			applied = false
-			lastError = { message: error instanceof Error ? error.message : String(error) }
-			console.warn(`[Emulation] Failed to re-apply emulation on attach: ${lastError.message}`)
-		}
-	}
-
-	return { getStatus, setDesired, clearDesired, onAttach }
 }

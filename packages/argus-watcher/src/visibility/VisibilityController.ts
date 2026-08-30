@@ -1,11 +1,18 @@
 import type { VisibilityLock } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../cdp/connection.js'
+import { createStickyController } from '../stickyController.js'
 
 /**
- * Tracks the desired "show" lock and (re)applies it to the attached CDP
- * session. Mirrors EmulationController / ThrottleController: the desired
- * state survives detaches and is re-applied on the next attach, so
+ * Tracks the desired "show" lock and (re)applies it to the attached CDP session, so
  * `argus page show` is sticky until `argus page hide`.
+ *
+ * Implementation notes:
+ * - `Page.bringToFront` is best-effort — a one-shot hint that raises the tab at call time.
+ *   Failure is swallowed; some environments (headless, minimized OS windows, extension
+ *   transport without a focused window) no-op it.
+ * - `Emulation.setFocusEmulationEnabled({ enabled: true })` is the mechanism that keeps
+ *   the page unthrottled while its window is covered. Session-scoped, so it must be
+ *   re-applied after every reattach.
  */
 export type VisibilityController = {
 	/** Current desired lock (what the next attach would apply). */
@@ -16,51 +23,43 @@ export type VisibilityController = {
 	onAttach: (session: CdpSessionHandle) => Promise<void>
 }
 
-/**
- * Implementation notes:
- * - `Page.bringToFront` is best-effort — a one-shot hint that raises the tab
- *   at call time. Failure is swallowed; some environments (headless, minimized
- *   OS windows, extension transport without a focused window) no-op it.
- * - `Emulation.setFocusEmulationEnabled({ enabled: true })` is the mechanism
- *   that keeps the page unthrottled while its window is covered. Session-
- *   scoped, so it must be re-applied after every reattach.
- */
-export const createVisibilityController = (): VisibilityController => {
-	let desired: VisibilityLock = 'default'
-
-	const apply = async (session: CdpSessionHandle, lock: VisibilityLock): Promise<void> => {
-		if (lock !== 'shown') {
-			await session.sendAndWait('Emulation.setFocusEmulationEnabled', { enabled: false })
-			return
-		}
-
-		try {
-			await session.sendAndWait('Page.bringToFront')
-		} catch {
-			// Advisory — focus emulation below carries the weight.
-		}
-		await session.sendAndWait('Emulation.setFocusEmulationEnabled', { enabled: true })
+const applyLock = async (session: CdpSessionHandle, lock: VisibilityLock): Promise<void> => {
+	if (lock !== 'shown') {
+		await session.sendAndWait('Emulation.setFocusEmulationEnabled', { enabled: false })
+		return
 	}
 
+	try {
+		await session.sendAndWait('Page.bringToFront')
+	} catch {
+		// Advisory — focus emulation below carries the weight.
+	}
+	await session.sendAndWait('Emulation.setFocusEmulationEnabled', { enabled: true })
+}
+
+export const createVisibilityController = (): VisibilityController => {
+	const sticky = createStickyController<VisibilityLock>({
+		label: 'Visibility',
+		apply: applyLock,
+		// Releasing the lock is the same operation as locking to `default`.
+		clear: (session) => applyLock(session, 'default'),
+	})
+
 	return {
-		getDesired: () => desired,
+		// `default` rather than null: visibility has no "unset", only "not locked shown".
+		getDesired: () => sticky.getState().state ?? 'default',
 		setLock: async (session, lock) => {
-			desired = lock
-			if (!session || !session.isAttached()) {
-				return
+			const result = await sticky.setDesired(lock, session)
+			// This controller reports CDP failure by throwing, unlike its two siblings.
+			if (result.lastError) {
+				throw new Error(result.lastError.message)
 			}
-			await apply(session, lock)
 		},
 		onAttach: async (session) => {
-			if (desired !== 'shown') {
+			if (sticky.getState().state !== 'shown') {
 				return
 			}
-			try {
-				await apply(session, 'shown')
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error)
-				console.warn(`[Visibility] Failed to re-apply on attach: ${message}`)
-			}
+			await sticky.onAttach(session)
 		},
 	}
 }
