@@ -85,6 +85,8 @@ The e2e suite cannot reach several of the paths this pass changed, so they were 
 
 ## Remaining work
 
+**Execution plan: [`tasks/code-quality-remaining.md`](tasks/code-quality-remaining.md)** (everything below except C2, ordered and scoped for work). C2 has its own plan in [`tasks/c2-frame-snapshot.md`](tasks/c2-frame-snapshot.md). The summary below stays as the audit's own record.
+
 Counts below were re-measured against the current tree, not copied from the original findings. Ordered so each group is independently shippable; the first two are where the remaining duplication is densest.
 
 ### 1. Finish what this pass started
