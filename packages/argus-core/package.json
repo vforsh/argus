@@ -13,6 +13,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./native-messaging": {
+			"types": "./dist/protocol/native-messaging.d.ts",
+			"default": "./dist/protocol/native-messaging.js"
 		}
 	},
 	"files": [

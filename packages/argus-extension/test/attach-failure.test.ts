@@ -1,3 +1,4 @@
+import { NATIVE_MESSAGING_PROTOCOL_VERSION } from '../src/types/messages.js'
 import { expect, it } from 'bun:test'
 import type { ExtensionToHost, HostToExtension } from '../src/types/messages.js'
 import type { PopupActionMessage, PopupResponse } from '../src/background/popup-protocol.js'
@@ -136,7 +137,14 @@ function createPort(name: string) {
 			port.sent.push(message)
 			if (message.type === 'init_tab_watcher') {
 				receive({ type: 'host_ready' })
-				receive({ type: 'host_info', watcherId: message.watcherId ?? 'test-watcher', watcherHost: '127.0.0.1', watcherPort: 1234, pid: 123 })
+				receive({
+					type: 'host_info',
+					watcherId: message.watcherId ?? 'test-watcher',
+					watcherHost: '127.0.0.1',
+					watcherPort: 1234,
+					pid: 123,
+					protocolVersion: NATIVE_MESSAGING_PROTOCOL_VERSION,
+				})
 			}
 			if (message.type === 'tab_action_response') response?.(message)
 		},

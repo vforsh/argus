@@ -1,3 +1,4 @@
+import { checkHostProtocol } from './protocol-handshake.js'
 import type { ControlDiagnostics, ControlHostToExtension, ExtensionToControlHost, TabInfo } from '../types/messages.js'
 import { BridgeClient } from './bridge-client.js'
 import type { DebuggerManager } from './debugger-manager.js'
@@ -20,7 +21,8 @@ export type ControlBridgeSessionEvents = {
 	onDisconnect?: () => void
 }
 
-export type TabActionResult = { ok: true; tab: TabInfo; watcherId?: string } | { ok: false; error: string }
+import type { TabActionResult } from '../types/messages.js'
+export type { TabActionResult } from '../types/messages.js'
 
 /**
  * Owns the extension-level native host. It never attaches chrome.debugger to a tab;
@@ -80,7 +82,14 @@ export class ControlBridgeSession {
 		this.lastMessageAt = Date.now()
 
 		switch (message.type) {
-			case 'host_info':
+			case 'host_info': {
+				const mismatch = checkHostProtocol(message)
+				if (mismatch) {
+					console.error(`[ControlBridgeSession] ${mismatch}`)
+					this.bridgeClient.disconnect()
+					return
+				}
+
 				this.watcherInfo = {
 					watcherId: message.watcherId,
 					watcherHost: message.watcherHost,
@@ -89,6 +98,7 @@ export class ControlBridgeSession {
 				}
 				this.events.onWatcherInfo?.(this.watcherInfo)
 				return
+			}
 
 			case 'attach_tab_watcher':
 				await this.handleTabAction(message.requestId, () => this.events.onAttachTabWatcher?.(message.tabId, { watcherId: message.watcherId }))

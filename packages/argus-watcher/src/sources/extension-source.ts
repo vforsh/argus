@@ -1,3 +1,4 @@
+import { NATIVE_MESSAGING_PROTOCOL_VERSION } from '@vforsh/argus-core'
 import { createNativeMessaging } from '../native-messaging/messaging.js'
 import { SessionManager, type ExtensionSession } from '../native-messaging/session-manager.js'
 import type { ExtensionToTabHost, TabHostToExtension } from '../native-messaging/types.js'
@@ -250,6 +251,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			watcherHost: hostInfo.watcherHost,
 			watcherPort: hostInfo.watcherPort,
 			pid: hostInfo.watcherPid,
+			protocolVersion: NATIVE_MESSAGING_PROTOCOL_VERSION,
 		})
 	}
 

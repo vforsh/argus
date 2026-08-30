@@ -4,6 +4,7 @@ import { CdpProxy } from './cdp-proxy.js'
 import type { DebuggerManager } from './debugger-manager.js'
 import { BRIDGE_HOST_NAME } from './native-hosts.js'
 import { createLatch, type Latch } from './latch.js'
+import { checkHostProtocol } from './protocol-handshake.js'
 
 export type TabWatcherInfo = {
 	watcherId: string
@@ -46,6 +47,7 @@ export class TabBridgeSession {
 	private readonly hostReady = createLatch()
 	private readonly watcherInfoReceived = createLatch()
 	private disposed = false
+	private protocolMismatch: string | null = null
 
 	constructor(tabId: number, debuggerManager: DebuggerManager, events: TabBridgeSessionEvents = {}, options: TabBridgeSessionOptions = {}) {
 		this.tabId = tabId
@@ -143,7 +145,16 @@ export class TabBridgeSession {
 		this.lastMessageAt = Date.now()
 
 		switch (message.type) {
-			case 'host_info':
+			case 'host_info': {
+				const mismatch = checkHostProtocol(message)
+				if (mismatch) {
+					console.error(`[TabBridgeSession] ${mismatch}`)
+					this.protocolMismatch = mismatch
+					this.dispose()
+					this.events.onDisconnect?.()
+					return
+				}
+
 				this.watcherInfo = {
 					watcherId: message.watcherId,
 					watcherHost: message.watcherHost,
@@ -153,6 +164,7 @@ export class TabBridgeSession {
 				this.events.onWatcherInfo?.(this.watcherInfo)
 				this.watcherInfoReceived.signal()
 				return
+			}
 
 			case 'host_ready':
 				this.hostReady.signal()
@@ -171,6 +183,9 @@ export class TabBridgeSession {
 	}
 
 	private assertOpen(): void {
+		if (this.protocolMismatch) {
+			throw new Error(this.protocolMismatch)
+		}
 		if (this.disposed) {
 			throw new Error(`Native host session for tab ${this.tabId} is already closed`)
 		}

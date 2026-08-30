@@ -1,3 +1,4 @@
+import { NATIVE_MESSAGING_PROTOCOL_VERSION } from '@vforsh/argus-core'
 import { createNativeMessaging } from '../native-messaging/messaging.js'
 import { ControlSessionManager } from '../native-messaging/control-session-manager.js'
 import type { ControlHostToExtension, ExtensionToControlHost } from '../native-messaging/types.js'
@@ -90,6 +91,7 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 			watcherHost: hostInfo.watcherHost,
 			watcherPort: hostInfo.watcherPort,
 			pid: hostInfo.watcherPid,
+			protocolVersion: NATIVE_MESSAGING_PROTOCOL_VERSION,
 		})
 	}
 }

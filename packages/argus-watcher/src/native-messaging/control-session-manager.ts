@@ -15,7 +15,8 @@ type PendingRequest<T> = {
 	timeout: ReturnType<typeof setTimeout>
 }
 
-export type TabActionResult = { ok: true; tab: TabInfo; watcherId?: string } | { ok: false; error: string }
+import type { TabActionResult } from './types.js'
+export type { TabActionResult } from './types.js'
 
 export class ControlSessionManager {
 	private readonly messaging: NativeMessagingHandler<ExtensionToControlHost, ControlHostToExtension>
