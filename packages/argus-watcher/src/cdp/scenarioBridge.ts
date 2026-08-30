@@ -139,7 +139,7 @@ const handleBridgeRequest = async (request: ScenarioBridgeRequest, services: Sce
 			return services.screenshotter.capture({ ...options, outFile: `scenarios/checkpoints/${fileName}` })
 		}
 		case 'logs.cursor':
-			return { cursor: services.buffer.getCursor() }
+			return { cursor: services.buffer.beginLogEpoch() }
 		case 'logs.read':
 			return readScenarioLogs(services.buffer, request.payload)
 		default:

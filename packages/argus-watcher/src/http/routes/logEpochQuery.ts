@@ -1,5 +1,5 @@
 import type http from 'node:http'
-import type { LogEpoch, LogEvent, LogsQuery } from '@vforsh/argus-core'
+import type { LogEpoch, LogsQuery } from '@vforsh/argus-core'
 import { LogEpochError, type LogBuffer, type LogEpochQueryResult, type LogFilters } from '../../buffer/LogBuffer.js'
 import { normalizeQueryValue, respondJson } from '../httpUtils.js'
 
@@ -48,14 +48,18 @@ export const respondLogEpochError = (res: http.ServerResponse, error: LogEpochEr
 	)
 }
 
-/** Read a bounded log page from either the full retained buffer or an opaque cursor. */
-export const listLogsFromPosition = (buffer: LogBuffer, position: LogPositionQuery, filters: LogFilters, limit: number): LogEpochQueryResult => {
-	if (position.kind === 'epoch') {
-		return buffer.listAfterEpoch(position.epoch, filters, limit)
-	}
+/**
+ * The epoch a position query starts from.
+ *
+ * "Everything retained" is just the epoch at the oldest surviving entry, so both forms take the
+ * same buffer path instead of the whole-buffer one needing its own id-based long-poll subsystem.
+ */
+const startEpoch = (buffer: LogBuffer, position: LogPositionQuery): LogEpoch =>
+	position.kind === 'epoch' ? position.epoch : buffer.epochAtStart()
 
-	return createQueryResult(buffer, position, buffer.listAfter(0, filters, limit))
-}
+/** Read a bounded log page from either the full retained buffer or an opaque cursor. */
+export const listLogsFromPosition = (buffer: LogBuffer, position: LogPositionQuery, filters: LogFilters, limit: number): LogEpochQueryResult =>
+	buffer.listAfterEpoch(startEpoch(buffer, position), filters, limit)
 
 /** Long-poll from either the full retained buffer or an opaque cursor. */
 export const waitForLogsFromPosition = async (
@@ -64,26 +68,4 @@ export const waitForLogsFromPosition = async (
 	filters: LogFilters,
 	limit: number,
 	timeoutMs: number,
-): Promise<LogEpochQueryResult> => {
-	if (position.kind === 'epoch') {
-		return buffer.waitForAfterEpoch(position.epoch, filters, limit, timeoutMs)
-	}
-
-	const events = await buffer.waitForAfter(0, filters, limit, timeoutMs)
-	return createQueryResult(buffer, position, events)
-}
-
-const createQueryResult = (buffer: LogBuffer, position: LogPositionQuery, events: LogEvent[]): LogEpochQueryResult => ({
-	events,
-	nextCursor: resolveNextCursor(buffer, position, events),
-})
-
-const resolveNextCursor = (buffer: LogBuffer, position: LogPositionQuery, events: LogEvent[]): LogEpoch => {
-	if (events.length > 0) {
-		return buffer.getEpochAt(events[events.length - 1]?.id ?? 0)
-	}
-	if (position.kind === 'epoch') {
-		return position.epoch
-	}
-	return buffer.getEpoch()
-}
+): Promise<LogEpochQueryResult> => await buffer.waitForAfterEpoch(startEpoch(buffer, position), filters, limit, timeoutMs)

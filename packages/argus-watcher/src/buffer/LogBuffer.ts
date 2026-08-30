@@ -4,7 +4,7 @@ import type { LogEpoch, LogEvent, LogLevel } from '@vforsh/argus-core'
 /**
  * Filtering options for log retrieval.
  *
- * Used by `LogBuffer.listAfter()` and `LogBuffer.waitForAfter()`.
+ * Used by `LogBuffer.listAfterEpoch()` and `LogBuffer.waitForAfterEpoch()`.
  */
 export type LogFilters = {
 	/** If provided, only include events whose `level` is in this list. */
@@ -28,14 +28,6 @@ export type LogFilters = {
 	 * Timestamp is **epoch milliseconds** (same units as `Date.now()`).
 	 */
 	sinceTs?: number
-}
-
-type Waiter = {
-	after: number
-	filters: LogFilters
-	limit: number
-	resolve: (events: LogEvent[]) => void
-	timer: NodeJS.Timeout
 }
 
 type EpochWaiter = {
@@ -78,7 +70,6 @@ export class LogBuffer {
 	private readonly streamId = randomUUID()
 	private events: LogEvent[] = []
 	private nextId = 1
-	private waiters: Waiter[] = []
 	private epochWaiters: EpochWaiter[] = []
 
 	constructor(maxSize: number) {
@@ -93,7 +84,6 @@ export class LogBuffer {
 		}
 		this.events.push(entry)
 		this.trim()
-		this.flushWaiters()
 		this.flushEpochWaiters()
 		return entry
 	}
@@ -103,19 +93,25 @@ export class LogBuffer {
 		return this.listAfterPosition(after, filters, limit)
 	}
 
-	/** Return the current opaque append cursor without copying buffered events. */
-	getCursor(): LogEpoch {
-		return this.beginLogEpoch()
-	}
-
-	/** Return an opaque position in this watcher's current log stream. */
+	/**
+	 * Return an opaque position in this watcher's current log stream, at the current append point.
+	 *
+	 * A query started from it sees only what arrives next. Three methods used to return this exact
+	 * value under three names (`getCursor`, `beginLogEpoch`, `getEpoch`).
+	 */
 	beginLogEpoch(): LogEpoch {
 		return encodeEpoch({ v: 1, s: this.streamId, p: this.currentPosition() })
 	}
 
-	/** Alias for {@link beginLogEpoch}; names the returned value as a cursor. */
-	getEpoch(): LogEpoch {
-		return this.beginLogEpoch()
+	/**
+	 * Return the oldest position this buffer can still serve.
+	 *
+	 * "Give me everything you have" is this epoch, which is what lets the whole-buffer query use the
+	 * same path as a cursored one instead of a parallel id-based long-poll subsystem.
+	 */
+	epochAtStart(): LogEpoch {
+		const oldest = this.events[0]
+		return this.getEpochAt(oldest ? oldest.id - 1 : this.currentPosition())
 	}
 
 	/** Encode a known stream position for response pagination. */
@@ -131,23 +127,6 @@ export class LogBuffer {
 			events,
 			nextCursor: events.length > 0 ? this.getEpochAt(events[events.length - 1]?.id ?? position) : epoch,
 		}
-	}
-
-	/** Wait for events after an id or timeout. */
-	waitForAfter(after: number, filters: LogFilters, limit: number, timeoutMs: number): Promise<LogEvent[]> {
-		const immediate = this.listAfter(after, filters, limit)
-		if (immediate.length > 0) {
-			return Promise.resolve(immediate)
-		}
-
-		return new Promise((resolve) => {
-			const timer = setTimeout(() => {
-				this.waiters = this.waiters.filter((waiter) => waiter.timer !== timer)
-				resolve([])
-			}, timeoutMs)
-
-			this.waiters.push({ after, filters, limit, resolve, timer })
-		})
 	}
 
 	/** Wait for events after an epoch, rejecting if the marker becomes stale while waiting. */
@@ -192,24 +171,6 @@ export class LogBuffer {
 		}
 
 		this.events = this.events.slice(this.events.length - this.maxSize)
-	}
-
-	private flushWaiters(): void {
-		if (this.waiters.length === 0) {
-			return
-		}
-
-		const remaining: Waiter[] = []
-		for (const waiter of this.waiters) {
-			const events = this.listAfter(waiter.after, waiter.filters, waiter.limit)
-			if (events.length > 0) {
-				clearTimeout(waiter.timer)
-				waiter.resolve(events)
-				continue
-			}
-			remaining.push(waiter)
-		}
-		this.waiters = remaining
 	}
 
 	private flushEpochWaiters(): void {
