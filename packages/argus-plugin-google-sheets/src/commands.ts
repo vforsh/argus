@@ -9,7 +9,7 @@ import { registerSheetInspectionCommands } from './inspectionCommands.js'
 import { findExportMatches, resolveFindColumn } from './findModel.js'
 import { collectGidsStepped } from './gidTraversal.js'
 import { buildLocateCellsExpression, type ExactCellMatch, type ExactLocatorResult } from './locatorPageScripts.js'
-import { parseDurationMs, registerSheetMutationCommands } from './mutationCommands.js'
+import { parseTimeoutMs, registerSheetMutationCommands } from './mutationCommands.js'
 import {
 	buildAddSheetExpression,
 	buildInfoSheetsExpression,
@@ -202,7 +202,7 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 
 const runList = async (ctx: ArgusPluginContextV1, id: string | undefined, options: ListOptions): Promise<void> => {
 	const output = ctx.host.createOutput(options)
-	const deadlineMs = parseDurationMs(options.deadline, 20_000)
+	const deadlineMs = parseTimeoutMs(options.deadline, 20_000)
 	if (deadlineMs == null) return usageError(output, '--deadline must be a positive duration such as 10s or 20s')
 	const base = await evalInWatcher<SheetListResult>(ctx, id, buildListSheetsExpression({ withGid: false }), output)
 	if (!base) return
@@ -219,7 +219,7 @@ const runList = async (ctx: ArgusPluginContextV1, id: string | undefined, option
 
 const runInfo = async (ctx: ArgusPluginContextV1, id: string | undefined, options: InfoOptions): Promise<void> => {
 	const output = ctx.host.createOutput(options)
-	const deadlineMs = parseDurationMs(options.deadline, 20_000)
+	const deadlineMs = parseTimeoutMs(options.deadline, 20_000)
 	if (deadlineMs == null) return usageError(output, '--deadline must be a positive duration such as 10s or 20s')
 	const base = await evalInWatcher<SheetInfoResult>(ctx, id, buildInfoSheetsExpression({ withGid: false }), output)
 	if (!base) return
@@ -351,7 +351,7 @@ const runFind = async (ctx: ArgusPluginContextV1, id: string | undefined, text: 
 	const needle = options.ignoreCase ? text.toLowerCase() : text
 	const candidates = findExportMatches(rows, needle, { columnIndex, ignoreCase: options.ignoreCase ?? false, limit })
 	const maxRowFlag = parsePositiveInt(options.maxRow, 5_000)
-	const deadlineMs = parseDurationMs(options.locateTimeout, 20_000)
+	const deadlineMs = parseTimeoutMs(options.locateTimeout, 20_000)
 	if (maxRowFlag == null) return usageError(output, '--max-row must be a positive integer')
 	if (deadlineMs == null) return usageError(output, '--locate-timeout must be a positive duration such as 5s or 20s')
 	const bounds = options.range ? parseA1Range(options.range) : null

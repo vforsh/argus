@@ -16,7 +16,7 @@ import { NET_MOCK_FAIL_REASONS } from '@vforsh/argus-core'
 import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
 import { formatError } from '../cli/parse.js'
 import type { Output } from '../output/io.js'
-import { parseDurationMs } from '../time.js'
+import { parseDurationMs } from '@vforsh/argus-core'
 import { resolvePath } from '../utils/paths.js'
 import { readStdin } from './evalShared.js'
 

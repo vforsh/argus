@@ -1,5 +1,5 @@
 import type { LogsOptions, NetOptions } from '../types.js'
-import { parseDurationMs } from '../time/parseDurationMs.js'
+import { parseDurationMs } from '@vforsh/argus-core'
 
 export const buildLogsParams = (options: LogsOptions): URLSearchParams => {
 	const params = new URLSearchParams()

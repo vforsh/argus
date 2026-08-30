@@ -1,5 +1,5 @@
 import type { Output } from '../../output/io.js'
-import { parseDurationMs } from '../../time.js'
+import { parseDurationMs } from '@vforsh/argus-core'
 
 export type DomElementTarget = {
 	selector?: string

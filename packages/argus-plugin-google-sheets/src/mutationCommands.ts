@@ -1,3 +1,4 @@
+import { parseDurationMs } from '@vforsh/argus-core'
 import type { Command } from 'commander'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { loadBatchOperations, type BatchOperation } from './batchInput.js'
@@ -355,7 +356,7 @@ const resolveMutationMethod = (value: string | undefined, output: Output): Mutat
 }
 
 const resolveVerifyTimeout = (options: { verifyTimeout?: string }, output: Output): number | null => {
-	const timeoutMs = parseDurationMs(options.verifyTimeout, DEFAULT_VERIFY_TIMEOUT_MS)
+	const timeoutMs = parseTimeoutMs(options.verifyTimeout, DEFAULT_VERIFY_TIMEOUT_MS)
 	if (timeoutMs != null) return timeoutMs
 
 	output.writeWarn('--verify-timeout must be a positive duration such as 500ms or 5s')
@@ -363,18 +364,18 @@ const resolveVerifyTimeout = (options: { verifyTimeout?: string }, output: Outpu
 	return null
 }
 
-export const parseDurationMs = (value: string | undefined, fallback: number): number | null => {
+/**
+ * Parse a plugin timeout flag into whole milliseconds.
+ *
+ * Bare numbers mean milliseconds here (the flags document millisecond-scale examples),
+ * unlike the CLI's second-defaulting duration flags. Returns `fallback` when the flag is
+ * absent, and `null` when the value is malformed or not strictly positive.
+ */
+export const parseTimeoutMs = (value: string | undefined, fallback: number): number | null => {
 	if (value == null) return fallback
 
-	const match = value.trim().match(/^(\d+(?:\.\d+)?)(ms|s|m)?$/)
-	if (!match) return null
-
-	const amount = Number(match[1])
-	let multiplier = 1
-	if (match[2] === 's') multiplier = 1_000
-	if (match[2] === 'm') multiplier = 60_000
-	const ms = amount * multiplier
-	return Number.isFinite(ms) && ms > 0 ? Math.round(ms) : null
+	const ms = parseDurationMs(value, 'ms')
+	return ms != null && ms > 0 ? Math.round(ms) : null
 }
 
 const writeWriteResult = (output: Output, options: WriteOptions, result: MutationResult): void => {

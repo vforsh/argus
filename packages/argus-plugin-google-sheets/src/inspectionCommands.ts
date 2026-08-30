@@ -2,7 +2,7 @@ import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 import { parseCsv } from './csv.js'
 import { buildLocateRowsExpression, type ExactLocatorResult, type ExactRowMatch } from './locatorPageScripts.js'
-import { parseDurationMs } from './mutationCommands.js'
+import { parseTimeoutMs } from './mutationCommands.js'
 import {
 	findExportHeaderIndex,
 	parseSelectHeaders,
@@ -168,7 +168,7 @@ const locateRows = async (
 	options: QueryOptions,
 ): Promise<ExactLocatorResult<ExactRowMatch> | null> => {
 	const maxRow = positiveInteger(options.maxRow ?? '5000', '--max-row', output)
-	const deadlineMs = parseDurationMs(options.locateTimeout, 20_000)
+	const deadlineMs = parseTimeoutMs(options.locateTimeout, 20_000)
 	if (maxRow == null) return null
 	if (deadlineMs == null) {
 		usageError(output, '--locate-timeout must be a positive duration such as 5s or 20s')

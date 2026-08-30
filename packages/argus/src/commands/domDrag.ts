@@ -3,7 +3,7 @@ import { domDragRequestSchema } from '@vforsh/argus-core'
 import type { ArgusCommandDefinition } from '../cli/defineCommand.js'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
-import { parseDurationMs } from '../time.js'
+import { parseDurationMs } from '@vforsh/argus-core'
 import { describeElementTarget, parseWaitDuration, parseXY, requireElementTarget, writeNoElementFound } from './dom/shared.js'
 import { resolveTestId } from './resolveTestId.js'
 

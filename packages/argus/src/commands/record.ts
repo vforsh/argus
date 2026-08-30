@@ -3,7 +3,7 @@ import type { RecordClipRegion, RecordFormat, RecordResponse, RecordStartRespons
 import { RECORD_FORMATS } from '@vforsh/argus-core'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
-import { parseDurationMs } from '../time.js'
+import { parseDurationMs } from '@vforsh/argus-core'
 
 const RECORD_STOP_TIMEOUT_MS = 60_000
 const RECORD_START_TIMEOUT_MS = 30_000

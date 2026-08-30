@@ -1,5 +1,5 @@
 import { normalizeQueryValue, parseNumber } from '../cli/parse.js'
-import { parseDurationMs } from '../time.js'
+import { parseDurationMs } from '@vforsh/argus-core'
 
 type MatchCaseOptions = {
 	ignoreCase?: boolean

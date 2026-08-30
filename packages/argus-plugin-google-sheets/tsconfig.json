@@ -11,6 +11,6 @@
 		"tsBuildInfoFile": "./dist/.tsbuildinfo",
 		"types": ["bun-types"]
 	},
-	"references": [{ "path": "../argus-plugin-api" }],
+	"references": [{ "path": "../argus-core" }, { "path": "../argus-plugin-api" }],
 	"include": ["src"]
 }

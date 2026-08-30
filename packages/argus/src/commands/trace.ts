@@ -1,6 +1,6 @@
 import type { TraceStartResponse, TraceStopResponse, WatcherRecord } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
-import { parseDurationMs } from '../time.js'
+import { parseDurationMs } from '@vforsh/argus-core'
 import { fetchWatcherJson, formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 
 /** Options for the trace command (start + stop). */

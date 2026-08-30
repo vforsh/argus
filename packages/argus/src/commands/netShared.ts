@@ -1,4 +1,4 @@
-import { parseDurationMs } from '../time.js'
+import { parseDurationMs } from '@vforsh/argus-core'
 import { appendAfterLimitParams, appendNetFilterParams, appendNetIgnoreParams, appendSinceParam } from '../watchers/queryParams.js'
 
 export type NetCliFilterOptions = {

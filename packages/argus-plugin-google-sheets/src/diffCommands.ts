@@ -4,7 +4,7 @@ import type { Command } from 'commander'
 import { parseCsv, parseTsv } from './csv.js'
 import { buildKeyedRows, diffKeyedRows, type KeyedDiffResult, type KeyedRow } from './keyedDiff.js'
 import { buildLocateRowsExpression, type ExactLocatorResult, type ExactRowMatch } from './locatorPageScripts.js'
-import { parseDurationMs } from './mutationCommands.js'
+import { parseTimeoutMs } from './mutationCommands.js'
 import { findExportHeaderIndex, type ExportRowCandidate } from './queryModel.js'
 import { buildSheetSchema, resolveHeader } from './schema.js'
 import { evalInWatcher, type Output } from './sheetCommandUtils.js'
@@ -95,7 +95,7 @@ const runDiff = async (ctx: ArgusPluginContextV1, id: string | undefined, option
 		const candidates: ExportRowCandidate[] = sheetRows
 			.filter((row) => relevantKeys.has(row.key))
 			.map((row) => ({ exportRow: row.exportRow as number, values: sheetData[(row.exportRow as number) - headerExportIndex - 2] ?? [] }))
-		const deadlineMs = Math.min(25_000, parseDurationMs(options.locateTimeout, 20_000) ?? 0)
+		const deadlineMs = Math.min(25_000, parseTimeoutMs(options.locateTimeout, 20_000) ?? 0)
 		if (deadlineMs <= 0) return usageError(output, '--locate-timeout must be a positive duration')
 		locator = await evalInWatcher<ExactLocatorResult<ExactRowMatch>>(
 			ctx,
