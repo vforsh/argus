@@ -5,9 +5,10 @@ import { resolveCdpEndpoint } from '../cdp/resolveCdpEndpoint.js'
 import { sendCdpCommand } from '../cdp/sendCdpCommand.js'
 import { selectTargetFromCandidates } from '../cdp/selectTarget.js'
 import { fetchJson } from '../httpClient.js'
-import { createOutput } from '../output/io.js'
-import { writeWatcherCandidates } from '../watchers/candidates.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { createOutput, type Output } from '../output/io.js'
+import { formatError } from '../cli/parse.js'
+import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { loadChromeTargets } from './chrome/shared.js'
 
 export type PageEndpointOptions = CdpEndpointOptions
 
@@ -58,113 +59,113 @@ export type PageReloadOptions = PageCommandOptions & {
 	params?: string
 }
 
+/**
+ * Reload the page, optionally rewriting query params.
+ *
+ * A target is reached one of two ways — by explicit `targetId`, or by resolving the page a
+ * watcher is attached to — and both paths then do the same thing. This used to be two
+ * branches that each hand-wrote watcher resolution, candidate printing, and `/json/list`
+ * fetching that `resolveWatcherOrExit` and `loadChromeTargets` already wrap.
+ */
 export const runPageReload = async (options: PageReloadOptions): Promise<void> => {
 	const output = createOutput(options)
-	const hasParamFlag = (options.param?.length ?? 0) > 0
-	const hasParamsFlag = options.params != null
 
-	if (!options.targetId && options.id) {
-		if (options.cdp) {
-			output.writeWarn('--cdp cannot be used without a targetId. Use --id to resolve the endpoint.')
-			process.exitCode = 2
-			return
-		}
+	const target = await resolveReloadTarget(options, output)
+	if (!target) return
 
-		const resolvedWatcher = await resolveWatcher({ id: options.id })
-		if (!resolvedWatcher.ok) {
-			output.writeWarn(resolvedWatcher.error)
-			if (resolvedWatcher.candidates && resolvedWatcher.candidates.length > 0) {
-				writeWatcherCandidates(resolvedWatcher.candidates, output)
-				output.writeWarn('Hint: run `argus list` to see all watchers.')
-			}
-			process.exitCode = resolvedWatcher.exitCode
-			return
-		}
+	await reloadTarget(target, {
+		hasParamFlag: (options.param?.length ?? 0) > 0,
+		hasParamsFlag: options.params != null,
+		options,
+		output,
+	})
+}
 
-		const statusUrl = `http://${resolvedWatcher.watcher.host}:${resolvedWatcher.watcher.port}/status`
-		let status: StatusResponse
-		try {
-			status = await fetchJson<StatusResponse>(statusUrl, { timeoutMs: 2_000 })
-		} catch (error) {
-			output.writeWarn(`${resolvedWatcher.watcher.id}: failed to reach watcher (${error instanceof Error ? error.message : error})`)
-			process.exitCode = 1
-			return
-		}
+/** Resolve the target to reload, by explicit id or via the watcher's attached page. */
+const resolveReloadTarget = async (options: PageReloadOptions, output: Output): Promise<ChromeTargetResponse | null> => {
+	const explicitId = options.targetId?.trim()
 
-		if (!status.attached || !status.target) {
-			output.writeWarn(`Watcher ${resolvedWatcher.watcher.id} is not attached to a target.`)
-			process.exitCode = 1
-			return
-		}
-
-		const endpoint = await resolveCdpEndpoint({ id: resolvedWatcher.watcher.id })
-		if (!endpoint.ok) {
-			output.writeWarn(endpoint.error)
-			process.exitCode = endpoint.exitCode
-			return
-		}
-
-		const targetsUrl = `http://${endpoint.host}:${endpoint.port}/json/list`
-		let targets: ChromeTargetResponse[]
-		try {
-			targets = await fetchJson<ChromeTargetResponse[]>(targetsUrl)
-		} catch (error) {
-			output.writeWarn(`Failed to load targets from ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
-			process.exitCode = 1
-			return
-		}
-
-		const candidates = findTargetsByAttached(status.target, targets)
-		const selection = await selectTargetFromCandidates(candidates, output, {
-			interactive: process.stdin.isTTY === true,
-			messages: {
-				empty: 'No targets matched the attached page.',
-				ambiguous: 'Multiple targets matched the attached page.',
-			},
-		})
-		if (!selection.ok) {
-			output.writeWarn(selection.error)
-			process.exitCode = selection.exitCode
-			return
-		}
-
-		await reloadTarget(selection.target, { hasParamFlag, hasParamsFlag, options, output })
-		return
+	if (!explicitId && options.id) {
+		return await resolveAttachedTarget(options, output)
 	}
 
-	if (!options.targetId || options.targetId.trim() === '') {
+	if (!explicitId) {
 		output.writeWarn('Provide a targetId or use --id <watcherId> to reload the attached page.')
 		process.exitCode = 2
-		return
+		return null
 	}
 
 	const endpoint = await resolveCdpEndpoint(options)
 	if (!endpoint.ok) {
 		output.writeWarn(endpoint.error)
 		process.exitCode = endpoint.exitCode
-		return
+		return null
 	}
 
-	const targetId = options.targetId.trim()
-	const targetsUrl = `http://${endpoint.host}:${endpoint.port}/json/list`
+	const targets = await loadChromeTargets(endpoint, output)
+	if (!targets) return null
 
-	let targets: ChromeTargetResponse[]
-	try {
-		targets = await fetchJson<ChromeTargetResponse[]>(targetsUrl)
-	} catch (error) {
-		output.writeWarn(`Failed to load targets from ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
-		process.exitCode = 1
-		return
-	}
-
-	const target = targets.find((entry) => entry.id === targetId)
+	const target = targets.find((entry) => entry.id === explicitId)
 	if (!target) {
-		output.writeWarn(`Target not found: ${targetId}`)
+		output.writeWarn(`Target not found: ${explicitId}`)
 		process.exitCode = 2
-		return
+		return null
 	}
 
-	await reloadTarget(target, { hasParamFlag, hasParamsFlag, options, output })
+	return target
+}
+
+/** Find the Chrome target a watcher is currently attached to. */
+const resolveAttachedTarget = async (options: PageReloadOptions, output: Output): Promise<ChromeTargetResponse | null> => {
+	if (options.cdp) {
+		output.writeWarn('--cdp cannot be used without a targetId. Use --id to resolve the endpoint.')
+		process.exitCode = 2
+		return null
+	}
+
+	const resolved = await resolveWatcherOrExit({ id: options.id }, output)
+	if (!resolved) return null
+
+	const statusUrl = `http://${resolved.watcher.host}:${resolved.watcher.port}/status`
+	let status: StatusResponse
+	try {
+		status = await fetchJson<StatusResponse>(statusUrl, { timeoutMs: 2_000 })
+	} catch (error) {
+		output.writeWarn(`${resolved.watcher.id}: failed to reach watcher (${formatError(error)})`)
+		process.exitCode = 1
+		return null
+	}
+
+	if (!status.attached || !status.target) {
+		output.writeWarn(`Watcher ${resolved.watcher.id} is not attached to a target.`)
+		process.exitCode = 1
+		return null
+	}
+
+	const endpoint = await resolveCdpEndpoint({ id: resolved.watcher.id })
+	if (!endpoint.ok) {
+		output.writeWarn(endpoint.error)
+		process.exitCode = endpoint.exitCode
+		return null
+	}
+
+	const targets = await loadChromeTargets(endpoint, output)
+	if (!targets) return null
+
+	const selection = await selectTargetFromCandidates(findTargetsByAttached(status.target, targets), output, {
+		interactive: process.stdin.isTTY === true,
+		messages: {
+			empty: 'No targets matched the attached page.',
+			ambiguous: 'Multiple targets matched the attached page.',
+		},
+	})
+	if (!selection.ok) {
+		output.writeWarn(selection.error)
+		process.exitCode = selection.exitCode
+		return null
+	}
+
+	return selection.target
 }
 
 type ReloadContext = {
