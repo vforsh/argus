@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getRegistryPath } from './paths.js'
+import { delay } from '../time.js'
 
 /** Max time to wait for lock acquisition. */
 const LOCK_TIMEOUT_MS = 2_000
@@ -49,8 +50,7 @@ const acquireLock = async (lockPath: string): Promise<void> => {
 
 		attempt += 1
 		const jitter = Math.random() * BASE_RETRY_MS
-		const delay = Math.min(BASE_RETRY_MS * attempt, 200) + jitter
-		await sleep(delay)
+		await delay(Math.min(BASE_RETRY_MS * attempt, 200) + jitter)
 	}
 
 	// Last-resort: remove potentially stale lock and try once more
@@ -91,4 +91,3 @@ const isExistError = (error: unknown): boolean => {
 	return !!error && typeof error === 'object' && 'code' in error && (error as NodeJS.ErrnoException).code === 'EEXIST'
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

@@ -8,6 +8,7 @@ import type {
 	ApiResult,
 } from '@vforsh/argus-core'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
+import { delay } from '@vforsh/argus-core'
 
 export type ExtensionTargetSelectorOptions = {
 	iframe?: string
@@ -278,4 +279,3 @@ const originOf = (url: string | undefined): string | null => {
 
 const shortenId = (id: string): string => (id.length > 18 ? `${id.slice(0, 14)}...` : id)
 
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

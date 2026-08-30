@@ -7,6 +7,7 @@ import { chromium } from 'playwright'
 import type { DialogHandleResponse, DialogStatusResponse } from '@vforsh/argus-core'
 import { getFreePort } from './helpers/ports.js'
 import { runCommand, runCommandWithExit, spawnAndWait, stopProcess } from './helpers/process.js'
+import { delay } from '@vforsh/argus-core'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -18,7 +19,6 @@ test(
 		const env = { ...process.env, ARGUS_HOME: tempDir }
 		const debugPort = await getFreePort()
 		const watcherId = `e2e-watcher-${Date.now()}`
-		const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 		// 1. Launch browser
 		const browser = await chromium.launch({
@@ -70,7 +70,7 @@ test(
 						if (status.dialog?.type === type) {
 							return status.dialog
 						}
-						await sleep(100)
+						await delay(100)
 					}
 					throw new Error(`Timed out waiting for ${type} dialog`)
 				}
@@ -81,7 +81,7 @@ test(
 						if (!status.dialog) {
 							return
 						}
-						await sleep(100)
+						await delay(100)
 					}
 					throw new Error('Timed out waiting for dialog to close')
 				}
@@ -92,7 +92,7 @@ test(
 						if (result != null) {
 							return result
 						}
-						await sleep(100)
+						await delay(100)
 					}
 					throw new Error('Timed out waiting for dialog result')
 				}
@@ -209,7 +209,7 @@ test(
 				const cursor = (JSON.parse(cursorOut) as { cursor: string }).cursor
 				const cursorMsg = `after-cursor-${Date.now()}`
 				await page.evaluate((msg) => console.log(msg), cursorMsg)
-				await sleep(200)
+				await delay(200)
 				const { stdout: afterCursorOut } = await runCommand('bun', [BIN_PATH, 'logs', watcherId, '--after', String(cursor), '--json'], {
 					env,
 				})
@@ -226,7 +226,7 @@ test(
 					console.error(msg)
 					console.error(msg)
 				}, duplicateMsg)
-				await sleep(300)
+				await delay(300)
 
 				const { stdout: epochErrorsOut } = await runCommand(
 					'bun',

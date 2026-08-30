@@ -20,6 +20,7 @@ import type {
 import type { Page } from 'playwright'
 import type * as http from 'node:http'
 import { startPlaygroundServers, waitForWatcherReady } from '../playground/harness.ts'
+import { delay } from '@vforsh/argus-core'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -491,7 +492,6 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	test(
 		'dialog commands work against playground dialogs',
 		async () => {
-			const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 			const fetchDialogStatus = async (): Promise<DialogStatusResponse> => {
 				const { stdout } = await runCommand('bun', [BIN_PATH, 'dialog', 'status', 'playground', '--json'], { env })
@@ -504,7 +504,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 					if (status.dialog?.type === type) {
 						return status.dialog
 					}
-					await sleep(100)
+					await delay(100)
 				}
 				throw new Error(`Timed out waiting for ${type} dialog`)
 			}
@@ -515,7 +515,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 					if (!status.dialog) {
 						return
 					}
-					await sleep(100)
+					await delay(100)
 				}
 				throw new Error('Timed out waiting for dialog to close')
 			}
@@ -535,7 +535,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 					if (result !== null) {
 						return result
 					}
-					await sleep(100)
+					await delay(100)
 				}
 				throw new Error('Timed out waiting for playground dialog result')
 			}

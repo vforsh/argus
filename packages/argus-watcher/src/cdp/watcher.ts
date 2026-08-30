@@ -6,6 +6,7 @@ import type { CdpSessionController, CdpSessionHandle } from './connection.js'
 import { fetchPageIntl, type PageIntlInfo, toConsoleEvent, toExceptionEvent } from './watcherEvents.js'
 import { findTarget, type CdpTarget } from './watcherTargets.js'
 import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
+import { delay } from '@vforsh/argus-core'
 
 /** Current CDP attachment status. */
 export type CdpStatus = {
@@ -183,7 +184,6 @@ const parseNavigation = (params: unknown): { url: string } | null => {
 	return { url }
 }
 
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const createSystemLog = (message: string): Omit<LogEvent, 'id'> => ({
 	ts: Date.now(),

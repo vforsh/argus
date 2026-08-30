@@ -4,6 +4,7 @@ import { pruneRegistry } from '../../registry.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
 import { fetchExtensionTabs, resolveTab, type TabSelector } from './tabSelection.js'
+import { delay } from '@vforsh/argus-core'
 
 export type WatcherResolutionResult =
 	| { ok: true; watcher: WatcherRecord; tab: ExtensionBrowserTab; status?: StatusResponse }
@@ -142,4 +143,3 @@ const targetMatchesTab = (target: NonNullable<StatusResponse['target']>, tab: Ex
 	return Boolean(target.title && target.title === tab.title && target.url === tab.url)
 }
 
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

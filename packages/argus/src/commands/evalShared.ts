@@ -321,15 +321,6 @@ export const wrapExpressionWithArgs = (source: string, args: EvalArgMap): string
 }
 
 // ---------------------------------------------------------------------------
-// Timing
-// ---------------------------------------------------------------------------
-
-/** Sleep for `durationMs` milliseconds. */
-export const sleep = async (durationMs: number): Promise<void> => {
-	await new Promise((resolve) => setTimeout(resolve, durationMs))
-}
-
-// ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
 

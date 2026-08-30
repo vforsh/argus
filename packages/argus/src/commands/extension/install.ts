@@ -7,6 +7,7 @@ import { ARGUS_EXTENSION_ID } from './extensionId.js'
 import { resolveExtensionDir } from './extensionPath.js'
 import { CONTROL_WATCHER_ID, findArgusExecutable, installNativeHosts, type InstalledNativeHost } from './nativeHost.js'
 import { emitFailure, getPlatformOrFail } from './failures.js'
+import { delay } from '@vforsh/argus-core'
 
 export type ExtensionInstallOptions = {
 	/** Open chrome://extensions automatically. Disable with --no-open. */
@@ -170,4 +171,3 @@ const parseTimeoutMs = (value: string | undefined): number => {
 	return seconds * 1000
 }
 
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

@@ -3,6 +3,7 @@ import type { ChildProcess } from 'node:child_process'
 import type * as http from 'node:http'
 import { spawn } from 'node:child_process'
 import { startServer, startWebSocketServer } from './serve.ts'
+import { delay } from '@vforsh/argus-core'
 
 const ARGUS_BIN = path.resolve(import.meta.dirname!, '..', 'packages', 'argus', 'src', 'bin.ts')
 
@@ -111,4 +112,3 @@ const closeServer = (server: { close: (callback?: () => void) => unknown }): Pro
 		server.close(() => resolve())
 	})
 
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

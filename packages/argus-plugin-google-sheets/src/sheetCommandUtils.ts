@@ -19,6 +19,7 @@ import {
 	type SheetSelectResult,
 	type SheetSwitchResult,
 } from './pageScripts.js'
+import { delay } from '@vforsh/argus-core'
 
 export type Output = ReturnType<ArgusPluginContextV1['host']['createOutput']>
 
@@ -42,7 +43,7 @@ export const selectRange = async (
 	const selected = await dispatchKey(ctx, id, output, { key: 'Enter', selector: '#t-name-box' })
 	if (!selected) return null
 
-	await sleep(200)
+	await delay(200)
 	return result
 }
 
@@ -60,7 +61,7 @@ export const clearGridRange = async (ctx: ArgusPluginContextV1, id: string | und
 			if (!(await dispatchKey(ctx, id, output, { key: 'Backspace' }))) return false
 		}
 	}
-	await sleep(150)
+	await delay(150)
 	return true
 }
 
@@ -191,7 +192,6 @@ const markIndeterminateTimeout = (message: string): void => {
 	}
 }
 
-export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * Spec for a sheets command, mirroring `defineWatcherCommand`'s shape.

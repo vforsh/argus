@@ -7,6 +7,7 @@ import { ensureArtifactsDir, ensureParentDir, moveArtifactFile, resolveArtifactP
 import { createDeferred } from '../deferred.js'
 import { formatFfmpegError, readPngSize, startFfmpeg, type FfmpegProcess } from './ffmpeg.js'
 import { createVisualCapturePlan, type VisualCaptureClip, type VisualCaptureViewport } from './visualCapture.js'
+import { delay } from '@vforsh/argus-core'
 
 const DEFAULT_RECORD_FPS = 30
 const FIRST_FRAME_TIMEOUT_MS = 2_000
@@ -342,4 +343,3 @@ const validateOutputPathFormat = (outFile: string, format: RecordFormat): void =
 	}
 }
 
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

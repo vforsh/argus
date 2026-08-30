@@ -13,6 +13,7 @@ import type {
 import { NetMockInterception, type NetMockInterceptionBinding, type NetMockPausedRequest } from './NetMockInterception.js'
 import { getErrorCode } from '../errors.js'
 import { formatError } from '@vforsh/argus-core'
+import { delay } from '@vforsh/argus-core'
 
 type InternalRule = NetMockRule & {
 	/** Compiled URL matcher, built once when the rule is added. */
@@ -77,7 +78,7 @@ export const createNetMockController = (): NetMockController => {
 		rule.hits += 1
 
 		if (rule.delayMs && rule.delayMs > 0) {
-			await sleep(rule.delayMs)
+			await delay(rule.delayMs)
 		}
 
 		const action = rule.action
@@ -269,4 +270,3 @@ const toPublicRule = (rule: InternalRule): NetMockRule => ({
 	createdAt: rule.createdAt,
 })
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

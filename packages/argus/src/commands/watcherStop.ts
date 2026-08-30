@@ -5,6 +5,7 @@ import { formatError } from '../cli/parse.js'
 import { formatWatcherLine } from '../output/format.js'
 import { createOutput } from '../output/io.js'
 import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { delay } from '@vforsh/argus-core'
 
 /** Options for the watcher stop command. */
 export type WatcherStopOptions = Record<string, never>
@@ -82,7 +83,7 @@ const waitForProcessExit = async (pid: number, timeoutMs: number, intervalMs: nu
 		if (check.state === 'error') {
 			return { state: 'error', error: check.error }
 		}
-		await sleep(intervalMs)
+		await delay(intervalMs)
 	}
 	return { state: 'timeout' }
 }
@@ -99,7 +100,6 @@ const checkProcessState = (pid: number): { state: 'alive' | 'dead' | 'error'; er
 	}
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const isNoSuchProcessError = (error: unknown): boolean => {
 	return isErrnoError(error) && error.code === 'ESRCH'

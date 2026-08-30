@@ -14,6 +14,7 @@ import { normalizeHttpUrl, registerTerminationHandlers, waitForever } from './st
 import type { AuthStateSnapshot } from '@vforsh/argus-core'
 import { applyAuthStateSnapshotToChrome } from './chrome/authState.js'
 import { loadAuthStateSnapshot } from './auth.js'
+import { delay } from '@vforsh/argus-core'
 
 export type ChromeStartOptions = {
 	url?: string
@@ -73,7 +74,6 @@ type ChromeStartNotReadyResult = {
 
 type ChromeStartReadyCheck = ChromeStartReadyResult | ChromeStartNotReadyResult
 
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const resolveChromeUserDataDir = (): string | null => {
 	if (process.env.ARGUS_CHROME_USER_DATA_DIR) {

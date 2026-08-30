@@ -1,3 +1,10 @@
+/**
+ * Resolve after `ms` milliseconds.
+ *
+ * Seventeen modules had defined this same one-liner privately, under two names.
+ */
+export const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
 /** Duration suffixes accepted by {@link parseDurationMs}. */
 export type DurationUnit = 'ms' | 's' | 'm' | 'h' | 'd'
 

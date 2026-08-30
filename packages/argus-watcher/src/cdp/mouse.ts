@@ -2,6 +2,7 @@ import { codedError } from '../errors.js'
 import { callFunctionOnNode, evaluateInPage } from './pageState.js'
 import type { CdpSessionHandle } from './connection.js'
 import { resolveSelectorTargets, toDomNodeDescriptor, type DomNodeHandle } from './dom/selector.js'
+import { delay } from '@vforsh/argus-core'
 
 type SelectorMatchResult = {
 	allNodeIds: number[]
@@ -69,7 +70,7 @@ export const dragAtPoints = async (session: CdpSessionHandle, start: Point, end:
 
 		for (let i = 1; i <= steps; i++) {
 			if (stepDelayMs > 0) {
-				await sleep(stepDelayMs)
+				await delay(stepDelayMs)
 			}
 			latest = interpolatePoint(start, end, i / steps)
 			await dispatchMouseEvent(session, { type: 'mouseMoved', x: latest.x, y: latest.y, button, buttons: mask, clickCount: 1 })
@@ -294,6 +295,5 @@ const interpolatePoint = (start: Point, end: Point, progress: number): Point => 
 	y: start.y + (end.y - start.y) * progress,
 })
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const createNotInteractableError = (message: string): Error => codedError('not_interactable', message)

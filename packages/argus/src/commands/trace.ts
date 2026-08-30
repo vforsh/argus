@@ -2,6 +2,7 @@ import type { TraceStartResponse, TraceStopResponse, WatcherRecord } from '@vfor
 import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '@vforsh/argus-core'
 import { fetchWatcherJson, formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { delay } from '@vforsh/argus-core'
 
 /** Options for the trace command (start + stop). */
 export type TraceOptions = {
@@ -152,6 +153,5 @@ const runTraceStopInternal = async (
 	}
 }
 
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const formatDurationMs = (ms: number): string => `${(ms / 1000).toFixed(3)}s`

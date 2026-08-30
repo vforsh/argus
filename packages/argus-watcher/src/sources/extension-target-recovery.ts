@@ -7,6 +7,7 @@ import {
 	resolveSelectedFrameCommandState,
 	type ExtensionFrameState,
 } from './extension-frame-state.js'
+import { delay } from '@vforsh/argus-core'
 
 const TARGET_RECOVERY_INTERVAL_MS = 500
 const TARGET_RECOVERY_TIMEOUT_MS = 30_000
@@ -165,4 +166,3 @@ const buildSelectedFrameNotReadyError = (tabId: number): Error =>
 		`Selected iframe target on tab ${tabId} is not executable yet after reload. Try again in a few seconds or reattach the watcher if the problem persists.`,
 	)
 
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

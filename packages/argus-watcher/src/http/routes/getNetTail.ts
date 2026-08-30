@@ -5,6 +5,7 @@ import { defineJsonRoute } from './defineRoute.js'
 import { emitRequest } from './types.js'
 import { readNetFiltersFromUrl, respondNetDisabled, toNetRequestEventQuery } from './netFilters.js'
 import { clampNumber } from '../httpUtils.js'
+import { delay } from '@vforsh/argus-core'
 
 export const route = defineJsonRoute<undefined, NetTailResponse>({
 	method: 'GET',
@@ -58,4 +59,3 @@ const pollNetBuffer = async (
 	}
 }
 
-const delay = (timeoutMs: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, timeoutMs))

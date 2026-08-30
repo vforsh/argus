@@ -1,10 +1,11 @@
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { failCommand } from './commandExit.js'
+import { delay } from '@vforsh/argus-core'
 import { a1ForOffset } from './a1.js'
 import { buildTypedClipboardPayload } from './typedClipboard.js'
 import { buildVerifyClearExpression, type SheetWriteVerificationResult } from './mutationPageScripts.js'
 import { readTypedMatrixFromClipboard } from './rawCellValues.js'
-import { clearGridRange, dispatchKey, evalInWatcher, selectRange, sleep, switchSheetTarget, type Output } from './sheetCommandUtils.js'
+import { clearGridRange, dispatchKey, evalInWatcher, selectRange, switchSheetTarget, type Output } from './sheetCommandUtils.js'
 import { buildPrepareTypedWriteExpression, type TypedWritePreparation } from './typedMutationPageScripts.js'
 import { compareTypedMatrix, type CellValue, type TypedMismatch } from './typedValues.js'
 
@@ -34,7 +35,7 @@ export const setTypedRange = async (
 	// The watcher dispatches CDP keyboard modifiers, so Sheets expects Ctrl even when
 	// the CLI process itself runs on macOS. Meta produces a successful no-op.
 	if (!(await dispatchKey(ctx, id, output, { key: 'v', modifiers: 'ctrl' }))) return null
-	await sleep(300)
+	await delay(300)
 	if (!(await materializeDecimalNumbers(ctx, id, output, input.range, input.values))) return null
 	const verification = await verifyTypedRange(ctx, id, output, prepared.verificationRange, input.values)
 	if (!verification) return null
@@ -63,10 +64,10 @@ const materializeDecimalNumbers = async (
 			const a1 = a1ForOffset(range, row, column)
 			if (!(await selectRange(ctx, id, a1, output))) return false
 			if (!(await dispatchKey(ctx, id, output, { key: 'c', modifiers: 'ctrl' }))) return false
-			await sleep(150)
+			await delay(150)
 			const pasteValuesModifiers = process.platform === 'darwin' ? 'meta,shift' : 'ctrl,shift'
 			if (!(await dispatchKey(ctx, id, output, { key: 'v', modifiers: pasteValuesModifiers }))) return false
-			await sleep(200)
+			await delay(200)
 		}
 	}
 	return true
