@@ -122,8 +122,13 @@ export const createWrapperScript = (platform: Platform, executablePath: string, 
 	return writeWrapperScript(getWrapperPath(platform, hostName), executablePath, hostName)
 }
 
-const writeWrapperScript = (wrapperPath: string, executablePath: string, hostName: NativeHostName, env?: Record<string, string>): string => {
-	const nodePath = findNodePath()
+const writeWrapperScript = (
+	wrapperPath: string,
+	executablePath: string,
+	hostName: NativeHostName,
+	env?: Record<string, string>,
+	nodePath: string = findNodePath(),
+): string => {
 	const args = hostName === CONTROL_HOST_NAME ? `watcher native-host --role control --id ${CONTROL_WATCHER_ID}` : 'watcher native-host --role tab'
 
 	// Chrome spawns the host without a shell profile, so the wrapper must carry everything
@@ -163,19 +168,27 @@ export const installNativeHosts = (platform: Platform, extensionId: string, exec
  * @param manifestDir - Directory to write manifests and wrapper scripts into (created if missing).
  * @param extensionId - Extension id allowed to connect (`allowed_origins`).
  * @param executablePath - Absolute path to the argus CLI entry (e.g. a repo `dist/bin.js`).
- * @param env - Env vars baked into the wrapper scripts; Chrome spawns hosts with no shell
- *   profile, so isolation vars like `ARGUS_HOME`/`ARGUS_REGISTRY_PATH` must travel here.
+ * @param options - `env`: vars baked into the wrapper scripts (Chrome spawns hosts with no
+ *   shell profile, so isolation vars like `ARGUS_HOME`/`ARGUS_REGISTRY_PATH` must travel
+ *   here); `nodePath`: runtime for the host process — defaults to the current executable's
+ *   realpath, which under `bun test` is bun, so pass an explicit node to match production.
  * @returns One record per host with the written manifest and wrapper paths.
  */
 export const installNativeHostsTo = (
 	manifestDir: string,
 	extensionId: string,
 	executablePath: string,
-	env?: Record<string, string>,
+	options?: { env?: Record<string, string>; nodePath?: string },
 ): InstalledNativeHost[] => {
 	fs.mkdirSync(manifestDir, { recursive: true })
 	return HOST_NAMES.map((hostName) => {
-		const wrapperPath = writeWrapperScript(path.join(manifestDir, wrapperFilename(hostName)), executablePath, hostName, env)
+		const wrapperPath = writeWrapperScript(
+			path.join(manifestDir, wrapperFilename(hostName)),
+			executablePath,
+			hostName,
+			options?.env,
+			options?.nodePath ?? findNodePath(),
+		)
 		const manifestPath = path.join(manifestDir, `${hostName}.json`)
 		fs.writeFileSync(manifestPath, JSON.stringify(createManifest(extensionId, wrapperPath, hostName), null, 2))
 		return { hostName, manifestPath, wrapperPath }

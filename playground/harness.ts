@@ -26,8 +26,16 @@ export type PlaygroundServers = {
  * Start the main playground page server plus the cross-origin iframe server.
  * The returned `close()` shuts both down cleanly.
  */
-export const startPlaygroundServers = ({ port, crossOriginPort }: { port: number; crossOriginPort: number }): PlaygroundServers => {
-	const webSocketPort = crossOriginPort + 1
+export const startPlaygroundServers = ({
+	port,
+	crossOriginPort,
+	webSocketPort = crossOriginPort + 1,
+}: {
+	port: number
+	crossOriginPort: number
+	/** Explicit WebSocket port; callers using dynamically allocated ports pass one to avoid collisions. */
+	webSocketPort?: number
+}): PlaygroundServers => {
 	const mainServer = startServer({ port, crossOriginPort, webSocketPort })
 	const crossOriginServer = startServer({ port: crossOriginPort })
 	const webSocketServer = startWebSocketServer(webSocketPort)
@@ -111,4 +119,3 @@ const closeServer = (server: { close: (callback?: () => void) => unknown }): Pro
 	new Promise((resolve) => {
 		server.close(() => resolve())
 	})
-
