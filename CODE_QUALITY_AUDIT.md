@@ -9,12 +9,12 @@
 
 ## Progress
 
-All six sequencing steps are done except one deliberately declined item (C2, below). 30 commits, `bf19320..HEAD`. Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. Full `test:e2e` re-run after steps 2, 3, 4, and 6: 24/25 files pass.
+All six sequencing steps are done except one deliberately declined item (C2, below). 34 commits, `bf19320..HEAD`. Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. **Full `test:e2e`: 25/25 files pass.**
 
-**Two pre-existing e2e flakes, both reproduced on clean clones of earlier commits and neither caused by this work:**
+**Two pre-existing e2e flakes found during this work and since fixed** (both predated it — reproduced on clean clones of earlier commits):
 
-- `watcher-net.test.ts` — a slow in-flight request lands in the buffer right after `net clear`. Reproduced at `bf19320`.
-- `watcher-auth.test.ts` — three auth cases fail with "Watcher not attached to a CDP target" when the command runs before attachment completes. Reproduced at `2d95a10` (1 failure per run, three runs).
+- `watcher-net.test.ts` — the page fires its last one-shot request 2500ms after load, and the test cleared the buffer without waiting for it, so the "empty after clear" assertion intermittently saw the leftover. The fixture now exposes `__netIdle`; the test waits for it and then for buffer quiescence. Eight consecutive green runs.
+- `watcher-auth.test.ts` — `startFreshWatchedSession` returned on process readiness, not CDP attachment, so three auth cases raced it. `helpers/watcher.ts` now owns the wait, and the four e2e files that each hand-rolled the same 15-line poll use it. Eight consecutive green runs.
 
 **Done**
 
