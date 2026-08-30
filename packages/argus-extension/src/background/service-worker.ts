@@ -45,10 +45,36 @@ const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
 		recordEvent('error', 'bridge', 'Control native host disconnected')
 	},
 })
-const bridgeSessions = new Map<number, TabBridgeSession>()
-const selectedFrameByTabId = new Map<number, string | null>()
-// Re-try a remembered iframe while Chrome is still populating frame metadata for a fresh attach.
-const pendingRememberedTargetByTabId = new Map<number, RememberedTargetSelection>()
+/**
+ * Everything the extension knows about one attached tab.
+ *
+ * This used to be three tabId-keyed maps plus DebuggerManager.attached, reconciled by a
+ * sweep that ran on every popup message because the maps drifted. One record per tab
+ * means attach, detach, and prune are single-map operations and a multi-step transition
+ * cannot leave half of the state behind.
+ */
+type TabAttachment = {
+	session: TabBridgeSession
+	/** Selected frame, or `null` for the page. Absent until a target is chosen. */
+	selectedFrameId?: string | null
+	/** A remembered iframe still waiting for Chrome to populate its frame metadata. */
+	pendingRememberedTarget?: RememberedTargetSelection
+}
+
+const attachments = new Map<number, TabAttachment>()
+
+/**
+ * Live view over the attached tabs' sessions.
+ *
+ * Exported for the tests, which assert on session identity and lifetime.
+ */
+const bridgeSessions = {
+	get: (tabId: number) => attachments.get(tabId)?.session,
+	has: (tabId: number) => attachments.has(tabId),
+	keys: () => attachments.keys(),
+	values: () => [...attachments.values()].map((attachment) => attachment.session),
+	entries: () => [...attachments.entries()].map(([tabId, attachment]) => [tabId, attachment.session] as const),
+}
 const targetSelectionHistory = new TargetSelectionHistoryStore()
 const targetVisibilityHistory = new TargetVisibilityHistoryStore()
 const recentEvents: PopupEvent[] = []
@@ -262,7 +288,7 @@ async function attachBridgeSession(tabId: number, options: TabBridgeSessionOptio
 		},
 		options,
 	)
-	bridgeSessions.set(tabId, session)
+	attachments.set(tabId, { session })
 	await connectBridgeSession(tabId, session)
 	return session
 }
@@ -297,8 +323,6 @@ async function connectBridgeSession(tabId: number, session: TabBridgeSession): P
 }
 
 function clearTabState(tabId: number): void {
-	selectedFrameByTabId.delete(tabId)
-	clearPendingRememberedTarget(tabId)
 	destroyBridgeSession(tabId)
 }
 
@@ -308,12 +332,8 @@ function clearTabState(tabId: number): void {
  * sessions before serving popup state so the badge and popup stay aligned with actual attachments.
  */
 function pruneStaleBridgeSessions(): void {
-	for (const [tabId, session] of bridgeSessions.entries()) {
-		if (debuggerManager.isAttached(tabId)) {
-			continue
-		}
-
-		if (!session.getTargetInfo()) {
+	for (const [tabId, attachment] of attachments.entries()) {
+		if (debuggerManager.isAttached(tabId) || !attachment.session.getTargetInfo()) {
 			continue
 		}
 
@@ -323,13 +343,13 @@ function pruneStaleBridgeSessions(): void {
 }
 
 function destroyBridgeSession(tabId: number): void {
-	const session = bridgeSessions.get(tabId)
-	if (!session) {
+	const attachment = attachments.get(tabId)
+	if (!attachment) {
 		return
 	}
 
-	bridgeSessions.delete(tabId)
-	session.dispose()
+	attachments.delete(tabId)
+	attachment.session.dispose()
 }
 
 function buildPopupStatusPayload(): PopupStatusPayload {
@@ -442,11 +462,7 @@ function syncSelectedFrameFromWatcher(targetId: string): void {
 }
 
 function getSelectedFrameId(tabId: number): string | null | undefined {
-	if (!selectedFrameByTabId.has(tabId)) {
-		return undefined
-	}
-
-	return selectedFrameByTabId.get(tabId) ?? null
+	return attachments.get(tabId)?.selectedFrameId
 }
 
 async function rememberTargetSelection(tabId: number, target: PopupTarget): Promise<void> {
@@ -514,9 +530,9 @@ async function prepareRememberedTargetSelection(tabId: number): Promise<void> {
 }
 
 async function replayRememberedTargetSelection(tabId: number): Promise<void> {
-	const remembered = pendingRememberedTargetByTabId.get(tabId)
-	const session = bridgeSessions.get(tabId)
-	if (!remembered || !session) {
+	const attachment = attachments.get(tabId)
+	const remembered = attachment?.pendingRememberedTarget
+	if (!attachment || !remembered) {
 		return
 	}
 
@@ -529,7 +545,7 @@ async function replayRememberedTargetSelection(tabId: number): Promise<void> {
 	}
 
 	try {
-		session.selectTarget(target.frameId)
+		attachment.session.selectTarget(target.frameId)
 		setSelectedFrame(tabId, target.frameId)
 		clearPendingRememberedTarget(tabId)
 		recordEvent('info', 'bridge', `Restored iframe ${target.frameId} on tab ${tabId}`)
@@ -539,19 +555,28 @@ async function replayRememberedTargetSelection(tabId: number): Promise<void> {
 }
 
 function shouldReplayRememberedTarget(tabId: number, method: string): boolean {
-	return pendingRememberedTargetByTabId.has(tabId) && REMEMBERED_TARGET_RETRY_EVENTS.has(method)
+	return attachments.get(tabId)?.pendingRememberedTarget != null && REMEMBERED_TARGET_RETRY_EVENTS.has(method)
 }
 
 function setSelectedFrame(tabId: number, frameId: string | null): void {
-	selectedFrameByTabId.set(tabId, frameId)
+	const attachment = attachments.get(tabId)
+	if (attachment) {
+		attachment.selectedFrameId = frameId
+	}
 }
 
 function setPendingRememberedTarget(tabId: number, remembered: RememberedTargetSelection): void {
-	pendingRememberedTargetByTabId.set(tabId, remembered)
+	const attachment = attachments.get(tabId)
+	if (attachment) {
+		attachment.pendingRememberedTarget = remembered
+	}
 }
 
 function clearPendingRememberedTarget(tabId: number): void {
-	pendingRememberedTargetByTabId.delete(tabId)
+	const attachment = attachments.get(tabId)
+	if (attachment) {
+		delete attachment.pendingRememberedTarget
+	}
 }
 
 console.log('[ServiceWorker] Argus CDP Bridge extension loaded')
