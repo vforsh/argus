@@ -124,7 +124,8 @@ export const createDelegatingSession = (
 			}
 		},
 		getTargetContext: options.getTargetContext,
-		getReadyTargetContext: options.getReadyTargetContext,
+		// A session with no recovery step is ready as soon as its context resolves.
+		getReadyTargetContext: options.getReadyTargetContext ?? (async () => options.getTargetContext()),
 	}
 
 	controller.rebind()

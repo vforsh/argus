@@ -213,6 +213,11 @@ export class SessionManager {
 					methodHandlers?.delete(handler as CdpEventHandler<never>)
 				}
 			},
+
+			// A per-tab bridge session addresses the whole tab; frame scoping is applied by the
+			// delegating session layered on top of it.
+			getTargetContext: () => ({ kind: 'page' }),
+			getReadyTargetContext: async () => ({ kind: 'page' }),
 		}
 
 		const session: ExtensionSession = {

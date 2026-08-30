@@ -1,30 +1,16 @@
 import type { ExtensionAttachRequest, ExtensionTabActionResponse } from '@vforsh/argus-core'
 import { extensionAttachRequestSchema } from '@vforsh/argus-core'
-import { defineJsonRoute } from './defineRoute.js'
-import { respondJson } from '../httpUtils.js'
+import { defineExtensionRoute } from './defineExtensionRoute.js'
+import { resolveExtensionTargetId } from './extensionTarget.js'
 import { emitRequest } from './types.js'
 
-export const route = defineJsonRoute<ExtensionAttachRequest, ExtensionTabActionResponse>({
+export const route = defineExtensionRoute<ExtensionAttachRequest, ExtensionTabActionResponse, 'attachTarget'>({
 	method: 'POST',
 	path: '/attach',
 	bodySchema: extensionAttachRequestSchema,
-	extensionOnly: true,
-	handle: async ({ res, ctx, body: payload }) => {
-		if (!ctx.sourceHandle?.attachTarget) {
-			return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
-		}
-
-		const targetId = payload.targetId ?? String(payload.tabId)
-
+	capability: 'attachTarget',
+	handle: async ({ res, ctx, body: payload, capability }) => {
 		emitRequest(ctx, res, 'attach')
-		return await ctx.sourceHandle.attachTarget(targetId, { watcherId: payload.watcherId })
-	},
-	handleError: (res, error) => {
-		respondJson(
-			res,
-			{ ok: false, error: { message: error instanceof Error ? error.message : String(error), code: 'extension_action_failed' } },
-			400,
-		)
-		return true
+		return await capability(resolveExtensionTargetId(payload), { watcherId: payload.watcherId })
 	},
 })

@@ -68,7 +68,7 @@ export const createCdpSource = (options: CdpSourceOptions): CdpSourceHandle => {
 		readBrowserCookies: createCdpBrowserCookieReader(chrome, () => watcher.getTarget()?.id ?? null),
 		getNetFilterContext: () => {
 			const target = watcher.getTarget()
-			const context = watcher.session.getTargetContext?.()
+			const context = watcher.session.getTargetContext()
 			return {
 				sourceMode: 'cdp',
 				selectedFrameId: context?.kind === 'frame' ? context.frameId : null,

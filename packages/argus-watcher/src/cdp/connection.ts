@@ -37,10 +37,16 @@ export type CdpSessionHandle = {
 	sendAndWait: <M extends CdpMethod>(method: M, params?: CdpParams<M>, options?: CdpSendOptions) => Promise<CdpResult<M>>
 	/** Subscribe to one CDP event. The handler receives that event's payload, not `unknown`. */
 	onEvent: <E extends CdpEvent>(method: E, handler: CdpEventHandler<E>) => () => void
-	/** Active target context for commands that need frame-aware behavior. */
-	getTargetContext?: () => CdpTargetContext
+	/**
+	 * Active target context for commands that need frame-aware behavior.
+	 *
+	 * Required, not optional-by-capability: a direct-CDP session is always page-scoped and says so,
+	 * which is what lets every frame-aware consumer just call it instead of writing the same
+	 * ternary-plus-optional-chain dance.
+	 */
+	getTargetContext: () => CdpTargetContext
 	/** Resolve the selected target after recovery; rejects if a requested iframe is still not executable. */
-	getReadyTargetContext?: () => Promise<CdpTargetContext>
+	getReadyTargetContext: () => Promise<CdpTargetContext>
 }
 
 type PendingRequest = {
@@ -86,6 +92,9 @@ export const createCdpSessionHandle = (): CdpSessionController => {
 				bucket?.delete(handler as CdpEventHandler<never>)
 			}
 		},
+		// A direct CDP connection targets one page; frame scoping only exists on the extension transport.
+		getTargetContext: () => ({ kind: 'page' }),
+		getReadyTargetContext: async () => ({ kind: 'page' }),
 	}
 
 	const attach = (socket: WebSocket): CdpConnection => {

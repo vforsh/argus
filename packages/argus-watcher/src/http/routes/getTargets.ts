@@ -1,19 +1,13 @@
 import type { ExtensionTargetsResponse } from '@vforsh/argus-core'
-import { defineJsonRoute } from './defineRoute.js'
-import { respondJson } from '../httpUtils.js'
+import { defineExtensionRoute } from './defineExtensionRoute.js'
 import { emitRequest } from './types.js'
 
-export const route = defineJsonRoute<undefined, ExtensionTargetsResponse>({
+export const route = defineExtensionRoute<undefined, ExtensionTargetsResponse, 'listTargets'>({
 	method: 'GET',
 	path: '/targets',
-	extensionOnly: true,
-	handle: async ({ res, ctx }) => {
-		if (!ctx.sourceHandle?.listTargets) {
-			return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
-		}
-
+	capability: 'listTargets',
+	handle: async ({ res, ctx, capability }) => {
 		emitRequest(ctx, res, 'targets')
-		const targets = await ctx.sourceHandle.listTargets()
-		return { ok: true, targets }
+		return { ok: true, targets: await capability() }
 	},
 })

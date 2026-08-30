@@ -1,27 +1,21 @@
 import type { ExtensionTabsResponse } from '@vforsh/argus-core'
-import { defineJsonRoute } from './defineRoute.js'
-import { normalizeQueryValue, respondJson } from '../httpUtils.js'
+import { normalizeQueryValue } from '@vforsh/argus-core'
+import { defineExtensionRoute } from './defineExtensionRoute.js'
 import { emitRequest } from './types.js'
 
-export const route = defineJsonRoute<undefined, ExtensionTabsResponse>({
+export const route = defineExtensionRoute<undefined, ExtensionTabsResponse, 'listTabs'>({
 	method: 'GET',
 	path: '/tabs',
-	extensionOnly: true,
-	handle: async ({ res, url, ctx }) => {
-		if (!ctx.sourceHandle?.listTabs) {
-			return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
+	capability: 'listTabs',
+	handle: async ({ res, url, ctx, capability }) => {
+		const filter = {
+			url: normalizeQueryValue(url.searchParams.get('url')),
+			title: normalizeQueryValue(url.searchParams.get('title')),
 		}
 
 		// Emitted manually to include query metadata in the request event.
-		emitRequest(ctx, res, 'tabs', {
-			url: url.searchParams.get('url') ?? undefined,
-			title: url.searchParams.get('title') ?? undefined,
-		})
+		emitRequest(ctx, res, 'tabs', filter)
 
-		const tabs = await ctx.sourceHandle.listTabs({
-			url: normalizeQueryValue(url.searchParams.get('url')),
-			title: normalizeQueryValue(url.searchParams.get('title')),
-		})
-		return { ok: true, tabs }
+		return { ok: true, tabs: await capability(filter) }
 	},
 })

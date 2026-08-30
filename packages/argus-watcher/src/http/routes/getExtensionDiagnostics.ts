@@ -1,18 +1,13 @@
 import type { ExtensionDiagnosticsResponse } from '@vforsh/argus-core'
-import { defineJsonRoute } from './defineRoute.js'
-import { respondJson } from '../httpUtils.js'
+import { defineExtensionRoute } from './defineExtensionRoute.js'
 import { emitRequest } from './types.js'
 
-export const route = defineJsonRoute<undefined, ExtensionDiagnosticsResponse>({
+export const route = defineExtensionRoute<undefined, ExtensionDiagnosticsResponse, 'getExtensionDiagnostics'>({
 	method: 'GET',
 	path: '/extension/diagnostics',
-	extensionOnly: true,
-	handle: async ({ res, ctx }) => {
-		if (!ctx.sourceHandle?.getExtensionDiagnostics) {
-			return respondJson(res, { ok: false, error: { message: 'Not available', code: 'not_available' } }, 400)
-		}
-
+	capability: 'getExtensionDiagnostics',
+	handle: async ({ res, ctx, capability }) => {
 		emitRequest(ctx, res, 'extension/diagnostics')
-		return await ctx.sourceHandle.getExtensionDiagnostics()
+		return await capability()
 	},
 })

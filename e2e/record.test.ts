@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import type { CdpEventHandler, CdpSessionHandle } from '../packages/argus-watcher/src/cdp/connection.js'
+import type { CdpEventHandler, CdpSessionHandle, CdpTargetContext } from '../packages/argus-watcher/src/cdp/connection.js'
 import { createRecorder } from '../packages/argus-watcher/src/cdp/recording.js'
 import {
 	inferRecordFormatFromOutFile,
@@ -54,6 +54,14 @@ class FakeCdpSession implements CdpSessionHandle {
 		}
 		bucket.add(handler)
 		return () => bucket?.delete(handler)
+	}
+
+	getTargetContext(): CdpTargetContext {
+		return { kind: 'page' }
+	}
+
+	async getReadyTargetContext(): Promise<CdpTargetContext> {
+		return { kind: 'page' }
 	}
 
 	private emit(method: string, params: unknown): void {

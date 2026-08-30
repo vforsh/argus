@@ -103,6 +103,11 @@ const createDetachedSession = (message: string): CdpSessionHandle => ({
 		throw createNotAttachedError(message)
 	},
 	onEvent: () => () => {},
+	// A control watcher never attaches to a page, so there is no frame to scope to.
+	getTargetContext: () => ({ kind: 'page' }),
+	getReadyTargetContext: async () => {
+		throw createNotAttachedError(message)
+	},
 })
 
 /** Control watchers operate on whole tabs; iframe target ids are rejected with actionable errors. */
