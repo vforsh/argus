@@ -51,87 +51,73 @@ export const createWatcherRuntimeServices = (
 		extensionRole,
 	} = setup
 
-	if (sourceMode === 'extension') {
-		const sourceHandle = createExtensionSource({
-			events: {
-				onLog: callbacks.onLog,
-				onStatus: callbacks.onStatus,
-				onPageNavigation: callbacks.onPageNavigation,
-				onPageLoad: callbacks.onPageLoad,
-				onPageIntl: callbacks.onPageIntl,
-				onAttach: callbacks.onAttach,
-				onTargetChanged: callbacks.onTargetChanged,
-				onDetach: () => {
-					callbacks.onDetach()
-				},
-			},
-			watcherId,
-			watcherHost: host,
-			watcherPort: record.port,
-			role: extensionRole,
-			ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
-			stripUrlPrefixes,
-			sourcemaps,
-		})
-
-		return {
-			sourceHandle,
-			networkCapture: netBuffer
-				? createNetworkCapture({
-						session: sourceHandle.pageSession ?? sourceHandle.session,
-						buffer: netBuffer,
-						realtimeBuffer: realtimeNetBuffer,
-					})
-				: null,
-			traceRecorder: createTraceRecorder({ session: sourceHandle.session, artifactsDir: artifactsBaseDir }),
-			screenshotter: createScreenshotter({
-				session: sourceHandle.session,
-				pageSession: sourceHandle.pageSession,
-				artifactsDir: artifactsBaseDir,
-			}),
-			recorder: createRecorder({
-				session: sourceHandle.session,
-				pageSession: sourceHandle.pageSession,
-				artifactsDir: artifactsBaseDir,
-				onRecordingStateChange: callbacks.onRecordingStateChange,
-			}),
-			runtimeEditor: createRuntimeEditor(sourceHandle.session),
-		}
+	const callbackEvents = {
+		onLog: callbacks.onLog,
+		onStatus: callbacks.onStatus,
+		onPageNavigation: callbacks.onPageNavigation,
+		onPageLoad: callbacks.onPageLoad,
+		onPageIntl: callbacks.onPageIntl,
+		onAttach: callbacks.onAttach,
 	}
 
-	const sourceHandle = createCdpSource({
-		chrome,
-		match: options.match,
-		sessionHandle,
-		events: {
-			onLog: callbacks.onLog,
-			onStatus: callbacks.onStatus,
-			onPageNavigation: callbacks.onPageNavigation,
-			onPageLoad: callbacks.onPageLoad,
-			onPageIntl: callbacks.onPageIntl,
-			onAttach: callbacks.onAttach,
-			onDetach: (reason) => {
-				callbacks.onDetach(reason)
-			},
-		},
-		watcherId,
-		ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
-		stripUrlPrefixes,
-		sourcemaps,
-	})
+	const sourceHandle =
+		sourceMode === 'extension'
+			? createExtensionSource({
+					events: {
+						...callbackEvents,
+						onTargetChanged: callbacks.onTargetChanged,
+						onDetach: () => {
+							callbacks.onDetach()
+						},
+					},
+					watcherId,
+					watcherHost: host,
+					watcherPort: record.port,
+					role: extensionRole,
+					ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
+					stripUrlPrefixes,
+					sourcemaps,
+				})
+			: createCdpSource({
+					chrome,
+					match: options.match,
+					sessionHandle,
+					events: {
+						...callbackEvents,
+						onDetach: (reason) => {
+							callbacks.onDetach(reason)
+						},
+					},
+					watcherId,
+					ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
+					stripUrlPrefixes,
+					sourcemaps,
+				})
+
+	/**
+	 * Only an extension session can be scoped to an iframe while a separate top-level session stays
+	 * available, which is what lets visual capture translate frame-relative coordinates. A direct CDP
+	 * session is its own page session, so it has nothing to translate against and passes `undefined`.
+	 */
+	const pageSession = sourceMode === 'extension' ? sourceHandle.pageSession : undefined
 
 	return {
 		sourceHandle,
 		networkCapture: netBuffer
-			? createNetworkCapture({ session: sessionHandle.session, buffer: netBuffer, realtimeBuffer: realtimeNetBuffer })
+			? createNetworkCapture({
+					session: sourceHandle.pageSession ?? sourceHandle.session,
+					buffer: netBuffer,
+					realtimeBuffer: realtimeNetBuffer,
+				})
 			: null,
-		traceRecorder: createTraceRecorder({ session: sessionHandle.session, artifactsDir: artifactsBaseDir }),
-		screenshotter: createScreenshotter({ session: sessionHandle.session, artifactsDir: artifactsBaseDir }),
+		traceRecorder: createTraceRecorder({ session: sourceHandle.session, artifactsDir: artifactsBaseDir }),
+		screenshotter: createScreenshotter({ session: sourceHandle.session, pageSession, artifactsDir: artifactsBaseDir }),
 		recorder: createRecorder({
-			session: sessionHandle.session,
+			session: sourceHandle.session,
+			pageSession,
 			artifactsDir: artifactsBaseDir,
 			onRecordingStateChange: callbacks.onRecordingStateChange,
 		}),
-		runtimeEditor: createRuntimeEditor(sessionHandle.session),
+		runtimeEditor: createRuntimeEditor(sourceHandle.session),
 	}
 }

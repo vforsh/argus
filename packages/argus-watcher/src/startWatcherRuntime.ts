@@ -1,12 +1,14 @@
 import type { DialogStatus, LogEvent } from '@vforsh/argus-core'
 import { startHttpServer } from './http/server.js'
 import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
-import { createPageIndicatorController, validatePageIndicatorOptions, type PageIndicatorController } from './cdp/pageIndicator.js'
+
 import { ElementRefRegistry } from './cdp/elementRefs.js'
 import { DialogTracker } from './dialogs/DialogTracker.js'
 import type { CdpSourceHandle, CdpSourceStatus, CdpSourceTarget } from './sources/types.js'
 import type { StartWatcherOptions, WatcherHandle } from './index.js'
-import { buildInjectExpression, formatWatcherError } from './runtime/watcherInject.js'
+import { createInjectOnAttach } from './runtime/watcherInject.js'
+import { createIndicatorBinding } from './runtime/watcherIndicator.js'
+import { createShutdownLatch } from './runtime/shutdownLatch.js'
 import { normalizeWatcherSetup } from './runtime/watcherSetup.js'
 import { createWatcherRuntimeServices } from './runtime/watcherServices.js'
 
@@ -32,10 +34,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		visibilityController,
 		netMockController,
 	} = setup
-	let closing = false
-	let readyForShutdown = false
-	let shutdownRequested = false
-	let closeOnce: (() => Promise<void>) | null = null
+	const shutdown = createShutdownLatch()
 	let cdpStatus: CdpSourceStatus = { attached: false, target: null }
 	const dialogTracker = new DialogTracker()
 	const elementRefs = new ElementRefRegistry()
@@ -57,15 +56,6 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 				})
 				.catch(() => {})
 		})
-	}
-
-	validatePageIndicatorOptions(options.pageIndicator)
-	const indicatorEnabled = options.pageIndicator?.enabled === true
-	let indicatorController: PageIndicatorController | null = null
-	let indicatorAttachedAt: number | null = null
-
-	if (indicatorEnabled) {
-		indicatorController = createPageIndicatorController(options.pageIndicator!)
 	}
 
 	const updateCdpStatus = (status: CdpSourceStatus): void => {
@@ -93,117 +83,11 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		}
 	}
 
-	const buildIndicatorInfo = (target: { title: string | null; url: string | null } | null) => ({
-		watcherId,
-		watcherHost: host,
-		watcherPort: record.port,
-		watcherPid: process.pid,
-		targetTitle: target?.title ?? null,
-		targetUrl: target?.url ?? null,
-		attachedAt: indicatorAttachedAt ?? Date.now(),
-	})
+	const indicator = createIndicatorBinding({ options: options.pageIndicator, record, getCdpStatus: () => cdpStatus })
+	const injectOnAttach = createInjectOnAttach(options.inject, record)
 
-	const onIndicatorNavigation = (session: CdpSourceHandle['session'], info: { url: string }): void => {
-		if (!indicatorController) {
-			return
-		}
-
-		/**
-		 * Reinstall the indicator after the top page navigates, but keep showing the currently selected
-		 * watcher target when extension mode is attached to an iframe. Otherwise a parent-page
-		 * navigation can overwrite the modal with stale top-level metadata.
-		 */
-		const indicatorTarget = cdpStatus.attached
-			? {
-					title: cdpStatus.target?.title ?? null,
-					url: cdpStatus.target?.url ?? info.url,
-				}
-			: {
-					title: null,
-					url: info.url,
-				}
-
-		indicatorController.onNavigation(session, buildIndicatorInfo(indicatorTarget))
-	}
-
-	const onIndicatorLoad = (): void => {
-		indicatorController?.reinstall()
-	}
-
-	const getIndicatorSession = (): CdpSourceHandle['session'] => sourceHandle.pageSession ?? sourceHandle.session
-
-	const onIndicatorAttach = (
-		session: CdpSourceHandle['session'],
-		target: { id: string; title: string; url: string; type?: string | null; parentId?: string | null },
-	): void => {
-		if (!indicatorController) {
-			return
-		}
-
-		indicatorAttachedAt = Date.now()
-		indicatorController.onAttach(
-			session,
-			{
-				id: target.id,
-				title: target.title,
-				url: target.url,
-				type: target.type ?? 'page',
-				parentId: target.parentId ?? null,
-				webSocketDebuggerUrl: '',
-			},
-			buildIndicatorInfo({ title: target.title, url: target.url }),
-		)
-	}
-
-	const maybeInjectOnAttach = async (
-		session: CdpSourceHandle['session'],
-		target: { title?: string | null; url?: string | null; type?: string | null; parentId?: string | null },
-	): Promise<void> => {
-		if (!options.inject?.script) {
-			return
-		}
-		if (!session.isAttached()) {
-			return
-		}
-
-		const trimmedScript = options.inject.script.trim()
-		if (trimmedScript === '') {
-			console.warn(`[Watcher] Inject script is empty for watcher ${record.id}. Skipping.`)
-			return
-		}
-
-		const attachedAt = Date.now()
-		const exposeArgus = options.inject.exposeArgus ?? true
-		const argusPayload = exposeArgus
-			? {
-					watcherId: record.id,
-					watcherHost: record.host,
-					watcherPort: record.port,
-					watcherPid: record.pid,
-					attachedAt,
-					target: {
-						title: target.title ?? null,
-						url: target.url ?? null,
-						type: target.type ?? 'page',
-						parentId: target.parentId ?? null,
-					},
-				}
-			: null
-
-		const expression = buildInjectExpression(trimmedScript, argusPayload)
-
-		try {
-			await session.sendAndWait('Page.addScriptToEvaluateOnNewDocument', { source: expression })
-		} catch (error) {
-			console.warn(`[Watcher] Failed to register inject script for watcher ${record.id}: ${formatWatcherError(error)}`)
-		}
-
-		try {
-			await session.sendAndWait('Runtime.evaluate', { expression, silent: true })
-		} catch (error) {
-			console.warn(`[Watcher] Failed to run inject script for watcher ${record.id}: ${formatWatcherError(error)}`)
-		}
-	}
+	/** Dialogs, network capture, and the indicator all belong to the page, never to a selected iframe. */
+	const getPageSession = (): CdpSourceHandle['session'] => sourceHandle.pageSession ?? sourceHandle.session
 
 	const handleSourceLog = (event: Omit<LogEvent, 'id'>): void => {
 		buffer.add(event)
@@ -216,7 +100,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		// reporting locations from the previous build.
 		sourcemaps.clear()
 		fileLogger?.rotate(info)
-		onIndicatorNavigation(getIndicatorSession(), info)
+		indicator.onNavigation(getPageSession(), info)
 		runtimeEditor?.reset()
 	}
 
@@ -233,11 +117,11 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		// Visibility lock is sticky across detaches; restore it before we
 		// forward the attach to other services so downstream flows (boot
 		// waits, indicator paints) benefit immediately.
-		await visibilityController.onAttach(sourceHandle.pageSession ?? session)
+		await visibilityController.onAttach(getPageSession())
 		await netMockController.onAttach()
 		await networkCapture?.onAttached()
-		onIndicatorAttach(session, target)
-		await maybeInjectOnAttach(session, target)
+		indicator.onAttach(session, target)
+		await injectOnAttach(session, target)
 	}
 
 	const handleTargetChanged = (
@@ -256,7 +140,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 			reason: null,
 		})
 		void netMockController.onTargetChanged()
-		onIndicatorAttach(session, target)
+		indicator.onAttach(session, target)
 	}
 
 	const handleSourceDetach = (reason?: string): void => {
@@ -265,7 +149,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		runtimeEditor?.rebind()
 		networkCapture?.onDetached()
 		netMockController.onDetach()
-		indicatorController?.onDetach()
+		indicator.onDetach()
 		recorder.onDetached(reason)
 		if (reason != null) {
 			traceRecorder.onDetached(reason)
@@ -276,18 +160,18 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		onLog: handleSourceLog,
 		onStatus: updateCdpStatus,
 		onPageNavigation: handlePageNavigation,
-		onPageLoad: onIndicatorLoad,
+		onPageLoad: indicator.onLoad,
 		onPageIntl: handlePageIntl,
 		onAttach: handleSourceAttach,
 		onTargetChanged: handleTargetChanged,
 		onDetach: handleSourceDetach,
 		onRecordingStateChange: (recording) => {
-			indicatorController?.setRecording(recording)
+			indicator.setRecording(recording)
 		},
 	})
 
 	netMockController.bind({
-		pageSession: sourceHandle.pageSession ?? sourceHandle.session,
+		pageSession: getPageSession(),
 		getSelectedTarget: () => {
 			const context = sourceHandle.getNetFilterContext?.() ?? null
 			const frameId = context?.selectedFrameId ?? null
@@ -299,7 +183,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		},
 	})
 
-	const dialogSession = sourceHandle.pageSession ?? sourceHandle.session
+	const dialogSession = getPageSession()
 	dialogSession.onEvent('Page.javascriptDialogOpening', (params) => {
 		const dialog = parseDialogStatus(params)
 		if (!dialog) {
@@ -321,7 +205,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		getWatcher: () => record,
 		getCdpStatus: () => cdpStatus,
 		getDialog: () => dialogTracker.getActive(),
-		pageCdpSession: sourceHandle.pageSession ?? sourceHandle.session,
+		pageCdpSession: getPageSession(),
 		cdpSession: sourceHandle.session,
 		traceRecorder,
 		screenshotter,
@@ -344,11 +228,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 			})
 		},
 		onShutdown: () => {
-			if (!readyForShutdown || !closeOnce) {
-				shutdownRequested = true
-				return
-			}
-			void closeOnce()
+			void shutdown.close()
 		},
 	})
 
@@ -362,13 +242,9 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	await announceWatcher(record)
 
 	const heartbeat = startRegistryHeartbeat(() => record, options.heartbeatMs ?? 15_000)
-	closeOnce = async () => {
-		if (closing) {
-			return
-		}
-		closing = true
+	shutdown.arm(async () => {
 		heartbeat.stop()
-		indicatorController?.stop()
+		indicator.stop()
 		if (cdpStatus.attached) {
 			logToPageConsole('detached (reason=watcher_stopped)')
 		}
@@ -379,18 +255,12 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		await server.close()
 		await removeWatcher(record.id)
 		events.clearListeners()
-	}
-	readyForShutdown = true
-	if (shutdownRequested) {
-		void closeOnce()
-	}
+	})
 
 	return {
 		watcher: record,
 		events,
-		close: async () => {
-			await closeOnce?.()
-		},
+		close: shutdown.close,
 	}
 }
 
