@@ -37,6 +37,8 @@ export type HttpServerOptions = {
 	realtimeNetBuffer: RealtimeNetBuffer | null
 	getWatcher: () => WatcherRecord
 	getCdpStatus: () => Pick<CdpSourceStatus, 'attached' | 'target' | 'targetReady'>
+	/** Lifetime side-effect counters reported by GET /status (see `StatusResponse.counters`). */
+	getCounters: () => { pageNavigations: number }
 	getDialog: () => DialogStatus | null
 	elementRefs: ElementRefRegistry
 	/** Session for page-scoped commands that must always target the top-level page. */

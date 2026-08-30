@@ -27,5 +27,6 @@ const buildStatus = (ctx: RouteContext): StatusResponse => {
 		watcher,
 		protocolVersion: ARGUS_PROTOCOL_VERSION,
 		watcherVersion: packageJson.version,
+		counters: ctx.getCounters(),
 	}
 }

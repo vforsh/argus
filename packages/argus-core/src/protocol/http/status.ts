@@ -33,6 +33,16 @@ export type StatusResponse = Ok<{
 	protocolVersion?: ArgusProtocolVersion
 	/** Watcher package version (e.g. "0.1.2"). */
 	watcherVersion?: string
+	/**
+	 * Lifetime counters for side effects that are hard to observe from outside.
+	 *
+	 * `pageNavigations` counts top-frame navigations the watcher acted on (log rotation,
+	 * sourcemap cache reset, indicator repaint). One real navigation must count exactly once;
+	 * the extension-mode e2e asserts on it to catch duplicated or lost navigation handling.
+	 */
+	counters?: {
+		pageNavigations: number
+	}
 }>
 
 /** Response payload for POST /shutdown. */

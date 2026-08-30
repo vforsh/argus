@@ -36,6 +36,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	} = setup
 	const shutdown = createShutdownLatch()
 	let cdpStatus: CdpSourceStatus = { attached: false, target: null }
+	let pageNavigations = 0
 	const dialogTracker = new DialogTracker()
 	const elementRefs = new ElementRefRegistry()
 
@@ -95,6 +96,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	}
 
 	const handlePageNavigation = (info: { url: string; title: string | null }): void => {
+		pageNavigations += 1
 		elementRefs.reset()
 		// A rebuilt bundle keeps its URL on most dev servers, so drop cached maps rather than
 		// reporting locations from the previous build.
@@ -204,6 +206,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		elementRefs,
 		getWatcher: () => record,
 		getCdpStatus: () => cdpStatus,
+		getCounters: () => ({ pageNavigations }),
 		getDialog: () => dialogTracker.getActive(),
 		pageCdpSession: getPageSession(),
 		cdpSession: sourceHandle.session,
