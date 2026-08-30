@@ -15,7 +15,6 @@ export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost>
 	private port: chrome.runtime.Port | null = null
 	private hostName: string
 	private messageHandlers = new Set<MessageHandler<Inbound>>()
-	private connectHandler: ConnectionHandler | null = null
 	private disconnectHandler: ConnectionHandler | null = null
 	private reconnectAttempts = 0
 	private maxReconnectAttempts = 5
@@ -33,13 +32,6 @@ export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost>
 	 */
 	onMessage(handler: MessageHandler<Inbound>): void {
 		this.messageHandlers.add(handler)
-	}
-
-	/**
-	 * Set handler for successful connection.
-	 */
-	onConnect(handler: ConnectionHandler): void {
-		this.connectHandler = handler
 	}
 
 	/**
@@ -85,10 +77,6 @@ export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost>
 
 			console.log('[BridgeClient] Connected to', this.hostName)
 			this.reconnectAttempts = 0
-
-			if (this.connectHandler) {
-				this.connectHandler()
-			}
 
 			return true
 		} catch (err) {

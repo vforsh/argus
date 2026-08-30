@@ -15,10 +15,13 @@ describe('target-visibility-history', () => {
 
 		await store.hide('https://vk.com/app54508014?session=1', iframeTarget('frame-a', 'https://game.example/frame', 'Game Frame'))
 
-		expect(
-			await store.isHidden('https://vk.com/app54508014?session=2', iframeTarget('frame-b', 'https://game.example/frame', 'Game Frame')),
-		).toBe(true)
-		expect(await store.isHidden('https://vk.com/other', iframeTarget('frame-b', 'https://game.example/frame', 'Game Frame'))).toBe(false)
+		const isHidden = async (pageUrl: string, target: SelectionTarget): Promise<boolean> => {
+			const hiddenTargets = await store.getHiddenTargets(pageUrl)
+			return hiddenTargets.some((hiddenTarget) => matchesHiddenTarget(hiddenTarget, target))
+		}
+
+		expect(await isHidden('https://vk.com/app54508014?session=2', iframeTarget('frame-b', 'https://game.example/frame', 'Game Frame'))).toBe(true)
+		expect(await isHidden('https://vk.com/other', iframeTarget('frame-b', 'https://game.example/frame', 'Game Frame'))).toBe(false)
 	})
 
 	it('does not duplicate the same hidden iframe signature', async () => {

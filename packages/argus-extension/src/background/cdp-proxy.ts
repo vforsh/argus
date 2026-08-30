@@ -5,8 +5,7 @@
 
 import type { DebuggerManager } from './debugger-manager.js'
 import type { BridgeClient } from './bridge-client.js'
-import type { CdpCommandMessage, DetachTabMessage, CookieQueryMessage, ExtensionToTabHost, TabInfo, TabHostToExtension } from '../types/messages.js'
-import { listBrowserTabs } from './tab-list.js'
+import type { CdpCommandMessage, DetachTabMessage, CookieQueryMessage, ExtensionToTabHost, TabHostToExtension } from '../types/messages.js'
 
 export class CdpProxy {
 	private debuggerManager: DebuggerManager
@@ -183,12 +182,5 @@ export class CdpProxy {
 			reason: 'user_requested',
 		})
 		await this.debuggerManager.detach(tabId)
-	}
-
-	/**
-	 * Get list of tabs for popup UI.
-	 */
-	async getTabsForPopup(): Promise<TabInfo[]> {
-		return await listBrowserTabs(this.debuggerManager)
 	}
 }

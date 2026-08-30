@@ -91,11 +91,6 @@ export class TargetVisibilityHistoryStore {
 		await this.persist()
 	}
 
-	async isHidden(pageUrl: string, target: SelectionTarget): Promise<boolean> {
-		const hiddenTargets = await this.getHiddenTargets(pageUrl)
-		return hiddenTargets.some((hiddenTarget) => matchesHiddenTarget(hiddenTarget, target))
-	}
-
 	private findEntry(pageUrl: string): HiddenTargetPageEntry | null {
 		const pageKey = normalizeSelectionPageKey(pageUrl)
 		return this.entries.find((entry) => entry.pageKey === pageKey) ?? null

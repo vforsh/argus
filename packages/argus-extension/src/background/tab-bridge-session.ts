@@ -3,6 +3,7 @@ import { BridgeClient } from './bridge-client.js'
 import { CdpProxy } from './cdp-proxy.js'
 import type { DebuggerManager } from './debugger-manager.js'
 import { BRIDGE_HOST_NAME } from './native-hosts.js'
+import { createLatch, type Latch } from './latch.js'
 
 export type TabWatcherInfo = {
 	watcherId: string
@@ -42,9 +43,8 @@ export class TabBridgeSession {
 	private targetInfo: TabTargetInfo | null = null
 	private desiredWatcherId: string | undefined
 	private lastMessageAt: number | null = null
-	private ready = false
-	private readyWaiters: Array<() => void> = []
-	private watcherInfoWaiters: Array<() => void> = []
+	private readonly hostReady = createLatch()
+	private readonly watcherInfoReceived = createLatch()
 	private disposed = false
 
 	constructor(tabId: number, debuggerManager: DebuggerManager, events: TabBridgeSessionEvents = {}, options: TabBridgeSessionOptions = {}) {
@@ -79,28 +79,9 @@ export class TabBridgeSession {
 		if (!sent) {
 			throw new Error(`Failed to initialize watcher for tab ${this.tabId}`)
 		}
-		await this.waitUntilReady()
-		await this.waitForWatcherInfo()
+		await this.awaitLatch(this.hostReady, 'did not become ready')
+		await this.awaitLatch(this.watcherInfoReceived, 'did not report watcher info')
 		await this.cdpProxy.attachTab(this.tabId)
-	}
-
-	async waitUntilReady(timeoutMs = 3_000): Promise<void> {
-		this.assertOpen()
-		if (this.ready) {
-			return
-		}
-
-		await new Promise<void>((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.readyWaiters = this.readyWaiters.filter((waiter) => waiter !== onReady)
-				reject(new Error(`Native host session for tab ${this.tabId} did not become ready`))
-			}, timeoutMs)
-			const onReady = (): void => {
-				clearTimeout(timer)
-				resolve()
-			}
-			this.readyWaiters.push(onReady)
-		})
 	}
 
 	async detach(): Promise<void> {
@@ -153,23 +134,9 @@ export class TabBridgeSession {
 		return this.lastMessageAt
 	}
 
-	private async waitForWatcherInfo(timeoutMs = 3_000): Promise<void> {
+	private async awaitLatch(latch: Latch, failure: string, timeoutMs = 3_000): Promise<void> {
 		this.assertOpen()
-		if (this.watcherInfo) {
-			return
-		}
-
-		await new Promise<void>((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.watcherInfoWaiters = this.watcherInfoWaiters.filter((waiter) => waiter !== onWatcherInfo)
-				reject(new Error(`Native host session for tab ${this.tabId} did not report watcher info`))
-			}, timeoutMs)
-			const onWatcherInfo = (): void => {
-				clearTimeout(timer)
-				resolve()
-			}
-			this.watcherInfoWaiters.push(onWatcherInfo)
-		})
+		await latch.wait(timeoutMs, `Native host session for tab ${this.tabId} ${failure}`)
 	}
 
 	private handleMessage(message: TabHostToExtension): void {
@@ -184,11 +151,11 @@ export class TabBridgeSession {
 					pid: message.pid,
 				}
 				this.events.onWatcherInfo?.(this.watcherInfo)
-				this.resolveWatcherInfoWaiters()
+				this.watcherInfoReceived.signal()
 				return
 
 			case 'host_ready':
-				this.resolveReadyWaiters()
+				this.hostReady.signal()
 				return
 
 			case 'target_info':
@@ -200,23 +167,6 @@ export class TabBridgeSession {
 					targetReady: message.targetReady ?? null,
 				}
 				this.events.onTargetInfo?.(this.targetInfo)
-		}
-	}
-
-	private resolveReadyWaiters(): void {
-		this.ready = true
-		const waiters = this.readyWaiters
-		this.readyWaiters = []
-		for (const waiter of waiters) {
-			waiter()
-		}
-	}
-
-	private resolveWatcherInfoWaiters(): void {
-		const waiters = this.watcherInfoWaiters
-		this.watcherInfoWaiters = []
-		for (const waiter of waiters) {
-			waiter()
 		}
 	}
 
