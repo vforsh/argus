@@ -1,11 +1,15 @@
 import type {
+	CdpEvent,
 	CdpEventHandler,
 	CdpEventMeta,
+	CdpEventPayload,
+	CdpMethod,
+	CdpParams,
+	CdpResult,
 	CdpSendOptions,
 	CdpSessionHandle,
 	CdpTargetContext,
-} from '../../packages/argus-watcher/src/cdp/connection.js'
-import type { CdpEvent, CdpEventPayload, CdpMethod, CdpParams, CdpResult } from '../../packages/argus-watcher/src/cdp/protocol.js'
+} from '@vforsh/argus-watcher/internal'
 
 /** One command the fake received. */
 export type FakeCdpCall = { method: string; params: Record<string, unknown> }

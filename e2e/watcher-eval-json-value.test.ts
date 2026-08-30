@@ -7,7 +7,7 @@
  * insertion order — so the same page state yields different bytes per transport.
  */
 import { describe, expect, test } from 'bun:test'
-import { evaluateExpression } from '../packages/argus-watcher/src/cdp/eval.js'
+import { evaluateExpression } from '@vforsh/argus-watcher/internal'
 import { createFakeCdpSession } from './helpers/fakeCdpSession.js'
 
 type CannedResult = { result?: unknown; exceptionDetails?: unknown }

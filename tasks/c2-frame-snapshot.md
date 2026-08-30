@@ -124,6 +124,18 @@ export type FrameSnapshotRequestMessage = {
 
 Риски: headless+native messaging (спайк в начале этапа 0); тайминги recovery на живом Chrome (митигируется F-сценарием и rerun'ами); бамп wire-протокола (release note, handshake уже защищает); один PR — при провале редизайна ветка режется по границе этапа 0, страховочная часть мержится отдельно.
 
+## Подобрать по пути: покрытие lease/traversal в google-sheets
+
+Вместе с этим планом удалены `packages/argus-plugin-google-sheets/src/{boundedTraversal,leaseModel}.ts`
+и `test/lease-deadline.test.ts`: модули существовали только ради теста и зеркалили инварианты, а не
+код, который реально едет. Настоящая логика живёт в `leasePageScripts.ts` (лизинг внутри страницы) и
+в собственном дедлайн-цикле `gidTraversal.ts` — ни то, ни другое зеркала не покрывали, так что зелёный
+тест ничего не гарантировал.
+
+Честный тест этих инвариантов требует браузера, то есть того же харнесса, что строит этап 0. Когда он
+появится, добавить сценарий: захват лиза чужим токеном → busy-ошибка; истечение TTL → повторный захват;
+обрыв обхода по дедлайну → `complete: false` и восстановление исходного gid.
+
 ## Final checklist
 
 После каждого этапа: `npm run build:packages`, `bun run --cwd packages/argus-extension build`, затем `npm run typecheck` и `npm run lint` (`npm run lint:fix` для авточинимого) — все ошибки чинить сразу; гейт этапа 0/4 — `npm run test:e2e:extension`, остальное — `npm run test:playground`.

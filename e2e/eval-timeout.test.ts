@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { parseDurationFlagMs, parseTimeoutMs } from '../packages/argus/src/commands/evalShared.js'
+import { parseDurationFlagMs, parseTimeoutMs } from '@vforsh/argus/internal'
 
 describe('eval timeout parsing', () => {
 	test('keeps bare eval timeout numbers as milliseconds', () => {

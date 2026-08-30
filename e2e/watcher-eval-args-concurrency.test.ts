@@ -1,8 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { chromium, type Browser, type CDPSession, type Page } from 'playwright'
-import type { CdpEventHandler, CdpSendOptions, CdpSessionHandle } from '../packages/argus-watcher/src/cdp/connection.js'
-import type { CdpEvent, CdpEventPayload, CdpResult } from '../packages/argus-watcher/src/cdp/protocol.js'
-import { evaluateExpression } from '../packages/argus-watcher/src/cdp/eval.js'
+import {
+	evaluateExpression,
+	type CdpEvent,
+	type CdpEventHandler,
+	type CdpEventPayload,
+	type CdpResult,
+	type CdpSendOptions,
+	type CdpSessionHandle,
+} from '@vforsh/argus-watcher/internal'
 
 describe('watcher eval argument isolation', () => {
 	let browser: Browser

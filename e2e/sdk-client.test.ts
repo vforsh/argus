@@ -19,8 +19,7 @@
  * raises an actionable "restart the watcher" error rather than degrading silently.
  */
 import { afterEach, describe, expect, test } from 'bun:test'
-import { createArgusClient } from '../packages/argus-client/src/index.js'
-import { ArgusEvalError } from '../packages/argus-client/src/eval/ArgusEvalError.js'
+import { ArgusEvalError, createArgusClient } from '@vforsh/argus-client'
 import { evalJsonResponse, startStubWatcher, type StubRoutes, type StubWatcher } from './helpers/stubWatcher.js'
 
 let stub: StubWatcher | undefined

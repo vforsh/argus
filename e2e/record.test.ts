@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { createRecorder } from '../packages/argus-watcher/src/cdp/recording.js'
+import { createRecorder } from '@vforsh/argus-watcher/internal'
 import { createFakeCdpSession } from './helpers/fakeCdpSession.js'
 import {
 	inferRecordFormatFromOutFile,

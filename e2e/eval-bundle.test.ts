@@ -2,10 +2,14 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { bundleEvalEntry, type BundleEvalEntryResult } from '../packages/argus/src/commands/evalBundle.js'
-import { fileUsesModuleSyntax } from '../packages/argus/src/commands/evalModuleSyntax.js'
-import { resolveBundleDecision, resolveExpression } from '../packages/argus/src/commands/evalShared.js'
-import type { Output } from '../packages/argus/src/output/io.js'
+import {
+	bundleEvalEntry,
+	fileUsesModuleSyntax,
+	resolveBundleDecision,
+	resolveExpression,
+	type BundleEvalEntryResult,
+	type Output,
+} from '@vforsh/argus/internal'
 
 const tempDirs: string[] = []
 

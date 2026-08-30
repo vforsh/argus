@@ -1,7 +1,5 @@
 import { test, expect } from 'bun:test'
-import { buildIgnoreMatcher } from '../packages/argus-watcher/src/cdp/ignoreList.js'
-import { selectBestFrame } from '../packages/argus-watcher/src/cdp/selectBestFrame.js'
-import { createSourcemapResolver } from '../packages/argus-watcher/src/sourcemaps/sourcemapResolver.js'
+import { buildIgnoreMatcher, createSourcemapResolver, selectBestFrame } from '@vforsh/argus-watcher/internal'
 import { identityMap, inlineSourcemap, mockStaticFetch } from './helpers/staticFetch.js'
 
 const annotate = (mapUrl: string): string => `console.log(1)\n//# sourceMappingURL=${mapUrl}\n`

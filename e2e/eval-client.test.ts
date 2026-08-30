@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatEvalTransportError } from '../packages/argus/src/eval/evalClient.js'
+import { formatEvalTransportError } from '@vforsh/argus/internal'
 
 const watcher = { id: 'extension' }
 

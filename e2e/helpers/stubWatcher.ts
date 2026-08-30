@@ -2,7 +2,7 @@ import http from 'node:http'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import type { RegistryV1 } from '../../packages/argus-core/src/registry/types.js'
+import type { RegistryV1 } from '@vforsh/argus-core'
 
 /** One request captured by the stub watcher. */
 export type StubCall = {

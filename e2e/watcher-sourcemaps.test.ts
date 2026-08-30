@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { createSourcemapResolver } from '../packages/argus-watcher/src/sourcemaps/sourcemapResolver.js'
+import { createSourcemapResolver } from '@vforsh/argus-watcher/internal'
 import { identityMap, inlineSourcemap, mockStaticFetch } from './helpers/staticFetch.js'
 
 const annotate = (mapUrl: string): string => `console.log(1)\n//# sourceMappingURL=${mapUrl}\n`

@@ -2,9 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { loadEvalArgsFile, parseEvalArgFlags, resolveEvalArgs } from '../packages/argus/src/commands/evalArgs.js'
-import { wrapExpressionWithArgs } from '../packages/argus/src/commands/evalShared.js'
-import { createOutput } from '../packages/argus/src/output/io.js'
+import { createOutput, loadEvalArgsFile, parseEvalArgFlags, resolveEvalArgs, wrapExpressionWithArgs } from '@vforsh/argus/internal'
 
 describe('eval argument helpers', () => {
 	test('parses key=value args as strings', () => {

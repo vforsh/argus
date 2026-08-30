@@ -2,7 +2,7 @@ import { test, expect } from 'bun:test'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
-import { WatcherFileLogger } from '../packages/argus-watcher/src/fileLogs/WatcherFileLogger.js'
+import { WatcherFileLogger } from '@vforsh/argus-watcher/internal'
 
 test('WatcherFileLogger creates files lazily and rotates on navigation', async () => {
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-file-logs-'))

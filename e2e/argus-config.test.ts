@@ -4,8 +4,12 @@ import os from 'node:os'
 import fs from 'node:fs/promises'
 import type { PageConsoleLogging } from '@vforsh/argus-core'
 import { runCommandWithExit } from './helpers/process.js'
-import { loadArgusConfig, resolveArgusConfigPath } from '../packages/argus/src/config/loadConfig.js'
-import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../packages/argus/src/config/mergeConfig.js'
+import {
+	loadArgusConfig,
+	mergeChromeStartOptionsWithConfig,
+	mergeWatcherStartOptionsWithConfig,
+	resolveArgusConfigPath,
+} from '@vforsh/argus/internal'
 
 const LOAD_CONFIG_MODULE_PATH = path.resolve('packages/argus/dist/config/loadConfig.js')
 const MERGE_CONFIG_MODULE_PATH = path.resolve('packages/argus/dist/config/mergeConfig.js')
