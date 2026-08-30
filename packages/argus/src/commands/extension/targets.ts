@@ -1,10 +1,10 @@
-import type { WatcherRecord } from '@vforsh/argus-core'
+import type { WatcherRecord, ExtensionTargetSummary } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
 import { formatWatcherLine } from '../../output/format.js'
 import { hasTabSelector } from './tabSelection.js'
 import { resolveOrAttachExtensionTabWatcher, writeFailure, type ExtensionTabWatcherOptions } from './tabWatcher.js'
-import { fetchExtensionTargets, formatExtensionTargetLine, renderExtensionTargetTree, type ExtensionTarget } from './targetSelection.js'
+import { fetchExtensionTargets, formatExtensionTargetLine, renderExtensionTargetTree } from './targetSelection.js'
 
 export type ExtensionTargetsOptions = ExtensionTabWatcherOptions & {
 	type?: string
@@ -73,7 +73,7 @@ const resolveExistingExtensionWatcher = async (
 	return { watcher: resolved.watcher, tab: null }
 }
 
-const filterTargets = (targets: ExtensionTarget[], type?: string): ExtensionTarget[] => {
+const filterTargets = (targets: ExtensionTargetSummary[], type?: string): ExtensionTargetSummary[] => {
 	const targetType = type?.trim()
 	return targetType ? targets.filter((target) => target.type === targetType) : targets
 }

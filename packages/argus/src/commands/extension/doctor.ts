@@ -1,11 +1,11 @@
-import type { ErrorResponse, ExtensionDiagnosticsResponse, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { ErrorResponse, ExtensionDiagnosticsResponse, StatusResponse, WatcherRecord, ExtensionTargetSummary } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { formatWatcherLine } from '../../output/format.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
 import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
 import { getPlatform, inspectNativeHosts } from './nativeHost.js'
-import { fetchExtensionTargets, formatExtensionTargetLine, type ExtensionTarget } from './targetSelection.js'
+import { fetchExtensionTargets, formatExtensionTargetLine } from './targetSelection.js'
 
 export type ExtensionDoctorOptions = {
 	watcher?: string
@@ -128,8 +128,8 @@ export const runExtensionDoctor = async (options: ExtensionDoctorOptions): Promi
 type WatcherDiagnostics = {
 	watcher: WatcherRecord
 	status: StatusResponse | null
-	targets: ExtensionTarget[]
-	selectedTarget: ExtensionTarget | null
+	targets: ExtensionTargetSummary[]
+	selectedTarget: ExtensionTargetSummary | null
 	bridge: ExtensionDiagnosticsResponse['tabWatchers'][number] | null
 }
 

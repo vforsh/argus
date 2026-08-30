@@ -1,8 +1,9 @@
+import type { ExtensionTargetsResponse } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
 import { respondJson } from '../httpUtils.js'
 import { emitRequest } from './types.js'
 
-export const route = defineJsonRoute({
+export const route = defineJsonRoute<undefined, ExtensionTargetsResponse>({
 	method: 'GET',
 	path: '/targets',
 	extensionOnly: true,

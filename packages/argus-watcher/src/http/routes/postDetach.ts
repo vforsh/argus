@@ -1,9 +1,9 @@
-import type { ExtensionTabActionResponse } from '@vforsh/argus-core'
+import type { ExtensionDetachRequest, ExtensionTabActionResponse } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
 import { respondInvalidBody, respondJson } from '../httpUtils.js'
 import { emitRequest } from './types.js'
 
-export const route = defineJsonRoute<{ tabId?: number; targetId?: string }, ExtensionTabActionResponse>({
+export const route = defineJsonRoute<ExtensionDetachRequest, ExtensionTabActionResponse>({
 	method: 'POST',
 	path: '/detach',
 	parseBody: true,

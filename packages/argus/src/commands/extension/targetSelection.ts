@@ -1,17 +1,12 @@
-import type { ErrorResponse, ExtensionTabActionResponse, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
+import type {
+	ErrorResponse,
+	ExtensionTabActionResponse,
+	ExtensionTargetSummary,
+	ExtensionTargetsResponse,
+	StatusResponse,
+	WatcherRecord,
+} from '@vforsh/argus-core'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
-
-export type ExtensionTarget = {
-	id: string
-	title: string
-	url: string
-	type?: string
-	parentId?: string | null
-	faviconUrl?: string
-	attached?: boolean
-	/** False for a selected iframe still waiting for rediscovery or an execution context. */
-	targetReady?: boolean
-}
 
 export type ExtensionTargetSelectorOptions = {
 	iframe?: string
@@ -21,19 +16,14 @@ export type ExtensionTargetSelectorOptions = {
 }
 
 export type ExtensionTargetSelectionResult =
-	| { ok: true; target: ExtensionTarget }
-	| { ok: false; reason: string; exitCode: 2; matches?: ExtensionTarget[] }
-
-export type ExtensionTargetsResponse = {
-	ok: true
-	targets: ExtensionTarget[]
-}
+	| { ok: true; target: ExtensionTargetSummary }
+	| { ok: false; reason: string; exitCode: 2; matches?: ExtensionTargetSummary[] }
 
 const PLUMBING_IFRAME_PATTERN = /(?:^|[./_-])(q_frame|auth|oauth|login|bridge|analytics|doubleclick|adservice|ads?)(?:[./_-]|$)/i
 
 export const fetchExtensionTargets = async (
 	watcher: WatcherRecord,
-): Promise<{ ok: true; targets: ExtensionTarget[] } | { ok: false; error: string }> => {
+): Promise<{ ok: true; targets: ExtensionTargetSummary[] } | { ok: false; error: string }> => {
 	try {
 		const response = await fetchWatcherJson<ExtensionTargetsResponse | ErrorResponse>(watcher, {
 			path: '/targets',
@@ -51,7 +41,7 @@ export const fetchExtensionTargets = async (
 
 export const selectExtensionTarget = async (
 	watcher: WatcherRecord,
-	target: ExtensionTarget,
+	target: ExtensionTargetSummary,
 ): Promise<{ ok: true; tab: ExtensionTabActionResponse['tab']; watcherId?: string } | { ok: false; error: string }> => {
 	try {
 		const response = await fetchWatcherJson<ExtensionTabActionResponse | ErrorResponse>(watcher, {
@@ -72,9 +62,9 @@ export const selectExtensionTarget = async (
 
 export const waitForSelectedTarget = async (
 	watcher: WatcherRecord,
-	target: ExtensionTarget,
+	target: ExtensionTargetSummary,
 	options: { timeoutMs?: number; intervalMs?: number } = {},
-): Promise<{ ok: true; status: StatusResponse; target: ExtensionTarget } | { ok: false; error: string }> => {
+): Promise<{ ok: true; status: StatusResponse; target: ExtensionTargetSummary } | { ok: false; error: string }> => {
 	const timeoutMs = options.timeoutMs ?? 5_000
 	const intervalMs = options.intervalMs ?? 200
 	const startedAt = Date.now()
@@ -104,7 +94,10 @@ export const waitForSelectedTarget = async (
 	return { ok: false, error: lastError }
 }
 
-export const resolveExtensionTarget = (targets: ExtensionTarget[], options: ExtensionTargetSelectorOptions): ExtensionTargetSelectionResult => {
+export const resolveExtensionTarget = (
+	targets: ExtensionTargetSummary[],
+	options: ExtensionTargetSelectorOptions,
+): ExtensionTargetSelectionResult => {
 	const selectorCount = [options.page === true, Boolean(options.iframe), Boolean(options.iframeUrl), Boolean(options.iframeTitle)].filter(
 		Boolean,
 	).length
@@ -134,7 +127,7 @@ export const resolveExtensionTarget = (targets: ExtensionTarget[], options: Exte
 export const hasExtensionTargetSelector = (options: ExtensionTargetSelectorOptions): boolean =>
 	Boolean(options.page === true || options.iframe || options.iframeUrl || options.iframeTitle)
 
-export const formatExtensionTargetLine = (target: ExtensionTarget): string => {
+export const formatExtensionTargetLine = (target: ExtensionTargetSummary): string => {
 	const state = target.targetReady === false ? 'pending' : target.attached ? 'attached' : 'available'
 	const type = target.type ?? 'target'
 	const title = target.title || '(untitled)'
@@ -142,9 +135,9 @@ export const formatExtensionTargetLine = (target: ExtensionTarget): string => {
 	return `${target.id} [${state}] ${type} ${title} - ${target.url}${parent}`
 }
 
-export const renderExtensionTargetTree = (targets: ExtensionTarget[], output: { writeHuman: (text: string) => void }): void => {
+export const renderExtensionTargetTree = (targets: ExtensionTargetSummary[], output: { writeHuman: (text: string) => void }): void => {
 	const targetById = new Map(targets.map((target) => [target.id, target]))
-	const childrenByParent = new Map<string | null, ExtensionTarget[]>()
+	const childrenByParent = new Map<string | null, ExtensionTargetSummary[]>()
 
 	for (const target of targets) {
 		const parentId = target.parentId ?? null
@@ -165,8 +158,8 @@ export const renderExtensionTargetTree = (targets: ExtensionTarget[], output: { 
 }
 
 const resolveSingleMatch = (
-	targets: ExtensionTarget[],
-	predicate: (target: ExtensionTarget) => boolean,
+	targets: ExtensionTargetSummary[],
+	predicate: (target: ExtensionTargetSummary) => boolean,
 	label: string,
 ): ExtensionTargetSelectionResult => {
 	const matches = targets.filter(predicate)
@@ -179,7 +172,7 @@ const resolveSingleMatch = (
 	return { ok: true, target: matches[0] }
 }
 
-const resolveAutoIframe = (iframes: ExtensionTarget[], allTargets: ExtensionTarget[]): ExtensionTargetSelectionResult => {
+const resolveAutoIframe = (iframes: ExtensionTargetSummary[], allTargets: ExtensionTargetSummary[]): ExtensionTargetSelectionResult => {
 	if (iframes.length === 0) {
 		return { ok: false, reason: 'No iframe targets found.', exitCode: 2 }
 	}
@@ -202,7 +195,7 @@ const resolveAutoIframe = (iframes: ExtensionTarget[], allTargets: ExtensionTarg
 	return { ok: true, target: best.target }
 }
 
-const scoreIframeTarget = (target: ExtensionTarget, page: ExtensionTarget | undefined): number => {
+const scoreIframeTarget = (target: ExtensionTargetSummary, page: ExtensionTargetSummary | undefined): number => {
 	let score = 0
 	// Auto mode is a conservative convenience for wrapper pages: prefer app-like
 	// cross-origin iframes and penalize known browser/platform plumbing.
@@ -222,10 +215,10 @@ const scoreIframeTarget = (target: ExtensionTarget, page: ExtensionTarget | unde
 }
 
 const renderTargetNode = (
-	target: ExtensionTarget,
+	target: ExtensionTargetSummary,
 	prefix: string,
 	isLast: boolean,
-	childrenByParent: Map<string | null, ExtensionTarget[]>,
+	childrenByParent: Map<string | null, ExtensionTargetSummary[]>,
 	output: { writeHuman: (text: string) => void },
 	isRoot = false,
 ): void => {
@@ -259,7 +252,7 @@ const fetchWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; s
 	}
 }
 
-const statusMatchesTarget = (status: StatusResponse, target: ExtensionTarget): boolean => {
+const statusMatchesTarget = (status: StatusResponse, target: ExtensionTargetSummary): boolean => {
 	if (!status.attached || !status.target) {
 		return false
 	}
