@@ -1,11 +1,12 @@
-import { parsePositiveInt } from './cliArgs.js'
+import { parsePositiveInt, runtimeError, usageError } from './cliArgs.js'
+import { failCommand } from './commandExit.js'
 import type { Command } from 'commander'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { indexToColumnLetters, parseA1Cell } from './a1.js'
 import { parseCsv } from './csv.js'
 import { buildDimensionMutationExpression, type SheetDimensionMutationResult } from './dimensionPageScripts.js'
 import { buildReadCsvExpression, type SheetCsvResult } from './sheetDataPageScripts.js'
-import { evalInWatcher, type Output, selectRange, switchSheetTarget, withSheetLease } from './sheetCommandUtils.js'
+import { evalInWatcher, type Output, runSheetCommand, selectRange, switchSheetTarget, withSheetLease } from './sheetCommandUtils.js'
 import { planStructuralProbes, type StructuralProbe } from './structuralVerification.js'
 
 type Dimension = 'rows' | 'columns'
@@ -85,61 +86,69 @@ const registerDimensionGroup = (ctx: ArgusPluginContextV1, sheets: Command, dime
 		)
 }
 
-const runAddDimension = async (
+const runAddDimension = (
 	ctx: ArgusPluginContextV1,
 	id: string | undefined,
 	dimension: Dimension,
 	indexValue: string,
 	options: DimensionAddOptions,
-): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const request = parseDimensionRequest(dimension, indexValue, options.count, output)
-	if (!request) return
+): Promise<void> =>
+	runDimensionCommand(ctx, id, options, (opts, output) => {
+		const request = parseDimensionRequest(dimension, indexValue, opts.count, output)
+		if (!request) return null
 
-	const side = parseInsertSide(options, output)
-	if (!side) return
+		const side = parseInsertSide(opts, output)
+		if (!side) return null
 
-	await runDimensionMutation(ctx, id, output, options, {
-		action: 'add',
-		dimension,
-		index: request.index,
-		count: request.count,
-		side,
+		return { action: 'add', dimension, index: request.index, count: request.count, side }
 	})
-}
 
-const runRemoveDimension = async (
+const runRemoveDimension = (
 	ctx: ArgusPluginContextV1,
 	id: string | undefined,
 	dimension: Dimension,
 	indexValue: string,
 	options: DimensionRemoveOptions,
-): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	if (!options.force) {
-		output.writeWarn(`Refusing to remove ${dimension} without --force`)
-		process.exitCode = 2
-		return
-	}
+): Promise<void> =>
+	runDimensionCommand(ctx, id, options, (opts, output) => {
+		if (!opts.force) return usageError(output, `Refusing to remove ${dimension} without --force`)
 
-	const request = parseDimensionRequest(dimension, indexValue, options.count, output)
-	if (!request) return
+		const request = parseDimensionRequest(dimension, indexValue, opts.count, output)
+		if (!request) return null
 
-	await runDimensionMutation(ctx, id, output, options, {
-		action: 'remove',
-		dimension,
-		index: request.index,
-		count: request.count,
+		return { action: 'remove', dimension, index: request.index, count: request.count }
 	})
-}
 
-const runDimensionMutation = async (
+/** Both dimension commands differ only in how their flags become a {@link DimensionMutationInput}. */
+const runDimensionCommand = <TOptions extends DimensionOptions>(
+	ctx: ArgusPluginContextV1,
+	id: string | undefined,
+	options: TOptions,
+	validate: (options: TOptions, output: Output) => DimensionMutationInput | null,
+): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate,
+		execute: ({ output, validated }) => mutateDimension(ctx, id, output, options, validated),
+		formatHuman: (result, output) => {
+			const verb = result.action === 'add' ? 'Inserted' : 'Removed'
+			const side = result.side ? ` ${result.side}` : ''
+			output.writeHuman(`${verb} ${result.count} ${result.dimension} at #${result.index}${side}`)
+		},
+	})
+
+/**
+ * Capture structural probes, mutate, then re-read them under one lease.
+ *
+ * A mutation whose probes did not shift is still reported in full — the checks are the interesting
+ * output — but it records exit code 1.
+ */
+const mutateDimension = async (
 	ctx: ArgusPluginContextV1,
 	id: string | undefined,
 	output: Output,
 	options: DimensionOptions,
 	input: DimensionMutationInput,
-): Promise<void> => {
+): Promise<DimensionCommandResult | null> => {
 	const leased = await withSheetLease(ctx, id, output, { operation: `${input.action} ${input.dimension}`, restore: true }, async () => {
 		if (options.sheet && !(await switchSheetTarget(ctx, id, options.sheet, output))) return null
 		const expectation = options.expectCell ? parseExpectedCell(options.expectCell, output) : null
@@ -151,12 +160,14 @@ const runDimensionMutation = async (
 		const verifiedChecks = await verifyStructuralChecks(ctx, id, output, checks)
 		return { mutation, checks: verifiedChecks }
 	})
-	const result = leased?.value
-	if (!result) return
-	const verified = result.checks.every((check) => check.verified)
-	if (!verified) process.exitCode = 1
 
-	writeDimensionResult(output, options, { ok: verified, ...input, mutations: [result.mutation], verified, checks: result.checks })
+	const result = leased?.value
+	if (!result) return null
+
+	const verified = result.checks.every((check) => check.verified)
+	if (!verified) failCommand(1)
+
+	return { ok: verified, ...input, mutations: [result.mutation], verified, checks: result.checks }
 }
 
 /** Execute one bulk row/column UI mutation after the caller acquires a sheet operation lease. */
@@ -193,18 +204,12 @@ const buildDimensionSelection = (input: DimensionMutationInput): { range: string
 
 const parseExpectedCell = (expectation: string, output: Output): { a1: string; value: string } | null => {
 	const separator = expectation.indexOf('=')
-	if (separator <= 0) {
-		output.writeWarn('--expect-cell must use A1=value syntax')
-		process.exitCode = 2
-		return null
-	}
+	if (separator <= 0) return usageError(output, '--expect-cell must use A1=value syntax')
+
 	const a1 = expectation.slice(0, separator).trim()
 	const cell = parseA1Cell(a1)
-	if (!cell || cell.sheet) {
-		output.writeWarn(`Structural expectation must use an unqualified A1 cell, got ${a1}.`)
-		process.exitCode = 2
-		return null
-	}
+	if (!cell || cell.sheet) return usageError(output, `Structural expectation must use an unqualified A1 cell, got ${a1}.`)
+
 	return { a1: a1.toUpperCase(), value: expectation.slice(separator + 1) }
 }
 
@@ -221,11 +226,10 @@ const captureStructuralChecks = async (
 		const expected = await readCell(ctx, id, output, probe.sourceA1)
 		if (expected == null) return null
 		if (probe.role === 'anchor' && expected !== expectation.value) {
-			output.writeWarn(
+			return runtimeError(
+				output,
 				`Structural precondition failed at ${probe.sourceA1}: expected ${JSON.stringify(expectation.value)}, actual ${JSON.stringify(expected)}`,
 			)
-			process.exitCode = 1
-			return null
 		}
 		checks.push({ ...probe, expected, actual: null, verified: probe.destinationA1 == null })
 	}
@@ -267,39 +271,17 @@ const readCell = async (ctx: ArgusPluginContextV1, id: string | undefined, outpu
 
 const parseDimensionRequest = (dimension: Dimension, indexValue: string, countValue: string | undefined, output: Output): DimensionRequest | null => {
 	const index = parsePositiveInt(indexValue)
-	if (index == null) {
-		output.writeWarn(`${dimension === 'rows' ? 'Row' : 'Column'} index must be a positive integer`)
-		process.exitCode = 2
-		return null
-	}
+	if (index == null) return usageError(output, `${dimension === 'rows' ? 'Row' : 'Column'} index must be a positive integer`)
 
 	const count = parsePositiveInt(countValue ?? '1')
-	if (count == null) {
-		output.writeWarn('--count must be a positive integer')
-		process.exitCode = 2
-		return null
-	}
+	if (count == null) return usageError(output, '--count must be a positive integer')
 
 	return { index, count }
 }
 
 const parseInsertSide = (options: DimensionAddOptions, output: Output): InsertSide | null => {
 	const sides = [options.before === true, options.after === true].filter(Boolean).length
-	if (sides !== 1) {
-		output.writeWarn('Choose exactly one insert side: --before or --after')
-		process.exitCode = 2
-		return null
-	}
+	if (sides !== 1) return usageError(output, 'Choose exactly one insert side: --before or --after')
+
 	return options.before ? 'before' : 'after'
-}
-
-const writeDimensionResult = (output: Output, options: DimensionOptions, result: DimensionCommandResult): void => {
-	if (options.json) {
-		output.writeJson(result)
-		return
-	}
-
-	const verb = result.action === 'add' ? 'Inserted' : 'Removed'
-	const side = result.side ? ` ${result.side}` : ''
-	output.writeHuman(`${verb} ${result.count} ${result.dimension} at #${result.index}${side}`)
 }

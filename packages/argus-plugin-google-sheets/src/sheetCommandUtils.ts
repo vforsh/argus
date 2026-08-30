@@ -2,6 +2,8 @@ import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { formatA1Cell, parseA1Range } from './a1.js'
+import { usageError } from './cliArgs.js'
+import { failCommand, withCommandExit } from './commandExit.js'
 import {
 	buildAcquireLeaseExpression,
 	buildReleaseLeaseExpression,
@@ -48,8 +50,7 @@ export const selectRange = async (
 export const clearGridRange = async (ctx: ArgusPluginContextV1, id: string | undefined, range: string, output: Output): Promise<boolean> => {
 	const bounds = parseA1Range(range)
 	if (!bounds) {
-		output.writeWarn(`Expected an A1 cell range, got ${range}.`)
-		process.exitCode = 2
+		usageError(output, `Expected an A1 cell range, got ${range}.`)
 		return false
 	}
 	for (let row = bounds.startRow; row <= bounds.endRow; row++) {
@@ -90,7 +91,7 @@ export const dispatchKey = async (
 
 	markIndeterminateTimeout(response.message)
 	ctx.host.writeRequestError(response, output)
-	process.exitCode = response.exitCode
+	failCommand(response.exitCode)
 	return false
 }
 
@@ -118,14 +119,15 @@ export const evalInWatcher = async <T>(
 	if (!response.ok) {
 		markIndeterminateTimeout(response.message)
 		ctx.host.writeRequestError(response, output)
-		process.exitCode = response.exitCode
-		return null
+		return failCommand(response.exitCode)
 	}
 	if (response.data.exception) {
 		output.writeWarn(response.data.exception.text)
-		process.exitCode = 1
-		return null
+		return failCommand(1)
 	}
+	// Eval trust boundary: the page returns whatever it returns, and `T` is the caller's claim about
+	// it. Every page script here is authored in this package, so the claim holds by construction --
+	// but nothing validates it at runtime, so a page-script change must update its result type too.
 	return response.data.result as T
 }
 
@@ -194,20 +196,28 @@ export const sleep = (ms: number): Promise<void> => new Promise((resolve) => set
 /**
  * Spec for a sheets command, mirroring `defineWatcherCommand`'s shape.
  *
- * Eighteen `run*` functions hand-rolled the identical pipeline — createOutput, validate
- * flags (warn + exitCode = 2 + return null), evaluate in the watcher, then
- * `if (options.json) writeJson else writeHuman`. Every command added before this landed
- * became copy number nineteen.
+ * Every `run*` function used to hand-roll the identical pipeline — createOutput, validate flags
+ * (warn + exitCode = 2 + return null), evaluate in the watcher, then
+ * `if (options.json) writeJson else writeHuman` — so each new command became one more copy. All 22
+ * now go through {@link runSheetCommand}; a new one should too.
  */
-export type SheetCommandSpec<TOptions extends { json?: boolean }, TResult> = {
+export type SheetCommandSpec<TOptions extends { json?: boolean }, TResult, TValidated = void> = {
 	/**
 	 * Validate flags and derive whatever `execute` needs.
 	 *
-	 * Return `null` to abort; report the reason with {@link usageError} first.
+	 * Return `null` to abort; report the reason with {@link usageError} first, which records the
+	 * usage exit code. Whatever else it returns is handed to `execute` as `validated`, so a parsed
+	 * flag is parsed once.
 	 */
-	validate?: (options: TOptions, output: Output) => unknown | null
+	validate?: (options: TOptions, output: Output) => TValidated | null
 	/** Perform the work. Return `null` to abort after reporting the failure. */
-	execute: (input: { ctx: ArgusPluginContextV1; id: string | undefined; options: TOptions; output: Output }) => Promise<TResult | null>
+	execute: (input: {
+		ctx: ArgusPluginContextV1
+		id: string | undefined
+		options: TOptions
+		output: Output
+		validated: TValidated
+	}) => Promise<TResult | null>
 	/** Render for humans. Defaults to pretty-printed JSON. */
 	formatHuman?: (result: TResult, output: Output, options: TOptions) => void
 	/** Map the result to the JSON payload. Defaults to the result itself. */
@@ -217,35 +227,37 @@ export type SheetCommandSpec<TOptions extends { json?: boolean }, TResult> = {
 /**
  * Run a sheets command through the shared pipeline.
  *
- * Keeps `process.exitCode` writes at the command layer: library helpers below return
- * discriminated results and never set it themselves.
+ * Establishes the {@link withCommandExit} scope, which is the only place `process.exitCode` is
+ * written: helpers below report failures with {@link failCommand} and return `null`.
  */
-export const runSheetCommand = async <TOptions extends { json?: boolean }, TResult>(
+export const runSheetCommand = async <TOptions extends { json?: boolean }, TResult, TValidated = void>(
 	ctx: ArgusPluginContextV1,
 	id: string | undefined,
 	options: TOptions,
-	spec: SheetCommandSpec<TOptions, TResult>,
-): Promise<void> => {
-	const output = ctx.host.createOutput(options)
+	spec: SheetCommandSpec<TOptions, TResult, TValidated>,
+): Promise<void> =>
+	await withCommandExit(async () => {
+		const output = ctx.host.createOutput(options)
 
-	if (spec.validate && spec.validate(options, output) === null) {
-		return
-	}
+		const validated = spec.validate ? spec.validate(options, output) : (undefined as TValidated)
+		if (validated === null) {
+			return
+		}
 
-	const result = await spec.execute({ ctx, id, options, output })
-	if (result == null) {
-		return
-	}
+		const result = await spec.execute({ ctx, id, options, output, validated })
+		if (result == null) {
+			return
+		}
 
-	if (options.json) {
-		output.writeJson(spec.formatJson ? spec.formatJson(result, options) : result)
-		return
-	}
+		if (options.json) {
+			output.writeJson(spec.formatJson ? spec.formatJson(result, options) : result)
+			return
+		}
 
-	if (spec.formatHuman) {
-		spec.formatHuman(result, output, options)
-		return
-	}
+		if (spec.formatHuman) {
+			spec.formatHuman(result, output, options)
+			return
+		}
 
-	output.writeHuman(JSON.stringify(result, null, 2))
-}
+		output.writeHuman(JSON.stringify(result, null, 2))
+	})

@@ -1,4 +1,5 @@
 import type { ArgusOutput as Output } from '@vforsh/argus-plugin-api'
+import { failCommand } from './commandExit.js'
 
 /**
  * Shared CLI argument helpers for the sheets commands.
@@ -9,16 +10,16 @@ import type { ArgusOutput as Output } from '@vforsh/argus-plugin-api'
  * twice at eleven lines each.
  */
 
-/** Report a bad flag and set the usage exit code. */
-export const usageError = (output: Output, message: string): void => {
+/** Report a bad flag and record the usage exit code. Returns `null` so it can be returned directly. */
+export const usageError = (output: Output, message: string): null => {
 	output.writeWarn(message)
-	process.exitCode = 2
+	return failCommand(2)
 }
 
-/** Report a failure that happened after the flags validated. */
-export const runtimeError = (output: Output, message: string): void => {
+/** Report a failure that happened after the flags validated. Returns `null` so it can be returned directly. */
+export const runtimeError = (output: Output, message: string): null => {
 	output.writeWarn(message)
-	process.exitCode = 1
+	return failCommand(1)
 }
 
 /**

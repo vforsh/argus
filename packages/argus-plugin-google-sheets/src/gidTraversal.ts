@@ -1,4 +1,5 @@
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
+import { runtimeError, usageError } from './cliArgs.js'
 import { buildSwitchSheetExpression } from './pageScripts.js'
 import { evalInWatcher, type Output, withSheetLease } from './sheetCommandUtils.js'
 import type { SheetListResult, SheetSwitchResult } from './sheetTabsTypes.js'
@@ -13,11 +14,10 @@ export const collectGidsStepped = async (
 	deadlineMs: number,
 ): Promise<SheetListResult | null> => {
 	if (base.sheets.length > 100 && !options.force) {
-		output.writeWarn(
+		return usageError(
+			output,
 			`Refusing to activate ${base.sheets.length} sheets (guard: 100). Resolve a known name directly, or add --force with --deadline.`,
 		)
-		process.exitCode = 2
-		return null
 	}
 	output.writeWarn(`Resolving ${base.sheets.length} sheet gids with a ${deadlineMs}ms internal deadline; original sheet will be restored.`)
 	const deadlineAt = Date.now() + deadlineMs
@@ -49,10 +49,11 @@ export const collectGidsStepped = async (
 	const traversal = leased?.value
 	if (!traversal) return null
 	if (!traversal.complete) {
-		output.writeWarn(
+		// Partial results are still returned: the sheets resolved so far are correct.
+		runtimeError(
+			output,
 			`Sheet gid traversal deadline reached after ${traversal.sheets.length}/${base.sheets.length}; no browser promise continues switching tabs.`,
 		)
-		process.exitCode = 1
 	}
 	const resolved = new Map(traversal.sheets.map((sheet) => [sheet.index, sheet]))
 	return { ...base, sheets: base.sheets.map((sheet) => resolved.get(sheet.index) ?? sheet) }

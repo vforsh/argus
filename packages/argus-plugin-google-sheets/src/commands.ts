@@ -1,4 +1,5 @@
 import { parsePositiveInt, usageError } from './cliArgs.js'
+import { failCommand } from './commandExit.js'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { parseA1Range } from './a1.js'
 import { registerSheetApplyCommand } from './applyCommands.js'
@@ -204,9 +205,8 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 
 const runList = (ctx: ArgusPluginContextV1, id: string | undefined, options: ListOptions): Promise<void> =>
 	runSheetCommand(ctx, id, options, {
-		validate: (opts, output) => requireDeadline(opts, output),
-		execute: async ({ output }) => {
-			const deadlineMs = parseTimeoutMs(options.deadline, 20_000)!
+		validate: requireDeadline,
+		execute: async ({ output, validated: deadlineMs }) => {
 			const base = await evalInWatcher<SheetListResult>(ctx, id, buildListSheetsExpression({ withGid: false }), output)
 			if (!base) return null
 			return options.withGid ? await collectGidsStepped(ctx, id, output, base, options, Math.min(25_000, deadlineMs)) : base
@@ -216,9 +216,8 @@ const runList = (ctx: ArgusPluginContextV1, id: string | undefined, options: Lis
 
 const runInfo = (ctx: ArgusPluginContextV1, id: string | undefined, options: InfoOptions): Promise<void> =>
 	runSheetCommand(ctx, id, options, {
-		validate: (opts, output) => requireDeadline(opts, output),
-		execute: async ({ output }) => {
-			const deadlineMs = parseTimeoutMs(options.deadline, 20_000)!
+		validate: requireDeadline,
+		execute: async ({ output, validated: deadlineMs }) => {
 			const base = await evalInWatcher<SheetInfoResult>(ctx, id, buildInfoSheetsExpression({ withGid: false }), output)
 			if (!base) return null
 			const list = options.withGid ? await collectGidsStepped(ctx, id, output, base, options, Math.min(25_000, deadlineMs)) : base
@@ -229,198 +228,225 @@ const runInfo = (ctx: ArgusPluginContextV1, id: string | undefined, options: Inf
 	})
 
 /** Shared `--deadline` guard: three commands accept the same flag with the same message. */
-const requireDeadline = (options: { deadline?: string }, output: Output): number | null => {
-	const deadlineMs = parseTimeoutMs(options.deadline, 20_000)
-	if (deadlineMs == null) {
-		usageError(output, '--deadline must be a positive duration such as 10s or 20s')
-		return null
-	}
-	return deadlineMs
-}
+const requireDeadline = (options: { deadline?: string }, output: Output): number | null =>
+	parseTimeoutMs(options.deadline, 20_000) ?? usageError(output, '--deadline must be a positive duration such as 10s or 20s')
 
-const runResolve = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, options: CommonOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const leased = await withSheetLease(
-		ctx,
-		id,
-		output,
-		{ operation: `resolve sheet ${sheet}`, restore: true },
-		async () => await resolveSheetTarget(ctx, id, sheet, output),
-	)
-	const result = leased?.value
-	if (!result) return
-	const payload = {
-		...result,
-		sheet: { ...result.sheet, active: (leased.release?.browserCurrentGid ?? result.browser.restoredGid) === result.target.gid },
-		browser: {
-			...result.browser,
-			restoredGid: leased.release?.browserCurrentGid ?? result.browser.restoredGid,
-			restoredUrl: leased.release?.browserCurrentUrl ?? result.browser.restoredUrl,
+const runResolve = (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, options: CommonOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		execute: async ({ output }) => {
+			const leased = await withSheetLease(
+				ctx,
+				id,
+				output,
+				{ operation: `resolve sheet ${sheet}`, restore: true },
+				async () => await resolveSheetTarget(ctx, id, sheet, output),
+			)
+			const result = leased?.value
+			if (!result) return null
+			// The release reports where the browser actually landed, which beats the pre-restore guess.
+			return {
+				...result,
+				sheet: { ...result.sheet, active: (leased.release?.browserCurrentGid ?? result.browser.restoredGid) === result.target.gid },
+				browser: {
+					...result.browser,
+					restoredGid: leased.release?.browserCurrentGid ?? result.browser.restoredGid,
+					restoredUrl: leased.release?.browserCurrentUrl ?? result.browser.restoredUrl,
+				},
+			}
 		},
-	}
-	if (options.json) output.writeJson(payload)
-	else output.writeHuman(`${payload.target.name}\t${payload.target.gid}\t${payload.target.url}`)
+		formatHuman: (payload, output) => output.writeHuman(`${payload.target.name}\t${payload.target.gid}\t${payload.target.url}`),
+	})
+
+const runSwitch = (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, options: CommonOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		execute: ({ output }) => leasedEval<SheetSwitchResult>(ctx, id, output, `switch to sheet ${sheet}`, false, buildSwitchSheetExpression(sheet)),
+		formatHuman: (result, output) => output.writeHuman(`Switched to ${formatSheetLabel(result.sheet)}`),
+	})
+
+const runAdd = (ctx: ArgusPluginContextV1, id: string | undefined, options: CommonOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		execute: ({ output }) => leasedEval<SheetAddResult>(ctx, id, output, 'add sheet', false, buildAddSheetExpression()),
+		formatHuman: (result, output) => output.writeHuman(`Added ${formatSheetLabel(result.sheet)}`),
+	})
+
+const runRemove = (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, options: RemoveOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output) => (opts.force ? true : usageError(output, 'Refusing to remove a sheet without --force')),
+		execute: ({ output }) => leasedEval<SheetRemoveResult>(ctx, id, output, `remove sheet ${sheet}`, false, buildRemoveSheetExpression(sheet)),
+		formatHuman: (result, output) => output.writeHuman(`Removed ${formatSheetLabel(result.removed)}`),
+	})
+
+const runRename = (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, name: string, options: CommonOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		execute: ({ output }) =>
+			leasedEval<SheetRenameResult>(ctx, id, output, `rename sheet ${sheet}`, false, buildRenameSheetExpression(sheet, name)),
+		formatHuman: (result, output) => output.writeHuman(`Renamed ${formatSheetLabel(result.before)} to ${formatSheetLabel(result.sheet)}`),
+	})
+
+const runMove = (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, index: string, options: CommonOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		execute: ({ output }) => leasedEval<SheetMoveResult>(ctx, id, output, `move sheet ${sheet}`, false, buildMoveSheetExpression(sheet, index)),
+		formatHuman: (result, output) => output.writeHuman(`Moved ${formatSheetLabel(result.sheet)} to #${result.sheet.index}`),
+	})
+
+const runRead = (ctx: ArgusPluginContextV1, id: string | undefined, options: ReadOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		execute: async ({ output }) => {
+			const data = await readSheetCsv(ctx, id, options, output)
+			return data ? { data, rows: parseCsv(data.csv) } : null
+		},
+		formatJson: ({ data, rows }) => ({ ...withoutCsv(data), rows }),
+		formatHuman: ({ data, rows }, output, opts) => {
+			// `--format json` prints the same payload without opting into the `--json` automation contract.
+			if (opts.format === 'json') return output.writeJson({ ...withoutCsv(data), rows })
+			if (opts.format === 'csv') return output.writeHuman(data.csv)
+			if (opts.format === 'tsv') return output.writeHuman(toTsv(rows))
+			return output.writeHuman(formatTable(rows))
+		},
+	})
+
+/** Data-independent `find` flags, parsed once before the export round-trip. */
+type FindPlan = {
+	limit: number
+	maxRow: number
+	deadlineMs: number
+	bounds: NonNullable<ReturnType<typeof parseA1Range>> | null
 }
 
-const runSwitch = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, options: CommonOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const result = await leasedEval<SheetSwitchResult>(ctx, id, output, `switch to sheet ${sheet}`, false, buildSwitchSheetExpression(sheet))
-	if (!result) return
+const runFind = (ctx: ArgusPluginContextV1, id: string | undefined, text: string, options: FindOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output): FindPlan | null => {
+			const limit = parsePositiveInt(opts.limit, { fallback: 20 })
+			if (limit == null) return usageError(output, '--limit must be a positive integer')
 
-	if (options.json) output.writeJson(result)
-	else output.writeHuman(`Switched to ${formatSheetLabel(result.sheet)}`)
-}
+			const maxRow = parsePositiveInt(opts.maxRow, { fallback: 5_000 })
+			if (maxRow == null) return usageError(output, '--max-row must be a positive integer')
 
-const runAdd = async (ctx: ArgusPluginContextV1, id: string | undefined, options: CommonOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const result = await leasedEval<SheetAddResult>(ctx, id, output, 'add sheet', false, buildAddSheetExpression())
-	if (!result) return
+			const deadlineMs = parseTimeoutMs(opts.locateTimeout, 20_000)
+			if (deadlineMs == null) return usageError(output, '--locate-timeout must be a positive duration such as 5s or 20s')
 
-	if (options.json) output.writeJson(result)
-	else output.writeHuman(`Added ${formatSheetLabel(result.sheet)}`)
-}
+			const bounds = opts.range ? parseA1Range(opts.range) : null
+			if (opts.range && !bounds) return usageError(output, '--range must be a physical A1 cell range for coordinate-safe find')
 
-const runRemove = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, options: RemoveOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	if (!options.force) {
-		output.writeWarn('Refusing to remove a sheet without --force')
-		process.exitCode = 2
-		return
-	}
+			return { limit, maxRow, deadlineMs, bounds }
+		},
+		execute: async ({ output, validated }) => {
+			const data = await readSheetCsv(ctx, id, options, output)
+			if (!data) return null
 
-	const result = await leasedEval<SheetRemoveResult>(ctx, id, output, `remove sheet ${sheet}`, false, buildRemoveSheetExpression(sheet))
-	if (!result) return
+			const rows = parseCsv(data.csv)
+			// `--column` resolves against the header row, so it can only be checked once the export lands.
+			const columnIndex = resolveFindColumn(options.column, rows[0] ?? [])
+			if (columnIndex === false) return usageError(output, `Unknown --column: ${options.column}`)
 
-	if (options.json) output.writeJson(result)
-	else output.writeHuman(`Removed ${formatSheetLabel(result.removed)}`)
-}
-
-const runRename = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, name: string, options: CommonOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const result = await leasedEval<SheetRenameResult>(ctx, id, output, `rename sheet ${sheet}`, false, buildRenameSheetExpression(sheet, name))
-	if (!result) return
-
-	if (options.json) output.writeJson(result)
-	else output.writeHuman(`Renamed ${formatSheetLabel(result.before)} to ${formatSheetLabel(result.sheet)}`)
-}
-
-const runMove = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, index: string, options: CommonOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const result = await leasedEval<SheetMoveResult>(ctx, id, output, `move sheet ${sheet}`, false, buildMoveSheetExpression(sheet, index))
-	if (!result) return
-
-	if (options.json) output.writeJson(result)
-	else output.writeHuman(`Moved ${formatSheetLabel(result.sheet)} to #${result.sheet.index}`)
-}
-
-const runRead = async (ctx: ArgusPluginContextV1, id: string | undefined, options: ReadOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const data = await readSheetCsv(ctx, id, options, output)
-	if (!data) return
-
-	const rows = parseCsv(data.csv)
-	const format = options.json ? 'json' : (options.format ?? 'table')
-	if (format === 'json') {
-		output.writeJson({ ...withoutCsv(data), rows })
-	} else if (format === 'csv') {
-		output.writeHuman(data.csv)
-	} else if (format === 'tsv') {
-		output.writeHuman(toTsv(rows))
-	} else {
-		output.writeHuman(formatTable(rows))
-	}
-}
-
-const runFind = async (ctx: ArgusPluginContextV1, id: string | undefined, text: string, options: FindOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const data = await readSheetCsv(ctx, id, options, output)
-	if (!data) return
-
-	const rows = parseCsv(data.csv)
-	const limit = parsePositiveInt(options.limit, { fallback: 20 })
-	if (limit == null) {
-		output.writeWarn('--limit must be a positive integer')
-		process.exitCode = 2
-		return
-	}
-
-	const columnIndex = resolveFindColumn(options.column, rows[0] ?? [])
-	if (columnIndex === false) {
-		output.writeWarn(`Unknown --column: ${options.column}`)
-		process.exitCode = 2
-		return
-	}
-
-	const needle = options.ignoreCase ? text.toLowerCase() : text
-	const candidates = findExportMatches(rows, needle, { columnIndex, ignoreCase: options.ignoreCase ?? false, limit })
-	const maxRowFlag = parsePositiveInt(options.maxRow, { fallback: 5_000 })
-	const deadlineMs = parseTimeoutMs(options.locateTimeout, 20_000)
-	if (maxRowFlag == null) return usageError(output, '--max-row must be a positive integer')
-	if (deadlineMs == null) return usageError(output, '--locate-timeout must be a positive duration such as 5s or 20s')
-	const bounds = options.range ? parseA1Range(options.range) : null
-	if (options.range && !bounds) return usageError(output, '--range must be a physical A1 cell range for coordinate-safe find')
-	const startRow = bounds ? bounds.startRow + 1 : 1
-	const maxRow = bounds ? Math.min(maxRowFlag, bounds.endRow + 1) : maxRowFlag
-	const lastColumn = bounds?.endColumn ?? Math.max(0, ...rows.map((row) => row.length - 1))
-	let locator: ExactLocatorResult<ExactCellMatch> = { ok: true, matches: [], scannedRows: 0, complete: true, reason: 'found' }
-	if (candidates.length > 0) {
-		const internalDeadline = Math.min(25_000, deadlineMs)
-		const located = await evalInWatcher<ExactLocatorResult<ExactCellMatch>>(
-			ctx,
-			id,
-			buildLocateCellsExpression({
-				gid: data.targetGid,
-				startRow,
-				maxRow,
-				firstColumn: bounds?.startColumn ?? 0,
-				lastColumn,
+			const ignoreCase = options.ignoreCase ?? false
+			const needle = ignoreCase ? text.toLowerCase() : text
+			const candidates = findExportMatches(rows, needle, { columnIndex, ignoreCase, limit: validated.limit })
+			const { bounds } = validated
+			const locator = await locateExactCells(ctx, id, output, {
+				candidates,
+				data,
 				needle,
 				columnIndex,
-				ignoreCase: options.ignoreCase ?? false,
-				limit,
-				expectedMatches: candidates.length,
-				deadlineMs: internalDeadline,
-			}),
-			output,
-			{ evalTimeoutMs: internalDeadline + 2_000, requestTimeoutMs: internalDeadline + 5_000 },
-		)
-		if (!located) return
-		locator = located
-		if (!locator.complete) process.exitCode = 1
-	}
+				ignoreCase,
+				limit: validated.limit,
+				deadlineMs: validated.deadlineMs,
+				startRow: bounds ? bounds.startRow + 1 : 1,
+				maxRow: bounds ? Math.min(validated.maxRow, bounds.endRow + 1) : validated.maxRow,
+				firstColumn: bounds?.startColumn ?? 0,
+				lastColumn: bounds?.endColumn ?? Math.max(0, ...rows.map((row) => row.length - 1)),
+			})
+			if (!locator) return null
 
-	if (options.json) {
-		output.writeJson({
+			return { data, candidates, locator }
+		},
+		formatJson: ({ data, candidates, locator }) => ({
 			...withoutCsv(data),
 			query: text,
 			candidateMatches: candidates,
 			matches: locator.matches,
 			locator: { complete: locator.complete, reason: locator.reason, scannedRows: locator.scannedRows },
-		})
-		return
+		}),
+		formatHuman: ({ locator }, output) => {
+			for (const match of locator.matches) {
+				output.writeHuman(`${match.a1}\t${match.value}`)
+			}
+			if (locator.matches.length === 0) output.writeHuman('No matches')
+			if (!locator.complete) {
+				output.writeWarn(`Exact locator incomplete (${locator.reason}); no export row was presented as a physical A1 coordinate.`)
+			}
+		},
+	})
+
+/**
+ * Turn export-row candidates into physical A1 coordinates.
+ *
+ * Skips the browser round-trip entirely when the export found nothing. An incomplete scan is not a
+ * hard failure -- the matches found so far are still printed -- but it records exit code 1 so a
+ * script can tell a partial answer from a complete one.
+ */
+const locateExactCells = async (
+	ctx: ArgusPluginContextV1,
+	id: string | undefined,
+	output: Output,
+	input: {
+		candidates: unknown[]
+		data: { targetGid: string }
+		needle: string
+		columnIndex: number | null
+		ignoreCase: boolean
+		limit: number
+		deadlineMs: number
+		startRow: number
+		maxRow: number
+		firstColumn: number
+		lastColumn: number
+	},
+): Promise<ExactLocatorResult<ExactCellMatch> | null> => {
+	if (input.candidates.length === 0) {
+		return { ok: true, matches: [], scannedRows: 0, complete: true, reason: 'found' }
 	}
 
-	for (const match of locator.matches) {
-		output.writeHuman(`${match.a1}\t${match.value}`)
-	}
-	if (locator.matches.length === 0) output.writeHuman('No matches')
-	if (!locator.complete) output.writeWarn(`Exact locator incomplete (${locator.reason}); no export row was presented as a physical A1 coordinate.`)
-}
-
-const runSelect = async (ctx: ArgusPluginContextV1, id: string | undefined, range: string, options: CommonOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const leased = await withSheetLease(
+	const internalDeadline = Math.min(25_000, input.deadlineMs)
+	const located = await evalInWatcher<ExactLocatorResult<ExactCellMatch>>(
 		ctx,
 		id,
+		buildLocateCellsExpression({
+			gid: input.data.targetGid,
+			startRow: input.startRow,
+			maxRow: input.maxRow,
+			firstColumn: input.firstColumn,
+			lastColumn: input.lastColumn,
+			needle: input.needle,
+			columnIndex: input.columnIndex,
+			ignoreCase: input.ignoreCase,
+			limit: input.limit,
+			expectedMatches: input.candidates.length,
+			deadlineMs: internalDeadline,
+		}),
 		output,
-		{ operation: `select ${range}`, restore: false },
-		async () => await selectRange(ctx, id, range, output),
+		{ evalTimeoutMs: internalDeadline + 2_000, requestTimeoutMs: internalDeadline + 5_000 },
 	)
-	const result = leased?.value
-	if (!result) return
-	if (options.json) output.writeJson(result)
-	else output.writeHuman(`Selected ${result.range}`)
+	if (!located) return null
+
+	if (!located.complete) failCommand(1)
+	return located
 }
+
+const runSelect = (ctx: ArgusPluginContextV1, id: string | undefined, range: string, options: CommonOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		execute: async ({ output }) => {
+			const leased = await withSheetLease(
+				ctx,
+				id,
+				output,
+				{ operation: `select ${range}`, restore: false },
+				async () => await selectRange(ctx, id, range, output),
+			)
+			return leased?.value ?? null
+		},
+		formatHuman: (result, output) => output.writeHuman(`Selected ${result.range}`),
+	})
 
 const withoutCsv = (
 	data: SheetCsvResult & {

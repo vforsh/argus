@@ -1,4 +1,5 @@
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
+import { failCommand } from './commandExit.js'
 import { a1ForOffset } from './a1.js'
 import { buildTypedClipboardPayload } from './typedClipboard.js'
 import { buildVerifyClearExpression, type SheetWriteVerificationResult } from './mutationPageScripts.js'
@@ -37,7 +38,7 @@ export const setTypedRange = async (
 	if (!(await materializeDecimalNumbers(ctx, id, output, input.range, input.values))) return null
 	const verification = await verifyTypedRange(ctx, id, output, prepared.verificationRange, input.values)
 	if (!verification) return null
-	if (verification.length > 0) process.exitCode = 1
+	if (verification.length > 0) failCommand(1)
 	return {
 		ok: true,
 		sheet: input.sheet,
@@ -93,7 +94,7 @@ export const clearTypedRange = async (
 		actual: { value: mismatch.actual, formatted: mismatch.actual },
 		reason: 'expected clear',
 	}))
-	if (!verification.verified) process.exitCode = 1
+	if (!verification.verified) failCommand(1)
 	return { ok: true, sheet: input.sheet, range: input.range, method: 'ui-clear', verified: verification.verified, mismatches }
 }
 

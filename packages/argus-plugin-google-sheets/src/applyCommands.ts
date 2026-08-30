@@ -12,7 +12,7 @@ import { parseSheetManifest, type SheetManifest, type SheetManifestOperation } f
 import { readTypedMatrixFromClipboard } from './rawCellValues.js'
 import { buildSheetSchema } from './schema.js'
 import { buildReadCsvExpression, type SheetCsvResult } from './sheetDataPageScripts.js'
-import { evalInWatcher, renewSheetLease, switchSheetTarget, type Output, withSheetLease } from './sheetCommandUtils.js'
+import { evalInWatcher, renewSheetLease, runSheetCommand, switchSheetTarget, type Output, withSheetLease } from './sheetCommandUtils.js'
 import { clearTypedRange, setTypedRange, type TypedMutationResult } from './typedMutationRuntime.js'
 import { compareTypedMatrix, shiftedRawValueMatches, type RawCellValue } from './typedValues.js'
 
@@ -55,52 +55,61 @@ export const registerSheetApplyCommand = (ctx: ArgusPluginContextV1, sheets: Com
 		.action(async (id: string | undefined, options: ApplyOptions) => runApply(ctx, id, options))
 }
 
-const runApply = async (ctx: ArgusPluginContextV1, id: string | undefined, options: ApplyOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	if ([options.file != null, options.stdin === true].filter(Boolean).length !== 1)
-		return usageError(output, 'Provide exactly one of --file or --stdin')
-	if ([options.dryRun === true, options.yes === true].filter(Boolean).length !== 1)
-		return usageError(output, 'Choose exactly one of --dry-run or --yes; mutation never proceeds without --yes')
-	const maxRow = Number(options.maxRow)
-	if (!Number.isInteger(maxRow) || maxRow < 1) return usageError(output, '--max-row must be a positive integer')
-	const manifest = await loadManifest(options, output)
-	if (!manifest) return
-	const journalPath = resolve(options.journal ?? (options.file ? `${options.file}.journal.json` : 'sheets-apply.journal.json'))
-	const rollbackPath = resolve(options.rollback ?? (options.file ? `${options.file}.rollback.json` : 'sheets-apply.rollback.json'))
+const runApply = (ctx: ArgusPluginContextV1, id: string | undefined, options: ApplyOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output) => {
+			if ([opts.file != null, opts.stdin === true].filter(Boolean).length !== 1) {
+				return usageError(output, 'Provide exactly one of --file or --stdin')
+			}
+			if ([opts.dryRun === true, opts.yes === true].filter(Boolean).length !== 1) {
+				return usageError(output, 'Choose exactly one of --dry-run or --yes; mutation never proceeds without --yes')
+			}
+			const maxRow = Number(opts.maxRow)
+			if (!Number.isInteger(maxRow) || maxRow < 1) return usageError(output, '--max-row must be a positive integer')
+			return maxRow
+		},
+		execute: async ({ output, validated: maxRow }) => {
+			const manifest = await loadManifest(options, output)
+			if (!manifest) return null
 
-	try {
-		const leased = await withSheetLease(
-			ctx,
-			id,
-			output,
-			{ operation: options.dryRun ? 'sheets apply dry-run' : 'sheets apply', restore: true, ttlMs: 300_000 },
-			async (lease) => {
-				const adapter = createPlannerAdapter(ctx, id, output, maxRow)
-				const plan = await planSheetManifest(manifest, adapter)
-				if (options.dryRun) return { plan, execution: null }
-				const execution = await executePlan(ctx, id, output, lease.token, plan, adapter, journalPath, rollbackPath)
-				return { plan, execution }
-			},
-		)
-		if (!leased) return
-		const { plan, execution } = leased.value
-		const payload = {
-			ok: execution?.journal.status !== 'partial' && execution?.journal.status !== 'failed',
-			dryRun: options.dryRun === true,
-			nonAtomic: true,
-			snapshot: plan.snapshot,
-			steps: plan.steps.map(formatPlanStep),
-			journal: execution ? journalPath : null,
-			rollback: execution ? rollbackPath : null,
-			status: execution?.journal.status ?? 'planned',
-			browserRestoredUrl: leased.release?.browserCurrentUrl ?? null,
-		}
-		if (options.json) output.writeJson(payload)
-		else writeApplyHuman(output, payload)
-	} catch (error) {
-		runtimeError(output, error instanceof Error ? error.message : String(error))
-	}
-}
+			const journalPath = resolve(options.journal ?? (options.file ? `${options.file}.journal.json` : 'sheets-apply.journal.json'))
+			const rollbackPath = resolve(options.rollback ?? (options.file ? `${options.file}.rollback.json` : 'sheets-apply.rollback.json'))
+
+			try {
+				const leased = await withSheetLease(
+					ctx,
+					id,
+					output,
+					{ operation: options.dryRun ? 'sheets apply dry-run' : 'sheets apply', restore: true, ttlMs: 300_000 },
+					async (lease) => {
+						const adapter = createPlannerAdapter(ctx, id, output, maxRow)
+						const plan = await planSheetManifest(manifest, adapter)
+						if (options.dryRun) return { plan, execution: null }
+						const execution = await executePlan(ctx, id, output, lease.token, plan, adapter, journalPath, rollbackPath)
+						return { plan, execution }
+					},
+				)
+				if (!leased) return null
+
+				const { plan, execution } = leased.value
+				return {
+					ok: execution?.journal.status !== 'partial' && execution?.journal.status !== 'failed',
+					dryRun: options.dryRun === true,
+					nonAtomic: true,
+					snapshot: plan.snapshot,
+					steps: plan.steps.map(formatPlanStep),
+					journal: execution ? journalPath : null,
+					rollback: execution ? rollbackPath : null,
+					status: execution?.journal.status ?? 'planned',
+					browserRestoredUrl: leased.release?.browserCurrentUrl ?? null,
+				}
+			} catch (error) {
+				// The planner and executor signal preflight and step failures by throwing.
+				return runtimeError(output, error instanceof Error ? error.message : String(error))
+			}
+		},
+		formatHuman: (payload, output) => writeApplyHuman(output, payload),
+	})
 
 const createPlannerAdapter = (ctx: ArgusPluginContextV1, id: string | undefined, output: Output, maxRow: number): ApplyPlannerAdapter => ({
 	resolveSheet: async (sheet) => {

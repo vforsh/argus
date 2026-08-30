@@ -1,4 +1,5 @@
 import { parsePositiveInt, runtimeError, usageError } from './cliArgs.js'
+import { failCommand } from './commandExit.js'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 import { parseCsv } from './csv.js'
@@ -13,7 +14,7 @@ import {
 	type ExportRowCandidate,
 } from './queryModel.js'
 import { buildSheetSchema, type SheetSchema } from './schema.js'
-import { evalInWatcher, type Output } from './sheetCommandUtils.js'
+import { evalInWatcher, type Output, runSheetCommand } from './sheetCommandUtils.js'
 import { readExactPhysicalRow, readSheetCsv } from './sheetRead.js'
 
 type InspectionOptions = {
@@ -63,88 +64,100 @@ export const registerSheetInspectionCommands = (ctx: ArgusPluginContextV1, sheet
 		.action(async (id: string | undefined, options: QueryOptions) => runQuery(ctx, id, options))
 }
 
-const runSchema = async (ctx: ArgusPluginContextV1, id: string | undefined, options: InspectionOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const headerRow = parsePositiveInt(options.headerRow ?? '1', { flag: '--header-row', output })
-	if (headerRow == null) return
-	const schemaResult = await loadSchema(ctx, id, options, headerRow, output)
-	if (!schemaResult) return
-	const payload = {
-		ok: true,
-		targetSheet: schemaResult.data.targetSheet,
-		targetGid: schemaResult.data.targetGid,
-		targetUrl: schemaResult.data.targetUrl,
-		browserCurrentUrl: schemaResult.data.browserCurrentUrl,
-		browserRestoredUrl: schemaResult.data.browserRestoredUrl,
-		...schemaResult.schema,
-	}
-	if (options.json) output.writeJson(payload)
-	else writeSchemaHuman(output, payload)
-}
-
-const runQuery = async (ctx: ArgusPluginContextV1, id: string | undefined, options: QueryOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const headerRow = parsePositiveInt(options.headerRow ?? '1', { flag: '--header-row', output })
-	const limit = parsePositiveInt(options.limit ?? '100', { flag: '--limit', output })
-	if (headerRow == null || limit == null) return
-	const schemaResult = await loadSchema(ctx, id, options, headerRow, output)
-	if (!schemaResult) return
-	const predicate = parseWhereExpression(options.where, schemaResult.schema)
-	if (typeof predicate === 'string') return usageError(output, predicate)
-	const selected = parseSelectHeaders(options.select, schemaResult.schema)
-	if (typeof selected === 'string') return usageError(output, selected)
-
-	const exported = await readSheetCsv(ctx, id, { sheet: options.sheet, gid: options.gid }, output)
-	if (!exported) return
-	const rows = parseCsv(exported.csv)
-	const headerExportIndex = findExportHeaderIndex(rows, schemaResult.schema)
-	if (headerExportIndex < 0) return runtimeError(output, `Physical header row ${headerRow} was not found in the whole-sheet export.`)
-	const allMatches = queryExportRows(rows, headerExportIndex, predicate)
-	const expectedCount = options.expectUnique
-		? 1
-		: options.expectCount == null
-			? null
-			: parsePositiveInt(options.expectCount, { flag: '--expect-count', output })
-	if (options.expectCount != null && expectedCount == null) return
-	if (expectedCount != null && allMatches.length !== expectedCount) {
-		return runtimeError(output, `Query assertion failed: expected ${expectedCount} match(es), found ${allMatches.length}.`)
-	}
-
-	const emitted = allMatches.slice(0, limit)
-	let located: ExactLocatorResult<ExactRowMatch> | null = null
-	if (options.locate && emitted.length > 0) {
-		located = await locateRows(ctx, id, output, exported.targetGid, headerRow + 1, emitted, schemaResult.schema.headers.length, options)
-		if (!located) return
-		if (!located.complete) process.exitCode = 1
-	}
-	const byExportRow = new Map(located?.matches.map((match) => [match.exportRow, match]) ?? [])
-	const resultRows = emitted.map((candidate) => {
-		const exact = byExportRow.get(candidate.exportRow)
-		return {
-			exportRow: candidate.exportRow,
-			location: exact ? { sheetRow: exact.sheetRow, a1: exact.a1, exactVerified: true } : null,
-			values: projectCandidate(candidate, selected),
-		}
+const runSchema = (ctx: ArgusPluginContextV1, id: string | undefined, options: InspectionOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output) => parsePositiveInt(opts.headerRow ?? '1', { flag: '--header-row', output }),
+		execute: async ({ output, validated: headerRow }) => {
+			const schemaResult = await loadSchema(ctx, id, options, headerRow, output)
+			if (!schemaResult) return null
+			return {
+				ok: true,
+				targetSheet: schemaResult.data.targetSheet,
+				targetGid: schemaResult.data.targetGid,
+				targetUrl: schemaResult.data.targetUrl,
+				browserCurrentUrl: schemaResult.data.browserCurrentUrl,
+				browserRestoredUrl: schemaResult.data.browserRestoredUrl,
+				...schemaResult.schema,
+			}
+		},
+		formatHuman: (payload, output) => writeSchemaHuman(output, payload),
 	})
-	const payload = {
-		ok: located?.complete !== false,
-		targetSheet: exported.targetSheet,
-		targetGid: exported.targetGid,
-		targetUrl: exported.targetUrl,
-		browserCurrentUrl: exported.browserCurrentUrl,
-		browserRestoredUrl: exported.browserRestoredUrl,
-		headerRow,
-		where: options.where,
-		select: selected.map((header) => header.original),
-		matchCount: allMatches.length,
-		emittedCount: resultRows.length,
-		truncated: allMatches.length > resultRows.length,
-		locator: located ? { scannedRows: located.scannedRows, complete: located.complete, reason: located.reason } : null,
-		rows: resultRows,
-	}
-	if (options.json) output.writeJson(payload)
-	else writeQueryHuman(output, payload)
-}
+
+const runQuery = (ctx: ArgusPluginContextV1, id: string | undefined, options: QueryOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output) => {
+			// Both flags are parsed before either is checked so a run with two bad flags reports both.
+			const headerRow = parsePositiveInt(opts.headerRow ?? '1', { flag: '--header-row', output })
+			const limit = parsePositiveInt(opts.limit ?? '100', { flag: '--limit', output })
+			return headerRow == null || limit == null ? null : { headerRow, limit }
+		},
+		execute: async ({ output, validated: { headerRow, limit } }) => {
+			const schemaResult = await loadSchema(ctx, id, options, headerRow, output)
+			if (!schemaResult) return null
+
+			const predicate = parseWhereExpression(options.where, schemaResult.schema)
+			if (typeof predicate === 'string') return usageError(output, predicate)
+
+			const selected = parseSelectHeaders(options.select, schemaResult.schema)
+			if (typeof selected === 'string') return usageError(output, selected)
+
+			const exported = await readSheetCsv(ctx, id, { sheet: options.sheet, gid: options.gid }, output)
+			if (!exported) return null
+
+			const rows = parseCsv(exported.csv)
+			const headerExportIndex = findExportHeaderIndex(rows, schemaResult.schema)
+			if (headerExportIndex < 0) {
+				return runtimeError(output, `Physical header row ${headerRow} was not found in the whole-sheet export.`)
+			}
+
+			const allMatches = queryExportRows(rows, headerExportIndex, predicate)
+			const expectedCount = options.expectUnique
+				? 1
+				: options.expectCount == null
+					? null
+					: parsePositiveInt(options.expectCount, { flag: '--expect-count', output })
+			if (options.expectCount != null && expectedCount == null) return null
+			if (expectedCount != null && allMatches.length !== expectedCount) {
+				return runtimeError(output, `Query assertion failed: expected ${expectedCount} match(es), found ${allMatches.length}.`)
+			}
+
+			const emitted = allMatches.slice(0, limit)
+			let located: ExactLocatorResult<ExactRowMatch> | null = null
+			if (options.locate && emitted.length > 0) {
+				located = await locateRows(ctx, id, output, exported.targetGid, headerRow + 1, emitted, schemaResult.schema.headers.length, options)
+				if (!located) return null
+				if (!located.complete) failCommand(1)
+			}
+
+			const byExportRow = new Map(located?.matches.map((match) => [match.exportRow, match]) ?? [])
+			const resultRows = emitted.map((candidate) => {
+				const exact = byExportRow.get(candidate.exportRow)
+				return {
+					exportRow: candidate.exportRow,
+					location: exact ? { sheetRow: exact.sheetRow, a1: exact.a1, exactVerified: true } : null,
+					values: projectCandidate(candidate, selected),
+				}
+			})
+
+			return {
+				ok: located?.complete !== false,
+				targetSheet: exported.targetSheet,
+				targetGid: exported.targetGid,
+				targetUrl: exported.targetUrl,
+				browserCurrentUrl: exported.browserCurrentUrl,
+				browserRestoredUrl: exported.browserRestoredUrl,
+				headerRow,
+				where: options.where,
+				select: selected.map((header) => header.original),
+				matchCount: allMatches.length,
+				emittedCount: resultRows.length,
+				truncated: allMatches.length > resultRows.length,
+				locator: located ? { scannedRows: located.scannedRows, complete: located.complete, reason: located.reason } : null,
+				rows: resultRows,
+			}
+		},
+		formatHuman: (payload, output) => writeQueryHuman(output, payload),
+	})
 
 const loadSchema = async (
 	ctx: ArgusPluginContextV1,
@@ -171,10 +184,8 @@ const locateRows = async (
 	const maxRow = parsePositiveInt(options.maxRow ?? '5000', { flag: '--max-row', output })
 	const deadlineMs = parseTimeoutMs(options.locateTimeout, 20_000)
 	if (maxRow == null) return null
-	if (deadlineMs == null) {
-		usageError(output, '--locate-timeout must be a positive duration such as 5s or 20s')
-		return null
-	}
+	if (deadlineMs == null) return usageError(output, '--locate-timeout must be a positive duration such as 5s or 20s')
+
 	const internalDeadlineMs = Math.min(25_000, deadlineMs)
 	return await evalInWatcher<ExactLocatorResult<ExactRowMatch>>(
 		ctx,

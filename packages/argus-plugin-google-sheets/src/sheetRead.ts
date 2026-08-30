@@ -1,4 +1,5 @@
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
+import { usageError } from './cliArgs.js'
 import { parseCsv } from './csv.js'
 import { buildReadCsvExpression, type SheetCsvResult } from './sheetDataPageScripts.js'
 import type { SheetResolveResult } from './pageScripts.js'
@@ -34,11 +35,7 @@ export const resolveReadTarget = async (
 	options: SheetReadTargetOptions,
 	output: Output,
 ): Promise<ResolvedReadTarget | null> => {
-	if (options.gid && options.sheet) {
-		output.writeWarn('Use only one sheet target: --gid or --sheet')
-		process.exitCode = 2
-		return null
-	}
+	if (options.gid && options.sheet) return usageError(output, 'Use only one sheet target: --gid or --sheet')
 	if (!options.sheet) {
 		return {
 			name: null,

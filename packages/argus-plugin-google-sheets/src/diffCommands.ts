@@ -1,4 +1,5 @@
 import { parsePositiveInt, runtimeError, usageError } from './cliArgs.js'
+import { failCommand } from './commandExit.js'
 import { readFile, writeFile } from 'node:fs/promises'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
@@ -8,7 +9,7 @@ import { buildLocateRowsExpression, type ExactLocatorResult, type ExactRowMatch 
 import { parseTimeoutMs } from './mutationCommands.js'
 import { findExportHeaderIndex, type ExportRowCandidate } from './queryModel.js'
 import { buildSheetSchema, resolveHeader } from './schema.js'
-import { evalInWatcher, type Output } from './sheetCommandUtils.js'
+import { evalInWatcher, type Output, runSheetCommand } from './sheetCommandUtils.js'
 import { readExactPhysicalRow, readSheetCsv } from './sheetRead.js'
 
 type DiffOptions = {
@@ -43,110 +44,179 @@ export const registerSheetDiffCommand = (ctx: ArgusPluginContextV1, sheets: Comm
 		.action(async (id: string | undefined, options: DiffOptions) => runDiff(ctx, id, options))
 }
 
-const runDiff = async (ctx: ArgusPluginContextV1, id: string | undefined, options: DiffOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const headerRow = parsePositiveInt(options.headerRow ?? '1')
-	const maxRow = parsePositiveInt(options.maxRow ?? '5000')
-	if (headerRow == null || maxRow == null) return usageError(output, '--header-row and --max-row must be positive integers')
-	let localText: string
+const runDiff = (ctx: ArgusPluginContextV1, id: string | undefined, options: DiffOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output) => {
+			const headerRow = parsePositiveInt(opts.headerRow ?? '1')
+			const maxRow = parsePositiveInt(opts.maxRow ?? '5000')
+			if (headerRow == null || maxRow == null) return usageError(output, '--header-row and --max-row must be positive integers')
+			return { headerRow, maxRow }
+		},
+		execute: async ({ output, validated: { headerRow, maxRow } }) => {
+			const localTable = await readLocalTable(options.against, output)
+			if (!localTable) return null
+
+			const exactHeader = await readExactPhysicalRow(ctx, id, { sheet: options.sheet, row: headerRow }, output)
+			if (!exactHeader) return null
+
+			const schema = buildSheetSchema(exactHeader.values, headerRow)
+			const keyHeader = resolveHeader(schema, options.key)
+			if (typeof keyHeader === 'string') return usageError(output, keyHeader)
+
+			const columnHeaders = []
+			for (const name of options.columns
+				.split(',')
+				.map((value) => value.trim())
+				.filter(Boolean)) {
+				const header = resolveHeader(schema, name)
+				if (typeof header === 'string') return usageError(output, header)
+				columnHeaders.push(header)
+			}
+			if (columnHeaders.length === 0) return usageError(output, '--columns must include at least one header')
+
+			const exported = await readSheetCsv(ctx, id, { sheet: options.sheet }, output)
+			if (!exported) return null
+
+			const exportRows = parseCsv(exported.csv)
+			const headerExportIndex = findExportHeaderIndex(exportRows, schema)
+			if (headerExportIndex < 0) return runtimeError(output, `Physical header row ${headerRow} was not found in the whole-sheet export.`)
+
+			const sheetData = exportRows.slice(headerExportIndex + 1)
+			const headerNames = schema.headers.map((header) => header.original)
+			const compareNames = columnHeaders.map((header) => header.original)
+			const sheetRows = buildKeyedRows(sheetData, headerNames, keyHeader.original, compareNames, 'Sheet')
+			if (typeof sheetRows === 'string') return runtimeError(output, sheetRows)
+			for (let index = 0; index < sheetRows.length; index++) sheetRows[index].exportRow = headerExportIndex + index + 2
+
+			const localRows = buildKeyedRows(localTable.slice(1), localTable[0], keyHeader.original, compareNames, 'Local file')
+			if (typeof localRows === 'string') return usageError(output, localRows)
+
+			const diff = diffKeyedRows(sheetRows, localRows, compareNames)
+			let locator: ExactLocatorResult<ExactRowMatch> | null = null
+			if (options.locate !== false && (diff.removals.length > 0 || diff.changes.length > 0)) {
+				locator = await locateChangedRows(ctx, id, output, options, {
+					diff,
+					schema,
+					sheetRows,
+					sheetData,
+					headerExportIndex,
+					headerRow,
+					maxRow,
+					gid: exported.targetGid,
+				})
+				if (!locator) return null
+				attachLocations(sheetRows, locator.matches)
+				if (!locator.complete) failCommand(1)
+			}
+
+			// Re-diff so the located A1 coordinates ride along in the emitted rows.
+			const locatedDiff = diffKeyedRows(sheetRows, localRows, compareNames)
+			const planPath = await emitApplyPlan(options, output, { headerRow, keyColumn: keyHeader.original, compareNames, diff: locatedDiff })
+			if (planPath === false) return null
+
+			return {
+				ok: locator?.complete !== false,
+				targetSheet: exported.targetSheet,
+				targetGid: exported.targetGid,
+				targetUrl: exported.targetUrl,
+				against: options.against,
+				key: keyHeader.original,
+				columns: compareNames,
+				...locatedDiff,
+				locator: locator ? { scannedRows: locator.scannedRows, complete: locator.complete, reason: locator.reason } : null,
+				emitPlan: planPath,
+			}
+		},
+		formatHuman: (payload, output) => writeHumanDiff(output, payload),
+	})
+
+/** Read `--against` and drop blank rows. Returns `null` after reporting an unreadable or empty file. */
+const readLocalTable = async (against: string, output: Output): Promise<string[][] | null> => {
+	let text: string
 	try {
-		localText = (await readFile(options.against, 'utf8')).replace(/^\uFEFF/, '')
+		text = (await readFile(against, 'utf8')).replace(/^\uFEFF/, '')
 	} catch (error) {
 		return usageError(output, `Failed to read --against file: ${error instanceof Error ? error.message : String(error)}`)
 	}
-	const localTable = (options.against.toLowerCase().endsWith('.tsv') ? parseTsv(localText) : parseCsv(localText)).filter((row) =>
-		row.some((cell) => cell !== ''),
+
+	const table = (against.toLowerCase().endsWith('.tsv') ? parseTsv(text) : parseCsv(text)).filter((row) => row.some((cell) => cell !== ''))
+	return table.length === 0 ? usageError(output, '--against file is empty') : table
+}
+
+/** Resolve export rows that changed or disappeared to physical A1 coordinates. */
+const locateChangedRows = async (
+	ctx: ArgusPluginContextV1,
+	id: string | undefined,
+	output: Output,
+	options: DiffOptions,
+	input: {
+		diff: KeyedDiffResult
+		schema: ReturnType<typeof buildSheetSchema>
+		sheetRows: KeyedRow[]
+		sheetData: string[][]
+		headerExportIndex: number
+		headerRow: number
+		maxRow: number
+		gid: string
+	},
+): Promise<ExactLocatorResult<ExactRowMatch> | null> => {
+	const relevantKeys = new Set([...input.diff.removals.map((row) => row.key), ...input.diff.changes.map((change) => change.key)])
+	const candidates: ExportRowCandidate[] = input.sheetRows
+		.filter((row) => relevantKeys.has(row.key))
+		.map((row) => ({
+			exportRow: row.exportRow as number,
+			values: input.sheetData[(row.exportRow as number) - input.headerExportIndex - 2] ?? [],
+		}))
+
+	const deadlineMs = Math.min(25_000, parseTimeoutMs(options.locateTimeout, 20_000) ?? 0)
+	if (deadlineMs <= 0) return usageError(output, '--locate-timeout must be a positive duration')
+
+	return await evalInWatcher<ExactLocatorResult<ExactRowMatch>>(
+		ctx,
+		id,
+		buildLocateRowsExpression({
+			gid: input.gid,
+			startRow: input.headerRow + 1,
+			maxRow: input.maxRow,
+			width: input.schema.headers.length,
+			candidates,
+			deadlineMs,
+		}),
+		output,
+		{ evalTimeoutMs: deadlineMs + 2_000, requestTimeoutMs: deadlineMs + 5_000 },
 	)
-	if (localTable.length === 0) return usageError(output, '--against file is empty')
+}
 
-	const exactHeader = await readExactPhysicalRow(ctx, id, { sheet: options.sheet, row: headerRow }, output)
-	if (!exactHeader) return
-	const schema = buildSheetSchema(exactHeader.values, headerRow)
-	const keyHeader = resolveHeader(schema, options.key)
-	if (typeof keyHeader === 'string') return usageError(output, keyHeader)
-	const columnHeaders = []
-	for (const name of options.columns
-		.split(',')
-		.map((value) => value.trim())
-		.filter(Boolean)) {
-		const header = resolveHeader(schema, name)
-		if (typeof header === 'string') return usageError(output, header)
-		columnHeaders.push(header)
-	}
-	if (columnHeaders.length === 0) return usageError(output, '--columns must include at least one header')
+/**
+ * Write the `--emit-plan` manifest when asked.
+ *
+ * @returns The written path, `null` when `--emit-plan` was not requested, or `false` after reporting
+ * a refusal — additions/removals need an explicit insertion/deletion policy, so no partial plan is
+ * written.
+ */
+const emitApplyPlan = async (
+	options: DiffOptions,
+	output: Output,
+	input: { headerRow: number; keyColumn: string; compareNames: string[]; diff: KeyedDiffResult },
+): Promise<string | null | false> => {
+	if (!options.emitPlan) return null
 
-	const exported = await readSheetCsv(ctx, id, { sheet: options.sheet }, output)
-	if (!exported) return
-	const exportRows = parseCsv(exported.csv)
-	const headerExportIndex = findExportHeaderIndex(exportRows, schema)
-	if (headerExportIndex < 0) return runtimeError(output, `Physical header row ${headerRow} was not found in the whole-sheet export.`)
-	const sheetData = exportRows.slice(headerExportIndex + 1)
-	const headerNames = schema.headers.map((header) => header.original)
-	const compareNames = columnHeaders.map((header) => header.original)
-	const sheetRows = buildKeyedRows(sheetData, headerNames, keyHeader.original, compareNames, 'Sheet')
-	if (typeof sheetRows === 'string') return runtimeError(output, sheetRows)
-	for (let index = 0; index < sheetRows.length; index++) sheetRows[index].exportRow = headerExportIndex + index + 2
-	const localRows = buildKeyedRows(localTable.slice(1), localTable[0], keyHeader.original, compareNames, 'Local file')
-	if (typeof localRows === 'string') return usageError(output, localRows)
-	const diff = diffKeyedRows(sheetRows, localRows, compareNames)
-
-	let locator: ExactLocatorResult<ExactRowMatch> | null = null
-	if (options.locate !== false && (diff.removals.length > 0 || diff.changes.length > 0)) {
-		const relevantKeys = new Set([...diff.removals.map((row) => row.key), ...diff.changes.map((change) => change.key)])
-		const candidates: ExportRowCandidate[] = sheetRows
-			.filter((row) => relevantKeys.has(row.key))
-			.map((row) => ({ exportRow: row.exportRow as number, values: sheetData[(row.exportRow as number) - headerExportIndex - 2] ?? [] }))
-		const deadlineMs = Math.min(25_000, parseTimeoutMs(options.locateTimeout, 20_000) ?? 0)
-		if (deadlineMs <= 0) return usageError(output, '--locate-timeout must be a positive duration')
-		locator = await evalInWatcher<ExactLocatorResult<ExactRowMatch>>(
-			ctx,
-			id,
-			buildLocateRowsExpression({
-				gid: exported.targetGid,
-				startRow: headerRow + 1,
-				maxRow,
-				width: schema.headers.length,
-				candidates,
-				deadlineMs,
-			}),
+	if (input.diff.additions.length > 0 || input.diff.removals.length > 0) {
+		runtimeError(
 			output,
-			{ evalTimeoutMs: deadlineMs + 2_000, requestTimeoutMs: deadlineMs + 5_000 },
+			'Refusing --emit-plan because additions/removals need explicit semantic insertion/deletion policy; no partial plan was written.',
 		)
-		if (!locator) return
-		attachLocations(sheetRows, locator.matches)
-		if (!locator.complete) process.exitCode = 1
+		return false
 	}
-	const locatedDiff = diffKeyedRows(sheetRows, localRows, compareNames)
-	let planPath: string | null = null
-	if (options.emitPlan) {
-		if (locatedDiff.additions.length > 0 || locatedDiff.removals.length > 0) {
-			return runtimeError(
-				output,
-				'Refusing --emit-plan because additions/removals need explicit semantic insertion/deletion policy; no partial plan was written.',
-			)
-		}
-		const manifest = buildUpdateManifest(options.sheet, headerRow, keyHeader.original, compareNames, locatedDiff)
-		try {
-			await writeFile(options.emitPlan, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
-			planPath = options.emitPlan
-		} catch (error) {
-			return runtimeError(output, `Failed to write --emit-plan: ${error instanceof Error ? error.message : String(error)}`)
-		}
+
+	const manifest = buildUpdateManifest(options.sheet, input.headerRow, input.keyColumn, input.compareNames, input.diff)
+	try {
+		await writeFile(options.emitPlan, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+		return options.emitPlan
+	} catch (error) {
+		runtimeError(output, `Failed to write --emit-plan: ${error instanceof Error ? error.message : String(error)}`)
+		return false
 	}
-	const payload = {
-		ok: locator?.complete !== false,
-		targetSheet: exported.targetSheet,
-		targetGid: exported.targetGid,
-		targetUrl: exported.targetUrl,
-		against: options.against,
-		key: keyHeader.original,
-		columns: compareNames,
-		...locatedDiff,
-		locator: locator ? { scannedRows: locator.scannedRows, complete: locator.complete, reason: locator.reason } : null,
-		emitPlan: planPath,
-	}
-	if (options.json) output.writeJson(payload)
-	else writeHumanDiff(output, payload)
 }
 
 const attachLocations = (rows: KeyedRow[], matches: ExactRowMatch[]): void => {

@@ -1,4 +1,5 @@
-import { readStdin } from './cliArgs.js'
+import { readStdin, usageError } from './cliArgs.js'
+import { failCommand } from './commandExit.js'
 import { parseDurationMs } from '@vforsh/argus-core'
 import type { Command } from 'commander'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
@@ -13,7 +14,7 @@ import {
 	type SheetWriteVerificationResult,
 } from './mutationPageScripts.js'
 import type { SheetTab } from './pageScripts.js'
-import { clearGridRange, dispatchKey, evalInWatcher, type Output, switchSheetTarget, withSheetLease } from './sheetCommandUtils.js'
+import { clearGridRange, dispatchKey, evalInWatcher, runSheetCommand, type Output, switchSheetTarget, withSheetLease } from './sheetCommandUtils.js'
 
 type CommonOptions = {
 	json?: boolean
@@ -103,100 +104,122 @@ export const registerSheetMutationCommands = (ctx: ArgusPluginContextV1, sheets:
 		.action(async (id: string | undefined, options: BatchOptions) => runBatch(ctx, id, options))
 }
 
-const runWrite = async (ctx: ArgusPluginContextV1, id: string | undefined, range: string, options: WriteOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const timeoutMs = resolveVerifyTimeout(options, output)
-	if (timeoutMs == null) return
-	if (options.verify === false) {
-		output.writeWarn('--no-verify is no longer supported; every mutation requires readback verification')
-		process.exitCode = 2
-		return
-	}
+const runWrite = (ctx: ArgusPluginContextV1, id: string | undefined, range: string, options: WriteOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output) => {
+			const timeoutMs = resolveVerifyTimeout(opts, output)
+			if (timeoutMs == null) return null
+			if (opts.verify === false) {
+				return usageError(output, '--no-verify is no longer supported; every mutation requires readback verification')
+			}
+			return timeoutMs
+		},
+		execute: async ({ output, validated: timeoutMs }) => {
+			// stdin is only readable here: `validate` is synchronous by design.
+			const tsv = await resolveWriteTsv(options)
+			if (tsv == null) return usageError(output, 'Provide exactly one of --value, --tsv, or --stdin')
+			if (tsv === '' || parseTsv(tsv).every((row) => row.every((cell) => cell === ''))) {
+				return usageError(output, 'Empty writes are unsafe and rejected; use sheets clear or null in a version-1 apply manifest')
+			}
 
-	const tsv = await resolveWriteTsv(options)
-	if (tsv == null) {
-		output.writeWarn('Provide exactly one of --value, --tsv, or --stdin')
-		process.exitCode = 2
-		return
-	}
-	if (tsv === '' || parseTsv(tsv).every((row) => row.every((cell) => cell === ''))) {
-		output.writeWarn('Empty writes are unsafe and rejected; use sheets clear or null in a version-1 apply manifest')
-		process.exitCode = 2
-		return
-	}
-
-	const leased = await withSheetLease(
-		ctx,
-		id,
-		output,
-		{ operation: `legacy write ${range}`, restore: true },
-		async () =>
-			await writeValuesOperation(ctx, id, output, {
-				range,
-				sheet: options.sheet,
-				values: parseTsv(tsv),
-				verify: true,
-				timeoutMs,
-			}),
-	)
-	const result = leased?.value
-	if (!result) return
-
-	if (didVerificationFail(result)) process.exitCode = 1
-	writeWriteResult(output, options, result)
-}
-
-const runClear = async (ctx: ArgusPluginContextV1, id: string | undefined, range: string, options: ClearOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const method = resolveMutationMethod(options.method, output)
-	if (!method) return
-
-	const timeoutMs = resolveVerifyTimeout(options, output)
-	if (timeoutMs == null) return
-
-	const leased = await withSheetLease(
-		ctx,
-		id,
-		output,
-		{ operation: `clear ${range}`, restore: true },
-		async () => await clearRangeOperation(ctx, id, output, { range, sheet: options.sheet, method, verify: true, timeoutMs }),
-	)
-	const result = leased?.value
-	if (!result) return
-
-	if (didVerificationFail(result)) process.exitCode = 1
-	writeClearResult(output, options, result)
-}
-
-const runBatch = async (ctx: ArgusPluginContextV1, id: string | undefined, options: BatchOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const method = resolveMutationMethod(options.method, output)
-	if (!method) return
-
-	const timeoutMs = resolveVerifyTimeout(options, output)
-	if (timeoutMs == null) return
-
-	const operations = await loadBatchOperations(options, output, readStdin)
-	if (!operations) return
-
-	const leased = await withSheetLease(ctx, id, output, { operation: 'legacy batch', restore: true, ttlMs: 300_000 }, async () => {
-		const results: MutationResult[] = []
-		for (const operation of operations) {
-			const result = await runBatchOperation(ctx, id, output, operation, {
-				sheet: options.sheet,
-				method,
-				timeoutMs,
-			})
-			if (!result) return null
-			results.push(result)
-		}
-		return results
+			const leased = await withSheetLease(
+				ctx,
+				id,
+				output,
+				{ operation: `legacy write ${range}`, restore: true },
+				async () =>
+					await writeValuesOperation(ctx, id, output, {
+						range,
+						sheet: options.sheet,
+						values: parseTsv(tsv),
+						verify: true,
+						timeoutMs,
+					}),
+			)
+			return finishMutation(leased?.value ?? null)
+		},
+		formatJson: (result) => toWritePayload(result),
+		formatHuman: (result, output) => {
+			output.writeHuman(`Wrote ${result.rows ?? 0} row(s) into ${formatMutationTarget(result)} via ${result.method}`)
+			writeVerificationSummary(output, result)
+		},
 	})
-	const results = leased?.value
-	if (!results) return
 
-	if (results.some(didVerificationFail)) process.exitCode = 1
-	writeBatchResult(output, options, { ok: true, operations: results })
+const runClear = (ctx: ArgusPluginContextV1, id: string | undefined, range: string, options: ClearOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output) => {
+			const method = resolveMutationMethod(opts.method, output)
+			if (!method) return null
+			const timeoutMs = resolveVerifyTimeout(opts, output)
+			return timeoutMs == null ? null : { method, timeoutMs }
+		},
+		execute: async ({ output, validated }) => {
+			const leased = await withSheetLease(
+				ctx,
+				id,
+				output,
+				{ operation: `clear ${range}`, restore: true },
+				async () =>
+					await clearRangeOperation(ctx, id, output, {
+						range,
+						sheet: options.sheet,
+						method: validated.method,
+						verify: true,
+						timeoutMs: validated.timeoutMs,
+					}),
+			)
+			return finishMutation(leased?.value ?? null)
+		},
+		formatHuman: (result, output) => {
+			output.writeHuman(`Cleared ${formatMutationTarget(result)} via ${result.method}`)
+			writeVerificationSummary(output, result)
+		},
+	})
+
+const runBatch = (ctx: ArgusPluginContextV1, id: string | undefined, options: BatchOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output) => {
+			const method = resolveMutationMethod(opts.method, output)
+			if (!method) return null
+			const timeoutMs = resolveVerifyTimeout(opts, output)
+			return timeoutMs == null ? null : { method, timeoutMs }
+		},
+		execute: async ({ output, validated }) => {
+			const operations = await loadBatchOperations(options, output, readStdin)
+			if (!operations) return null
+
+			const leased = await withSheetLease(ctx, id, output, { operation: 'legacy batch', restore: true, ttlMs: 300_000 }, async () => {
+				const results: MutationResult[] = []
+				for (const operation of operations) {
+					const result = await runBatchOperation(ctx, id, output, operation, {
+						sheet: options.sheet,
+						method: validated.method,
+						timeoutMs: validated.timeoutMs,
+					})
+					if (!result) return null
+					results.push(result)
+				}
+				return results
+			})
+
+			const results = leased?.value
+			if (!results) return null
+			if (results.some(didVerificationFail)) failCommand(1)
+			return { ok: true as const, operations: results }
+		},
+		formatHuman: (result, output) => {
+			for (const operation of result.operations) {
+				const verb = operation.operation === 'write' ? `Wrote ${operation.rows ?? 0} row(s) into` : 'Cleared'
+				output.writeHuman(`${verb} ${formatMutationTarget(operation)} via ${operation.method}`)
+				writeVerificationSummary(output, operation)
+			}
+		},
+	})
+
+/** A mutation that ran but failed readback is still reported in full, with a non-zero exit code. */
+const finishMutation = (result: MutationResult | null): MutationResult | null => {
+	if (result && didVerificationFail(result)) failCommand(1)
+	return result
 }
 
 const runBatchOperation = async (
@@ -351,18 +374,14 @@ const resolveMutationMethod = (value: string | undefined, output: Output): Mutat
 	const method = value ?? 'auto'
 	if (method === 'auto' || method === 'ui') return method
 
-	output.writeWarn('--method must be auto or ui')
-	process.exitCode = 2
-	return null
+	return usageError(output, '--method must be auto or ui')
 }
 
 const resolveVerifyTimeout = (options: { verifyTimeout?: string }, output: Output): number | null => {
 	const timeoutMs = parseTimeoutMs(options.verifyTimeout, DEFAULT_VERIFY_TIMEOUT_MS)
 	if (timeoutMs != null) return timeoutMs
 
-	output.writeWarn('--verify-timeout must be a positive duration such as 500ms or 5s')
-	process.exitCode = 2
-	return null
+	return usageError(output, '--verify-timeout must be a positive duration such as 500ms or 5s')
 }
 
 /**
@@ -379,50 +398,19 @@ export const parseTimeoutMs = (value: string | undefined, fallback: number): num
 	return ms != null && ms > 0 ? Math.round(ms) : null
 }
 
-const writeWriteResult = (output: Output, options: WriteOptions, result: MutationResult): void => {
-	const payload = {
-		ok: true,
-		range: result.range,
-		sheet: result.sheet,
-		method: result.method,
-		rows: result.rows ?? 0,
-		verified: result.verified,
-		verificationRange: result.verificationRange,
-		attempts: result.attempts,
-		mismatches: result.mismatches,
-		verificationSkipped: result.verificationSkipped,
-	}
-	if (options.json) {
-		output.writeJson(payload)
-		return
-	}
-
-	output.writeHuman(`Wrote ${payload.rows} row(s) into ${formatMutationTarget(result)} via ${result.method}`)
-	writeVerificationSummary(output, result)
-}
-
-const writeClearResult = (output: Output, options: ClearOptions, result: MutationResult): void => {
-	if (options.json) {
-		output.writeJson(result)
-		return
-	}
-
-	output.writeHuman(`Cleared ${formatMutationTarget(result)} via ${result.method}`)
-	writeVerificationSummary(output, result)
-}
-
-const writeBatchResult = (output: Output, options: BatchOptions, result: { ok: true; operations: MutationResult[] }): void => {
-	if (options.json) {
-		output.writeJson(result)
-		return
-	}
-
-	for (const operation of result.operations) {
-		const verb = operation.operation === 'write' ? `Wrote ${operation.rows ?? 0} row(s) into` : 'Cleared'
-		output.writeHuman(`${verb} ${formatMutationTarget(operation)} via ${operation.method}`)
-		writeVerificationSummary(output, operation)
-	}
-}
+/** `write` reports `rows` as a number even when the operation carried none. */
+const toWritePayload = (result: MutationResult) => ({
+	ok: true,
+	range: result.range,
+	sheet: result.sheet,
+	method: result.method,
+	rows: result.rows ?? 0,
+	verified: result.verified,
+	verificationRange: result.verificationRange,
+	attempts: result.attempts,
+	mismatches: result.mismatches,
+	verificationSkipped: result.verificationSkipped,
+})
 
 const writeVerificationSummary = (output: Output, result: MutationResult): void => {
 	if (result.verificationSkipped) {

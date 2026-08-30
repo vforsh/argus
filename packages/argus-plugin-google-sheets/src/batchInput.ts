@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { usageError } from './cliArgs.js'
 import type { Output } from './sheetCommandUtils.js'
 
 export type BatchOperation =
@@ -26,36 +27,22 @@ export const loadBatchOperations = async (
 	readStdin: () => Promise<string>,
 ): Promise<BatchOperation[] | null> => {
 	const selected = [options.file != null, options.stdin === true].filter(Boolean).length
-	if (selected !== 1) {
-		output.writeWarn('Provide exactly one of --file or --stdin')
-		process.exitCode = 2
-		return null
-	}
+	if (selected !== 1) return usageError(output, 'Provide exactly one of --file or --stdin')
 
 	let parsed: unknown
 	try {
 		const text = options.file ? await readFile(options.file, 'utf8') : await readStdin()
 		parsed = JSON.parse(text)
 	} catch (error) {
-		output.writeWarn(`Failed to read batch JSON: ${error instanceof Error ? error.message : String(error)}`)
-		process.exitCode = 2
-		return null
+		return usageError(output, `Failed to read batch JSON: ${error instanceof Error ? error.message : String(error)}`)
 	}
 
-	if (!Array.isArray(parsed)) {
-		output.writeWarn('Batch JSON must be an array')
-		process.exitCode = 2
-		return null
-	}
+	if (!Array.isArray(parsed)) return usageError(output, 'Batch JSON must be an array')
 
 	const operations: BatchOperation[] = []
 	for (let index = 0; index < parsed.length; index++) {
 		const operation = parseBatchOperation(parsed[index], index)
-		if (typeof operation === 'string') {
-			output.writeWarn(operation)
-			process.exitCode = 2
-			return null
-		}
+		if (typeof operation === 'string') return usageError(output, operation)
 		operations.push(operation)
 	}
 	return operations
