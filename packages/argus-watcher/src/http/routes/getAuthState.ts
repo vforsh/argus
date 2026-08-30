@@ -1,5 +1,5 @@
 import type { AuthStateSnapshot } from '@vforsh/argus-core'
-import { inspectAuthState } from '../../cdp/auth.js'
+import { inspectAuthState } from '../../cdp/authSnapshot.js'
 import { defineJsonRoute } from './defineRoute.js'
 import { normalizeQueryValue } from '../httpUtils.js'
 import { emitRequest } from './types.js'

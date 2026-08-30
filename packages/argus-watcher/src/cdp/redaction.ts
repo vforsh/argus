@@ -101,20 +101,6 @@ export const captureHeaders = (headers: Record<string, unknown> | undefined): Re
 }
 
 /** Merge two captured auth-header maps, preferring newer values for the same header name. */
-export const mergeCapturedAuthHeaders = (
-	current: Record<string, string> | undefined,
-	incoming: Record<string, string> | undefined,
-): Record<string, string> | undefined => {
-	if (!current) {
-		return incoming
-	}
-	if (!incoming) {
-		return current
-	}
-
-	return { ...current, ...incoming }
-}
-
 /** Merge two captured header maps, preferring newer values for the same header name. */
 export const mergeCapturedHeaders = (
 	current: Record<string, string> | undefined,
@@ -194,7 +180,8 @@ const redactCookieHeader = (value: string): string => {
 	return parts.join('; ')
 }
 
-const redactToken = (value: string): string => {
+/** Show a value's first and last four characters, masking anything short enough to guess. */
+export const redactToken = (value: string): string => {
 	if (value.length <= 8) {
 		return '*'.repeat(value.length)
 	}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { CdpSessionHandle } from '../src/cdp/connection.js'
-import { clearAuthCookies, inspectAuthCookie, setAuthCookie } from '../src/cdp/auth.js'
+import { clearAuthCookies, inspectAuthCookie, setAuthCookie } from '../src/cdp/authCookies.js'
 
 describe('auth cookie operations', () => {
 	it('finds one cookie by exact identity with dot-agnostic domain matching', async () => {

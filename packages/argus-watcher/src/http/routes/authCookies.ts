@@ -17,7 +17,7 @@ import {
 } from '@vforsh/argus-core'
 import type { RouteContext } from './types.js'
 import type { WatcherRouteDefinition } from './defineRoute.js'
-import { clearAuthCookies, deleteAuthCookie, inspectAuthCookie, setAuthCookie } from '../../cdp/auth.js'
+import { clearAuthCookies, deleteAuthCookie, inspectAuthCookie, setAuthCookie } from '../../cdp/authCookies.js'
 import { defineJsonRoute } from './defineRoute.js'
 
 const createAuthCookieRoute = <TRequest, TResponse extends { ok: true }>(options: {

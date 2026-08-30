@@ -9,7 +9,7 @@ import type {
 import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { RealtimeNetBuffer } from '../buffer/RealtimeNetBuffer.js'
 import type { CdpSessionHandle } from './connection.js'
-import { captureHeaders, mergeCapturedAuthHeaders, mergeCapturedHeaders, pickCapturedAuthHeaders, redactUrl } from './redaction.js'
+import { captureHeaders, mergeCapturedHeaders, pickCapturedAuthHeaders, redactUrl } from './redaction.js'
 import { finalizeSseRequest, openSseRequest, registerRealtimeNetworkCapture } from './networkRealtimeCapture.js'
 
 type ResponseTimingPayload = {
@@ -371,7 +371,7 @@ const createInflightRequest = (requestId: string): InflightRequest => ({
 })
 
 const mergeRequestHeaders = (entry: InflightRequest, headers: Record<string, unknown> | undefined): void => {
-	entry.summaryRequestHeaders = mergeCapturedAuthHeaders(entry.summaryRequestHeaders, pickCapturedAuthHeaders(headers))
+	entry.summaryRequestHeaders = mergeCapturedHeaders(entry.summaryRequestHeaders, pickCapturedAuthHeaders(headers))
 	entry.requestHeaders = mergeCapturedHeaders(entry.requestHeaders, captureHeaders(headers))
 }
 

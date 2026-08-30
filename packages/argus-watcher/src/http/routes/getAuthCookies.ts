@@ -1,5 +1,5 @@
 import type { AuthCookiesResponse } from '@vforsh/argus-core'
-import { inspectAuthCookies } from '../../cdp/auth.js'
+import { inspectAuthCookies } from '../../cdp/authCookies.js'
 import { defineJsonRoute } from './defineRoute.js'
 import { normalizeQueryValue } from '../httpUtils.js'
 import { emitRequest } from './types.js'
