@@ -1,7 +1,7 @@
 import type { NetResponse } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
 import { emitRequest } from './types.js'
-import { readNetFiltersFromUrl, respondNetDisabled, toNetRequestEventQuery } from './netFilters.js'
+import { nextAfterCursor, readNetFiltersFromUrl, respondNetDisabled, toNetRequestEventQuery } from './netFilters.js'
 
 export const route = defineJsonRoute<undefined, NetResponse>({
 	method: 'GET',
@@ -19,7 +19,7 @@ export const route = defineJsonRoute<undefined, NetResponse>({
 		emitRequest(ctx, res, 'net', toNetRequestEventQuery(filters))
 
 		const requests = ctx.netBuffer.listAfter(filters.after, filters, filters.limit)
-		const nextAfter = requests.length > 0 ? (requests[requests.length - 1]?.id ?? filters.after) : filters.after
+		const nextAfter = nextAfterCursor(requests, filters.after)
 		return { ok: true, requests, nextAfter }
 	},
 })

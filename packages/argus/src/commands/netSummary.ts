@@ -1,6 +1,6 @@
 import type { EvalResponse, NetResponse, NetworkRequestSummary } from '@vforsh/argus-core'
 import type { NetCliFilterOptions } from './netShared.js'
-import { appendNetCommandParams, validateNetCommandOptions } from './netShared.js'
+import { fetchAllNetPages, validateNetCommandOptions } from './netShared.js'
 import { createOutput } from '../output/io.js'
 import { formatWatcherTransportError, fetchWatcherJson, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { formatNetSummaryReport, summarizeNetworkRequests, type NavigationTimingSummary } from '../net/summary.js'
@@ -48,33 +48,12 @@ export const runNetSummary = async (id: string | undefined, options: NetSummaryO
 	}
 }
 
-const fetchAllRequests = async (watcher: { host: string; port: number }, options: NetCliFilterOptions): Promise<NetworkRequestSummary[]> => {
-	const requests: NetworkRequestSummary[] = []
-	let after = 0
-	const baseParams = new URLSearchParams()
-	const baseQuery = appendNetCommandParams(baseParams, options, { includeAfter: false, includeLimit: false })
-	if (baseQuery.error) {
-		throw new Error(baseQuery.error)
-	}
-
-	while (true) {
-		const params = new URLSearchParams(baseParams)
-		params.set('after', String(after))
-		params.set('limit', String(NET_PAGE_LIMIT))
-
-		const response = await fetchWatcherJson<NetResponse>(watcher, {
-			path: '/net',
-			query: params,
-			timeoutMs: 5_000,
-		})
-		if (response.requests.length === 0) {
-			return requests
-		}
-
-		requests.push(...response.requests)
-		after = response.nextAfter
-	}
-}
+const fetchAllRequests = async (watcher: { host: string; port: number }, options: NetCliFilterOptions): Promise<NetworkRequestSummary[]> =>
+	await fetchAllNetPages<NetResponse, NetworkRequestSummary>(watcher, options, {
+		path: '/net',
+		pageLimit: NET_PAGE_LIMIT,
+		select: (response) => response.requests,
+	})
 
 const fetchNavigationSummary = async (watcher: { host: string; port: number }): Promise<NavigationTimingSummary | null> => {
 	const response = await fetchWatcherJson<EvalResponse>(watcher, {

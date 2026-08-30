@@ -3,11 +3,11 @@ import path from 'node:path'
 import type { NetRequestsResponse, NetworkRequestDetail } from '@vforsh/argus-core'
 import type { NetCliFilterOptions } from './netShared.js'
 import { captureNetWindow, parseNetCaptureOptions, type NetCaptureOptions } from './netCapture.js'
-import { appendNetCommandParams, validateNetCommandOptions } from './netShared.js'
+import { fetchAllNetPages, validateNetCommandOptions } from './netShared.js'
 import { buildHarFromNetworkRequests } from '../net/har.js'
 import { createOutput } from '../output/io.js'
 import { resolvePath } from '../utils/paths.js'
-import { fetchWatcherJson, formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { formatError } from '../cli/parse.js'
 
 const NET_EXPORT_PAGE_LIMIT = 5_000
@@ -128,35 +128,9 @@ const formatHarSavedMessage = (outPath: string, requestCount: number, timedOut: 
 const fetchAllNetworkRequestDetails = async (
 	watcher: { host: string; port: number },
 	options: NetCliFilterOptions,
-): Promise<NetworkRequestDetail[]> => {
-	const requests: NetworkRequestDetail[] = []
-	let after = 0
-	const baseParams = createNetRequestsBaseParams(options)
-
-	while (true) {
-		const params = new URLSearchParams(baseParams)
-		params.set('after', String(after))
-		params.set('limit', String(NET_EXPORT_PAGE_LIMIT))
-
-		const response = await fetchWatcherJson<NetRequestsResponse>(watcher, {
-			path: '/net/requests',
-			query: params,
-			timeoutMs: 5_000,
-		})
-		if (response.requests.length === 0) {
-			return requests
-		}
-
-		requests.push(...response.requests)
-		after = response.nextAfter
-	}
-}
-
-const createNetRequestsBaseParams = (options: NetCliFilterOptions): URLSearchParams => {
-	const params = new URLSearchParams()
-	const query = appendNetCommandParams(params, options, { includeAfter: false, includeLimit: false })
-	if (query.error) {
-		throw new Error(query.error)
-	}
-	return params
-}
+): Promise<NetworkRequestDetail[]> =>
+	await fetchAllNetPages<NetRequestsResponse, NetworkRequestDetail>(watcher, options, {
+		path: '/net/requests',
+		pageLimit: NET_EXPORT_PAGE_LIMIT,
+		select: (response) => response.requests,
+	})

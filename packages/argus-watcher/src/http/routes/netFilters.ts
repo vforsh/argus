@@ -46,6 +46,15 @@ export const respondNetDisabled = (res: http.ServerResponse): void => {
 }
 
 /**
+ * Cursor the client should send as `after` on its next poll.
+ *
+ * The last id in the page, or the cursor it already had when the page is empty — never a value the
+ * client would have to interpret. Every `/net*` listing route paginates this way; keeping the
+ * expression in one place is what stops one of them from quietly resetting a poller to 0.
+ */
+export const nextAfterCursor = (page: readonly { id: number }[], after: number): number => page[page.length - 1]?.id ?? after
+
+/**
  * Parse network filters from a route URL with the standard after/limit/sinceTs
  * defaults shared by the `/net*` listing routes. Responds 400 `invalid_net_filter`
  * and returns null when the query is invalid.

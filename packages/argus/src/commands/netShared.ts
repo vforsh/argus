@@ -1,4 +1,5 @@
 import { parseDurationMs } from '@vforsh/argus-core'
+import { fetchWatcherJson } from '../watchers/requestWatcher.js'
 import { appendAfterLimitParams, appendNetFilterParams, appendNetIgnoreParams, appendSinceParam } from '../watchers/queryParams.js'
 
 export type NetCliFilterOptions = {
@@ -150,5 +151,46 @@ const resolveDerivedNetFilters = (
 		party: party.value,
 		minDurationMs: minDurationMs.value,
 		minTransferBytes: minTransferBytes.value,
+	}
+}
+
+/**
+ * Drain every page of a `/net*` listing endpoint.
+ *
+ * `net export` and `net summary` both need the whole capture rather than one page, and both had
+ * written the same cursor loop: copy the base params, set `after`/`limit`, stop on an empty page,
+ * otherwise advance to `nextAfter`. The loop terminates because the watcher only ever returns
+ * `nextAfter > after` while it has rows, and answers an empty page once the cursor passes the end.
+ *
+ * @param path Watcher path to page through, e.g. `/net` or `/net/requests`.
+ * @param pageLimit Rows per request. The watcher clamps this to its own maximum.
+ * @param select Pull the page out of the response; its `nextAfter` drives the cursor.
+ */
+export const fetchAllNetPages = async <TResponse extends { nextAfter: number }, TRow>(
+	watcher: { host: string; port: number },
+	options: NetCliFilterOptions,
+	input: { path: string; pageLimit: number; select: (response: TResponse) => TRow[] },
+): Promise<TRow[]> => {
+	const baseParams = new URLSearchParams()
+	const baseQuery = appendNetCommandParams(baseParams, options, { includeAfter: false, includeLimit: false })
+	if (baseQuery.error) {
+		throw new Error(baseQuery.error)
+	}
+
+	const rows: TRow[] = []
+	let after = 0
+	while (true) {
+		const params = new URLSearchParams(baseParams)
+		params.set('after', String(after))
+		params.set('limit', String(input.pageLimit))
+
+		const response = await fetchWatcherJson<TResponse>(watcher, { path: input.path, query: params, timeoutMs: 5_000 })
+		const page = input.select(response)
+		if (page.length === 0) {
+			return rows
+		}
+
+		rows.push(...page)
+		after = response.nextAfter
 	}
 }

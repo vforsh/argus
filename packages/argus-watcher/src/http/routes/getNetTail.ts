@@ -3,7 +3,7 @@ import type { NetBuffer } from '../../buffer/NetBuffer.js'
 import type { ParsedNetFilters } from './netFilters.js'
 import { defineJsonRoute } from './defineRoute.js'
 import { emitRequest } from './types.js'
-import { readNetFiltersFromUrl, respondNetDisabled, toNetRequestEventQuery } from './netFilters.js'
+import { nextAfterCursor, readNetFiltersFromUrl, respondNetDisabled, toNetRequestEventQuery } from './netFilters.js'
 import { clampNumber } from '../httpUtils.js'
 import { delay } from '@vforsh/argus-core'
 
@@ -24,7 +24,7 @@ export const route = defineJsonRoute<undefined, NetTailResponse>({
 		emitRequest(ctx, res, 'net/tail', toNetRequestEventQuery(filters, { timeoutMs }))
 
 		const requests = await pollNetBuffer(ctx.netBuffer, filters.after, filters, filters.limit, timeoutMs)
-		const nextAfter = requests.length > 0 ? (requests[requests.length - 1]?.id ?? filters.after) : filters.after
+		const nextAfter = nextAfterCursor(requests, filters.after)
 		return { ok: true, requests, nextAfter, timedOut: requests.length === 0 }
 	},
 })
