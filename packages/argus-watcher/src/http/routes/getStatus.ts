@@ -1,5 +1,6 @@
 import type { StatusResponse } from '@vforsh/argus-core'
 import { ARGUS_PROTOCOL_VERSION } from '@vforsh/argus-core'
+import packageJson from '../../../package.json' with { type: 'json' }
 import type { RouteContext } from './types.js'
 import { defineJsonRoute } from './defineRoute.js'
 
@@ -25,5 +26,6 @@ const buildStatus = (ctx: RouteContext): StatusResponse => {
 		buffer,
 		watcher,
 		protocolVersion: ARGUS_PROTOCOL_VERSION,
+		watcherVersion: packageJson.version,
 	}
 }
