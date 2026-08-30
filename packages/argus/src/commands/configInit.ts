@@ -2,10 +2,12 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { formatError } from '../cli/parse.js'
+import { createOutput, type Output } from '../output/io.js'
 
 export type ConfigInitOptions = {
 	path?: string
 	force?: boolean
+	json?: boolean
 }
 
 const DEFAULT_CONFIG_PATH = '.argus/config.json'
@@ -40,80 +42,81 @@ const resolveConfigPath = (cwd: string, targetPath?: string): string => {
 	return path.isAbsolute(targetPath) ? targetPath : path.resolve(cwd, targetPath)
 }
 
-const ensureParentDir = async (filePath: string): Promise<boolean> => {
+const ensureParentDir = async (filePath: string, output: Output): Promise<boolean> => {
 	const dir = path.dirname(filePath)
 	try {
 		await fs.mkdir(dir, { recursive: true })
 		return true
 	} catch (error) {
-		console.error(`Failed to create config directory ${dir}: ${formatError(error)}`)
+		output.writeWarn(`Failed to create config directory ${dir}: ${formatError(error)}`)
 		process.exitCode = 2
 		return false
 	}
 }
 
-const writeConfigFile = async (filePath: string, contents: string, force?: boolean): Promise<boolean> => {
+const writeConfigFile = async (filePath: string, contents: string, output: Output, force?: boolean): Promise<boolean> => {
 	try {
 		await fs.writeFile(filePath, contents, { encoding: 'utf8', flag: force ? 'w' : 'wx' })
 		return true
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-			console.error(`Config already exists at ${filePath}. Use --force to overwrite.`)
+			output.writeWarn(`Config already exists at ${filePath}. Use --force to overwrite.`)
 			process.exitCode = 2
 			return false
 		}
-		console.error(`Failed to write config at ${filePath}: ${formatError(error)}`)
+		output.writeWarn(`Failed to write config at ${filePath}: ${formatError(error)}`)
 		process.exitCode = 2
 		return false
 	}
 }
 
-const ensureSchemaFile = async (schemaPath: string): Promise<boolean> => {
+const ensureSchemaFile = async (schemaPath: string, output: Output): Promise<boolean> => {
 	try {
 		const stats = await fs.stat(schemaPath)
 		if (!stats.isFile()) {
-			console.error(`Schema path is not a file: ${schemaPath}`)
+			output.writeWarn(`Schema path is not a file: ${schemaPath}`)
 			process.exitCode = 2
 			return false
 		}
 		return true
 	} catch (error) {
-		console.error(`Schema not found at ${schemaPath}: ${formatError(error)}`)
+		output.writeWarn(`Schema not found at ${schemaPath}: ${formatError(error)}`)
 		process.exitCode = 2
 		return false
 	}
 }
 
-const resolveSchemaRef = async (): Promise<string | null> => {
+const resolveSchemaRef = async (output: Output): Promise<string | null> => {
 	// At runtime, this file lives at: <packageRoot>/dist/commands/configInit.js
 	// The schema lives at:          <packageRoot>/schemas/argus.config.schema.json
 	const schemaUrl = new URL('../../schemas/argus.config.schema.json', import.meta.url)
 	const schemaPath = fileURLToPath(schemaUrl)
 
-	if (!(await ensureSchemaFile(schemaPath))) {
+	if (!(await ensureSchemaFile(schemaPath, output))) {
 		return null
 	}
 	return pathToFileURL(schemaPath).href
 }
 
 export const runConfigInit = async (options: ConfigInitOptions): Promise<void> => {
+	const output = createOutput(options)
 	const cwd = process.cwd()
 	const targetPath = resolveConfigPath(cwd, options.path)
 
-	if (!(await ensureParentDir(targetPath))) {
+	if (!(await ensureParentDir(targetPath, output))) {
 		return
 	}
 
-	const schemaRef = await resolveSchemaRef()
+	const schemaRef = await resolveSchemaRef(output)
 	if (!schemaRef) {
 		return
 	}
 
 	const template = buildConfigTemplate(schemaRef)
 	const contents = `${JSON.stringify(template, null, '\t')}\n`
-	if (!(await writeConfigFile(targetPath, contents, options.force))) {
+	if (!(await writeConfigFile(targetPath, contents, output, options.force))) {
 		return
 	}
 
-	console.log(`Created Argus config at ${targetPath}`)
+	output.writeHuman(`Created Argus config at ${targetPath}`)
 }

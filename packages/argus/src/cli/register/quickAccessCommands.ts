@@ -7,6 +7,7 @@ import { runReload } from '../../commands/reload.js'
 import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
 import { jsonOption } from './sharedOptions.js'
+import { usageError } from '../validation.js'
 
 export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 	{
@@ -100,16 +101,14 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 	},
 ]
 
-const normalizeStartAuthOptions = (command: Command, options: { authFrom?: string; profile?: string }): boolean => {
+const normalizeStartAuthOptions = (command: Command, options: { json?: boolean; authFrom?: string; profile?: string }): boolean => {
 	if (!options.authFrom) {
 		return true
 	}
 
 	if (isCliProvided(command, 'profile')) {
 		if (options.profile && options.profile !== 'temp') {
-			console.error('Cannot combine --auth-from with a copied Chrome profile. Use --profile temp or omit --profile.')
-			process.exitCode = 2
-			return false
+			return usageError(options, 'Cannot combine --auth-from with a copied Chrome profile. Use --profile temp or omit --profile.')
 		}
 		return true
 	}

@@ -2,6 +2,7 @@ import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runDomFill } from '../../commands/domFill.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
 import { jsonOption } from './sharedOptions.js'
+import { usageError } from '../validation.js'
 
 export const fillCommand: ArgusCommandDefinition = {
 	name: 'fill',
@@ -37,13 +38,11 @@ export const fillCommand: ArgusCommandDefinition = {
 	],
 	action: async (id, value, options) => {
 		if (value != null && options.value != null) {
-			console.error('Provide either a positional value or --value, not both.')
-			process.exitCode = 2
+			usageError(options, 'Provide either a positional value or --value, not both.')
 			return
 		}
 		if (options.name && (options.testid || options.ref)) {
-			console.error('Cannot use --name with --testid or --ref.')
-			process.exitCode = 2
+			usageError(options, 'Cannot use --name with --testid or --ref.')
 			return
 		}
 		if (!resolveTestId(options)) return

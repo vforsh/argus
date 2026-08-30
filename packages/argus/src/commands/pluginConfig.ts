@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { createOutput } from '../output/io.js'
+import { createOutput, type Output } from '../output/io.js'
 import { resolveArgusConfigPath } from '../config/loadConfig.js'
 import { getGlobalArgusConfigPath } from '../config/argusHome.js'
 import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from '../cli/plugins/pluginAliases.js'
@@ -44,14 +44,14 @@ const resolveGlobalTargetConfigPath = (): { path: string; exists: boolean } => {
 	return { path: configPath, exists: existsSync(configPath) }
 }
 
-const readConfigObject = async (configPath: string, exists: boolean): Promise<JsonObject | null> => {
+const readConfigObject = async (configPath: string, exists: boolean, output: Output): Promise<JsonObject | null> => {
 	if (!exists) return {}
 
 	let raw: string
 	try {
 		raw = await fs.readFile(configPath, 'utf8')
 	} catch (error) {
-		console.error(`Failed to read Argus config at ${configPath}: ${formatError(error)}`)
+		output.writeWarn(`Failed to read Argus config at ${configPath}: ${formatError(error)}`)
 		process.exitCode = 2
 		return null
 	}
@@ -59,32 +59,32 @@ const readConfigObject = async (configPath: string, exists: boolean): Promise<Js
 	try {
 		const parsed = JSON.parse(raw)
 		if (isRecord(parsed)) return parsed
-		console.error(`Invalid Argus config at ${configPath}: config root must be an object.`)
+		output.writeWarn(`Invalid Argus config at ${configPath}: config root must be an object.`)
 		process.exitCode = 2
 		return null
 	} catch (error) {
-		console.error(`Invalid Argus config at ${configPath}: ${formatError(error)}`)
+		output.writeWarn(`Invalid Argus config at ${configPath}: ${formatError(error)}`)
 		process.exitCode = 2
 		return null
 	}
 }
 
-const getPluginSpecs = (config: JsonObject, configPath: string): string[] | null => {
+const getPluginSpecs = (config: JsonObject, configPath: string, output: Output): string[] | null => {
 	const value = config.plugins
 	if (value === undefined) return []
 	if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.trim() === '')) {
-		console.error(`Invalid Argus config at ${configPath}: "plugins" must be an array of non-empty strings.`)
+		output.writeWarn(`Invalid Argus config at ${configPath}: "plugins" must be an array of non-empty strings.`)
 		process.exitCode = 2
 		return null
 	}
 	return value
 }
 
-const getPluginAliases = (config: JsonObject, configPath: string): Record<string, string> | null => {
+const getPluginAliases = (config: JsonObject, configPath: string, output: Output): Record<string, string> | null => {
 	const value = config.pluginAliases
 	if (value === undefined) return {}
 	if (!isRecord(value)) {
-		console.error(`Invalid Argus config at ${configPath}: "pluginAliases" must be an object with string values.`)
+		output.writeWarn(`Invalid Argus config at ${configPath}: "pluginAliases" must be an object with string values.`)
 		process.exitCode = 2
 		return null
 	}
@@ -92,7 +92,7 @@ const getPluginAliases = (config: JsonObject, configPath: string): Record<string
 	const aliases: Record<string, string> = {}
 	for (const [alias, spec] of Object.entries(value)) {
 		if (alias.trim() === '' || typeof spec !== 'string' || spec.trim() === '') {
-			console.error(`Invalid Argus config at ${configPath}: "pluginAliases" keys and values must be non-empty strings.`)
+			output.writeWarn(`Invalid Argus config at ${configPath}: "pluginAliases" keys and values must be non-empty strings.`)
 			process.exitCode = 2
 			return null
 		}
@@ -101,21 +101,21 @@ const getPluginAliases = (config: JsonObject, configPath: string): Record<string
 	return aliases
 }
 
-const writeConfigObject = async (configPath: string, config: JsonObject): Promise<boolean> => {
+const writeConfigObject = async (configPath: string, config: JsonObject, output: Output): Promise<boolean> => {
 	try {
 		await fs.mkdir(path.dirname(configPath), { recursive: true })
 		await fs.writeFile(configPath, `${JSON.stringify(config, null, '\t')}\n`, 'utf8')
 		return true
 	} catch (error) {
-		console.error(`Failed to write Argus config at ${configPath}: ${formatError(error)}`)
+		output.writeWarn(`Failed to write Argus config at ${configPath}: ${formatError(error)}`)
 		process.exitCode = 2
 		return false
 	}
 }
 
-const loadMutablePluginConfig = async (options: PluginConfigMutationOptions): Promise<MutablePluginConfig | null> => {
+const loadMutablePluginConfig = async (options: PluginConfigMutationOptions, output: Output): Promise<MutablePluginConfig | null> => {
 	if (options.path && options.global) {
-		console.error('Use either --path or --global, not both.')
+		output.writeWarn('Use either --path or --global, not both.')
 		process.exitCode = 2
 		return null
 	}
@@ -123,12 +123,12 @@ const loadMutablePluginConfig = async (options: PluginConfigMutationOptions): Pr
 	const target = options.global ? resolveGlobalTargetConfigPath() : resolveTargetConfigPath(process.cwd(), options.path)
 	if (!target) return null
 
-	const config = await readConfigObject(target.path, target.exists)
+	const config = await readConfigObject(target.path, target.exists, output)
 	if (!config) return null
 
-	const plugins = getPluginSpecs(config, target.path)
+	const plugins = getPluginSpecs(config, target.path, output)
 	if (!plugins) return null
-	const pluginAliases = getPluginAliases(config, target.path)
+	const pluginAliases = getPluginAliases(config, target.path, output)
 	if (!pluginAliases) return null
 
 	return { path: target.path, config, plugins, pluginAliases }
@@ -157,7 +157,7 @@ const parsePluginAddTarget = (raw: string, aliases: Record<string, string>): Par
 
 export const runPluginAdd = async (targetSpec: string, options: PluginConfigMutationOptions): Promise<void> => {
 	const output = createOutput(options)
-	const loaded = await loadMutablePluginConfig(options)
+	const loaded = await loadMutablePluginConfig(options, output)
 	if (!loaded) return
 
 	const parsed = parsePluginAddTarget(targetSpec, { ...BUILTIN_PLUGIN_ALIASES, ...loaded.pluginAliases })
@@ -179,7 +179,7 @@ export const runPluginAdd = async (targetSpec: string, options: PluginConfigMuta
 		loaded.pluginAliases[parsed.alias] = parsed.resolvedSpec
 		loaded.config.pluginAliases = loaded.pluginAliases
 	}
-	if ((changed || aliasChanged) && !(await writeConfigObject(loaded.path, loaded.config))) return
+	if ((changed || aliasChanged) && !(await writeConfigObject(loaded.path, loaded.config, output))) return
 
 	const response = {
 		configPath: loaded.path,
@@ -204,7 +204,7 @@ export const runPluginRemove = async (targetSpec: string, options: PluginConfigM
 		return
 	}
 
-	const loaded = await loadMutablePluginConfig(options)
+	const loaded = await loadMutablePluginConfig(options, output)
 	if (!loaded) return
 
 	const aliases = { ...BUILTIN_PLUGIN_ALIASES, ...loaded.pluginAliases }
@@ -217,7 +217,7 @@ export const runPluginRemove = async (targetSpec: string, options: PluginConfigM
 	if (changed || aliasChanged) {
 		loaded.config.plugins = next
 		loaded.config.pluginAliases = Object.keys(nextAliases).length > 0 ? nextAliases : undefined
-		if (!(await writeConfigObject(loaded.path, loaded.config))) return
+		if (!(await writeConfigObject(loaded.path, loaded.config, output))) return
 	}
 
 	const response = { configPath: loaded.path, target: normalized, changed: changed || aliasChanged, plugins: next, pluginAliases: nextAliases }

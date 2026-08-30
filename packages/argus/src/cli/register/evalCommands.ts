@@ -3,6 +3,7 @@ import { runEval } from '../../commands/eval.js'
 import { runEvalUntil } from '../../commands/evalUntil.js'
 import { runIframeHelper } from '../../commands/iframeHelper.js'
 import { jsonOption } from './sharedOptions.js'
+import { usageError } from '../validation.js'
 
 const collectValue = (value: string, previous: string[] = []): string[] => [...previous, value]
 
@@ -149,10 +150,12 @@ const REJECTED = Symbol('eval-expression-rejected')
  * parsed but never reached the command. The options object is passed through now, so
  * `RunEvalOptions` is the contract instead of a hand-copied mirror.
  */
-const resolveEvalExpression = (expression: string | undefined, options: { expression?: string }): string | undefined | typeof REJECTED => {
+const resolveEvalExpression = (
+	expression: string | undefined,
+	options: { json?: boolean; expression?: string },
+): string | undefined | typeof REJECTED => {
 	if (expression != null && options.expression != null) {
-		console.error('Provide either a positional expression or --expression, not both.')
-		process.exitCode = 2
+		usageError(options, 'Provide either a positional expression or --expression, not both.')
 		return REJECTED
 	}
 

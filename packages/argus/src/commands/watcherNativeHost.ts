@@ -18,6 +18,8 @@ export type NativeHostOptions = {
 export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<void> => {
 	const role = options.role?.trim() || 'tab'
 	if (role !== 'tab' && role !== 'control') {
+		// Stdout is the native-messaging channel here, so every diagnostic goes to stderr directly:
+		// an `Output` would be free to write to stdout and corrupt the framing.
 		console.error(`Invalid native host role: ${role}. Expected "tab" or "control".`)
 		process.exit(2)
 	}

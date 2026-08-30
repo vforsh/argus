@@ -6,6 +6,7 @@ import { runChromeVersion, runChromeStatus, runChromeList, runChromeStop } from 
 import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig } from '../../config/mergeConfig.js'
 import { jsonOption } from './sharedOptions.js'
+import { usageError } from '../validation.js'
 
 const cdpTargetOptions = [
 	{ flags: '--cdp <host:port>', description: 'CDP host:port' },
@@ -111,16 +112,14 @@ export const chromeCommands: readonly ArgusCommandDefinition[] = [
 	},
 ]
 
-const normalizeAuthStateProfileOptions = (command: Command, options: { authState?: string; profile?: string }): boolean => {
+const normalizeAuthStateProfileOptions = (command: Command, options: { json?: boolean; authState?: string; profile?: string }): boolean => {
 	if (!options.authState) {
 		return true
 	}
 
 	if (isCliProvided(command, 'profile')) {
 		if (options.profile && options.profile !== 'temp') {
-			console.error('Cannot combine --auth-state with a copied Chrome profile. Use --profile temp or omit --profile.')
-			process.exitCode = 2
-			return false
+			return usageError(options, 'Cannot combine --auth-state with a copied Chrome profile. Use --profile temp or omit --profile.')
 		}
 		return true
 	}

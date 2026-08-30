@@ -1,7 +1,7 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
 import { runLogCursor, runLogEpoch, runLogs } from '../../commands/logs.js'
 import { runTail } from '../../commands/tail.js'
-import { collectMatch, validateCaseFlags, validateMatchOptions } from '../validation.js'
+import { collectMatch, usageError, validateCaseFlags, validateMatchOptions } from '../validation.js'
 
 const sharedFilterOptions: readonly ArgusCommandOption[] = [
 	{ flags: '--levels <levels>', description: 'Comma-separated log levels' },
@@ -19,9 +19,7 @@ const validateLogsOptions = (options: {
 	match?: string[]
 }): boolean => {
 	if (options.json && options.jsonFull) {
-		console.error('Cannot combine --json with --json-full.')
-		process.exitCode = 2
-		return false
+		return usageError(options, 'Cannot combine --json with --json-full.')
 	}
 	return validateCaseFlags(options) && validateMatchOptions(options)
 }
