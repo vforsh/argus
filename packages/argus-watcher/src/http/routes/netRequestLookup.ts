@@ -1,6 +1,6 @@
 import type { NetworkRequestDetail } from '@vforsh/argus-core'
 import type { NetBuffer, NetBufferRecord } from '../../buffer/NetBuffer.js'
-import { normalizeQueryValue } from '../httpUtils.js'
+import { normalizeQueryValue, optionalPositiveInt } from '../httpUtils.js'
 
 export type NetRequestLookup = {
 	id?: number
@@ -12,14 +12,14 @@ export type NetRequestLookup = {
  * Routes accept either an Argus buffer id or a raw CDP request id.
  */
 export const parseNetRequestLookup = (searchParams: URLSearchParams): NetRequestLookup | null => {
-	const id = parsePositiveInt(searchParams.get('id'))
+	const id = optionalPositiveInt(searchParams.get('id'))
 	const requestId = normalizeQueryValue(searchParams.get('requestId'))
 	if (id == null && !requestId) {
 		return null
 	}
 
 	return {
-		id: id ?? undefined,
+		id,
 		requestId,
 	}
 }
@@ -38,17 +38,4 @@ export const resolveNetRequestLookupRecord = (buffer: NetBuffer, lookup: NetRequ
 	}
 
 	return null
-}
-
-const parsePositiveInt = (value: string | null): number | null => {
-	if (!value) {
-		return null
-	}
-
-	const parsed = Number(value)
-	if (!Number.isSafeInteger(parsed) || parsed < 1) {
-		return null
-	}
-
-	return parsed
 }

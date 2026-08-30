@@ -3,7 +3,7 @@ import type { NetFilterContext, NetFilters, NetParty, NetScope } from '../../net
 import { derivePartyHost, normalizeNetUrlKey } from '../../net/filtering.js'
 import type { HttpRequestEventMetadata } from '../server.js'
 import type { RouteContext } from './types.js'
-import { clampNumber, normalizeQueryValue, respondJson } from '../httpUtils.js'
+import { clampNumber, normalizeQueryValue, optionalNumber, respondJson } from '../httpUtils.js'
 
 export type ParsedNetFilters = NetFilters & {
 	after: number
@@ -43,7 +43,7 @@ export const readNetFiltersFromUrl = (url: URL, ctx: RouteContext, res: http.Ser
 	const filters = parseNetRequestFilters(url.searchParams, {
 		after: clampNumber(url.searchParams.get('after'), 0),
 		limit: clampNumber(url.searchParams.get('limit'), 500, 1, 5000),
-		sinceTs: clampNumber(url.searchParams.get('sinceTs'), undefined),
+		sinceTs: optionalNumber(url.searchParams.get('sinceTs')),
 		context: ctx.getNetFilterContext?.() ?? null,
 	})
 	if (filters.error || !filters.value) {
@@ -101,8 +101,8 @@ export const parseNetRequestFilters = (searchParams: URLSearchParams, options: P
 			frameId: resolvedFrameId,
 			documentUrlKey: resolveDocumentUrlKey({ frame: frame.value ?? null, scope: resolvedScope, context }),
 			failedOnly: hasTruthyFlag(searchParams, 'failedOnly'),
-			minDurationMs: optionalClampNumber(searchParams.get('minDurationMs'), 1),
-			minTransferBytes: optionalClampNumber(searchParams.get('minTransferBytes'), 1),
+			minDurationMs: optionalNumber(searchParams.get('minDurationMs'), 1),
+			minTransferBytes: optionalNumber(searchParams.get('minTransferBytes'), 1),
 			scope: resolvedScope,
 			frame: frame.value ?? null,
 		},
@@ -244,6 +244,3 @@ const hasTruthyFlag = (searchParams: URLSearchParams, key: string): boolean => {
 	const normalized = value.trim().toLowerCase()
 	return normalized !== '' && normalized !== '0' && normalized !== 'false'
 }
-
-const optionalClampNumber = (value: string | null, min: number): number | undefined =>
-	value == null ? undefined : clampNumber(value, undefined, min)

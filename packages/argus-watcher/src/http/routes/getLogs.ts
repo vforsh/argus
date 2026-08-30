@@ -6,6 +6,7 @@ import {
 	respondInvalidMatch,
 	respondInvalidMatchCase,
 	clampNumber,
+	optionalNumber,
 	parseLevels,
 	resolveMatchCase,
 	normalizeMatchPatterns,
@@ -30,7 +31,7 @@ export const route = defineJsonRoute<undefined, LogsResponse>({
 			return respondInvalidMatchCase(res)
 		}
 		const source = normalizeQueryValue(url.searchParams.get('source'))
-		const sinceTs = clampNumber(url.searchParams.get('sinceTs'), undefined)
+		const sinceTs = optionalNumber(url.searchParams.get('sinceTs'))
 
 		const matchPatterns = normalizeMatchPatterns(match)
 		if (matchPatterns.error) {

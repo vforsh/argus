@@ -70,16 +70,62 @@ export const readJsonBody = async <T>(req: http.IncomingMessage, res: http.Serve
 	}
 }
 
-export const clampNumber = (value: string | null, fallback?: number, min?: number, max?: number): number => {
+/**
+ * Read a numeric query param that always resolves to a number.
+ *
+ * Absent or non-numeric values fall back to `fallback`; in-range values are clamped
+ * into `[min, max]`. Use {@link optionalNumber} when "absent" must stay distinguishable
+ * from a real value — this function cannot express it.
+ */
+export const clampNumber = (value: string | null, fallback: number, min?: number, max?: number): number => {
+	const parsed = value == null ? Number.NaN : Number(value)
+	if (!Number.isFinite(parsed)) {
+		return fallback
+	}
+
+	return clampToRange(parsed, min, max)
+}
+
+/**
+ * Read an optional numeric query param.
+ *
+ * Returns `undefined` when the param is absent or non-numeric, so callers can tell
+ * "not provided" from a provided `0`. Provided values are clamped into `[min, max]`.
+ */
+export const optionalNumber = (value: string | null, min?: number, max?: number): number | undefined => {
 	if (value == null) {
-		return fallback ?? 0
+		return undefined
 	}
 
 	const parsed = Number(value)
 	if (!Number.isFinite(parsed)) {
-		return fallback ?? 0
+		return undefined
 	}
 
+	return clampToRange(parsed, min, max)
+}
+
+/**
+ * Read an optional positive-integer query param (buffer ids and other 1-based handles).
+ *
+ * Unlike {@link optionalNumber} this rejects rather than clamps: fractional, negative,
+ * zero, and unsafe-integer values all yield `undefined` so a bad id can never be
+ * silently coerced into a valid lookup.
+ */
+export const optionalPositiveInt = (value: string | null): number | undefined => {
+	if (!value) {
+		return undefined
+	}
+
+	const parsed = Number(value)
+	if (!Number.isSafeInteger(parsed) || parsed < 1) {
+		return undefined
+	}
+
+	return parsed
+}
+
+const clampToRange = (parsed: number, min?: number, max?: number): number => {
 	if (min != null && parsed < min) {
 		return min
 	}
@@ -133,10 +179,7 @@ export const normalizeMatchPatterns = (match: string[]): { patterns: string[]; e
 	return { patterns }
 }
 
-export const compileMatchPatterns = (
-	patterns: string[],
-	matchCase: 'sensitive' | 'insensitive',
-): { match?: RegExp[]; error?: string } => {
+export const compileMatchPatterns = (patterns: string[], matchCase: 'sensitive' | 'insensitive'): { match?: RegExp[]; error?: string } => {
 	if (patterns.length === 0) {
 		return {}
 	}

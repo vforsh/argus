@@ -2,7 +2,8 @@ import type { NetWebSocketResponse } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
 import { emitRequest } from './types.js'
 import { respondNetDisabled } from './netFilters.js'
-import { clampNumber, normalizeQueryValue, respondJson } from '../httpUtils.js'
+import { parseNetRequestLookup } from './netRequestLookup.js'
+import { respondJson } from '../httpUtils.js'
 
 export const route = defineJsonRoute<undefined, NetWebSocketResponse>({
 	method: 'GET',
@@ -12,15 +13,15 @@ export const route = defineJsonRoute<undefined, NetWebSocketResponse>({
 			return respondNetDisabled(res)
 		}
 
-		const id = clampNumber(url.searchParams.get('id'), undefined, 1)
-		const requestId = normalizeQueryValue(url.searchParams.get('requestId'))
-		if (id == null && !requestId) {
+		const lookup = parseNetRequestLookup(url.searchParams)
+		if (!lookup) {
 			return respondJson(res, { ok: false, error: { code: 'invalid_net_request', message: 'Missing WebSocket connection id' } }, 400)
 		}
 
-		emitRequest(ctx, res, 'net/ws/connection', { id, requestId: requestId ?? undefined })
+		emitRequest(ctx, res, 'net/ws/connection', { id: lookup.id, requestId: lookup.requestId })
 
-		const connection = id != null ? ctx.realtimeNetBuffer.getWebSocketById(id) : ctx.realtimeNetBuffer.getWebSocketByRequestId(requestId!)
+		const connection =
+			lookup.id != null ? ctx.realtimeNetBuffer.getWebSocketById(lookup.id) : ctx.realtimeNetBuffer.getWebSocketByRequestId(lookup.requestId!)
 		if (!connection) {
 			return respondJson(res, { ok: false, error: { code: 'net_request_not_found', message: 'WebSocket connection not found' } }, 404)
 		}
