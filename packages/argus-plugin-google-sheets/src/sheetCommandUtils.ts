@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto'
 import { formatA1Cell, parseA1Range } from './a1.js'
 import {
 	buildAcquireLeaseExpression,
-	buildAssertLeaseExpression,
 	buildReleaseLeaseExpression,
 	buildRenewLeaseExpression,
 	type SheetLeaseRelease,
@@ -165,10 +164,6 @@ export const withSheetLease = async <T>(
 	}
 	return { value, lease, release }
 }
-
-/** Assert that an existing lease token is still current before a UI step. */
-export const assertSheetLease = async (ctx: ArgusPluginContextV1, id: string | undefined, output: Output, token: string): Promise<boolean> =>
-	Boolean(await evalInWatcher(ctx, id, buildAssertLeaseExpression(token), output, { evalTimeoutMs: 3_000, requestTimeoutMs: 5_000 }))
 
 /** Renew a matching lease token for another bounded operation window. */
 export const renewSheetLease = async (

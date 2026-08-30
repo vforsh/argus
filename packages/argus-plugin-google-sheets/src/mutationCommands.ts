@@ -1,3 +1,4 @@
+import { readStdin } from './cliArgs.js'
 import { parseDurationMs } from '@vforsh/argus-core'
 import type { Command } from 'commander'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
@@ -445,15 +446,3 @@ const formatVerificationTarget = (result: MutationResult): string =>
 	result.sheet ? `${result.sheet.name}!${result.verificationRange}` : result.verificationRange
 
 const didVerificationFail = (result: MutationResult): boolean => result.verified === false || result.mismatches.length > 0
-
-const readStdin = async (): Promise<string> =>
-	new Promise((resolve, reject) => {
-		let data = ''
-		process.stdin.setEncoding('utf8')
-		process.stdin.on('data', (chunk) => {
-			data += chunk
-		})
-		process.stdin.on('end', () => resolve(data))
-		process.stdin.on('error', reject)
-		process.stdin.resume()
-	})

@@ -1,3 +1,4 @@
+import { parsePositiveInt, runtimeError, usageError } from './cliArgs.js'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 import { parseCsv } from './csv.js'
@@ -64,7 +65,7 @@ export const registerSheetInspectionCommands = (ctx: ArgusPluginContextV1, sheet
 
 const runSchema = async (ctx: ArgusPluginContextV1, id: string | undefined, options: InspectionOptions): Promise<void> => {
 	const output = ctx.host.createOutput(options)
-	const headerRow = positiveInteger(options.headerRow ?? '1', '--header-row', output)
+	const headerRow = parsePositiveInt(options.headerRow ?? '1', { flag: '--header-row', output })
 	if (headerRow == null) return
 	const schemaResult = await loadSchema(ctx, id, options, headerRow, output)
 	if (!schemaResult) return
@@ -83,8 +84,8 @@ const runSchema = async (ctx: ArgusPluginContextV1, id: string | undefined, opti
 
 const runQuery = async (ctx: ArgusPluginContextV1, id: string | undefined, options: QueryOptions): Promise<void> => {
 	const output = ctx.host.createOutput(options)
-	const headerRow = positiveInteger(options.headerRow ?? '1', '--header-row', output)
-	const limit = positiveInteger(options.limit ?? '100', '--limit', output)
+	const headerRow = parsePositiveInt(options.headerRow ?? '1', { flag: '--header-row', output })
+	const limit = parsePositiveInt(options.limit ?? '100', { flag: '--limit', output })
 	if (headerRow == null || limit == null) return
 	const schemaResult = await loadSchema(ctx, id, options, headerRow, output)
 	if (!schemaResult) return
@@ -103,7 +104,7 @@ const runQuery = async (ctx: ArgusPluginContextV1, id: string | undefined, optio
 		? 1
 		: options.expectCount == null
 			? null
-			: positiveInteger(options.expectCount, '--expect-count', output)
+			: parsePositiveInt(options.expectCount, { flag: '--expect-count', output })
 	if (options.expectCount != null && expectedCount == null) return
 	if (expectedCount != null && allMatches.length !== expectedCount) {
 		return runtimeError(output, `Query assertion failed: expected ${expectedCount} match(es), found ${allMatches.length}.`)
@@ -167,7 +168,7 @@ const locateRows = async (
 	width: number,
 	options: QueryOptions,
 ): Promise<ExactLocatorResult<ExactRowMatch> | null> => {
-	const maxRow = positiveInteger(options.maxRow ?? '5000', '--max-row', output)
+	const maxRow = parsePositiveInt(options.maxRow ?? '5000', { flag: '--max-row', output })
 	const deadlineMs = parseTimeoutMs(options.locateTimeout, 20_000)
 	if (maxRow == null) return null
 	if (deadlineMs == null) {
@@ -182,23 +183,6 @@ const locateRows = async (
 		output,
 		{ evalTimeoutMs: internalDeadlineMs + 2_000, requestTimeoutMs: internalDeadlineMs + 5_000 },
 	)
-}
-
-const positiveInteger = (value: string, flag: string, output: Output): number | null => {
-	const parsed = Number(value)
-	if (Number.isInteger(parsed) && parsed > 0) return parsed
-	usageError(output, `${flag} must be a positive integer`)
-	return null
-}
-
-const usageError = (output: Output, message: string): void => {
-	output.writeWarn(message)
-	process.exitCode = 2
-}
-
-const runtimeError = (output: Output, message: string): void => {
-	output.writeWarn(message)
-	process.exitCode = 1
 }
 
 const writeSchemaHuman = (output: Output, payload: { targetSheet: string | null; headerRow: number; headers: SheetSchema['headers'] }): void => {

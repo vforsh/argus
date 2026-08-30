@@ -1,3 +1,4 @@
+import { parsePositiveInt, runtimeError, usageError } from './cliArgs.js'
 import { readFile, writeFile } from 'node:fs/promises'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
@@ -44,8 +45,8 @@ export const registerSheetDiffCommand = (ctx: ArgusPluginContextV1, sheets: Comm
 
 const runDiff = async (ctx: ArgusPluginContextV1, id: string | undefined, options: DiffOptions): Promise<void> => {
 	const output = ctx.host.createOutput(options)
-	const headerRow = parsePositiveInteger(options.headerRow ?? '1')
-	const maxRow = parsePositiveInteger(options.maxRow ?? '5000')
+	const headerRow = parsePositiveInt(options.headerRow ?? '1')
+	const maxRow = parsePositiveInt(options.maxRow ?? '5000')
 	if (headerRow == null || maxRow == null) return usageError(output, '--header-row and --max-row must be positive integers')
 	let localText: string
 	try {
@@ -195,17 +196,4 @@ const writeHumanDiff = (
 	if (payload.emitPlan) output.writeHuman(`Apply manifest: ${payload.emitPlan}`)
 	if (payload.locator && !payload.locator.complete)
 		output.writeWarn(`Locator incomplete (${payload.locator.reason}); unresolved rows have exportRow only.`)
-}
-
-const parsePositiveInteger = (value: string): number | null => {
-	const number = Number(value)
-	return Number.isInteger(number) && number > 0 ? number : null
-}
-const usageError = (output: Output, message: string): void => {
-	output.writeWarn(message)
-	process.exitCode = 2
-}
-const runtimeError = (output: Output, message: string): void => {
-	output.writeWarn(message)
-	process.exitCode = 1
 }

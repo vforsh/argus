@@ -41,21 +41,6 @@ export const cellValueType = (value: CellValue): 'text' | 'number' | 'boolean' |
 	return 'formula'
 }
 
-/** Serialize a typed rectangle for Google Sheets UI paste without conflating formula and text. */
-export const typedValuesToTsv = (values: readonly (readonly CellValue[])[]): string =>
-	values
-		.map((row) =>
-			row
-				.map((value) => {
-					if (value === null) return ''
-					if (typeof value === 'string') return `'${value.replace(/\r?\n/g, ' ')}`
-					if (typeof value === 'object') return value.formula.replace(/\r?\n/g, ' ')
-					return String(value)
-				})
-				.join('\t'),
-		)
-		.join('\n')
-
 /** Compare an exact raw cell read with the requested typed value. */
 export const typedValueMatches = (actual: RawCellValue, expected: CellValue): boolean => {
 	if (expected === null) return actual.value === null || actual.value === ''

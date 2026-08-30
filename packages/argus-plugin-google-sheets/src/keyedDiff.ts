@@ -1,6 +1,3 @@
-import type { LocatedRowCandidate } from './queryModel.js'
-import type { SheetHeader } from './schema.js'
-
 /** One keyed table row used by the diff engine. */
 export type KeyedRow = {
 	key: string
@@ -65,20 +62,3 @@ export const diffKeyedRows = (sheetRows: readonly KeyedRow[], localRows: readonl
 	}
 	return { additions, removals, changes, unchanged }
 }
-
-/** Convert located sheet candidates to keyed rows for diff coordinate output. */
-export const candidatesToKeyedRows = (
-	candidates: readonly (LocatedRowCandidate | { exportRow: number; values: string[] })[],
-	keyHeader: SheetHeader,
-	columns: readonly SheetHeader[],
-): KeyedRow[] =>
-	candidates.map((candidate) => {
-		const values: Record<string, string> = {}
-		for (const header of columns) values[header.original] = candidate.values[header.index - 1] ?? ''
-		return {
-			key: candidate.values[keyHeader.index - 1] ?? '',
-			values,
-			exportRow: candidate.exportRow,
-			...('sheetRow' in candidate ? { sheetRow: candidate.sheetRow, a1: candidate.a1 } : {}),
-		}
-	})

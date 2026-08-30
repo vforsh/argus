@@ -1,3 +1,4 @@
+import { parsePositiveInt } from './cliArgs.js'
 import type { Command } from 'commander'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { indexToColumnLetters, parseA1Cell } from './a1.js'
@@ -290,11 +291,6 @@ const parseInsertSide = (options: DimensionAddOptions, output: Output): InsertSi
 		return null
 	}
 	return options.before ? 'before' : 'after'
-}
-
-const parsePositiveInt = (value: string): number | null => {
-	const parsed = Number(value)
-	return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
 const writeDimensionResult = (output: Output, options: DimensionOptions, result: DimensionCommandResult): void => {

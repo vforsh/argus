@@ -1,3 +1,4 @@
+import { parsePositiveInt, usageError } from './cliArgs.js'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { parseA1Range } from './a1.js'
 import { registerSheetApplyCommand } from './applyCommands.js'
@@ -334,7 +335,7 @@ const runFind = async (ctx: ArgusPluginContextV1, id: string | undefined, text: 
 	if (!data) return
 
 	const rows = parseCsv(data.csv)
-	const limit = parsePositiveInt(options.limit, 20)
+	const limit = parsePositiveInt(options.limit, { fallback: 20 })
 	if (limit == null) {
 		output.writeWarn('--limit must be a positive integer')
 		process.exitCode = 2
@@ -350,7 +351,7 @@ const runFind = async (ctx: ArgusPluginContextV1, id: string | undefined, text: 
 
 	const needle = options.ignoreCase ? text.toLowerCase() : text
 	const candidates = findExportMatches(rows, needle, { columnIndex, ignoreCase: options.ignoreCase ?? false, limit })
-	const maxRowFlag = parsePositiveInt(options.maxRow, 5_000)
+	const maxRowFlag = parsePositiveInt(options.maxRow, { fallback: 5_000 })
 	const deadlineMs = parseTimeoutMs(options.locateTimeout, 20_000)
 	if (maxRowFlag == null) return usageError(output, '--max-row must be a positive integer')
 	if (deadlineMs == null) return usageError(output, '--locate-timeout must be a positive duration such as 5s or 20s')
@@ -457,15 +458,4 @@ const leasedEval = async <T>(
 		async () => await evalInWatcher<T>(ctx, id, expression, output, { evalTimeoutMs, requestTimeoutMs: evalTimeoutMs + 3_000 }),
 	)
 	return leased?.value ?? null
-}
-
-const usageError = (output: Output, message: string): void => {
-	output.writeWarn(message)
-	process.exitCode = 2
-}
-
-const parsePositiveInt = (value: string | undefined, fallback: number): number | null => {
-	if (value == null) return fallback
-	const parsed = Number(value)
-	return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }

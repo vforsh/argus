@@ -1,3 +1,4 @@
+import { readStdin, runtimeError, usageError } from './cliArgs.js'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
@@ -348,22 +349,4 @@ const writeApplyHuman = (
 	}
 	if (payload.journal) output.writeHuman(`Journal: ${payload.journal}`)
 	if (payload.rollback) output.writeHuman(`Rollback manifest: ${payload.rollback}`)
-}
-
-const readStdin = async (): Promise<string> =>
-	await new Promise((resolveText, reject) => {
-		let data = ''
-		process.stdin.setEncoding('utf8')
-		process.stdin.on('data', (chunk) => (data += chunk))
-		process.stdin.on('end', () => resolveText(data))
-		process.stdin.on('error', reject)
-		process.stdin.resume()
-	})
-const usageError = (output: Output, message: string): void => {
-	output.writeWarn(message)
-	process.exitCode = 2
-}
-const runtimeError = (output: Output, message: string): void => {
-	output.writeWarn(message)
-	process.exitCode = 1
 }

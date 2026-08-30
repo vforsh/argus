@@ -25,9 +25,6 @@ return readSheetCsvInPage(${JSON.stringify(input)})
 /** Build a browser expression that fills the Google Sheets name box. */
 export const buildSelectRangeExpression = (range: string): string => `(${selectSheetRangeInPage.toString()})(${JSON.stringify({ range })})`
 
-/** Build a browser expression that replaces the clipboard text. */
-export const buildClipboardExpression = (text: string): string => `(${writeClipboardInPage.toString()})(${JSON.stringify({ text })})`
-
 /** Read Google Sheets CSV inside its authenticated page context. */
 export function readSheetCsvInPage(input: { range?: string; gid?: string }): Promise<SheetCsvResult> {
 	const gid = input.gid ?? getCurrentGid()
@@ -149,3 +146,53 @@ export async function writeClipboardInPage(input: { text: string }): Promise<She
 		textarea.remove()
 	}
 }
+
+/** Dispatch one mouse event with viewport coordinates Google Sheets accepts. */
+export function dispatchPointerEvent(element: HTMLElement, type: string, clientX: number, clientY: number, button: 0 | 2 = 0): void {
+	element.dispatchEvent(
+		new MouseEvent(type, {
+			bubbles: true,
+			cancelable: true,
+			view: window,
+			clientX,
+			clientY,
+			button,
+		}),
+	)
+}
+
+/** Rendered elements matching a selector, in document order. */
+export function getRenderedElements(selector: string): HTMLElement[] {
+	return Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(isRenderedElement)
+}
+
+/** First rendered element matching a selector. */
+export function findRenderedElement(selector: string): HTMLElement | null {
+	return getRenderedElements(selector)[0] ?? null
+}
+
+/** Dispatch the mouse sequence Google Sheets treats as a press. */
+export function pressElement(element: HTMLElement, button: 0 | 2 = 0): void {
+	const rect = element.getBoundingClientRect()
+	const clientX = rect.left + rect.width / 2
+	const clientY = rect.top + rect.height / 2
+	for (const type of ['mouseover', 'mousedown', 'mouseup', 'click']) {
+		dispatchPointerEvent(element, type, clientX, clientY, button)
+	}
+}
+
+/**
+ * Transitive dependencies of the Sheets DOM helpers above.
+ *
+ * Builders compose this instead of hand-picking helpers; a missing entry used to be a
+ * runtime ReferenceError in the page with no compile-time signal.
+ */
+export const sheetDomDeps = [
+	isRenderedElement,
+	getRenderedElements,
+	findRenderedElement,
+	dispatchPointerEvent,
+	pressElement,
+	delay,
+	getSpreadsheetId,
+] as const
