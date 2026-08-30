@@ -1,0 +1,9 @@
+{
+	"version": 3,
+	"file": "sourcemapped-app.js",
+	"sources": [
+		"../src/sourcemapped-fixture.ts"
+	],
+	"names": [],
+	"mappings": "AAGA;CAEE;CAGA"
+}

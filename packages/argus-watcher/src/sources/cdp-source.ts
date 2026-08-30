@@ -27,7 +27,7 @@ export type CdpSourceOptions = CdpSourceBaseOptions & {
  * Returns a handle that can be used to control the source and access CDP session.
  */
 export const createCdpSource = (options: CdpSourceOptions): CdpSourceHandle => {
-	const { events, ignoreMatcher, stripUrlPrefixes, chrome, match, sessionHandle } = options
+	const { events, ignoreMatcher, stripUrlPrefixes, sourcemaps, chrome, match, sessionHandle } = options
 
 	// Create session handle if not provided
 	const controller = sessionHandle ?? createCdpSessionHandle()
@@ -42,6 +42,7 @@ export const createCdpSource = (options: CdpSourceOptions): CdpSourceHandle => {
 		sessionHandle: controller,
 		ignoreMatcher: ignoreMatcherObj,
 		stripUrlPrefixes,
+		sourcemaps,
 		onLog: events.onLog,
 		onStatus: events.onStatus,
 		onPageNavigation: events.onPageNavigation,

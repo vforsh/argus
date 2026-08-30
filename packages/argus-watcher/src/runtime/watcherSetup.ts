@@ -7,6 +7,7 @@ import { NetBuffer } from '../buffer/NetBuffer.js'
 import { RealtimeNetBuffer } from '../buffer/RealtimeNetBuffer.js'
 import { WatcherFileLogger } from '../fileLogs/WatcherFileLogger.js'
 import { buildIgnoreMatcher } from '../cdp/ignoreList.js'
+import { createSourcemapResolver, type SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
 import { createCdpSessionHandle } from '../cdp/connection.js'
 import { createEmulationController } from '../emulation/EmulationController.js'
 import { createThrottleController } from '../throttle/ThrottleController.js'
@@ -29,6 +30,8 @@ export type NormalizedWatcherSetup = {
 	pageConsoleLogging: NonNullable<StartWatcherOptions['pageConsoleLogging']>
 	ignoreMatcher: ReturnType<typeof buildIgnoreMatcher>
 	stripUrlPrefixes: string[] | undefined
+	/** Owned here so the cache lives and dies with the watcher instead of the module. */
+	sourcemaps: SourcemapResolver
 	events: Emittery<ArgusWatcherEventMap>
 	buffer: LogBuffer
 	netBuffer: NetBuffer | null
@@ -103,6 +106,7 @@ export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: s
 		pageConsoleLogging,
 		ignoreMatcher,
 		stripUrlPrefixes,
+		sourcemaps: createSourcemapResolver(),
 		events,
 		buffer,
 		netBuffer,

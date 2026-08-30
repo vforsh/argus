@@ -4,6 +4,7 @@ import { createCdpSessionHandle } from './connection.js'
 import type { CdpSessionController, CdpSessionHandle } from './connection.js'
 import { fetchPageIntl, type PageIntlInfo, toConsoleEvent, toExceptionEvent } from './watcherEvents.js'
 import { findTarget, type CdpTarget } from './watcherTargets.js'
+import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
 
 /** Current CDP attachment status. */
 export type CdpStatus = {
@@ -32,6 +33,7 @@ export type CdpWatcherOptions = {
 	sessionHandle?: CdpSessionController
 	ignoreMatcher?: IgnoreMatcher | null
 	stripUrlPrefixes?: string[]
+	sourcemaps: SourcemapResolver
 }
 
 export type CdpWatcherHandle = {

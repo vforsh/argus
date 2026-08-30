@@ -112,6 +112,20 @@
 			</div>
 		</section>
 
+		<!-- ── Sourcemaps ── -->
+		<section data-testid="sourcemaps-section">
+			<h2>Sourcemaps</h2>
+			<p style="font-size: 0.85rem; color: #666; margin-top: 0">
+				Both bundles are unfindable by the old <code>&lt;script&gt;.map</code> guess: one is served with a cache-busting query and points at a
+				hashed map under <code>/maps/</code>, the other inlines its map as a <code>data:</code> URI.
+			</p>
+			<div class="btn-row">
+				<button data-testid="btn-sourcemapped-log" onclick="window.sourcemappedFixture.log()">log (mapped bundle)</button>
+				<button data-testid="btn-sourcemapped-throw" onclick="window.sourcemappedFixture.boom()">throw (mapped bundle)</button>
+				<button data-testid="btn-inline-mapped-log" onclick="window.inlineMappedFixture.log()">log (inline map)</button>
+			</div>
+		</section>
+
 		<!-- ── Network ── -->
 		<section data-testid="network-section">
 			<h2>Network</h2>
@@ -340,6 +354,8 @@
 
 		<script src="/config.js"></script>
 		<script src="/minified-app.js"></script>
+		<script src="/sourcemapped-app.js?v=abc123"></script>
+		<script src="/inline-mapped-app.js"></script>
 		<script>
 			// ── Event tracking (e2e test pattern) ──
 			window.__events = []

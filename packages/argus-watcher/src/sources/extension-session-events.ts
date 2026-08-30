@@ -3,12 +3,14 @@ import type { CdpSourceEvents } from './types.js'
 import { parseExecutionContext, parseFrame, type ExtensionFrameState } from './extension-frame-state.js'
 import type { IgnoreMatcher } from '../cdp/ignoreList.js'
 import { toConsoleEvent, toExceptionEvent } from '../cdp/watcherEvents.js'
+import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
 
 type RegisterExtensionSessionEventsOptions = {
 	session: ExtensionSession
 	events: CdpSourceEvents
 	ignoreMatcher?: IgnoreMatcher | null
 	stripUrlPrefixes?: string[]
+	sourcemaps: SourcemapResolver
 	getOrCreateFrameState: (tabId: number) => ExtensionFrameState
 	reconcileTargetSelection: (session: ExtensionSession) => boolean
 	removeFrame: (tabId: number, frameId: string) => void
@@ -25,6 +27,7 @@ export const registerExtensionSessionEventHandlers = ({
 	events,
 	ignoreMatcher,
 	stripUrlPrefixes,
+	sourcemaps,
 	getOrCreateFrameState,
 	reconcileTargetSelection,
 	removeFrame,
@@ -134,7 +137,7 @@ export const registerExtensionSessionEventHandlers = ({
 
 	// Same mapper as the direct-CDP watcher, handed the bridge session so remote objects and
 	// sourcemapped locations resolve identically in both modes.
-	const logConfig = { ignoreMatcher, stripUrlPrefixes, cdp: session.handle }
+	const logConfig = { ignoreMatcher, stripUrlPrefixes, sourcemaps, cdp: session.handle }
 
 	session.handle.onEvent('Runtime.consoleAPICalled', (params) => {
 		void toConsoleEvent(params, session, logConfig).then((event) => events.onLog(event))

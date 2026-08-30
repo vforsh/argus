@@ -4,7 +4,7 @@ import type { IgnoreMatcher } from './ignoreList.js'
 import { stripUrlPrefixes } from './locationCleanup.js'
 import type { CallFrame, SelectedLocation } from './selectBestFrame.js'
 import { selectBestFrame } from './selectBestFrame.js'
-import { resolveSourcemappedLocation } from '../sourcemaps/resolveLocation.js'
+import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
 import type { CdpSessionHandle } from './connection.js'
 import { serializeRemoteObject, serializeRemoteObjects } from './remoteObject.js'
 
@@ -28,6 +28,8 @@ type WatcherEventConfig = {
 	ignoreMatcher?: IgnoreMatcher | null
 	stripUrlPrefixes?: string[]
 	cdp?: CdpSessionHandle
+	/** Required so every source wires the watcher-scoped cache; there is no module-global fallback. */
+	sourcemaps: SourcemapResolver
 }
 
 /**
@@ -129,12 +131,12 @@ const applyLocation = async (
 	callFrames: CallFrame[] | undefined,
 	config: WatcherEventConfig,
 ): Promise<Omit<LogEvent, 'id'>> => {
-	const selected = await selectLocationFromFrames(callFrames, config.ignoreMatcher ?? null)
+	const selected = await selectLocationFromFrames(callFrames, config.ignoreMatcher ?? null, config.sourcemaps)
 	if (selected) {
 		return applyLocationCleanup({ ...event, ...selected }, config.stripUrlPrefixes)
 	}
 
-	const fallback = await applySourcemap(applyFirstFrame(event, callFrames))
+	const fallback = await applySourcemap(applyFirstFrame(event, callFrames), config.sourcemaps)
 	return applyLocationCleanup(fallback, config.stripUrlPrefixes)
 }
 
@@ -142,12 +144,12 @@ const applyLocation = async (
 const resolveTimestamp = (timestamp: number | undefined): number =>
 	typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : Date.now()
 
-const applySourcemap = async (event: Omit<LogEvent, 'id'>): Promise<Omit<LogEvent, 'id'>> => {
+const applySourcemap = async (event: Omit<LogEvent, 'id'>, sourcemaps: SourcemapResolver): Promise<Omit<LogEvent, 'id'>> => {
 	if (!event.file || event.line == null || event.column == null) {
 		return event
 	}
 	try {
-		const resolved = await resolveSourcemappedLocation({
+		const resolved = await sourcemaps.resolve({
 			file: event.file,
 			line: event.line,
 			column: event.column,
@@ -169,11 +171,12 @@ const applySourcemap = async (event: Omit<LogEvent, 'id'>): Promise<Omit<LogEven
 const selectLocationFromFrames = async (
 	callFrames: CallFrame[] | undefined,
 	ignoreMatcher: IgnoreMatcher | null,
+	sourcemaps: SourcemapResolver,
 ): Promise<SelectedLocation | null> => {
 	if (!ignoreMatcher) {
 		return null
 	}
-	return selectBestFrame(callFrames, ignoreMatcher)
+	return selectBestFrame(callFrames, ignoreMatcher, sourcemaps)
 }
 
 const applyFirstFrame = (event: Omit<LogEvent, 'id'>, callFrames: CallFrame[] | undefined): Omit<LogEvent, 'id'> => {

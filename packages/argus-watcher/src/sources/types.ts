@@ -1,3 +1,4 @@
+import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
 /**
  * Source abstraction types for unified CDP and Extension modes.
  * Both sources implement the same interface, allowing the watcher
@@ -137,4 +138,6 @@ export type CdpSourceBaseOptions = {
 	ignoreMatcher?: ((url: string) => boolean) | null
 	/** Strip these literal prefixes from event.file for display/logging. */
 	stripUrlPrefixes?: string[]
+	/** Watcher-scoped sourcemap cache used to report original locations on log/exception events. */
+	sourcemaps: SourcemapResolver
 }

@@ -20,6 +20,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		host,
 		port,
 		pageConsoleLogging,
+		sourcemaps,
 		events,
 		buffer,
 		netBuffer,
@@ -211,6 +212,9 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 
 	const handlePageNavigation = (info: { url: string; title: string | null }): void => {
 		elementRefs.reset()
+		// A rebuilt bundle keeps its URL on most dev servers, so drop cached maps rather than
+		// reporting locations from the previous build.
+		sourcemaps.clear()
 		fileLogger?.rotate(info)
 		onIndicatorNavigation(getIndicatorSession(), info)
 		runtimeEditor?.reset()

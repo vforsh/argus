@@ -42,7 +42,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		return createControlExtensionSource(options)
 	}
 
-	const { events, ignoreMatcher, stripUrlPrefixes, watcherId, watcherHost, watcherPort } = options
+	const { events, ignoreMatcher, stripUrlPrefixes, sourcemaps, watcherId, watcherHost, watcherPort } = options
 
 	// The shared log mapper takes the matcher object shape (mirrors createCdpSource).
 	const ignoreMatcherObj: IgnoreMatcher | null = ignoreMatcher ? { matches: ignoreMatcher } : null
@@ -283,6 +283,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				events,
 				ignoreMatcher: ignoreMatcherObj,
 				stripUrlPrefixes,
+				sourcemaps,
 				getOrCreateFrameState,
 				reconcileTargetSelection,
 				removeFrame,

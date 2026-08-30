@@ -44,6 +44,7 @@ export const createWatcherRuntimeServices = (
 		sessionHandle,
 		ignoreMatcher,
 		stripUrlPrefixes,
+		sourcemaps,
 		watcherId,
 		host,
 		record,
@@ -70,6 +71,7 @@ export const createWatcherRuntimeServices = (
 			role: extensionRole,
 			ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
 			stripUrlPrefixes,
+			sourcemaps,
 		})
 
 		return {
@@ -115,6 +117,7 @@ export const createWatcherRuntimeServices = (
 		watcherId,
 		ignoreMatcher: ignoreMatcher ? (url: string) => ignoreMatcher.matches(url) : null,
 		stripUrlPrefixes,
+		sourcemaps,
 	})
 
 	return {

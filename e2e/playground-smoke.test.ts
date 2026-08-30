@@ -13,6 +13,7 @@ import type {
 	DomInfoResponse,
 	DomTreeResponse,
 	EvalResponse,
+	LogsResponse,
 	ScreenshotResponse,
 	StorageListResponse,
 	VisibilityResponse,
@@ -169,6 +170,29 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 		expect((await fs.stat(response.result.checkpoint.outFile)).size).toBeGreaterThan(0)
 		expect(stderr).toContain('bundling automatically')
 		expect(stdout.trim().split('\n')).toHaveLength(1)
+	})
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// sourcemaps
+	// ─────────────────────────────────────────────────────────────────────────
+
+	test("log locations resolve through each bundle's own sourceMappingURL annotation", async () => {
+		await page.click('[data-testid="btn-sourcemapped-log"]')
+		await page.click('[data-testid="btn-inline-mapped-log"]')
+
+		const read = async (match: string) => {
+			const { stdout } = await runCommand('bun', [BIN_PATH, 'logs', 'playground', '--json', '--match', match], { env })
+			const response = JSON.parse(stdout) as LogsResponse
+			expect(response.events.length).toBeGreaterThan(0)
+			return response.events.at(-1)!
+		}
+
+		// The bundle is served at `?v=abc123` with its map under /maps/ — `<script>.map` would 404.
+		const mapped = await read('sourcemapped fixture log')
+		expect(mapped.file).toEndWith('/src/sourcemapped-fixture.ts')
+
+		const inline = await read('inline mapped fixture log')
+		expect(inline.file).toEndWith('/src/inline-fixture.ts')
 	})
 
 	test('eval bundles local imports from --file', async () => {
@@ -462,9 +486,6 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 
 	test(
 		'dialog commands work against playground dialogs',
-		{
-			timeout: 15_000,
-		},
 		async () => {
 			const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -580,6 +601,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 			await waitForNoDialog()
 			expect(await waitForPlaygroundDialogResult()).toBe('playground override')
 		},
+		{ timeout: 15_000 },
 	)
 
 	// ─────────────────────────────────────────────────────────────────────────
