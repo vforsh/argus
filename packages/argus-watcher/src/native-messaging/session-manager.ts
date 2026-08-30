@@ -6,8 +6,8 @@
 import { createNotAttachedError } from '../errors.js'
 import type { CdpEvent, CdpEventPayload } from '../cdp/protocol.js'
 import type { NativeMessagingHandler } from './messaging.js'
+import { createPendingRequestTable, createRequestIdAllocator } from './pendingRequests.js'
 import type {
-	PendingRequest,
 	CdpEventHandler,
 	CdpEventMeta,
 	FrameSnapshot,
@@ -35,15 +35,17 @@ export type SessionManagerEvents = {
 	onTargetSelected: (tabId: number, frameId: string | null) => void
 }
 
-let nextRequestId = 1
-
 /**
  * Manages CDP sessions with tabs attached via the Chrome extension.
  */
 export class SessionManager {
 	private messaging: NativeMessagingHandler<ExtensionToTabHost, TabHostToExtension>
 	private sessions = new Map<number, ExtensionSession>()
-	private pendingRequests = new Map<number, PendingRequest>()
+	private readonly nextRequestId = createRequestIdAllocator()
+	private readonly pendingRequests = createPendingRequestTable<unknown>({
+		timeoutMs: 30_000,
+		timeoutMessage: 'Bridge request timed out',
+	})
 	private eventHandlers = new Map<number, Map<string, Set<CdpEventHandler<never>>>>()
 	private events: SessionManagerEvents
 
@@ -154,19 +156,11 @@ export class SessionManager {
 	}
 
 	private resolvePendingRequest(requestId: number, result: unknown, error?: { message: string }): void {
-		const pending = this.pendingRequests.get(requestId)
-		if (!pending) {
+		if (error) {
+			this.pendingRequests.fail(requestId, new Error(error.message))
 			return
 		}
-
-		this.pendingRequests.delete(requestId)
-		clearTimeout(pending.timeout)
-
-		if (error) {
-			pending.reject(new Error(error.message))
-		} else {
-			pending.resolve(result)
-		}
+		this.pendingRequests.settle(requestId, result)
 	}
 
 	/**
@@ -268,21 +262,9 @@ export class SessionManager {
 	}
 
 	private sendBridgeRequest<T>(buildMessage: (requestId: number) => TabHostToExtension, timeoutMs: number): Promise<T> {
-		const requestId = nextRequestId++
-
-		return new Promise((resolve, reject) => {
-			const timeout = setTimeout(() => {
-				this.pendingRequests.delete(requestId)
-				reject(new Error(`Bridge request timed out after ${timeoutMs}ms`))
-			}, timeoutMs)
-
-			this.pendingRequests.set(requestId, {
-				requestId,
-				resolve: (result) => resolve(result as T),
-				reject,
-				timeout,
-			})
-			this.messaging.send(buildMessage(requestId))
-		})
+		const requestId = this.nextRequestId()
+		const result = this.pendingRequests.open(requestId, { timeoutMs, timeoutMessage: `Bridge request timed out after ${timeoutMs}ms` })
+		this.messaging.send(buildMessage(requestId))
+		return result as Promise<T>
 	}
 }
