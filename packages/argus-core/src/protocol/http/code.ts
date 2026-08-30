@@ -1,5 +1,6 @@
 import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
 import { compact, fieldError, optionalInteger, optionalNonEmptyString, readFields, requireObject, requiredString } from '../schemaFields.js'
+import type { Ok } from './errors.js'
 
 /** Runtime resource type exposed by the live runtime-code API. */
 export type CodeResourceType = 'script' | 'stylesheet'
@@ -19,10 +20,9 @@ export type CodeListRequest = {
 }
 
 /** Response payload for POST /code/list. */
-export type CodeListResponse = {
-	ok: true
+export type CodeListResponse = Ok<{
 	resources: CodeResource[]
-}
+}>
 
 /** Request payload for POST /code/read. */
 export type CodeReadRequest = {
@@ -35,8 +35,7 @@ export type CodeReadRequest = {
 }
 
 /** Response payload for POST /code/read. */
-export type CodeReadResponse = {
-	ok: true
+export type CodeReadResponse = Ok<{
 	resource: CodeResource
 	/** Raw source text for the requested line slice. */
 	source: string
@@ -44,7 +43,7 @@ export type CodeReadResponse = {
 	totalLines: number
 	startLine: number
 	endLine: number
-}
+}>
 
 /** Request payload for POST /code/grep. */
 export type CodeGrepRequest = {
@@ -73,12 +72,11 @@ export type CodeGrepSkippedResource = {
 }
 
 /** Response payload for POST /code/grep. */
-export type CodeGrepResponse = {
-	ok: true
+export type CodeGrepResponse = Ok<{
 	matches: CodeGrepMatch[]
 	/** Non-fatal runtime resources skipped while searching. */
 	skippedResources: CodeGrepSkippedResource[]
-}
+}>
 
 /** Request payload for POST /code/edit. */
 export type CodeEditRequest = {
@@ -89,10 +87,9 @@ export type CodeEditRequest = {
 }
 
 /** Response payload for POST /code/edit. */
-export type CodeEditResponse = {
-	ok: true
+export type CodeEditResponse = Ok<{
 	resource: CodeResource
-}
+}>
 
 /** Schema for POST /code/list request payloads. */
 export const codeListRequestSchema = defineProtocolSchema<CodeListRequest>((value) => {

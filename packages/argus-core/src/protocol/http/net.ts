@@ -1,3 +1,4 @@
+import type { Ok } from './errors.js'
 /** Network request summary captured from CDP. */
 export type NetworkRequestSummary = {
 	id: number
@@ -84,53 +85,47 @@ export type NetworkRequestDetail = NetworkRequestSummary & {
 }
 
 /** Response payload for GET /net. */
-export type NetResponse = {
-	ok: true
+export type NetResponse = Ok<{
 	requests: NetworkRequestSummary[]
 	nextAfter: number
-}
+}>
 
 /** Response payload for GET /net/requests. */
-export type NetRequestsResponse = {
-	ok: true
+export type NetRequestsResponse = Ok<{
 	requests: NetworkRequestDetail[]
 	nextAfter: number
-}
+}>
 
 /** Response payload for GET /net/tail. */
-export type NetTailResponse = {
-	ok: true
+export type NetTailResponse = Ok<{
 	requests: NetworkRequestSummary[]
 	nextAfter: number
 	timedOut: boolean
-}
+}>
 
 /** Response payload for POST /net/clear. */
-export type NetClearResponse = {
-	ok: true
+export type NetClearResponse = Ok<{
 	/** Number of buffered requests removed. */
 	cleared: number
-}
+}>
 
 /** Response payload for GET /net/request. */
-export type NetRequestResponse = {
-	ok: true
+export type NetRequestResponse = Ok<{
 	request: NetworkRequestDetail
-}
+}>
 
 /** Which body payload to fetch for a buffered request. */
 export type NetRequestBodyPart = 'request' | 'response'
 
 /** Response payload for GET /net/request/body. */
-export type NetRequestBodyResponse = {
-	ok: true
+export type NetRequestBodyResponse = Ok<{
 	id: number
 	requestId: string
 	part: NetRequestBodyPart
 	mimeType: string | null
 	body: string
 	base64Encoded: boolean
-}
+}>
 
 /** Direction for a captured WebSocket frame preview. */
 export type NetWebSocketFrameDirection = 'sent' | 'received'
@@ -203,21 +198,18 @@ export type NetSseSummary = {
 }
 
 /** Response payload for GET /net/ws. */
-export type NetWebSocketsResponse = {
-	ok: true
+export type NetWebSocketsResponse = Ok<{
 	connections: NetWebSocketSummary[]
 	nextAfter: number
-}
+}>
 
 /** Response payload for GET /net/ws/connection. */
-export type NetWebSocketResponse = {
-	ok: true
+export type NetWebSocketResponse = Ok<{
 	connection: NetWebSocketDetail
-}
+}>
 
 /** Response payload for GET /net/sse. */
-export type NetSseResponse = {
-	ok: true
+export type NetSseResponse = Ok<{
 	streams: NetSseSummary[]
 	nextAfter: number
-}
+}>

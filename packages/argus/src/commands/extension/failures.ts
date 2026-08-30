@@ -1,4 +1,4 @@
-import type { ErrorResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { ArgusErrorCode, ErrorResponse, WatcherRecord } from '@vforsh/argus-core'
 import type { Output } from '../../output/io.js'
 import { formatError } from '../../cli/parse.js'
 import { formatWatcherLine } from '../../output/format.js'
@@ -27,7 +27,7 @@ export type EmitFailureInput = {
 	/** Process exit code. Defaults to 1. */
 	exitCode?: number
 	/** Machine-readable code carried in the JSON envelope. */
-	code?: string
+	code?: ArgusErrorCode
 	/** Lines printed after the message in human mode, and only in human mode. */
 	hints?: readonly FailureHint[]
 	/**
@@ -108,7 +108,7 @@ const toMessage = (error: unknown): string => {
 }
 
 /** Preserve a code the watcher already assigned rather than inventing a new one. */
-const extractCode = (error: unknown): string | undefined => (isErrorResponse(error) ? error.error.code : undefined)
+const extractCode = (error: unknown): ArgusErrorCode | undefined => (isErrorResponse(error) ? error.error.code : undefined)
 
 const isErrorResponse = (value: unknown): value is ErrorResponse =>
 	typeof value === 'object' &&

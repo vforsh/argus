@@ -1,5 +1,6 @@
 import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
 import { compact, optionalEnum, optionalString, readFields, requireObject } from '../schemaFields.js'
+import type { Ok } from './errors.js'
 
 /** Storage areas exposed by the watcher API. */
 export type StorageArea = 'local' | 'session'
@@ -19,10 +20,9 @@ export type StorageRequest = {
 	origin?: string
 }
 
-type StorageResponseBase = {
-	ok: true
+type StorageResponseBase = Ok<{
 	origin: string
-}
+}>
 
 /** Response payload for POST /storage/<area> (get). */
 export type StorageGetResponse = StorageResponseBase & {

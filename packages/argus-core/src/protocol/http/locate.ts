@@ -2,6 +2,7 @@ import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
 import { compact, optionalBoolean, optionalString, readFields, requireObject, requiredString } from '../schemaFields.js'
 
 import type { ElementRef } from './dom.js'
+import type { Ok } from './errors.js'
 
 /** Common matching options for semantic element lookup commands. */
 export type LocateMatchOptions = {
@@ -45,13 +46,12 @@ export type LocateLabelRequest = LocateMatchOptions & {
 }
 
 /** Shared response payload for `/locate/*` routes. */
-export type LocateResponse = {
-	ok: true
+export type LocateResponse = Ok<{
 	/** Number of matched semantic elements before any `all=false` truncation. */
 	matches: number
 	/** Element summaries for the resolved matches. */
 	elements: LocatedElement[]
-}
+}>
 
 /**
  * Build the schema for one `/locate/*` route.

@@ -1,5 +1,5 @@
 import { formatError } from '../../cli/parse.js'
-import type { ErrorResponse, ExtensionBrowserTab, ExtensionTabsResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { ExtensionBrowserTab, ExtensionTabsResponse, WatcherRecord, ApiResult } from '@vforsh/argus-core'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 
 export type ExtensionTabSelectorOptions = {
@@ -52,7 +52,7 @@ export const fetchExtensionTabs = async (watcher: WatcherRecord, selector: TabSe
 	const query = buildTabsQuery(selector)
 
 	try {
-		const response = await fetchWatcherJson<ExtensionTabsResponse | ErrorResponse>(watcher, {
+		const response = await fetchWatcherJson<ApiResult<ExtensionTabsResponse>>(watcher, {
 			path: '/tabs',
 			query,
 			timeoutMs: 5_000,

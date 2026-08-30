@@ -3,6 +3,7 @@ import { compact, optionalEnum, optionalNonEmptyString, optionalNumber, optional
 import { optionalClipRegion, requireSingleCaptureTarget } from './screenshot.js'
 
 import type { ScreenshotClipRegion } from './screenshot.js'
+import type { Ok } from './errors.js'
 
 /** Viewport-relative crop rectangle in CSS pixels. */
 export type RecordClipRegion = ScreenshotClipRegion
@@ -35,15 +36,14 @@ export type RecordRequest = RecordOptions & {
 export type RecordStartRequest = RecordOptions
 
 /** Response payload for POST /record/start. */
-export type RecordStartResponse = {
-	ok: true
+export type RecordStartResponse = Ok<{
 	recordId: string
 	sessionName: string
 	outFile: string
 	format: RecordFormat
 	fps: number
 	clipped: boolean
-}
+}>
 
 /** Request payload for POST /record/stop. */
 export type RecordStopRequest = {
@@ -52,8 +52,7 @@ export type RecordStopRequest = {
 }
 
 /** Response payload for POST /record and POST /record/stop. */
-export type RecordStopResponse = {
-	ok: true
+export type RecordStopResponse = Ok<{
 	recordId: string
 	sessionName: string
 	outFile: string
@@ -62,7 +61,7 @@ export type RecordStopResponse = {
 	durationMs: number
 	fps: number
 	clipped: boolean
-}
+}>
 
 export type RecordResponse = RecordStopResponse
 

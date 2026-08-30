@@ -1,6 +1,7 @@
 import type { CdpMethod, CdpParams } from '../cdp/protocol.js'
 import type { NetMockScope } from '@vforsh/argus-core'
 import type { CdpEventMeta, CdpSessionHandle } from '../cdp/connection.js'
+import { hasErrorCode } from '../errors.js'
 
 /** CDP routing information for the target currently selected by the watcher. */
 export type NetMockSelectedTarget = {
@@ -204,8 +205,7 @@ const parsePausedRequest = (params: unknown, meta: CdpEventMeta): NetMockPausedR
 }
 
 const isBenignInterceptionError = (error: unknown): boolean => {
-	const code = (error as { code?: unknown })?.code
-	if (code === 'cdp_not_attached') {
+	if (hasErrorCode(error, 'cdp_not_attached')) {
 		return true
 	}
 	const message = error instanceof Error ? error.message : String(error)

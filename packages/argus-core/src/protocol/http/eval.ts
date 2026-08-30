@@ -1,5 +1,6 @@
 import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
 import { compact, optionalBoolean, optionalNumber, optionalRecord, readFields, requireObject, requiredString } from '../schemaFields.js'
+import type { Ok } from './errors.js'
 
 /** Request payload for POST /eval. */
 export type EvalRequest = {
@@ -39,12 +40,11 @@ export type EvalRequest = {
 }
 
 /** Response payload for POST /eval. */
-export type EvalResponse = {
-	ok: true
+export type EvalResponse = Ok<{
 	result: unknown
 	type: string | null
 	exception: { text: string; details?: unknown } | null
-}
+}>
 
 /** Schema for POST /eval request payloads. */
 export const evalRequestSchema = defineProtocolSchema<EvalRequest>((value) => {

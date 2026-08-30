@@ -31,6 +31,7 @@ import {
 	requiredString,
 	type FieldError,
 } from '../schemaFields.js'
+import type { ErrorDetail, Ok } from './errors.js'
 
 export type NetMockMatch = {
 	/** URL wildcard pattern (substring match when it contains no `*`). */
@@ -116,8 +117,7 @@ export type NetMockAddRequest = {
 }
 
 /** POST /net/mock/add response. */
-export type NetMockAddResponse = {
-	ok: true
+export type NetMockAddResponse = Ok<{
 	/** Whether the watcher is currently attached to a CDP target. */
 	attached: boolean
 	/** Whether Fetch interception is active on the attached target. False when detached (rule is queued). */
@@ -125,8 +125,8 @@ export type NetMockAddResponse = {
 	/** The installed rule. */
 	rule: NetMockRule
 	/** Optional error details when interception could not be enabled. */
-	error?: { message: string; code?: string } | null
-}
+	error?: ErrorDetail | null
+}>
 
 /** POST /net/mock/remove request payload. */
 export type NetMockRemoveRequest = {
@@ -135,26 +135,23 @@ export type NetMockRemoveRequest = {
 }
 
 /** POST /net/mock/remove response. */
-export type NetMockRemoveResponse = {
-	ok: true
+export type NetMockRemoveResponse = Ok<{
 	/** True when a rule with the given id existed and was removed. */
 	removed: boolean
 	/** Whether Fetch interception remains active after the removal. */
 	enabled: boolean
-}
+}>
 
 /** POST /net/mock/clear response. */
-export type NetMockClearResponse = {
-	ok: true
+export type NetMockClearResponse = Ok<{
 	/** Number of rules removed. */
 	removed: number
 	/** Whether Fetch interception remains active (always false after clear unless disable failed). */
 	enabled: boolean
-}
+}>
 
 /** GET /net/mock response. */
-export type NetMockStatusResponse = {
-	ok: true
+export type NetMockStatusResponse = Ok<{
 	/** Whether the watcher is currently attached to a CDP target. */
 	attached: boolean
 	/** Whether Fetch interception is active on the attached target. */
@@ -162,8 +159,8 @@ export type NetMockStatusResponse = {
 	/** Installed rules in match order (first match wins). */
 	rules: NetMockRule[]
 	/** Last interception error (enable/disable or action failure), if any. */
-	lastError?: { message: string; code?: string } | null
-}
+	lastError?: ErrorDetail | null
+}>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Request schemas

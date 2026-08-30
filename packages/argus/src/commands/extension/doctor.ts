@@ -1,5 +1,5 @@
 import { formatError } from '../../cli/parse.js'
-import type { ErrorResponse, ExtensionDiagnosticsResponse, StatusResponse, WatcherRecord, ExtensionTargetSummary } from '@vforsh/argus-core'
+import type { ExtensionDiagnosticsResponse, StatusResponse, WatcherRecord, ExtensionTargetSummary, ApiResult } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { formatWatcherLine } from '../../output/format.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
@@ -152,7 +152,7 @@ const fetchExtensionDiagnostics = async (
 	watcher: WatcherRecord,
 ): Promise<{ ok: true; diagnostics: ExtensionDiagnosticsResponse } | { ok: false; error: string }> => {
 	try {
-		const response = await fetchWatcherJson<ExtensionDiagnosticsResponse | ErrorResponse>(watcher, {
+		const response = await fetchWatcherJson<ApiResult<ExtensionDiagnosticsResponse>>(watcher, {
 			path: '/extension/diagnostics',
 			timeoutMs: 5_000,
 			returnErrorResponse: true,

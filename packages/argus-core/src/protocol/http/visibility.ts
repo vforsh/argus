@@ -1,5 +1,6 @@
 import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
 import { optionalEnum, readFields, requireObject } from '../schemaFields.js'
+import type { Ok } from './errors.js'
 
 /**
  * Visibility lock controls whether the attached page should behave as if
@@ -25,13 +26,12 @@ export type VisibilityRequest = {
  * it is remembered by the watcher and re-applied on the next attach when
  * `attached` is `false`.
  */
-export type VisibilityResponse = {
-	ok: true
+export type VisibilityResponse = Ok<{
 	/** Whether the watcher was attached to a CDP target at response time. */
 	attached: boolean
 	/** Current desired visibility lock. */
 	state: VisibilityLock
-}
+}>
 
 /** Actions accepted by POST /visibility. */
 export const VISIBILITY_ACTIONS = ['show', 'hide'] as const

@@ -4,10 +4,10 @@ import { compact, optionalBoolean, readFields, requireObject } from '../schemaFi
 import type { WatcherRecord } from '../../registry/types.js'
 import type { DialogStatus } from './dialog.js'
 import type { ArgusProtocolVersion } from '../version.js'
+import type { Ok } from './errors.js'
 
 /** Response payload for GET /status. */
-export type StatusResponse = {
-	ok: true
+export type StatusResponse = Ok<{
 	id: string
 	pid: number
 	attached: boolean
@@ -33,12 +33,10 @@ export type StatusResponse = {
 	protocolVersion?: ArgusProtocolVersion
 	/** Watcher package version (e.g. "0.1.2"). */
 	watcherVersion?: string
-}
+}>
 
 /** Response payload for POST /shutdown. */
-export type ShutdownResponse = {
-	ok: true
-}
+export type ShutdownResponse = Ok<{}>
 
 /** Request payload for POST /reload. */
 export type ReloadRequest = {
@@ -47,9 +45,7 @@ export type ReloadRequest = {
 }
 
 /** Response payload for POST /reload. */
-export type ReloadResponse = {
-	ok: true
-}
+export type ReloadResponse = Ok<{}>
 
 /** Schema for POST /reload request payloads. */
 export const reloadRequestSchema = defineProtocolSchema<ReloadRequest>((value) => {

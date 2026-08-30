@@ -1,6 +1,7 @@
 import { domTargetPayload } from './dom.js'
 import { defineProtocolSchema, invalidProtocolPayload, isProtocolObject, validProtocolPayload } from '../schema.js'
 import type { DomElementTarget, ElementRef } from './dom.js'
+import type { Ok } from './errors.js'
 
 /** Viewport coordinate or delta used by pointer/mouse interaction commands. */
 export type DomPoint = {
@@ -23,13 +24,12 @@ export type DomHoverRequest = DomElementTarget & {
 /**
  * Response payload for POST /dom/hover.
  */
-export type DomHoverResponse = {
-	ok: true
+export type DomHoverResponse = Ok<{
 	/** Number of elements matched by selector. */
 	matches: number
 	/** Number of elements hovered. */
 	hovered: number
-}
+}>
 
 /** Mouse button for pointer-style interaction commands. Default: 'left'. */
 export type MouseButton = 'left' | 'middle' | 'right'
@@ -114,13 +114,12 @@ export const domClickRequestSchema = defineProtocolSchema<DomClickRequest>((valu
 /**
  * Response payload for POST /dom/click.
  */
-export type DomClickResponse = {
-	ok: true
+export type DomClickResponse = Ok<{
 	/** Number of elements matched by selector. */
 	matches: number
 	/** Number of elements clicked. */
 	clicked: number
-}
+}>
 
 /**
  * Request payload for POST /dom/drag.
@@ -231,13 +230,12 @@ export const domDragRequestSchema = defineProtocolSchema<DomDragRequest>((value)
 /**
  * Response payload for POST /dom/drag.
  */
-export type DomDragResponse = {
-	ok: true
+export type DomDragResponse = Ok<{
 	/** Number of elements matched by selector/ref. Zero for coordinate-only drags. */
 	matches: number
 	/** Number of drag gestures completed. */
 	dragged: number
-}
+}>
 
 const optionalString = (value: Record<string, unknown>, key: string): string | undefined => {
 	const field = value[key]

@@ -1,5 +1,6 @@
 import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
 import { compact, optionalBoolean, optionalInteger, optionalNonEmptyString, readFields, requireObject } from '../schemaFields.js'
+import type { Ok } from './errors.js'
 
 /**
  * A node in the accessibility tree.
@@ -35,15 +36,14 @@ export type SnapshotRequest = {
 /**
  * Response payload for POST /snapshot.
  */
-export type SnapshotResponse = {
-	ok: true
+export type SnapshotResponse = Ok<{
 	/** Root nodes of the accessibility tree. */
 	roots: AXTreeNode[]
 	/** Total number of nodes before filtering. */
 	totalNodes: number
 	/** Number of nodes after filtering. */
 	returnedNodes: number
-}
+}>
 
 /** Schema for POST /snapshot request payloads. */
 export const snapshotRequestSchema = defineProtocolSchema<SnapshotRequest>((value) => {

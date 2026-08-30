@@ -4,7 +4,7 @@ import type {
 	ArgusWatcherRequestResult,
 	ArgusWatcherRequestSuccess,
 } from '@vforsh/argus-plugin-api'
-import type { ErrorResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { ErrorResponse, WatcherRecord, ApiResult } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
 import { fetchJson } from '../httpClient.js'
 import { formatError } from '../cli/parse.js'
@@ -125,7 +125,7 @@ export async function requestWatcherAction<T extends { ok: true }>(
 	input: WatcherRequestInput,
 	output: Output,
 ): Promise<{ watcher: WatcherRecord; data: T } | null> {
-	const result = await requestWatcherJson<T | ErrorResponse>({
+	const result = await requestWatcherJson<ApiResult<T>>({
 		...input,
 		returnErrorResponse: true,
 	})

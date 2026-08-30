@@ -1,5 +1,6 @@
 import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
 import { compact, optionalEnum, optionalString, readFields, requireObject } from '../schemaFields.js'
+import type { Ok } from './errors.js'
 
 /** Browser dialog types exposed by Chrome DevTools Protocol. */
 export type DialogType = 'alert' | 'confirm' | 'prompt' | 'beforeunload'
@@ -15,10 +16,9 @@ export type DialogStatus = {
 }
 
 /** Response payload for GET /dialog. */
-export type DialogStatusResponse = {
-	ok: true
+export type DialogStatusResponse = Ok<{
 	dialog: DialogStatus | null
-}
+}>
 
 /** Request payload for POST /dialog. */
 export type DialogHandleRequest = {
@@ -27,11 +27,10 @@ export type DialogHandleRequest = {
 }
 
 /** Response payload for POST /dialog. */
-export type DialogHandleResponse = {
-	ok: true
+export type DialogHandleResponse = Ok<{
 	action: 'accept' | 'dismiss'
 	dialog: DialogStatus
-}
+}>
 
 /** Actions accepted by POST /dialog. */
 export const DIALOG_ACTIONS = ['accept', 'dismiss'] as const

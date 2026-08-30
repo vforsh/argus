@@ -1,5 +1,5 @@
 import { formatError } from '../../cli/parse.js'
-import type { ErrorResponse, ExtensionBrowserTab, ExtensionTabActionResponse, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { ExtensionBrowserTab, ExtensionTabActionResponse, StatusResponse, WatcherRecord, ApiResult } from '@vforsh/argus-core'
 import { pruneRegistry } from '../../registry.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
@@ -18,7 +18,7 @@ export const attachTab = async (
 	options: { watcherId?: string } = {},
 ): Promise<{ ok: true; tab: ExtensionBrowserTab; watcherId?: string } | { ok: false; error: string }> => {
 	try {
-		const response = await fetchWatcherJson<ExtensionTabActionResponse | ErrorResponse>(controlWatcher, {
+		const response = await fetchWatcherJson<ApiResult<ExtensionTabActionResponse>>(controlWatcher, {
 			path: '/attach',
 			method: 'POST',
 			body: { tabId: tab.tabId, watcherId: options.watcherId },

@@ -2,6 +2,7 @@ import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } fr
 import { compact, optionalInteger, optionalNonEmptyString, readFields, requireObject } from '../schemaFields.js'
 
 import type { ExtensionControlBridgeStatus, ExtensionTabBridgeStatus, ExtensionRecentEvent } from '../native-messaging.js'
+import type { Ok } from './errors.js'
 
 export type ExtensionBrowserTab = {
 	tabId: number
@@ -12,17 +13,15 @@ export type ExtensionBrowserTab = {
 	watcherId?: string
 }
 
-export type ExtensionTabsResponse = {
-	ok: true
+export type ExtensionTabsResponse = Ok<{
 	tabs: ExtensionBrowserTab[]
-}
+}>
 
 /** Result of an extension-control attach/detach request after the extension has applied it. */
-export type ExtensionTabActionResponse = {
-	ok: true
+export type ExtensionTabActionResponse = Ok<{
 	tab: ExtensionBrowserTab
 	watcherId?: string
-}
+}>
 
 /**
  * One target the extension watcher can attach to: a tab, or an iframe inside one.
@@ -48,10 +47,9 @@ export type ExtensionTargetSummary = {
 }
 
 /** Response payload for GET /targets. */
-export type ExtensionTargetsResponse = {
-	ok: true
+export type ExtensionTargetsResponse = Ok<{
 	targets: ExtensionTargetSummary[]
-}
+}>
 
 /**
  * Request payload for POST /attach.
@@ -73,8 +71,7 @@ export type ExtensionDetachRequest = {
 }
 
 /** Live diagnostics from the extension-control watcher and connected browser extension. */
-export type ExtensionDiagnosticsResponse = {
-	ok: true
+export type ExtensionDiagnosticsResponse = Ok<{
 	extension: {
 		id: string | null
 		version: string | null
@@ -82,7 +79,7 @@ export type ExtensionDiagnosticsResponse = {
 	control: ExtensionControlBridgeStatus
 	tabWatchers: ExtensionTabBridgeStatus[]
 	recentEvents: ExtensionRecentEvent[]
-}
+}>
 
 /** Read the targetId/tabId pair both extension action routes accept. */
 const readExtensionTarget = (value: unknown) =>

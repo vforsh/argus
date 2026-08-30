@@ -13,6 +13,7 @@ import {
 	requiredString,
 	type FieldError,
 } from '../schemaFields.js'
+import type { Ok } from './errors.js'
 
 /** Cookie metadata exposed by the auth cookie endpoints. */
 export type AuthCookie = {
@@ -36,11 +37,10 @@ export type AuthCookieIdentity = {
 }
 
 /** Response payload for GET /auth/cookies. */
-export type AuthCookiesResponse = {
-	ok: true
+export type AuthCookiesResponse = Ok<{
 	origin: string
 	cookies: AuthCookie[]
-}
+}>
 
 /** Request payload for exact cookie lookup. */
 export type AuthCookieGetRequest = AuthCookieIdentity & {
@@ -48,11 +48,10 @@ export type AuthCookieGetRequest = AuthCookieIdentity & {
 }
 
 /** Response payload for exact cookie lookup. */
-export type AuthCookieGetResponse = {
-	ok: true
+export type AuthCookieGetResponse = Ok<{
 	origin: string
 	cookie: AuthCookie | null
-}
+}>
 
 /** Cookie payload used by auth-state export and import. */
 export type AuthStateCookie = {
@@ -73,22 +72,20 @@ export type AuthCookieSetRequest = {
 }
 
 /** Response payload for cookie upserts. */
-export type AuthCookieSetResponse = {
-	ok: true
+export type AuthCookieSetResponse = Ok<{
 	origin: string
 	cookie: AuthCookie
-}
+}>
 
 /** Request payload for exact cookie deletion. */
 export type AuthCookieDeleteRequest = AuthCookieIdentity
 
 /** Response payload for exact cookie deletion. */
-export type AuthCookieDeleteResponse = {
-	ok: true
+export type AuthCookieDeleteResponse = Ok<{
 	origin: string
 	deleted: boolean
 	cookie: AuthCookieIdentity
-}
+}>
 
 /** Scope used by bulk cookie clearing. */
 export type AuthCookieClearScope = 'origin' | 'site' | 'domain' | 'browserContext'
@@ -102,8 +99,7 @@ export type AuthCookieClearRequest = {
 }
 
 /** Response payload for scoped cookie clearing. */
-export type AuthCookieClearResponse = {
-	ok: true
+export type AuthCookieClearResponse = Ok<{
 	origin: string
 	scope: AuthCookieClearScope
 	scopeValue: string | null
@@ -111,7 +107,7 @@ export type AuthCookieClearResponse = {
 	authOnly: boolean
 	cleared: number
 	cookies: AuthCookieIdentity[]
-}
+}>
 
 /** A single storage entry for localStorage/sessionStorage snapshots. */
 export type AuthStateStorageEntry = {
@@ -176,14 +172,13 @@ export type AuthStateSnapshotMetadata = {
 }
 
 /** Portable auth snapshot used to rehydrate a fresh browser session. */
-export type AuthStateSnapshot = {
-	ok: true
+export type AuthStateSnapshot = Ok<{
 	url: string
 	origin: string
 	cookies: AuthStateCookie[]
 	origins: AuthStateOrigin[]
 	metadata: AuthStateSnapshotMetadata
-}
+}>
 
 /** Request payload for loading an auth-state snapshot into an attached watcher target. */
 export type AuthStateLoadRequest = {
@@ -192,10 +187,9 @@ export type AuthStateLoadRequest = {
 }
 
 /** Response payload for auth-state hydration requests. */
-export type AuthStateLoadResponse = {
-	ok: true
+export type AuthStateLoadResponse = Ok<{
 	startupUrl: string | null
-}
+}>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Request schemas

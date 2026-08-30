@@ -1,5 +1,6 @@
 import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
 import { compact, optionalNonEmptyString, optionalString, readFields, requireObject } from '../schemaFields.js'
+import type { Ok } from './errors.js'
 
 /** Request payload for POST /trace/start. */
 export type TraceStartRequest = {
@@ -9,12 +10,11 @@ export type TraceStartRequest = {
 }
 
 /** Response payload for POST /trace/start. */
-export type TraceStartResponse = {
-	ok: true
+export type TraceStartResponse = Ok<{
 	traceId: string
 	sessionName: string
 	outFile: string
-}
+}>
 
 /** Request payload for POST /trace/stop. */
 export type TraceStopRequest = {
@@ -23,13 +23,12 @@ export type TraceStopRequest = {
 }
 
 /** Response payload for POST /trace/stop. */
-export type TraceStopResponse = {
-	ok: true
+export type TraceStopResponse = Ok<{
 	sessionName: string
 	outFile: string
 	eventCount: number
 	durationMs: number
-}
+}>
 
 /** Schema for POST /trace/start request payloads. */
 export const traceStartRequestSchema = defineProtocolSchema<TraceStartRequest>((value) => {

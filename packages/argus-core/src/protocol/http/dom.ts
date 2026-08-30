@@ -16,6 +16,7 @@ import {
 	requiredString,
 	type FieldError,
 } from '../schemaFields.js'
+import type { Ok } from './errors.js'
 
 /** Stable element ref emitted by `snapshot` / `locate` and accepted by ref-aware commands. */
 export type ElementRef = string
@@ -84,8 +85,7 @@ export type DomTreeRequest = {
 /**
  * Response payload for POST /dom/tree.
  */
-export type DomTreeResponse = {
-	ok: true
+export type DomTreeResponse = Ok<{
 	/** Number of elements matched by selector. */
 	matches: number
 	/** Subtree roots (one per match). Empty if no matches. */
@@ -94,7 +94,7 @@ export type DomTreeResponse = {
 	truncated: boolean
 	/** Reason for truncation if truncated is true. */
 	truncatedReason?: 'max_nodes' | 'depth'
-}
+}>
 
 /**
  * Request payload for POST /dom/info.
@@ -111,13 +111,12 @@ export type DomInfoRequest = DomElementTarget & {
 /**
  * Response payload for POST /dom/info.
  */
-export type DomInfoResponse = {
-	ok: true
+export type DomInfoResponse = Ok<{
 	/** Number of elements matched by selector. */
 	matches: number
 	/** Element info (one per match). Empty if no matches. */
 	elements: DomElementInfo[]
-}
+}>
 
 /**
  * Request payload for POST /dom/keydown.
@@ -154,8 +153,7 @@ export type DomKeydownEvent = {
 /**
  * Response payload for POST /dom/keydown.
  */
-export type DomKeydownResponse = {
-	ok: true
+export type DomKeydownResponse = Ok<{
 	/** The key that was dispatched. */
 	key: string
 	/** The physical KeyboardEvent.code that was dispatched. */
@@ -166,7 +164,7 @@ export type DomKeydownResponse = {
 	focused: boolean
 	/** Full resolved event shape for debugging exact key/code/modifier dispatch. */
 	event: DomKeydownEvent
-}
+}>
 
 /** Valid positions for insertAdjacentHTML. */
 export type DomInsertPosition = 'beforebegin' | 'afterbegin' | 'beforeend' | 'afterend'
@@ -194,13 +192,12 @@ export type DomAddRequest = {
 /**
  * Response payload for POST /dom/add.
  */
-export type DomAddResponse = {
-	ok: true
+export type DomAddResponse = Ok<{
 	/** Number of elements matched by selector. */
 	matches: number
 	/** Number of elements where HTML was inserted. */
 	inserted: number
-}
+}>
 
 /**
  * Request payload for POST /dom/remove.
@@ -217,13 +214,12 @@ export type DomRemoveRequest = {
 /**
  * Response payload for POST /dom/remove.
  */
-export type DomRemoveResponse = {
-	ok: true
+export type DomRemoveResponse = Ok<{
 	/** Number of elements matched by selector. */
 	matches: number
 	/** Number of elements removed. */
 	removed: number
-}
+}>
 
 /**
  * Request payload for POST /dom/modify.
@@ -247,13 +243,12 @@ export type DomModifyRequest = {
 /**
  * Response payload for POST /dom/modify.
  */
-export type DomModifyResponse = {
-	ok: true
+export type DomModifyResponse = Ok<{
 	/** Number of elements matched by selector. */
 	matches: number
 	/** Number of elements modified. */
 	modified: number
-}
+}>
 
 /**
  * Request payload for POST /dom/set-file.
@@ -274,13 +269,12 @@ export type DomSetFileRequest = {
 /**
  * Response payload for POST /dom/set-file.
  */
-export type DomSetFileResponse = {
-	ok: true
+export type DomSetFileResponse = Ok<{
 	/** Number of elements matched by selector. */
 	matches: number
 	/** Number of file inputs updated. */
 	updated: number
-}
+}>
 
 /**
  * Request payload for POST /dom/scroll-to.
@@ -304,8 +298,7 @@ export type DomScrollToRequest = {
 /**
  * Response payload for POST /dom/scroll-to.
  */
-export type DomScrollToResponse = {
-	ok: true
+export type DomScrollToResponse = Ok<{
 	/** Number of elements matched by selector (only when selector is used). */
 	matches?: number
 	/** Number of elements scrolled (only when selector is used). */
@@ -314,7 +307,7 @@ export type DomScrollToResponse = {
 	scrollX: number
 	/** Final vertical scroll position. */
 	scrollY: number
-}
+}>
 
 /**
  * Request payload for POST /dom/scroll.
@@ -340,13 +333,12 @@ export type DomScrollRequest = {
 /**
  * Response payload for POST /dom/scroll.
  */
-export type DomScrollResponse = {
-	ok: true
+export type DomScrollResponse = Ok<{
 	/** Number of elements matched by selector (only when selector is used). */
 	matches?: number
 	/** Number of elements scrolled (only when selector is used). */
 	scrolled?: number
-}
+}>
 
 /**
  * Request payload for POST /dom/fill.
@@ -365,13 +357,12 @@ export type DomFillRequest = DomElementTarget & {
 /**
  * Response payload for POST /dom/fill.
  */
-export type DomFillResponse = {
-	ok: true
+export type DomFillResponse = Ok<{
 	/** Number of elements matched by selector. */
 	matches: number
 	/** Number of elements filled. */
 	filled: number
-}
+}>
 
 /**
  * Request payload for POST /dom/focus.
@@ -386,13 +377,12 @@ export type DomFocusRequest = DomElementTarget & {
 /**
  * Response payload for POST /dom/focus.
  */
-export type DomFocusResponse = {
-	ok: true
+export type DomFocusResponse = Ok<{
 	/** Number of elements matched by selector. */
 	matches: number
 	/** Number of elements focused. */
 	focused: number
-}
+}>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Request schemas

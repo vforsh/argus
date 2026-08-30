@@ -1,11 +1,11 @@
 import { formatError } from '../../cli/parse.js'
 import type {
-	ErrorResponse,
 	ExtensionTabActionResponse,
 	ExtensionTargetSummary,
 	ExtensionTargetsResponse,
 	StatusResponse,
 	WatcherRecord,
+	ApiResult,
 } from '@vforsh/argus-core'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 
@@ -26,7 +26,7 @@ export const fetchExtensionTargets = async (
 	watcher: WatcherRecord,
 ): Promise<{ ok: true; targets: ExtensionTargetSummary[] } | { ok: false; error: string }> => {
 	try {
-		const response = await fetchWatcherJson<ExtensionTargetsResponse | ErrorResponse>(watcher, {
+		const response = await fetchWatcherJson<ApiResult<ExtensionTargetsResponse>>(watcher, {
 			path: '/targets',
 			timeoutMs: 5_000,
 			returnErrorResponse: true,
@@ -45,7 +45,7 @@ export const selectExtensionTarget = async (
 	target: ExtensionTargetSummary,
 ): Promise<{ ok: true; tab: ExtensionTabActionResponse['tab']; watcherId?: string } | { ok: false; error: string }> => {
 	try {
-		const response = await fetchWatcherJson<ExtensionTabActionResponse | ErrorResponse>(watcher, {
+		const response = await fetchWatcherJson<ApiResult<ExtensionTabActionResponse>>(watcher, {
 			path: '/attach',
 			method: 'POST',
 			body: { targetId: target.id },

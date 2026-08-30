@@ -8,10 +8,10 @@ import type {
 	NetMockRule,
 	NetMockScope,
 	NetMockStatusResponse,
+	ErrorDetail,
 } from '@vforsh/argus-core'
 import { NetMockInterception, type NetMockInterceptionBinding, type NetMockPausedRequest } from './NetMockInterception.js'
-
-type NetMockError = { message: string; code?: string }
+import { getErrorCode } from '../errors.js'
 
 type InternalRule = NetMockRule & {
 	/** Compiled URL matcher, built once when the rule is added. */
@@ -42,14 +42,14 @@ export type NetMockController = {
 }
 
 export const createNetMockController = (): NetMockController => {
-	let lastError: NetMockError | null = null
+	let lastError: ErrorDetail | null = null
 	let nextRuleId = 1
 	const rules: InternalRule[] = []
 
 	const recordError = (error: unknown): void => {
 		lastError = { message: error instanceof Error ? error.message : String(error) }
-		const code = (error as { code?: unknown })?.code
-		if (typeof code === 'string') {
+		const code = getErrorCode(error)
+		if (code) {
 			lastError.code = code
 		}
 	}

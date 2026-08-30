@@ -11,6 +11,7 @@ import {
 	requireObject,
 	type FieldError,
 } from '../schemaFields.js'
+import type { Ok } from './errors.js'
 
 /** Rectangle crop in CSS pixels relative to the selected target viewport. */
 export type ScreenshotClipRegion = {
@@ -30,11 +31,10 @@ export type ScreenshotRequest = {
 }
 
 /** Response payload for POST /screenshot. */
-export type ScreenshotResponse = {
-	ok: true
+export type ScreenshotResponse = Ok<{
 	outFile: string
 	clipped: boolean
-}
+}>
 
 /**
  * Read an optional crop rectangle.

@@ -1,5 +1,6 @@
 import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
 import { optionalEnum, optionalNumber, readFields, requireObject } from '../schemaFields.js'
+import type { ErrorDetail, Ok } from './errors.js'
 
 /**
  * CPU throttle state.
@@ -13,31 +14,28 @@ export type ThrottleState = {
 export type ThrottleRequest = { action: 'set'; rate: number } | { action: 'clear' }
 
 /** POST /throttle response for the `set` action. */
-export type ThrottleSetResponse = {
-	ok: true
+export type ThrottleSetResponse = Ok<{
 	attached: boolean
 	applied: boolean
 	state: ThrottleState | null
-	error?: { message: string; code?: string } | null
-}
+	error?: ErrorDetail | null
+}>
 
 /** POST /throttle response for the `clear` action. */
-export type ThrottleClearResponse = {
-	ok: true
+export type ThrottleClearResponse = Ok<{
 	attached: boolean
 	applied: boolean
 	state: null
-	error?: { message: string; code?: string } | null
-}
+	error?: ErrorDetail | null
+}>
 
 /** GET /throttle response. */
-export type ThrottleStatusResponse = {
-	ok: true
+export type ThrottleStatusResponse = Ok<{
 	attached: boolean
 	applied: boolean
 	state: ThrottleState | null
-	lastError?: { message: string; code?: string } | null
-}
+	lastError?: ErrorDetail | null
+}>
 
 /** Actions accepted by POST /throttle. */
 export const THROTTLE_ACTIONS = ['set', 'clear'] as const

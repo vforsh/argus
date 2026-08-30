@@ -1,5 +1,6 @@
 import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
 import { compact, optionalBoolean, optionalEnum, optionalNumber, optionalRecord, readFields, requireObject } from '../schemaFields.js'
+import type { ErrorDetail, Ok } from './errors.js'
 
 /** Viewport emulation parameters for device metrics override. */
 export type EmulationViewport = {
@@ -38,8 +39,7 @@ export type EmulationState = {
 export type EmulationRequest = { action: 'set'; state: EmulationState } | { action: 'clear' }
 
 /** POST /emulation response for the `set` action. */
-export type EmulationSetResponse = {
-	ok: true
+export type EmulationSetResponse = Ok<{
 	/** Whether the watcher is currently attached to a CDP target. */
 	attached: boolean
 	/** Whether the emulation state was applied to the current CDP session. False if queued (detached) or apply failed. */
@@ -47,12 +47,11 @@ export type EmulationSetResponse = {
 	/** The desired emulation state after the operation. */
 	state: EmulationState | null
 	/** Optional error details when `applied` is false due to a CDP failure. */
-	error?: { message: string; code?: string } | null
-}
+	error?: ErrorDetail | null
+}>
 
 /** POST /emulation response for the `clear` action. */
-export type EmulationClearResponse = {
-	ok: true
+export type EmulationClearResponse = Ok<{
 	/** Whether the watcher is currently attached to a CDP target. */
 	attached: boolean
 	/** Whether the clear was applied (metrics + touch + UA restored). */
@@ -60,12 +59,11 @@ export type EmulationClearResponse = {
 	/** Always null after clear. */
 	state: null
 	/** Optional error details when `applied` is false due to a CDP failure. */
-	error?: { message: string; code?: string } | null
-}
+	error?: ErrorDetail | null
+}>
 
 /** GET /emulation response. */
-export type EmulationStatusResponse = {
-	ok: true
+export type EmulationStatusResponse = Ok<{
 	/** Whether the watcher is currently attached to a CDP target. */
 	attached: boolean
 	/** Whether the desired state is currently applied to the attached target. */
@@ -75,8 +73,8 @@ export type EmulationStatusResponse = {
 	/** Best-effort baseline values captured on attach. `userAgent` is null when detached or not yet resolved. */
 	baseline: { userAgent: string | null }
 	/** Last error from a failed apply attempt, if any. */
-	lastError?: { message: string; code?: string } | null
-}
+	lastError?: ErrorDetail | null
+}>
 
 /** Actions accepted by POST /emulation. */
 export const EMULATION_ACTIONS = ['set', 'clear'] as const

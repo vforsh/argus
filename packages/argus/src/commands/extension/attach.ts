@@ -1,5 +1,5 @@
 import { emitFailure, emitResolveFailure } from './failures.js'
-import type { ErrorResponse, ExtensionTabActionResponse } from '@vforsh/argus-core'
+import type { ErrorResponse, ExtensionTabActionResponse, ApiResult } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
@@ -69,9 +69,9 @@ const runExtensionTabAction = async (action: ExtensionTabAction, options: Extens
 		return
 	}
 
-	let response: ExtensionTabActionResponse | ErrorResponse
+	let response: ApiResult<ExtensionTabActionResponse>
 	try {
-		response = await fetchWatcherJson<ExtensionTabActionResponse | ErrorResponse>(resolved.watcher, {
+		response = await fetchWatcherJson<ApiResult<ExtensionTabActionResponse>>(resolved.watcher, {
 			path: action === 'attach' ? '/attach' : '/detach',
 			method: 'POST',
 			body: { tabId: tab.tab.tabId, watcherId: action === 'attach' ? options.as : undefined },

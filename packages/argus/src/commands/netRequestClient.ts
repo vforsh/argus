@@ -1,5 +1,4 @@
 import type {
-	ErrorResponse,
 	NetResponse,
 	NetRequestBodyPart,
 	NetRequestBodyResponse,
@@ -7,6 +6,7 @@ import type {
 	NetworkRequestSummary,
 	NetworkRequestDetail,
 	WatcherRecord,
+	ApiResult,
 } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
 import { fetchWatcherJson, formatWatcherTransportError, writeErrorResponse } from '../watchers/requestWatcher.js'
@@ -55,7 +55,7 @@ export const fetchNetRequestBody = async (
 	part: NetRequestBodyPart,
 	output: Output,
 	config: { writeApiErrors?: boolean } = {},
-): Promise<NetRequestBodyResponse | ErrorResponse | null> => {
+): Promise<ApiResult<NetRequestBodyResponse> | null> => {
 	const bodyQuery = new URLSearchParams(query)
 	bodyQuery.set('part', part)
 	return await fetchNetRequestRoute<NetRequestBodyResponse>(watcher, '/net/request/body', bodyQuery, NET_REQUEST_BODY_TIMEOUT_MS, output, config)
@@ -68,9 +68,9 @@ const fetchNetRequestRoute = async <T extends { ok: true }>(
 	timeoutMs: number,
 	output: Output,
 	config: { writeApiErrors?: boolean } = {},
-): Promise<T | ErrorResponse | null> => {
+): Promise<ApiResult<T> | null> => {
 	try {
-		const response = await fetchWatcherJson<T | ErrorResponse>(watcher, {
+		const response = await fetchWatcherJson<ApiResult<T>>(watcher, {
 			path,
 			query,
 			timeoutMs,

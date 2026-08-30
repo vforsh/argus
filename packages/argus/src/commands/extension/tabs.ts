@@ -1,7 +1,7 @@
 import { formatExtensionTabLine } from './tabSelection.js'
 import { emitFailure, emitResolveFailure } from './failures.js'
 import { formatError } from '../../cli/parse.js'
-import type { ErrorResponse, ExtensionTabsResponse } from '@vforsh/argus-core'
+import type { ExtensionTabsResponse, ApiResult } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
@@ -23,9 +23,9 @@ export const runExtensionTabs = async (options: ExtensionTabsOptions): Promise<v
 
 	const query = buildTabsQuery(options)
 
-	let response: ExtensionTabsResponse | ErrorResponse
+	let response: ApiResult<ExtensionTabsResponse>
 	try {
-		response = await fetchWatcherJson<ExtensionTabsResponse | ErrorResponse>(resolved.watcher, {
+		response = await fetchWatcherJson<ApiResult<ExtensionTabsResponse>>(resolved.watcher, {
 			path: '/tabs',
 			query,
 			timeoutMs: 5_000,

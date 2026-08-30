@@ -24,7 +24,7 @@ export const readNetworkBody = async (options: {
 		const result = await options.session.sendAndWait('Network.getRequestPostData', { requestId: options.request.requestId }, commandOptions)
 
 		if (typeof result.postData !== 'string') {
-			throw createNetBodyError('Request body not available for this request', 'body_not_available')
+			throw codedError('body_not_available', 'Request body not available for this request')
 		}
 
 		return {
@@ -37,7 +37,7 @@ export const readNetworkBody = async (options: {
 	const result = await options.session.sendAndWait('Network.getResponseBody', { requestId: options.request.requestId }, commandOptions)
 
 	if (typeof result.body !== 'string') {
-		throw createNetBodyError('Response body not available for this request', 'body_not_available')
+		throw codedError('body_not_available', 'Response body not available for this request')
 	}
 
 	return {
@@ -50,7 +50,7 @@ export const readNetworkBody = async (options: {
 export const normalizeNetBodyError = (error: unknown, part: NetRequestBodyPart): Error => {
 	const message = unwrapNetBodyErrorMessage(error instanceof Error ? error.message : String(error))
 	if (isMissingNetBodyError(message)) {
-		return createNetBodyError(`${capitalizePart(part)} body not available for this request`, 'body_not_available')
+		return codedError('body_not_available', `${capitalizePart(part)} body not available for this request`)
 	}
 
 	return error instanceof Error ? error : new Error(message)
@@ -90,7 +90,5 @@ const unwrapNetBodyErrorMessage = (message: string): string => {
 		return message
 	}
 }
-
-const createNetBodyError = (message: string, code: string): Error => codedError(code, message)
 
 const capitalizePart = (part: NetRequestBodyPart): string => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`

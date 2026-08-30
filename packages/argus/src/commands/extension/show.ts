@@ -1,6 +1,6 @@
 import { emitFailure } from './failures.js'
 import { formatError } from '../../cli/parse.js'
-import type { ErrorResponse, ExtensionBrowserTab, VisibilityResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { ExtensionBrowserTab, VisibilityResponse, WatcherRecord, ApiResult } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
@@ -119,9 +119,9 @@ export const showWatcher = async (
 	output: ReturnType<typeof createOutput>,
 	options: ExtensionShowOptions,
 ): Promise<void> => {
-	let response: VisibilityResponse | ErrorResponse
+	let response: ApiResult<VisibilityResponse>
 	try {
-		response = await fetchWatcherJson<VisibilityResponse | ErrorResponse>(watcher, {
+		response = await fetchWatcherJson<ApiResult<VisibilityResponse>>(watcher, {
 			path: '/visibility',
 			method: 'POST',
 			body: { action: 'show' },
