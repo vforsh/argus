@@ -1,11 +1,8 @@
-import { readFile } from 'node:fs/promises'
 import type { DomFillResponse } from '@vforsh/argus-core'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
-import { formatError } from '../cli/parse.js'
 import type { Output } from '../output/io.js'
-import { resolvePath } from '../utils/paths.js'
 import { describeElementTarget, parseWaitDuration, requireElementTarget, writeNoElementFound } from './dom/shared.js'
-import { readStdin } from './evalShared.js'
+import { readTextInput, selectTextInput } from './inputSource.js'
 
 /** Options for the dom fill command. */
 export type DomFillOptions = {
@@ -77,46 +74,21 @@ const buildFillPlan = async (value: string | undefined, options: DomFillOptions,
 
 /** Resolve the fill value from inline arg, --value-file, or --value-stdin. Returns null on error. */
 const resolveFillValue = async (value: string | undefined, options: DomFillOptions, output: Output): Promise<string | null> => {
-	const wantsStdin = options.valueStdin === true || value === '-'
-	const hasInline = value != null && value !== '-'
-	const hasFile = options.valueFile != null
-
-	const sourceCount = [hasInline, hasFile, wantsStdin].filter(Boolean).length
-	if (sourceCount > 1) {
-		output.writeWarn('Provide only one of: inline value, --value-file, or --value-stdin')
+	const selection = selectTextInput(
+		{ inline: value, file: options.valueFile, stdin: options.valueStdin },
+		{
+			inline: 'inline value',
+			file: '--value-file',
+			stdin: '--value-stdin',
+			missing: 'Value is required. Provide an inline value, --value-file, or --value-stdin (or pass - as value).',
+		},
+		output,
+	)
+	if (!selection) {
 		return null
 	}
 
-	if (hasFile) {
-		try {
-			const content = await readFile(resolvePath(options.valueFile!), 'utf8')
-			if (!content.trim()) {
-				output.writeWarn(`File is empty: ${options.valueFile}`)
-				return null
-			}
-			return content
-		} catch (error) {
-			output.writeWarn(`Failed to read --value-file: ${formatError(error)}`)
-			return null
-		}
-	}
-
-	if (wantsStdin) {
-		try {
-			const content = await readStdin()
-			if (!content.trim()) {
-				output.writeWarn('Stdin input is empty')
-				return null
-			}
-			return content
-		} catch (error) {
-			output.writeWarn(`Failed to read stdin: ${formatError(error)}`)
-			return null
-		}
-	}
-
-	if (hasInline) return value!
-
-	output.writeWarn('Value is required. Provide an inline value, --value-file, or --value-stdin (or pass - as value).')
-	return null
+	// An empty inline value is meaningful here — it clears the field — so it skips the empty check.
+	return selection.kind === 'inline' ? selection.value : await readTextInput(selection, { file: '--value-file' }, output, 'Value')
 }
+

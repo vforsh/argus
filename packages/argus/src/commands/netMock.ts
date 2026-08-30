@@ -18,7 +18,7 @@ import { formatError } from '../cli/parse.js'
 import type { Output } from '../output/io.js'
 import { parseDurationMs } from '@vforsh/argus-core'
 import { resolvePath } from '../utils/paths.js'
-import { readStdin } from './evalShared.js'
+import { readStdin } from './inputSource.js'
 
 const TIMEOUT_WRITE_MS = 10_000
 const TIMEOUT_READ_MS = 5_000

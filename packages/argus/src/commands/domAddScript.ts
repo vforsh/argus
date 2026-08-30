@@ -1,9 +1,7 @@
-import { readFile } from 'node:fs/promises'
 import { evalOnce } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
-import { formatError } from '../cli/parse.js'
-import { resolvePath } from '../utils/paths.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { readTextInput, selectTextInput } from './inputSource.js'
 
 /** Options for the dom add-script command. */
 export type DomAddScriptOptions = {
@@ -88,18 +86,10 @@ const resolveCodeInput = async (
 	options: DomAddScriptOptions,
 	output: ReturnType<typeof createOutput>,
 ): Promise<CodeInput | null> => {
-	const wantsStdin = options.stdin === true || code === '-'
-	const hasInline = code != null && code !== '-'
-	const hasFile = options.file != null
+	// `--src` wins outright when it is the only source; otherwise it just joins the conflict message.
 	const hasSrc = options.src != null
-
-	const sourceCount = [hasInline, hasFile, wantsStdin, hasSrc].filter(Boolean).length
-	if (sourceCount > 1) {
-		output.writeWarn('Provide only one of: inline code, --file, --stdin, or --src')
-		return null
-	}
-
-	if (hasSrc) {
+	const hasTextSource = options.file != null || options.stdin === true || (code != null && code !== '-')
+	if (hasSrc && !hasTextSource) {
 		const url = options.src!.trim()
 		if (!url) {
 			output.writeWarn('--src value is empty')
@@ -108,44 +98,23 @@ const resolveCodeInput = async (
 		return { kind: 'src', value: url }
 	}
 
-	if (hasFile) {
-		try {
-			const content = await readFile(resolvePath(options.file!), 'utf8')
-			if (!content.trim()) {
-				output.writeWarn(`File is empty: ${options.file}`)
-				return null
-			}
-			return { kind: 'inline', value: content }
-		} catch (error) {
-			output.writeWarn(`Failed to read --file: ${formatError(error)}`)
-			return null
-		}
+	const selection = selectTextInput(
+		{ inline: code, file: options.file, stdin: options.stdin },
+		{
+			inline: 'inline code',
+			file: '--file',
+			stdin: '--stdin',
+			missing: 'Code is required. Provide inline code, --file, --stdin, or --src (or pass - as code).',
+		},
+		output,
+		[{ name: '--src', present: hasSrc }],
+	)
+	if (!selection) {
+		return null
 	}
 
-	if (wantsStdin) {
-		try {
-			const content = await readStdin()
-			if (!content.trim()) {
-				output.writeWarn('Stdin input is empty')
-				return null
-			}
-			return { kind: 'inline', value: content }
-		} catch (error) {
-			output.writeWarn(`Failed to read stdin: ${formatError(error)}`)
-			return null
-		}
-	}
-
-	if (hasInline) {
-		if (!code!.trim()) {
-			output.writeWarn('Code is empty')
-			return null
-		}
-		return { kind: 'inline', value: code! }
-	}
-
-	output.writeWarn('Provide inline code, --file, --stdin (or pass - as code), or --src.')
-	return null
+	const value = await readTextInput(selection, { file: '--file' }, output, 'Code')
+	return value == null ? null : { kind: 'inline', value }
 }
 
 type ScriptConfig = {
@@ -202,15 +171,3 @@ const resolveTarget = (value: string | undefined, output: ReturnType<typeof crea
 	output.writeWarn('--target must be "head" or "body"')
 	return null
 }
-
-const readStdin = async (): Promise<string> =>
-	new Promise((resolve, reject) => {
-		let data = ''
-		process.stdin.setEncoding('utf8')
-		process.stdin.on('data', (chunk) => {
-			data += chunk
-		})
-		process.stdin.on('end', () => resolve(data))
-		process.stdin.on('error', (error) => reject(error))
-		process.stdin.resume()
-	})

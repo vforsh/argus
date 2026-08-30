@@ -8,6 +8,7 @@ import { type EvalArgMap, type EvalArgSourceOptions, hasEvalArgs, resolveEvalArg
 import { bundleEvalEntry } from './evalBundle.js'
 import { fileUsesModuleSyntax } from './evalModuleSyntax.js'
 import { createEvalResultFileSink, type EvalResultFileOptions } from './evalResultOutput.js'
+import { readTextInput, selectTextInput, type TextInputSelection } from './inputSource.js'
 
 // Re-export eval arg helpers for existing imports and tests.
 export { type EvalArgMap, hasEvalArgs, parseEvalArgFlags as parseEvalArgs } from './evalArgs.js'
@@ -99,86 +100,74 @@ const resolveExpressionSource = async (
 	options: ExpressionSourceOptions,
 	output: Output,
 ): Promise<ResolvedExpressionSource | null> => {
-	const wantsStdin = options.stdin === true || inline === '-'
-	const hasInline = inline != null && inline !== '-'
-	const filePath = options.file
-	const hasFile = filePath != null
-
-	if (hasInline && hasFile) {
-		output.writeWarn('Cannot combine an inline expression with --file')
-		return null
-	}
-
-	if (hasInline && wantsStdin) {
-		output.writeWarn('Cannot combine an inline expression with --stdin')
-		return null
-	}
-
-	if (hasFile && wantsStdin) {
-		output.writeWarn('Cannot combine --file with stdin input')
-		return null
-	}
-
-	if ((options.bundle || options.noBundle) && !hasFile) {
+	// Checked before the source is picked: "--bundle needs --file" is the more actionable message
+	// when a user passes --bundle with no expression at all.
+	if ((options.bundle || options.noBundle) && options.file == null) {
 		output.writeWarn('--bundle and --no-bundle require --file')
 		return null
 	}
 
-	let expression: string
-	let scenario: true | undefined
-	if (hasFile) {
-		const fileContent = await readFileContent(filePath, options.file, output)
-		if (fileContent == null) {
-			return null
-		}
-
-		const bundleDecision = resolveBundleDecision(options, fileContent)
-		if (bundleDecision.autoEnabled) {
-			output.writeWarn('Detected import/export in --file; bundling automatically. Pass --no-bundle to read the file as-is.')
-		}
-
-		if (bundleDecision.shouldBundle) {
-			const bundled = await bundleEvalEntry(filePath)
-			if (!bundled.ok) {
-				output.writeWarn(`Failed to bundle --file: ${bundled.error}`)
-				return null
-			}
-
-			if (!bundled.code.trim()) {
-				output.writeWarn(`Bundled file is empty: ${options.file}`)
-				return null
-			}
-
-			expression = bundled.code
-			scenario = true
-		} else {
-			expression = fileContent
-		}
-	} else if (wantsStdin) {
-		try {
-			const content = await readStdin()
-			if (!content.trim()) {
-				output.writeWarn('Stdin input is empty')
-				return null
-			}
-			expression = content
-		} catch (error) {
-			output.writeWarn(`Failed to read stdin: ${formatError(error)}`)
-			return null
-		}
-	} else if (hasInline) {
-		if (!inline.trim()) {
-			output.writeWarn('Expression is empty')
-			return null
-		}
-		expression = inline
-	} else {
-		output.writeWarn('Expression is required. Provide an inline expression, --file, or --stdin (or pass - as expression).')
+	const selection = selectTextInput({ inline, file: options.file, stdin: options.stdin }, EXPRESSION_INPUT_NAMES, output)
+	if (!selection) {
 		return null
 	}
 
-	const injected = await prependInjectSource(expression, options.inject, output)
-	return injected == null ? null : { expression: injected, scenario }
+	const source = selection.kind === 'file' ? await resolveFileExpression(selection.path, options, output) : await readInlineExpression(selection, output)
+	if (!source) {
+		return null
+	}
+
+	const injected = await prependInjectSource(source.expression, options.inject, output)
+	return injected == null ? null : { expression: injected, scenario: source.scenario }
+}
+
+const EXPRESSION_INPUT_NAMES = {
+	inline: 'an inline expression',
+	file: '--file',
+	stdin: '--stdin',
+	missing: 'Expression is required. Provide an inline expression, --file, or --stdin (or pass - as expression).',
+} as const
+
+const readInlineExpression = async (
+	selection: TextInputSelection,
+	output: Output,
+): Promise<ResolvedExpressionSource | null> => {
+	const expression = await readTextInput(selection, EXPRESSION_INPUT_NAMES, output, 'Expression')
+	return expression == null ? null : { expression }
+}
+
+/** A `--file` expression may be bundled first; `--bundle`/`--no-bundle` and module syntax decide. */
+const resolveFileExpression = async (
+	filePath: string,
+	options: ExpressionSourceOptions,
+	output: Output,
+): Promise<ResolvedExpressionSource | null> => {
+	const fileContent = await readTextInput({ kind: 'file', path: filePath }, EXPRESSION_INPUT_NAMES, output, 'File')
+	if (fileContent == null) {
+		return null
+	}
+
+	const bundleDecision = resolveBundleDecision(options, fileContent)
+	if (bundleDecision.autoEnabled) {
+		output.writeWarn('Detected import/export in --file; bundling automatically. Pass --no-bundle to read the file as-is.')
+	}
+
+	if (!bundleDecision.shouldBundle) {
+		return { expression: fileContent }
+	}
+
+	const bundled = await bundleEvalEntry(filePath)
+	if (!bundled.ok) {
+		output.writeWarn(`Failed to bundle --file: ${bundled.error}`)
+		return null
+	}
+
+	if (!bundled.code.trim()) {
+		output.writeWarn(`Bundled file is empty: ${filePath}`)
+		return null
+	}
+
+	return { expression: bundled.code, scenario: true }
 }
 
 type BundleDecision = { shouldBundle: boolean; autoEnabled: boolean }
@@ -203,21 +192,6 @@ export const resolveBundleDecision = (options: ExpressionSourceOptions, fileCont
 	return { shouldBundle: true, autoEnabled: true }
 }
 
-const readFileContent = async (filePath: string, displayPath: string | undefined, output: Output): Promise<string | null> => {
-	try {
-		const content = await readFile(filePath, 'utf8')
-		if (!content.trim()) {
-			output.writeWarn(`File is empty: ${displayPath}`)
-			return null
-		}
-
-		return content
-	} catch (error) {
-		output.writeWarn(`Failed to read --file: ${formatError(error)}`)
-		return null
-	}
-}
-
 const prependInjectSource = async (expression: string, injectPath: string | undefined, output: Output): Promise<string | null> => {
 	if (injectPath == null) {
 		return expression
@@ -237,18 +211,6 @@ const prependInjectSource = async (expression: string, injectPath: string | unde
 	}
 }
 
-/** Read all of stdin into a string. */
-export const readStdin = async (): Promise<string> =>
-	new Promise((resolve, reject) => {
-		let data = ''
-		process.stdin.setEncoding('utf8')
-		process.stdin.on('data', (chunk) => {
-			data += chunk
-		})
-		process.stdin.on('end', () => resolve(data))
-		process.stdin.on('error', (error) => reject(error))
-		process.stdin.resume()
-	})
 
 // ---------------------------------------------------------------------------
 // Parsing helpers

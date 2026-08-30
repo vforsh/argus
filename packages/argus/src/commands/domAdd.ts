@@ -1,9 +1,7 @@
 import type { DomAddResponse, DomInsertPosition } from '@vforsh/argus-core'
-import { readFile } from 'node:fs/promises'
-import { formatError } from '../cli/parse.js'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
-import { resolvePath } from '../utils/paths.js'
+import { readTextInput, selectTextInput } from './inputSource.js'
 import { requireSelector, writeNoElementFound } from './dom/shared.js'
 
 /** Options for the dom add command. */
@@ -149,59 +147,16 @@ const parseNonNegativeInt = (value: string | undefined, label: string, output: O
 }
 
 const resolveHtmlInput = async (options: DomAddOptions, output: Output): Promise<string | null> => {
-	const wantsStdin = options.htmlStdin === true || options.html === '-'
-	const hasHtmlValue = options.html != null && options.html !== '-'
-	const hasFile = options.htmlFile != null
-
-	if (hasHtmlValue && hasFile) {
-		output.writeWarn('Cannot combine --html with --html-file')
-		return null
-	}
-
-	if (hasHtmlValue && options.htmlStdin) {
-		output.writeWarn('Cannot combine --html with --html-stdin')
-		return null
-	}
-
-	if (hasFile && wantsStdin) {
-		output.writeWarn('Cannot combine --html-file with stdin input')
-		return null
-	}
-
-	if (hasFile) {
-		try {
-			return await readFile(resolvePath(options.htmlFile ?? ''), 'utf8')
-		} catch (error) {
-			output.writeWarn(`Failed to read --html-file: ${formatError(error)}`)
-			return null
-		}
-	}
-
-	if (wantsStdin) {
-		try {
-			return await readStdin()
-		} catch (error) {
-			output.writeWarn(`Failed to read stdin: ${formatError(error)}`)
-			return null
-		}
-	}
-
-	if (hasHtmlValue) {
-		return options.html ?? null
-	}
-
-	output.writeWarn('Provide --html, --html-file, or --html-stdin (or pass --html -)')
-	return null
+	const selection = selectTextInput(
+		{ inline: options.html, file: options.htmlFile, stdin: options.htmlStdin },
+		{
+			inline: '--html',
+			file: '--html-file',
+			stdin: '--html-stdin',
+			missing: 'Provide --html, --html-file, or --html-stdin (or pass --html -)',
+		},
+		output,
+	)
+	return selection && (await readTextInput(selection, { file: '--html-file' }, output, 'HTML content'))
 }
 
-const readStdin = async (): Promise<string> =>
-	new Promise((resolve, reject) => {
-		let data = ''
-		process.stdin.setEncoding('utf8')
-		process.stdin.on('data', (chunk) => {
-			data += chunk
-		})
-		process.stdin.on('end', () => resolve(data))
-		process.stdin.on('error', (error) => reject(error))
-		process.stdin.resume()
-	})
