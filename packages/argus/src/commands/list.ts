@@ -1,3 +1,4 @@
+import { describeProtocolMismatch } from '@vforsh/argus-core'
 import type { StatusResponse, WatcherRecord } from '@vforsh/argus-core'
 import { pruneRegistry } from '../registry.js'
 import { formatWatcherLine } from '../output/format.js'
@@ -65,6 +66,10 @@ const listWatchers = async (
 	for (const watcher of watchers) {
 		try {
 			const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 2_000 })
+			const mismatch = describeProtocolMismatch(status.protocolVersion, status.watcherVersion)
+			if (mismatch) {
+				output.writeWarn(`${watcher.id}: ${mismatch}`)
+			}
 			results.push({ watcher, status })
 		} catch (error) {
 			output.writeWarn(formatWatcherTransportError(watcher, error))

@@ -1,3 +1,4 @@
+import { describeProtocolMismatch } from '@vforsh/argus-core'
 import { accessSync, constants } from 'node:fs'
 import type { RegistryV1, StatusResponse } from '@vforsh/argus-core'
 import type { ChromeVersionResponse } from './chrome.js'
@@ -23,9 +24,7 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 
 	const registryReadable = checkReadable(registryPath)
 	const registryStatus: DoctorStatus = registryReadable ? 'ok' : 'warn'
-	const registryMessage = registryReadable
-		? `registry path readable: ${registryPath}`
-		: `registry path not readable: ${registryPath}`
+	const registryMessage = registryReadable ? `registry path readable: ${registryPath}` : `registry path not readable: ${registryPath}`
 
 	const hasWebSocket = Boolean((globalThis as { WebSocket?: unknown }).WebSocket)
 	const websocketStatus: DoctorStatus = hasWebSocket ? 'ok' : 'fail'
@@ -61,6 +60,8 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 		message: string
 		attached?: boolean
 		target?: { title: string | null; url: string | null } | null
+		/** Protocol version the watcher reports, or null when it is too old to report one. */
+		protocolVersion?: number | null
 	}>
 
 	for (const watcher of watcherEntries) {
@@ -76,14 +77,16 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 			continue
 		}
 
+		const mismatch = describeProtocolMismatch(statusResult.status.protocolVersion, statusResult.status.watcherVersion)
 		watcherReports.push({
 			id: watcher.id,
 			host: watcher.host,
 			port: watcher.port,
-			status: 'ok',
-			message: statusResult.status.attached ? 'attached' : 'detached',
+			status: mismatch ? 'warn' : 'ok',
+			message: mismatch ?? (statusResult.status.attached ? 'attached' : 'detached'),
 			attached: statusResult.status.attached,
 			target: statusResult.status.target,
+			protocolVersion: statusResult.status.protocolVersion ?? null,
 		})
 	}
 
@@ -123,12 +126,11 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 	}
 
 	for (const report of watcherReports) {
-		const targetLabel = report.target?.title || report.target?.url
-			? ` (${report.target?.title ?? ''}${report.target?.title && report.target?.url ? ' • ' : ''}${report.target?.url ?? ''})`
-			: ''
-		output.writeHuman(
-			`${formatStatus(report.status)} watcher ${report.id} ${report.host}:${report.port} ${report.message}${targetLabel}`.trim(),
-		)
+		const targetLabel =
+			report.target?.title || report.target?.url
+				? ` (${report.target?.title ?? ''}${report.target?.title && report.target?.url ? ' • ' : ''}${report.target?.url ?? ''})`
+				: ''
+		output.writeHuman(`${formatStatus(report.status)} watcher ${report.id} ${report.host}:${report.port} ${report.message}${targetLabel}`.trim())
 	}
 }
 
@@ -141,10 +143,7 @@ const checkReadable = (path: string): boolean => {
 	}
 }
 
-const checkWatcherStatus = async (
-	host: string,
-	port: number,
-): Promise<{ ok: true; status: StatusResponse } | { ok: false; error: string }> => {
+const checkWatcherStatus = async (host: string, port: number): Promise<{ ok: true; status: StatusResponse } | { ok: false; error: string }> => {
 	const url = `http://${host}:${port}/status`
 	try {
 		const status = await fetchJson<StatusResponse>(url, { timeoutMs: 2_000 })
@@ -154,10 +153,7 @@ const checkWatcherStatus = async (
 	}
 }
 
-const checkCdp = async (
-	host: string,
-	port: number,
-): Promise<{ ok: true; version: string } | { ok: false; error: string }> => {
+const checkCdp = async (host: string, port: number): Promise<{ ok: true; version: string } | { ok: false; error: string }> => {
 	const url = `http://${host}:${port}/json/version`
 	try {
 		const response = await fetchJson<ChromeVersionResponse>(url, { timeoutMs: 1_500 })

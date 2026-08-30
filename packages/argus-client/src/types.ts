@@ -54,6 +54,13 @@ export type ListResult = {
 	status?: StatusResponse
 	/** Error message when unreachable. */
 	error?: string
+	/**
+	 * Set when the watcher answered but speaks an incompatible protocol version.
+	 *
+	 * The watcher is still reachable and `status` is still populated, but commands issued
+	 * against it may fail in ways this SDK cannot interpret.
+	 */
+	protocolMismatch?: string
 }
 
 /** Controls how log event args are returned. */

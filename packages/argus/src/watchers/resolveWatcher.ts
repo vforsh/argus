@@ -1,4 +1,5 @@
 import type { RegistryV1, WatcherRecord } from '@vforsh/argus-core'
+import { describeProtocolMismatch } from '@vforsh/argus-core'
 import type { StatusResponse } from '@vforsh/argus-core'
 import { pruneRegistry } from '../registry.js'
 import { fetchWatcherJson } from './requestWatcher.js'
@@ -60,6 +61,11 @@ export const resolveWatcher = async (input: ResolveWatcherInput): Promise<Resolv
 const checkWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; status: StatusResponse } | { ok: false; error: string }> => {
 	try {
 		const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 1_500 })
+		// A peer that cannot speak our protocol is not a usable auto-selection candidate.
+		const mismatch = describeProtocolMismatch(status.protocolVersion, status.watcherVersion)
+		if (mismatch) {
+			return { ok: false, error: mismatch }
+		}
 		return { ok: true, status }
 	} catch (error) {
 		return { ok: false, error: error instanceof Error ? error.message : String(error) }

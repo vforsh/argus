@@ -1,3 +1,4 @@
+import { describeProtocolMismatch } from '@vforsh/argus-core'
 import type {
 	LogCursorResponse,
 	LogEpochResponse,
@@ -29,7 +30,8 @@ export const createInspectMethods = (ctx: ClientContext) => ({
 					path: '/status',
 					timeoutMs: ctx.listTimeoutMs,
 				})
-				results.push({ watcher, reachable: true, status })
+				const mismatch = describeProtocolMismatch(status.protocolVersion, status.watcherVersion)
+				results.push(mismatch ? { watcher, reachable: true, status, protocolMismatch: mismatch } : { watcher, reachable: true, status })
 			} catch (error) {
 				results.push({ watcher, reachable: false, error: formatError(error) })
 			}

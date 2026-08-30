@@ -1,3 +1,4 @@
+import { describeProtocolMismatch } from '@vforsh/argus-core'
 import type { StatusResponse } from '@vforsh/argus-core'
 import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
 
@@ -12,5 +13,10 @@ export const runWatcherStatus = defineWatcherCommand<WatcherStatusOptions, Statu
 	formatHuman: (status, { output, watcher }) => {
 		const readinessSuffix = status.targetReady === false ? ' targetReady=false' : ''
 		output.writeHuman(`ok ${watcher.id} ${watcher.host}:${watcher.port} pid=${status.pid} attached=${status.attached}${readinessSuffix}`)
+
+		const mismatch = describeProtocolMismatch(status.protocolVersion, status.watcherVersion)
+		if (mismatch) {
+			output.writeWarn(mismatch)
+		}
 	},
 })
