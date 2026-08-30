@@ -24,6 +24,7 @@ import type {
 	PopupActionMessage,
 	PopupEvent,
 	PopupResponse,
+	PopupResponseFor,
 	PopupStatusPayload,
 	PopupTabWithTargets,
 	PopupTarget,
@@ -149,14 +150,20 @@ async function detachTabFromControl(tabId: number): Promise<TabActionResult> {
 	}
 }
 
-async function buildPopupResponse(message: PopupActionMessage): Promise<PopupResponse> {
+async function buildPopupResponse<M extends PopupActionMessage>(message: M): Promise<PopupResponseFor<M['action']>> {
+	// The union is narrowed per case below; the cast re-attaches each case's payload to
+	// the caller's action, which TypeScript cannot infer through a switch on a generic.
+	return (await dispatchPopupAction(message)) as PopupResponseFor<M['action']>
+}
+
+async function dispatchPopupAction(message: PopupActionMessage): Promise<PopupResponse> {
 	try {
 		switch (message.action) {
 			case 'getTargets':
 				return { success: true, tabs: await getTabsWithTargets() }
 
 			case 'attach': {
-				const tabId = requireTabId(message)
+				const { tabId } = message
 				await attachBridgeSession(tabId)
 				setSelectedFrame(tabId, null)
 				await prepareRememberedTargetSelection(tabId)
@@ -165,27 +172,26 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 			}
 
 			case 'detach': {
-				const tabId = requireTabId(message)
+				const { tabId } = message
 				await detachTab(tabId)
 				recordEvent('info', 'popup', `Detached tab ${tabId}`)
 				return { success: true }
 			}
 
 			case 'focusTab': {
-				const tabId = requireTabId(message)
+				const { tabId } = message
 				await focusTab(tabId)
 				recordEvent('info', 'popup', `Focused tab ${tabId}`)
 				return { success: true }
 			}
 
 			case 'selectTarget': {
-				const tabId = requireTabId(message)
+				const { tabId, frameId } = message
 				const session = bridgeSessions.get(tabId)
 				if (!session) {
 					return { success: false, error: `No watcher bridge for tab ${tabId}` }
 				}
 
-				const frameId = message.frameId ?? null
 				const target = getPopupTarget(debuggerManager, tabId, frameId)
 				if (!target) {
 					return { success: false, error: `Unknown target for tab ${tabId}` }
@@ -200,16 +206,16 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 			}
 
 			case 'hideTarget': {
-				const tabId = requireTabId(message)
-				const target = getRequiredIframeTarget(debuggerManager, tabId, message.frameId ?? null)
+				const { tabId, frameId } = message
+				const target = getRequiredIframeTarget(debuggerManager, tabId, frameId)
 				await hideTarget(tabId, target)
 				recordEvent('info', 'popup', `Hid iframe ${target.frameId} on tab ${tabId}`)
 				return { success: true }
 			}
 
 			case 'showTarget': {
-				const tabId = requireTabId(message)
-				const target = getRequiredIframeTarget(debuggerManager, tabId, message.frameId ?? null)
+				const { tabId, frameId } = message
+				const target = getRequiredIframeTarget(debuggerManager, tabId, frameId)
 				await showTarget(tabId, target)
 				recordEvent('info', 'popup', `Restored iframe ${target.frameId} on tab ${tabId}`)
 				return { success: true }
@@ -220,9 +226,6 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 					success: true,
 					status: buildPopupStatusPayload(),
 				}
-
-			default:
-				return { success: false, error: `Unknown action: ${message.action}` }
 		}
 	} catch (err) {
 		recordEvent('error', 'popup', err instanceof Error ? err.message : 'Unknown popup error')
@@ -231,14 +234,6 @@ async function buildPopupResponse(message: PopupActionMessage): Promise<PopupRes
 			error: err instanceof Error ? err.message : 'Unknown error',
 		}
 	}
-}
-
-function requireTabId(message: PopupActionMessage): number {
-	if (message.tabId !== undefined) {
-		return message.tabId
-	}
-
-	throw new Error('No tabId provided')
 }
 
 async function attachBridgeSession(tabId: number, options: TabBridgeSessionOptions = {}): Promise<TabBridgeSession> {
@@ -346,7 +341,6 @@ function buildPopupStatusPayload(): PopupStatusPayload {
 			title: target.title,
 		})),
 		watchers: getWatcherStatuses(),
-		recentEvents,
 	}
 }
 

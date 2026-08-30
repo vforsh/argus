@@ -4,32 +4,16 @@
  */
 
 import { renderTargetList } from './target-list.js'
-import type { CurrentTargetSummary, PopupWatcherStatus, TabInfo } from './types.js'
+import { runPopupMessage, sendPopupMessage } from './popup-client.js'
+import type {
+	PopupCurrentTarget,
+	PopupStatusPayload,
+	PopupTabAction,
+	PopupTabWithTargets,
+	PopupTargetAction,
+	PopupWatcherStatus,
+} from '../background/popup-protocol.js'
 
-type StatusPayload = {
-	bridgeConnected: boolean
-	attachedTabs: Array<{ tabId: number; url: string; title: string }>
-	watchers: PopupWatcherStatus[]
-}
-
-type StatusResponse = {
-	success: boolean
-	status?: StatusPayload
-	error?: string
-}
-
-type TabsResponse = {
-	success: boolean
-	tabs?: TabInfo[]
-	error?: string
-}
-
-type ActionResponse = {
-	success: boolean
-	error?: string
-}
-
-type PopupAction = 'attach' | 'detach' | 'focusTab' | 'selectTarget' | 'hideTarget' | 'showTarget'
 type TabButtonAction = 'attach' | 'detach' | 'copy-info'
 
 const COPY_ICON = `
@@ -94,12 +78,6 @@ document.querySelector('.health-summary-actions')?.addEventListener('click', (ev
 	event.stopPropagation()
 })
 
-async function sendMessage<T>(message: { action: string; tabId?: number; frameId?: string | null }): Promise<T> {
-	return new Promise((resolve) => {
-		chrome.runtime.sendMessage(message, resolve)
-	})
-}
-
 function setEmptyState(icon: string, message: string): void {
 	availableSection.classList.remove('hidden')
 	attachedSection.classList.add('hidden')
@@ -123,10 +101,10 @@ function showError(message: string | null): void {
 	errorBanner.classList.toggle('hidden', !message)
 }
 
-function updateHealth(status: StatusPayload | undefined, watcher: PopupWatcherStatus | null): void {
+function updateHealth(status: PopupStatusPayload | undefined, watcher: PopupWatcherStatus | null): void {
 	const target = watcher?.currentTarget ?? null
 	const tabCount = status?.attachedTabs.length ?? 0
-	const nativeHostConnected = watcher?.nativeHostConnected ?? status?.bridgeConnected ?? false
+	const nativeHostConnected = watcher?.bridgeConnected ?? status?.bridgeConnected ?? false
 	const watcherReady = watcher?.watcherReady ?? false
 	const targetState = watcher?.targetState ?? 'not-selected'
 
@@ -172,7 +150,7 @@ function setHealthValueState(element: HTMLElement, text: string, stateClass: 'co
 	element.classList.toggle('warning', stateClass === 'warning')
 }
 
-function formatTargetState(target: CurrentTargetSummary | null, state: PopupWatcherStatus['targetState']): string {
+function formatTargetState(target: PopupCurrentTarget | null, state: PopupWatcherStatus['targetState']): string {
 	if (!target || state === 'not-selected') {
 		return '-'
 	}
@@ -191,7 +169,7 @@ function getTargetStateClass(state: PopupWatcherStatus['targetState']): 'connect
 	return null
 }
 
-function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
+function renderTabs(tabs: PopupTabWithTargets[], currentTabId?: number): void {
 	if (tabs.length === 0) {
 		setEmptyState('🔍', 'No tabs available')
 		return
@@ -212,7 +190,7 @@ function renderTabs(tabs: TabInfo[], currentTabId?: number): void {
 	renderTabGroup(availableSection, availableContent, availableTabs, false)
 }
 
-function renderTabItem(tab: TabInfo, showTargets: boolean): string {
+function renderTabItem(tab: PopupTabWithTargets, showTargets: boolean): string {
 	const favicon = tab.faviconUrl
 		? `<img class="tab-favicon" src="${escapeHtml(tab.faviconUrl)}" alt="">`
 		: `<div class="tab-favicon" style="background: #e0e0e0"></div>`
@@ -233,7 +211,7 @@ function renderTabItem(tab: TabInfo, showTargets: boolean): string {
   `
 }
 
-function renderTabGroup(section: HTMLDivElement, content: HTMLDivElement, tabs: TabInfo[], showTargets: boolean): void {
+function renderTabGroup(section: HTMLDivElement, content: HTMLDivElement, tabs: PopupTabWithTargets[], showTargets: boolean): void {
 	if (tabs.length === 0) {
 		section.classList.add('hidden')
 		content.innerHTML = ''
@@ -302,7 +280,7 @@ async function handleTabItemClick(event: Event): Promise<void> {
 	tabItem.style.pointerEvents = 'none'
 
 	try {
-		await runPopupAction(action, { tabId })
+		await runTabAction(action, tabId)
 		if (action === 'attach') {
 			await refreshTabs(true)
 		}
@@ -316,7 +294,7 @@ async function handleTabItemClick(event: Event): Promise<void> {
 /**
  * Attached rows act like "jump to this Chrome tab"; unattached rows keep the existing one-click attach flow.
  */
-function getTabItemAction(tabItem: HTMLElement): Extract<PopupAction, 'attach' | 'focusTab'> {
+function getTabItemAction(tabItem: HTMLElement): Extract<PopupTabAction, 'attach' | 'focusTab'> {
 	return tabItem.classList.contains('attached') ? 'focusTab' : 'attach'
 }
 
@@ -341,7 +319,7 @@ async function handleTabAction(event: Event): Promise<void> {
 	const restoreButton = setBusyButtonState(button, action)
 
 	try {
-		await runPopupAction(action, { tabId })
+		await runTabAction(action, tabId)
 		await refreshTabs(true)
 	} catch (error) {
 		showError(error instanceof Error ? error.message : `${capitalize(action)} failed`)
@@ -357,7 +335,7 @@ async function handleTargetSelection(event: Event): Promise<void> {
 	button.disabled = true
 
 	try {
-		await runPopupAction('selectTarget', { tabId, frameId })
+		await runTargetAction('selectTarget', tabId, frameId)
 		await refreshTabs(true)
 	} catch (error) {
 		showError(error instanceof Error ? error.message : 'Target selection failed')
@@ -375,7 +353,7 @@ async function handleTargetVisibility(event: Event): Promise<void> {
 	button.disabled = true
 
 	try {
-		await runPopupAction(action, { tabId, frameId })
+		await runTargetAction(action, tabId, frameId)
 		await refreshTabs(true)
 	} catch (error) {
 		showError(error instanceof Error ? error.message : action === 'hideTarget' ? 'Target hide failed' : 'Target restore failed')
@@ -383,36 +361,40 @@ async function handleTargetVisibility(event: Event): Promise<void> {
 	}
 }
 
-async function runPopupAction(action: PopupAction, args: { tabId: number; frameId?: string | null }): Promise<void> {
-	const response = await sendMessage<ActionResponse>({ action, ...args })
-	if (!response.success) {
-		throw new Error(response.error ?? `${capitalize(action)} failed`)
-	}
+async function runTabAction(action: PopupTabAction, tabId: number): Promise<void> {
+	await runPopupMessage({ action, tabId })
+	showError(null)
+}
 
+async function runTargetAction(action: PopupTargetAction, tabId: number, frameId: string | null): Promise<void> {
+	await runPopupMessage({ action, tabId, frameId })
 	showError(null)
 }
 
 async function refreshTabs(forceRender = false): Promise<void> {
 	try {
 		const [statusResponse, tabsResponse, activeTab] = await Promise.all([
-			sendMessage<StatusResponse>({ action: 'getStatus' }),
-			sendMessage<TabsResponse>({ action: 'getTargets' }),
+			sendPopupMessage({ action: 'getStatus' }),
+			sendPopupMessage({ action: 'getTargets' }),
 			getCurrentTab(),
 		])
 
 		if (!statusResponse.success) {
-			throw new Error(statusResponse.error ?? 'Failed to load bridge status')
+			throw new Error(statusResponse.error)
 		}
 
 		const status = statusResponse.status
-		latestWatchers = status?.watchers ?? []
-		latestCurrentWatcher = selectCurrentWatcher(status ?? null, tabsResponse.tabs ?? [], activeTab?.id)
+		const tabs = tabsResponse.success ? tabsResponse.tabs : null
+		const tabsError = tabsResponse.success ? null : tabsResponse.error
+
+		latestWatchers = status.watchers
+		latestCurrentWatcher = selectCurrentWatcher(status, tabs ?? [], activeTab?.id)
 
 		const stateHash = JSON.stringify({
 			status,
-			tabs: tabsResponse.tabs,
+			tabs,
 			currentTabId: activeTab?.id,
-			error: currentError ?? tabsResponse.error ?? null,
+			error: currentError ?? tabsError,
 		})
 
 		if (!forceRender && stateHash === prevStateHash) {
@@ -420,17 +402,17 @@ async function refreshTabs(forceRender = false): Promise<void> {
 		}
 		prevStateHash = stateHash
 
-		updateStatus(status?.bridgeConnected ?? false, status?.attachedTabs.length ?? 0)
+		updateStatus(status.bridgeConnected, status.attachedTabs.length)
 		updateHealth(status, latestCurrentWatcher)
 
-		if (tabsResponse.success && tabsResponse.tabs) {
-			renderTabs(tabsResponse.tabs, activeTab?.id)
+		if (tabs) {
+			renderTabs(tabs, activeTab?.id)
 			showError(currentError)
 			return
 		}
 
-		showError(tabsResponse.error ?? 'Failed to load tabs')
-		setEmptyState('⚠️', tabsResponse.error ?? 'Failed to load tabs')
+		showError(tabsError ?? 'Failed to load tabs')
+		setEmptyState('⚠️', tabsError ?? 'Failed to load tabs')
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Failed to refresh popup'
 		showError(message)
@@ -544,7 +526,7 @@ async function detachWatchers(tabIds: number[]): Promise<number[]> {
 
 	for (const tabId of tabIds) {
 		try {
-			await runPopupAction('detach', { tabId })
+			await runTabAction('detach', tabId)
 		} catch {
 			failures.push(tabId)
 		}
@@ -632,7 +614,7 @@ function capitalize(text: string): string {
 	return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-function selectCurrentWatcher(status: StatusPayload | null, tabs: TabInfo[], activeTabId?: number): PopupWatcherStatus | null {
+function selectCurrentWatcher(status: PopupStatusPayload | null, tabs: PopupTabWithTargets[], activeTabId?: number): PopupWatcherStatus | null {
 	if (!status) {
 		return null
 	}

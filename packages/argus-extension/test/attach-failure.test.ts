@@ -42,11 +42,17 @@ it('propagates Chrome attachment failures through popup/control, cleans only fai
 			expect(debuggerManager.isAttached(3)).toBe(true)
 
 			const status = await harness.popup({ action: 'getStatus' })
-			if (!status.success || !('status' in status)) throw new Error('Missing popup status')
-			expect(
-				status.status.recentEvents.some((event) => event.level === 'info' && event.message.toLowerCase().includes(`attached tab ${tabId}`)),
-			).toBe(false)
+			if (!status.success) throw new Error('Missing popup status')
 			expect(status.status.attachedTabs.map((tab) => tab.tabId)).toEqual([3])
+
+			// Recorded events reach consumers through control diagnostics, not the popup payload.
+			const diagnostics = await harness.control({ type: 'control_status', requestId: 99 })
+			if (diagnostics.type !== 'control_status_response') throw new Error('Missing control diagnostics')
+			expect(
+				diagnostics.diagnostics.recentEvents.some(
+					(event) => event.level === 'info' && event.message.toLowerCase().includes(`attached tab ${tabId}`),
+				),
+			).toBe(false)
 
 			harness.conflicts.delete(tabId)
 			if (via === 'popup') {
@@ -146,7 +152,7 @@ function createPort(name: string) {
 					protocolVersion: NATIVE_MESSAGING_PROTOCOL_VERSION,
 				})
 			}
-			if (message.type === 'tab_action_response') response?.(message)
+			if (message.type === 'tab_action_response' || message.type === 'control_status_response') response?.(message)
 		},
 		request: (message: HostToExtension) =>
 			new Promise<ExtensionToHost>((resolve) => {

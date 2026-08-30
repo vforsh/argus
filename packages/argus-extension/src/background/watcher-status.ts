@@ -45,10 +45,8 @@ function createWatcherStatus(
 	const readiness = buildWatcherReadiness(debuggerManager, tabId, session, watcherInfo, currentTarget)
 	return {
 		tabId,
-		bridgeConnected: readiness.nativeHostConnected,
-		nativeHostConnected: readiness.nativeHostConnected,
+		bridgeConnected: readiness.bridgeConnected,
 		watcherReady: readiness.watcherReady,
-		targetReady: readiness.targetReady,
 		targetState: readiness.targetState,
 		watcherId: watcherInfo?.watcherId ?? null,
 		watcherHost: watcherInfo?.watcherHost ?? null,
@@ -65,15 +63,16 @@ function buildWatcherReadiness(
 	session: TabBridgeSession,
 	watcherInfo: ReturnType<TabBridgeSession['getWatcherInfo']>,
 	currentTarget: PopupWatcherStatus['currentTarget'],
-): Pick<PopupWatcherStatus, 'nativeHostConnected' | 'watcherReady' | 'targetReady' | 'targetState'> {
-	const nativeHostConnected = session.isConnected()
-	const watcherReady = nativeHostConnected && Boolean(watcherInfo?.watcherId && watcherInfo.watcherHost && watcherInfo.watcherPort != null)
+): Pick<PopupWatcherStatus, 'bridgeConnected' | 'watcherReady' | 'targetState'> {
+	const bridgeConnected = session.isConnected()
+	const watcherReady = bridgeConnected && Boolean(watcherInfo?.watcherId && watcherInfo.watcherHost && watcherInfo.watcherPort != null)
 	const targetReady = currentTarget?.targetReady ?? getTargetReadiness(debuggerManager, tabId, currentTarget)
 
 	return {
-		nativeHostConnected,
+		bridgeConnected,
 		watcherReady,
-		targetReady,
+		// targetReady is not surfaced on its own: the popup only ever renders this
+		// three-state derivation of it.
 		targetState: targetReady == null ? 'not-selected' : targetReady ? 'ready' : 'rebinding',
 	}
 }

@@ -1,5 +1,5 @@
 import { isLowInterestTarget } from './classify-target.js'
-import type { PopupTarget, TabInfo } from './types.js'
+import type { PopupTabWithTargets, PopupTarget } from '../background/popup-protocol.js'
 
 const HIDE_TARGET_ICON = `
 	<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -17,7 +17,7 @@ const SHOW_TARGET_ICON = `
 	</svg>
 `
 
-export function renderTargetList(tab: TabInfo): string {
+export function renderTargetList(tab: PopupTabWithTargets): string {
 	const targets = tab.targets ?? []
 	const hiddenTargets = tab.hiddenTargets ?? []
 	if (targets.length <= 1 && hiddenTargets.length === 0) return ''
@@ -43,7 +43,7 @@ export function renderTargetList(tab: TabInfo): string {
 	`
 }
 
-function renderHiddenFramesSection(tab: TabInfo, autoHiddenTargets: PopupTarget[], manuallyHiddenTargets: PopupTarget[]): string {
+function renderHiddenFramesSection(tab: PopupTabWithTargets, autoHiddenTargets: PopupTarget[], manuallyHiddenTargets: PopupTarget[]): string {
 	const count = autoHiddenTargets.length + manuallyHiddenTargets.length
 	if (count === 0) {
 		return ''
@@ -67,11 +67,11 @@ function renderHiddenFramesSection(tab: TabInfo, autoHiddenTargets: PopupTarget[
   `
 }
 
-function renderTargetItems(tab: TabInfo, targets: PopupTarget[], visibility: 'visible' | 'hidden'): string {
+function renderTargetItems(tab: PopupTabWithTargets, targets: PopupTarget[], visibility: 'visible' | 'hidden'): string {
 	return targets.map((target) => renderTargetItem(tab, target, visibility)).join('')
 }
 
-function renderTargetItem(tab: TabInfo, target: PopupTarget, visibility: 'visible' | 'hidden'): string {
+function renderTargetItem(tab: PopupTabWithTargets, target: PopupTarget, visibility: 'visible' | 'hidden'): string {
 	const isSelected = isTargetSelected(tab.selectedFrameId, target.frameId)
 	const kindLabel = target.type === 'page' ? 'Page' : 'Iframe'
 	const title = target.title || kindLabel
