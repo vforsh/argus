@@ -527,7 +527,9 @@ describe('network workflow e2e', () => {
 		expect(gatedInspect.ok).toBe(true)
 		expect(gatedInspect.request.url.includes('/api/really-delayed')).toBe(true)
 		expect(JSON.parse(gatedInspect.responseBody?.body ?? 'null')).toEqual({ reallyDelayed: true })
-	}, 25_000)
+		// Budget, not an expectation: this case runs ~25s (a 15s __netIdle wait plus two reload
+		// workflows), and the 25s it used to carry left no headroom, so it timed out under load.
+	}, 60_000)
 })
 
 const renderAppHtml = (analyticsPort: number): string => `
