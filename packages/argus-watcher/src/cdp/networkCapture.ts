@@ -9,7 +9,8 @@ import type {
 import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { RealtimeNetBuffer } from '../buffer/RealtimeNetBuffer.js'
 import type { CdpSessionHandle } from './connection.js'
-import { captureHeaders, mergeCapturedHeaders, pickCapturedAuthHeaders, redactUrl } from './redaction.js'
+import { captureHeaders, mergeCapturedHeaders, pickCapturedAuthHeaders, redactOptionalUrl, redactUrl } from './redaction.js'
+import { normalizeString, pickNumber } from './cdpValues.js'
 import { finalizeSseRequest, openSseRequest, registerRealtimeNetworkCapture } from './networkRealtimeCapture.js'
 
 type ResponseTimingPayload = {
@@ -113,9 +114,9 @@ export const createNetworkCapture = (options: {
 		const summary: Omit<NetworkRequestSummary, 'id'> = {
 			ts: Date.now(),
 			requestId: record.requestId,
-			url: sanitizeUrl(record.url),
+			url: redactUrl(record.url),
 			method: record.method,
-			documentUrl: sanitizeOptionalUrl(record.documentUrl),
+			documentUrl: redactOptionalUrl(record.documentUrl),
 			requestHeaders: record.summaryRequestHeaders,
 			resourceType: record.resourceType,
 			mimeType: record.mimeType,
@@ -184,8 +185,8 @@ export const createNetworkCapture = (options: {
 
 		if (payload.redirectResponse && entry.url) {
 			entry.redirects.push({
-				fromUrl: sanitizeUrl(entry.url),
-				toUrl: sanitizeUrl(nextUrl),
+				fromUrl: redactUrl(entry.url),
+				toUrl: redactUrl(nextUrl),
 				status: pickNumber(payload.redirectResponse.status),
 				statusText: normalizeString(payload.redirectResponse.statusText),
 			})
@@ -514,7 +515,7 @@ const normalizeInitiator = (value: unknown): NetworkInitiator | null => {
 	}
 
 	const stack = flattenInitiatorStack(payload.stack)
-	const url = typeof payload.url === 'string' ? sanitizeUrl(payload.url) : null
+	const url = typeof payload.url === 'string' ? redactUrl(payload.url) : null
 	const lineNumber = pickNumber(payload.lineNumber)
 	const columnNumber = pickNumber(payload.columnNumber)
 	const requestId = typeof payload.requestId === 'string' ? payload.requestId : null
@@ -555,7 +556,7 @@ const flattenInitiatorStack = (stack: { callFrames?: unknown[]; parent?: unknown
 			}
 			frames.push({
 				functionName: normalizeString(callFrame.functionName),
-				url: sanitizeUrl(callFrame.url),
+				url: redactUrl(callFrame.url),
 				lineNumber: pickNumber(callFrame.lineNumber),
 				columnNumber: pickNumber(callFrame.columnNumber),
 			})
@@ -568,16 +569,3 @@ const flattenInitiatorStack = (stack: { callFrames?: unknown[]; parent?: unknown
 	return frames
 }
 
-const sanitizeUrl = (value: string): string => redactUrl(value)
-
-const sanitizeOptionalUrl = (value: string | null): string | null => (value ? sanitizeUrl(value) : null)
-
-const pickNumber = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
-
-const normalizeString = (value: unknown): string | null => {
-	if (typeof value !== 'string') {
-		return null
-	}
-	const trimmed = value.trim()
-	return trimmed || null
-}

@@ -1,7 +1,8 @@
 import type { NetWebSocketFrameDirection, NetWebSocketFramePreview } from '@vforsh/argus-core'
 import type { RealtimeNetBuffer } from '../buffer/RealtimeNetBuffer.js'
 import type { CdpSessionHandle } from './connection.js'
-import { captureHeaders, redactUrl } from './redaction.js'
+import { captureHeaders, redactOptionalUrl, redactUrl } from './redaction.js'
+import { normalizeString, pickNumber } from './cdpValues.js'
 
 export type RealtimeInflightRequest = {
 	requestId: string
@@ -44,8 +45,8 @@ export const registerRealtimeNetworkCapture = (options: {
 			return
 		}
 		options.buffer?.upsertWebSocket(payload.requestId, {
-			url: sanitizeOptionalUrl(payload.url ?? null) ?? '',
-			documentUrl: typeof payload.initiator?.url === 'string' ? sanitizeOptionalUrl(payload.initiator.url) : null,
+			url: redactOptionalUrl(payload.url ?? null) ?? '',
+			documentUrl: typeof payload.initiator?.url === 'string' ? redactOptionalUrl(payload.initiator.url) : null,
 			createdAt: Date.now(),
 			state: 'created',
 		})
@@ -121,9 +122,9 @@ export const openSseRequest = (buffer: RealtimeNetBuffer | null | undefined, ent
 		return
 	}
 	buffer?.upsertSse(entry.requestId, {
-		url: sanitizeUrl(entry.url),
+		url: redactUrl(entry.url),
 		method: entry.method,
-		documentUrl: sanitizeOptionalUrl(entry.documentUrl),
+		documentUrl: redactOptionalUrl(entry.documentUrl),
 		frameId: entry.frameId,
 		status: entry.status,
 		statusText: entry.statusText,
@@ -138,9 +139,9 @@ export const finalizeSseRequest = (buffer: RealtimeNetBuffer | null | undefined,
 		return
 	}
 	buffer?.upsertSse(entry.requestId, {
-		url: sanitizeUrl(entry.url),
+		url: redactUrl(entry.url),
 		method: entry.method,
-		documentUrl: sanitizeOptionalUrl(entry.documentUrl),
+		documentUrl: redactOptionalUrl(entry.documentUrl),
 		frameId: entry.frameId,
 		status: entry.status,
 		statusText: entry.statusText,
@@ -188,10 +189,6 @@ const buildFramePreview = (
 	}
 }
 
-const sanitizeUrl = (value: string): string => redactUrl(value)
-
-const sanitizeOptionalUrl = (value: string | null): string | null => (value ? sanitizeUrl(value) : null)
-
 const truncatePayload = (value: string): string => {
 	const limit = 500
 	return value.length > limit ? `${value.slice(0, limit)}...` : value
@@ -202,12 +199,3 @@ const toWallTimeMs = (value: unknown): number | null => {
 	return seconds != null ? Math.round(seconds * 1000) : null
 }
 
-const pickNumber = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
-
-const normalizeString = (value: unknown): string | null => {
-	if (typeof value !== 'string') {
-		return null
-	}
-	const trimmed = value.trim()
-	return trimmed || null
-}

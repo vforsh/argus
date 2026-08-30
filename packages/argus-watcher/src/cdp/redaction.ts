@@ -50,6 +50,9 @@ export const redactUrl = (value: string): string => {
 	return url.toString()
 }
 
+/** {@link redactUrl} for a nullable URL. */
+export const redactOptionalUrl = (value: string | null): string | null => (value ? redactUrl(value) : null)
+
 /** Pick a narrow allowlist of auth-related headers and redact their values. */
 export const pickCapturedAuthHeaders = (headers: Record<string, unknown> | undefined): Record<string, string> | undefined => {
 	if (!headers) {
