@@ -9,7 +9,7 @@
 
 ## Progress
 
-All six sequencing steps are done, plus a follow-up pass closing C1, A7, A4, C3, D7, C8, D6, D4, and D5 — everything except one deliberately declined item (C2). 45 commits, `bf19320..HEAD`. **What is left is in [Remaining work](#remaining-work) below**, re-measured against the current tree. Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. **Full `test:e2e`: 25/25 files pass.**
+All six sequencing steps are done, plus a follow-up pass closing C1, A7, A4, C3, D7, C8, D6, D4, and D5 — everything except one deliberately declined item (C2). 45 commits, `bf19320..HEAD`. The nine follow-up findings were then exercised against live watchers (table below), which surfaced one pre-existing bug in sourcemap resolution. **What is left is in [Remaining work](#remaining-work) below**, re-measured against the current tree. Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. **Full `test:e2e`: 25/25 files pass.**
 
 **One regression found by testing against a live extension watcher and fixed** (`d1b9e68`): merging Commander options by value let a parent's option _default_ win when a subcommand declares the same flag but the user omits it — `net --resource-type` is a repeatable filter defaulting to `[]`, `net mock add --resource-type` is a scalar, so the subcommand received the parent's empty array and the watcher schema rejected it. The rule is now "the nearest command declaring an option owns it, even when absent". The unit test added with B2 had missed this because it only covered flags that were actually typed.
 
@@ -65,6 +65,24 @@ All six sequencing steps are done, plus a follow-up pass closing C1, A7, A4, C3,
 
 `AGENTS.md` changed with the code: the `readJsonBody` gotcha is retired (replaced by a schema-only rule), the Golden Path requires a request schema alongside the types plus a `WATCHER_ENDPOINTS` entry, and three new invariants are recorded — `Ok<T>`/`ApiResult<T>` for the envelope, `ARGUS_ERROR_CODES` as a closed union, and typed GET query shapes.
 
+### Verified against live watchers
+
+The e2e suite cannot reach several of the paths this pass changed, so they were exercised by hand against running watchers — a fresh CDP watcher for the playground, and a second extension-backed tab watcher attached alongside an existing one (`--as`, so no live session was disturbed).
+
+| Path                                           | Mode      | Result                                                                                                                                                                                         |
+| ---------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **C1** sourcemapped log locations              | both      | `original-module.js:3:10` from a minified bundle — the fix works in extension mode, which was the bug                                                                                          |
+| **C1** `console.assert`, object args, `ts`     | both      | `error` not `log`; remote objects serialized over the native-messaging bridge; fractional `ts` proves the CDP payload timestamp                                                                |
+| **C1** log ordering (the risk this pass added) | both      | 60/60 (CDP) and 80/80 (bridge) in program order — Chrome ships previews, so the `getProperties` round-trip is rarely taken                                                                     |
+| **C3** failure classification                  | Node+Bun  | timeout → `transport`/keep, dead port → `unreachable`/evict, 404 → `api-rejection`/keep — identical on both runtimes despite different error shapes                                            |
+| **C3** eviction end-to-end                     | CLI       | a command against a killed watcher removed its registry entry; a timed-out command did not                                                                                                     |
+| **C8** temp profile + auth-state               | CLI       | dir removed on Chrome exit; bad `--auth-state` path fails with no Chrome spawned; hydration forced a temp profile, adopted the startup URL, and all snapshot cookies landed                    |
+| **D6** recording + tracing                     | CLI       | real ffmpeg mp4 (h264, ffprobe-verified) and webm; **EXDEV** copy+unlink exercised across two real filesystems; trace 7687 events                                                              |
+| **D4** extension routes                        | extension | `/tabs`, `/targets`, `/extension/diagnostics`, `/attach`, `/detach` all serving; capability guard returns `not_available`; shared `extension_action_failed` mapping preserves the real message |
+| **D5** cookie paths                            | CLI       | both read paths now return byte-identical shapes; `sameSite` normalized everywhere; CRUD + snapshot export intact                                                                              |
+| **A4** query shapes                            | CLI+SDK   | `--scope` rejected CLI-side; the SDK's new filters reach the watcher (`method: ['DELETE']` → 0 proves server-side application)                                                                 |
+| **D7** endpoint list                           | watcher   | 11 distinct endpoint values flowed through the `httpRequested` event                                                                                                                           |
+
 ## Remaining work
 
 Counts below were re-measured against the current tree, not copied from the original findings. Ordered so each group is independently shippable; the first two are where the remaining duplication is densest.
@@ -82,7 +100,7 @@ Counts below were re-measured against the current tree, not copied from the orig
 - **D9** — `startWatcherRuntime.ts` is still 417 LOC and `createWatcherRuntimeServices` still builds the service block twice.
 - **D10** — `editor.ts` (472 LOC) still hides the `reset()`/`rebind()` lifecycle in a closure with four coordinating flags.
 - **D15** — `LogBuffer` still runs both waiter subsystems (`waitForAfter`/`flushWaiters` alongside `waitForAfterEpoch`/`flushEpochWaiters`); the id-based path survives only as the `kind: 'all'` position query.
-- **D16** — module-level mutable state without lifecycle: the sourcemap trace-map cache is still unbounded and never invalidated, so a dev-server rebuild mid-session keeps resolving against the old map.
+- **D16** — module-level mutable state without lifecycle: the sourcemap trace-map cache is still unbounded and never invalidated, so a dev-server rebuild mid-session keeps resolving against the old map. See also the live bug in group 5 — it lives in the same file and caches its failures in this same map.
 
 ### 3. Test-surface debt
 
@@ -98,7 +116,23 @@ Each was surfaced by a type the change introduced, not by a test — the argumen
 - **The SDK evicted watchers on timeouts.** Eviction fired on any non-HTTP failure, so a slow command against a healthy watcher could delete its shared-registry entry. It is now typed on `HttpTimeoutError` and narrowed to failures that were never answered — and the CLI applies the same policy, which was the point of C3.
 - **`createNetBodyError` was a pass-through** that only ever supplied `body_not_available`, visible once the code argument had to be a union member.
 
-### 5. Declined
+### 5. Found by live verification — a live bug, not from this pass
+
+**Sourcemap resolution ignores `sourceMappingURL` and guesses the map URL.** [`packages/argus-watcher/src/sourcemaps/resolveLocation.ts:93`](packages/argus-watcher/src/sourcemaps/resolveLocation.ts) does ``fetch(`${scriptUrl}.map`)`` — it never reads the `//# sourceMappingURL=` comment the bundle actually carries. Reproduced in **both** CDP and extension mode, so it predates this work.
+
+It happens to work for a plain `app.js` → `app.js.map`, and fails for:
+
+- **`app.js?v=abc123`** — the cache-busting query most production bundles ship with. It fetches `app.js?v=abc123.map`; a server that ignores the query returns **200 with JavaScript**, `.json()` throws, and the failure is cached.
+- Any map not at `<script>.map` — CDN-hosted, `/maps/…`, or a hashed map filename.
+- Inline `data:` sourcemaps.
+
+It also compounds with **D16**: the `null` lands in the unbounded module-global `traceMapCache` and poisons that script URL for the whole watcher process.
+
+The consequence is that the sourcemap feature — which C1 just extended to extension mode — silently does nothing for a large share of real production bundles, and fails by reporting a plausible-looking minified location rather than an error.
+
+**Fix:** take the map URL from CDP instead of guessing. `Debugger.scriptParsed` carries `sourceMapURL` per script; resolve it against the script URL (it may be absolute, relative, or a `data:` URI) and key the cache on the script id. Pairs naturally with D16's cache lifecycle, since both live in this file.
+
+### 6. Declined
 
 **C2 — `frame_snapshot` replacing forged CDP events.** A cross-process redesign of frame synchronization: the extension's forged `Page.frameNavigated`/`frameDetached` drive the watcher's incremental frame reconstruction, target-selection reconciliation, page-navigation callbacks, and title refresh. Nothing automated exercises that path end-to-end — no e2e attaches a real extension with its native host and drives iframe selection across a navigation; `extension-diagnostics.test.ts` is two tests about bridge connectivity. It is also precisely the terrain the two most recent bug fixes (`f4c449f`, `a89ef4c`) had to thread through. Shipping an unverifiable rewrite there is worse than leaving the duplication. Doing it safely means first building an e2e that drives a real Chrome with the unpacked extension.
 
