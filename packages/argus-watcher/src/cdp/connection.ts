@@ -1,3 +1,4 @@
+import { createNotAttachedError } from '../errors.js'
 import type { CdpEvent, CdpEventPayload, CdpMethod, CdpParams, CdpResult } from './protocol.js'
 
 export type CdpEventMeta = {
@@ -191,11 +192,7 @@ export const createCdpSessionHandle = (): CdpSessionController => {
 	return { session, attach, detach }
 }
 
-export const createCdpNotAttachedError = (): Error => {
-	const error = new Error('Watcher not attached to a CDP target')
-	;(error as Error & { code?: string }).code = 'cdp_not_attached'
-	return error
-}
+export const createCdpNotAttachedError = (): Error => createNotAttachedError('Watcher not attached to a CDP target')
 
 const parseMessage = (data: unknown): unknown => {
 	if (typeof data === 'string') {

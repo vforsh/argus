@@ -1,3 +1,4 @@
+import { hasErrorCode } from '../../errors.js'
 import type http from 'node:http'
 import { respondJson } from '../httpUtils.js'
 
@@ -55,12 +56,7 @@ export const respondMissingElementRef = (res: http.ServerResponse, ref: string):
 }
 
 export const respondTargetResolutionError = (res: http.ServerResponse, error: unknown): boolean => {
-	if (!error || typeof error !== 'object') {
-		return false
-	}
-
-	const code = 'code' in error ? (error as { code?: unknown }).code : undefined
-	if (code !== 'invalid_ref') {
+	if (!hasErrorCode(error, 'invalid_ref')) {
 		return false
 	}
 

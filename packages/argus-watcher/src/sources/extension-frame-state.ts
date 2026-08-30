@@ -66,11 +66,7 @@ export const createEmptyFrameState = (): ExtensionFrameState => ({
 	pendingTitleLoads: new Set(),
 })
 
-export const createNotAttachedError = (): Error => {
-	const error = new Error('No tab attached via extension')
-	;(error as Error & { code?: string }).code = 'cdp_not_attached'
-	return error
-}
+export { createNotAttachedError } from '../errors.js'
 
 export const formatPageTargetId = (tabId: number): string => `tab:${tabId}`
 

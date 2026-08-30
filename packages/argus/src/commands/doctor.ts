@@ -64,8 +64,11 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 		protocolVersion?: number | null
 	}>
 
-	for (const watcher of watcherEntries) {
-		const statusResult = await checkWatcherStatus(watcher.host, watcher.port)
+	// Probed concurrently; the report stays in registry order because the results do.
+	const statuses = await Promise.all(watcherEntries.map((watcher) => checkWatcherStatus(watcher.host, watcher.port)))
+
+	for (const [index, watcher] of watcherEntries.entries()) {
+		const statusResult = statuses[index]
 		if (!statusResult.ok) {
 			watcherReports.push({
 				id: watcher.id,

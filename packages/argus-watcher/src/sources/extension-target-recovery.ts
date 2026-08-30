@@ -1,3 +1,4 @@
+import { codedError } from '../errors.js'
 import type { ExtensionSession } from '../native-messaging/session-manager.js'
 import type { CdpTargetContext } from '../cdp/connection.js'
 import {
@@ -158,12 +159,10 @@ export const createTargetRecovery = (deps: TargetRecoveryDeps): TargetRecoveryCo
 
 const needsTargetRecovery = (state: ExtensionFrameState): boolean => resolveSelectedFrameCommandState(state).kind === 'pending'
 
-const buildSelectedFrameNotReadyError = (tabId: number): Error => {
-	const error = new Error(
+const buildSelectedFrameNotReadyError = (tabId: number): Error =>
+	codedError(
+		'extension_frame_not_ready',
 		`Selected iframe target on tab ${tabId} is not executable yet after reload. Try again in a few seconds or reattach the watcher if the problem persists.`,
 	)
-	;(error as Error & { code?: string }).code = 'extension_frame_not_ready'
-	return error
-}
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

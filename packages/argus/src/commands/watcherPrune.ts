@@ -51,9 +51,10 @@ export const runWatcherPrune = async (options: WatcherPruneOptions): Promise<voi
 	const keptIds: string[] = []
 	const removedIds: string[] = []
 
-	// Check each watcher for reachability
-	for (const watcher of watchers) {
-		const reachable = await checkWatcherReachable(watcher)
+	// Independent reachability probes, so latency is one timeout rather than N.
+	const reachability = await Promise.all(watchers.map(async (watcher) => ({ watcher, reachable: await checkWatcherReachable(watcher) })))
+
+	for (const { watcher, reachable } of reachability) {
 		if (reachable) {
 			keptIds.push(watcher.id)
 		} else {

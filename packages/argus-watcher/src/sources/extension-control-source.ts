@@ -1,3 +1,4 @@
+import { createNotAttachedError } from '../errors.js'
 import { NATIVE_MESSAGING_PROTOCOL_VERSION } from '@vforsh/argus-core'
 import { createNativeMessaging } from '../native-messaging/messaging.js'
 import { ControlSessionManager } from '../native-messaging/control-session-manager.js'
@@ -99,9 +100,7 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 const createDetachedSession = (message: string): CdpSessionHandle => ({
 	isAttached: () => false,
 	sendAndWait: async () => {
-		const error = new Error(message)
-		;(error as Error & { code?: string }).code = 'cdp_not_attached'
-		throw error
+		throw createNotAttachedError(message)
 	},
 	onEvent: () => () => {},
 })

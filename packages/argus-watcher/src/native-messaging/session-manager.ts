@@ -3,6 +3,7 @@
  * Implements CdpSessionHandle interface using Native Messaging.
  */
 
+import { createNotAttachedError } from '../errors.js'
 import type { CdpEvent, CdpEventPayload } from '../cdp/protocol.js'
 import type { NativeMessagingHandler } from './messaging.js'
 import type {
@@ -181,7 +182,7 @@ export class SessionManager {
 
 			sendAndWait: async (method, params, options) => {
 				if (!this.sessions.has(tabId)) {
-					throw this.createNotAttachedError()
+					throw createNotAttachedError()
 				}
 
 				return this.sendBridgeRequest(
@@ -234,7 +235,7 @@ export class SessionManager {
 	 */
 	async getCookies(tabId: number, query?: { domain?: string; url?: string }, timeoutMs = 5000): Promise<NativeCookie[]> {
 		if (!this.sessions.has(tabId)) {
-			throw this.createNotAttachedError()
+			throw createNotAttachedError()
 		}
 
 		return await this.sendBridgeRequest(
@@ -259,15 +260,6 @@ export class SessionManager {
 			tabId,
 		}
 		this.messaging.send(message)
-	}
-
-	/**
-	 * Create an error for when no tab is attached.
-	 */
-	private createNotAttachedError(): Error {
-		const error = new Error('No tab attached via extension')
-		;(error as Error & { code?: string }).code = 'cdp_not_attached'
-		return error
 	}
 
 	private sendBridgeRequest<T>(buildMessage: (requestId: number) => TabHostToExtension, timeoutMs: number): Promise<T> {

@@ -1,3 +1,4 @@
+import { getErrorCode } from '../errors.js'
 import http from 'node:http'
 import type { ErrorResponse, LogLevel } from '@vforsh/argus-core'
 
@@ -30,7 +31,7 @@ export const respondPayloadTooLarge = (res: http.ServerResponse): void => {
 
 export const respondError = (res: http.ServerResponse, error: unknown): void => {
 	const message = formatError(error)
-	const code = resolveErrorCode(error)
+	const code = getErrorCode(error)
 	respondJson(res, { ok: false, error: { message, code } } satisfies ErrorResponse, 500)
 }
 
@@ -239,16 +240,6 @@ export const normalizeTimeout = (value: unknown): number | undefined => {
 		return undefined
 	}
 	return parsed
-}
-
-const resolveErrorCode = (error: unknown): string | undefined => {
-	if (!error || typeof error !== 'object') {
-		return undefined
-	}
-	if ('code' in error && typeof (error as { code?: unknown }).code === 'string') {
-		return (error as { code: string }).code
-	}
-	return undefined
 }
 
 const formatError = (error: unknown): string => {

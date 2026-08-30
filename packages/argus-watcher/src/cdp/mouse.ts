@@ -1,3 +1,4 @@
+import { codedError } from '../errors.js'
 import { callFunctionOnNode, evaluateInPage } from './pageState.js'
 import type { CdpSessionHandle } from './connection.js'
 import { resolveSelectorTargets, toDomNodeDescriptor, type DomNodeHandle } from './dom/selector.js'
@@ -295,8 +296,4 @@ const interpolatePoint = (start: Point, end: Point, progress: number): Point => 
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-const createNotInteractableError = (message: string): Error => {
-	const error = new Error(message)
-	;(error as Error & { code?: string }).code = 'not_interactable'
-	return error
-}
+const createNotInteractableError = (message: string): Error => codedError('not_interactable', message)

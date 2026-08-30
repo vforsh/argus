@@ -1,3 +1,4 @@
+import { codedError } from '../errors.js'
 import type { DomKeydownEvent } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import { resolveDomSelectorMatches } from './mouse.js'
@@ -243,9 +244,7 @@ export const dispatchKeydown = async (session: CdpSessionHandle, options: Dispat
 		}
 
 		if (allNodeIds.length > 1) {
-			const error = new Error(`Selector matched ${allNodeIds.length} elements; keydown requires exactly one target`)
-			;(error as Error & { code?: string }).code = 'multiple_matches'
-			throw error
+			throw codedError('multiple_matches', `Selector matched ${allNodeIds.length} elements; keydown requires exactly one target`)
 		}
 
 		const nodeId = nodeIds[0]

@@ -1,3 +1,4 @@
+import { codedError } from '../errors.js'
 import type { NetRequestBodyPart, NetworkRequestDetail } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 
@@ -90,10 +91,6 @@ const unwrapNetBodyErrorMessage = (message: string): string => {
 	}
 }
 
-const createNetBodyError = (message: string, code: string): Error => {
-	const error = new Error(message)
-	;(error as Error & { code?: string }).code = code
-	return error
-}
+const createNetBodyError = (message: string, code: string): Error => codedError(code, message)
 
 const capitalizePart = (part: NetRequestBodyPart): string => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`

@@ -61,21 +61,26 @@ const listWatchers = async (
 
 	if (watchers.length === 0) return []
 
-	const results: Array<{ watcher: WatcherRecord; status?: StatusResponse }> = []
-
-	for (const watcher of watchers) {
-		try {
-			const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 2_000 })
-			const mismatch = describeProtocolMismatch(status.protocolVersion, status.watcherVersion)
-			if (mismatch) {
-				output.writeWarn(`${watcher.id}: ${mismatch}`)
+	// Probed concurrently: these are independent 2s-timeout requests, so a registry with
+	// five dead watchers used to make `argus list` take ten seconds. Warnings are written
+	// after the fact so their order still follows the registry, not completion order.
+	const probes = await Promise.all(
+		watchers.map(async (watcher): Promise<{ watcher: WatcherRecord; status?: StatusResponse; warning?: string }> => {
+			try {
+				const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 2_000 })
+				const mismatch = describeProtocolMismatch(status.protocolVersion, status.watcherVersion)
+				return mismatch ? { watcher, status, warning: `${watcher.id}: ${mismatch}` } : { watcher, status }
+			} catch (error) {
+				return { watcher, warning: formatWatcherTransportError(watcher, error) }
 			}
-			results.push({ watcher, status })
-		} catch (error) {
-			output.writeWarn(formatWatcherTransportError(watcher, error))
-			results.push({ watcher })
+		}),
+	)
+
+	for (const probe of probes) {
+		if (probe.warning) {
+			output.writeWarn(probe.warning)
 		}
 	}
 
-	return results
+	return probes.map(({ watcher, status }) => (status ? { watcher, status } : { watcher }))
 }

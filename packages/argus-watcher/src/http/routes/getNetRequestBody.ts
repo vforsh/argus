@@ -1,3 +1,4 @@
+import { hasErrorCode } from '../../errors.js'
 import type { NetRequestBodyPart, NetRequestBodyResponse } from '@vforsh/argus-core'
 import type { RouteContext } from './types.js'
 import { defineJsonRoute } from './defineRoute.js'
@@ -61,7 +62,7 @@ export const route = defineJsonRoute<undefined, NetRequestBodyResponse>({
 		} catch (error) {
 			// normalizeNetBodyError maps CDP failures onto stable codes; body_not_available stays a 404.
 			const normalizedError = normalizeNetBodyError(error, part)
-			if ((normalizedError as Error & { code?: string }).code === 'body_not_available') {
+			if (hasErrorCode(normalizedError, 'body_not_available')) {
 				return respondJson(res, { ok: false, error: { code: 'body_not_available', message: normalizedError.message } }, 404)
 			}
 			throw normalizedError
