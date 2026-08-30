@@ -69,5 +69,6 @@ function createExtensionSessionStub(overrides: { sendAndWait: NonNullable<Extens
 			getTargetContext: () => ({ kind: 'page' as const }),
 			getReadyTargetContext: async () => ({ kind: 'page' as const }),
 		},
+		requestFrameSnapshot: async () => ({ tabId: 1, topFrameId: null, frames: [], reason: 'requested' as const }),
 	}
 }

@@ -5,13 +5,21 @@
 
 import type { DebuggerManager } from './debugger-manager.js'
 import type { BridgeClient } from './bridge-client.js'
-import type { CdpCommandMessage, DetachTabMessage, CookieQueryMessage, ExtensionToTabHost, TabHostToExtension } from '../types/messages.js'
+import type {
+	CdpCommandMessage,
+	DetachTabMessage,
+	CookieQueryMessage,
+	ExtensionToTabHost,
+	FrameSnapshotRequestMessage,
+	TabHostToExtension,
+} from '../types/messages.js'
 
 export class CdpProxy {
 	private debuggerManager: DebuggerManager
 	private bridgeClient: BridgeClient<TabHostToExtension, ExtensionToTabHost>
 	private removeDebuggerEventForwarding: (() => void) | null = null
 	private removeDebuggerDetachForwarding: (() => void) | null = null
+	private removeFramesChangedForwarding: (() => void) | null = null
 
 	constructor(debuggerManager: DebuggerManager, bridgeClient: BridgeClient<TabHostToExtension, ExtensionToTabHost>) {
 		this.debuggerManager = debuggerManager
@@ -42,6 +50,17 @@ export class CdpProxy {
 				reason,
 			})
 		})
+
+		// The authoritative frame table travels as full snapshots, never as fabricated
+		// Page.frameNavigated/frameDetached events. The watcher filters by tabId.
+		this.removeFramesChangedForwarding = this.debuggerManager.onFramesChanged((tabId, reason) => {
+			this.bridgeClient.send({
+				type: 'frame_snapshot',
+				tabId,
+				reason,
+				...this.debuggerManager.getFrameSnapshot(tabId),
+			})
+		})
 	}
 
 	dispose(): void {
@@ -49,6 +68,8 @@ export class CdpProxy {
 		this.removeDebuggerEventForwarding = null
 		this.removeDebuggerDetachForwarding?.()
 		this.removeDebuggerDetachForwarding = null
+		this.removeFramesChangedForwarding?.()
+		this.removeFramesChangedForwarding = null
 	}
 
 	/**
@@ -77,6 +98,10 @@ export class CdpProxy {
 
 			case 'cookie_query':
 				await this.handleCookieQuery(message)
+				break
+
+			case 'frame_snapshot_request':
+				await this.handleFrameSnapshotRequest(message)
 				break
 
 			case 'host_info':
@@ -144,6 +169,30 @@ export class CdpProxy {
 				},
 			})
 		}
+	}
+
+	/**
+	 * Answer a watcher pull for the frame table. With `refresh` the table is re-read from
+	 * Chrome first; either way the reply is the full current table, so applying it is
+	 * idempotent on the watcher side.
+	 */
+	private async handleFrameSnapshotRequest(message: FrameSnapshotRequestMessage): Promise<void> {
+		let snapshot
+		try {
+			snapshot = message.refresh ? await this.debuggerManager.resyncFrames(message.tabId) : this.debuggerManager.getFrameSnapshot(message.tabId)
+		} catch {
+			// Tab not attached (or resync raced a detach); answer with what we have so the
+			// watcher's request resolves instead of timing out.
+			snapshot = this.debuggerManager.getFrameSnapshot(message.tabId)
+		}
+
+		this.bridgeClient.send({
+			type: 'frame_snapshot',
+			tabId: message.tabId,
+			reason: 'requested',
+			requestId: message.requestId,
+			...snapshot,
+		})
 	}
 
 	/**

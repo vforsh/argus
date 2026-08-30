@@ -45,16 +45,6 @@ export type SelectedFrameCommandState =
 	| { kind: 'pending'; frameId: string | null; reason: 'frame_missing' | 'frame_not_ready' }
 	| { kind: 'frame'; frameId: string; sessionId: string | null; executionContextId: number | null }
 
-export type CdpFrameTreeNode = {
-	frame?: {
-		id?: string
-		parentId?: string
-		url?: string
-		name?: string
-	}
-	childFrames?: CdpFrameTreeNode[]
-}
-
 export const createEmptyFrameState = (): ExtensionFrameState => ({
 	topFrameId: null,
 	requestedFrameId: null,
@@ -128,28 +118,6 @@ export const buildFrameTargets = (state: ExtensionFrameState, tabId: number, act
 	[...state.frames.values()]
 		.filter((frame) => frame.frameId !== state.topFrameId)
 		.map((frame) => frameToTarget(tabId, frame, { attached: frame.frameId === activeFrameId, faviconUrl, topFrameId: state.topFrameId }))
-
-export const collectFrameTree = (node: CdpFrameTreeNode | undefined, state: ExtensionFrameState): void => {
-	if (!node?.frame?.id) {
-		return
-	}
-
-	const frameId = node.frame.id
-	state.frames.set(frameId, {
-		frameId,
-		parentFrameId: node.frame.parentId ?? null,
-		url: node.frame.url ?? '',
-		title: node.frame.name ?? null,
-		sessionId: state.frames.get(frameId)?.sessionId ?? null,
-	})
-	if (!node.frame.parentId) {
-		state.topFrameId = frameId
-	}
-
-	for (const child of node.childFrames ?? []) {
-		collectFrameTree(child, state)
-	}
-}
 
 export const parseFrame = (params: unknown): ExtensionFrame | null => {
 	const record = params as { frame?: { id?: string; parentId?: string | null; url?: string; name?: string } }

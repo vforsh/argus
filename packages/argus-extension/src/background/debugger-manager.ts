@@ -2,7 +2,24 @@
  * Manages chrome.debugger attachment lifecycle.
  * Handles root tab attachment, recursive child-target auto-attach, frame discovery,
  * and session-aware CDP command routing.
+ *
+ * Frame bookkeeping contract (C2): this class owns the authoritative frame table per tab
+ * (mutated via `frame-table.ts`). Only REAL Chrome CDP events are re-emitted through
+ * `onEvent`; snapshot merges and session detaches never fabricate `Page.frameNavigated`/
+ * `Page.frameDetached`. Instead, table changes are published through `onFramesChanged`,
+ * which the bridge serializes into a `frame_snapshot` message.
  */
+
+import type { FrameSnapshotReason } from '../types/messages.js'
+import {
+	applyFrameEvent,
+	applyFrameTreeSnapshot,
+	dropSessionFrames,
+	serializeFrameTable,
+	type CdpFrameTreeNode,
+	type FrameRecord,
+} from './frame-table.js'
+import { readTabCookies, type CookieQuery, type NativeCookie } from './tab-cookies.js'
 
 type ChildSession = {
 	sessionId: string
@@ -16,36 +33,6 @@ type ChildSession = {
 
 type DebuggeeWithSession = chrome.debugger.Debuggee & {
 	sessionId?: string
-}
-
-type FrameRecord = {
-	frameId: string
-	parentFrameId: string | null
-	url: string
-	title: string | null
-	sessionId: string | null
-}
-
-type CookieQuery = {
-	domain?: string
-	url?: string
-}
-
-type CdpFrameTreeNode = {
-	frame?: { id?: string; parentId?: string; name?: string; url?: string }
-	childFrames?: CdpFrameTreeNode[]
-}
-
-type NativeCookie = {
-	name: string
-	value: string
-	domain: string
-	path: string
-	secure: boolean
-	httpOnly: boolean
-	session: boolean
-	expires: number | null
-	sameSite: string | null
 }
 
 const FRAME_TREE_SYNC_DELAY_MS = 150
@@ -65,12 +52,22 @@ export type AttachedTarget = {
 
 export type CdpEventHandler = (tabId: number, method: string, params: unknown, meta?: { sessionId?: string | null }) => void
 export type DebuggerDetachHandler = (tabId: number, reason: string) => void
+export type FramesChangedHandler = (tabId: number, reason: FrameSnapshotReason) => void
+
+/** Full frame table published to the watcher. */
+export type FrameSnapshotPayload = {
+	topFrameId: string | null
+	frames: FrameRecord[]
+}
 
 export class DebuggerManager {
 	private attached = new Map<number, AttachedTarget>()
 	private eventHandlers = new Set<CdpEventHandler>()
 	private detachHandlers = new Set<DebuggerDetachHandler>()
+	private framesChangedHandlers = new Set<FramesChangedHandler>()
 	private frameTreeSyncTimers = new Map<string, ReturnType<typeof setTimeout>>()
+	/** Last published frame table per tab; publishes that change nothing are suppressed. */
+	private lastPublishedFrames = new Map<number, string>()
 
 	constructor() {
 		chrome.debugger.onEvent.addListener((debuggee, method, params) => {
@@ -95,6 +92,14 @@ export class DebuggerManager {
 		this.detachHandlers.add(handler)
 		return () => {
 			this.detachHandlers.delete(handler)
+		}
+	}
+
+	/** Subscribe to authoritative frame-table changes (deduplicated; see class doc). */
+	onFramesChanged(handler: FramesChangedHandler): () => void {
+		this.framesChangedHandlers.add(handler)
+		return () => {
+			this.framesChangedHandlers.delete(handler)
 		}
 	}
 
@@ -135,6 +140,9 @@ export class DebuggerManager {
 		this.attached.set(tabId, target)
 		await this.configureAutoAttach(tabId)
 		await this.refreshFrameTree(tabId, null)
+		// The initial table travels inside tab_attached; prime the publish cache so the
+		// first post-attach resync only publishes when something actually changed.
+		this.lastPublishedFrames.set(tabId, serializeFrameTable(target))
 		return target
 	}
 
@@ -148,6 +156,7 @@ export class DebuggerManager {
 			// Tab may already be closed
 		}
 		this.attached.delete(tabId)
+		this.lastPublishedFrames.delete(tabId)
 	}
 
 	async sendCommand<T = unknown>(tabId: number, method: string, params?: Record<string, unknown>, sessionId?: string | null): Promise<T> {
@@ -188,30 +197,38 @@ export class DebuggerManager {
 		return [...target.frames.values()]
 	}
 
+	/** Current authoritative frame table for a tab, in `frame_snapshot` payload shape. */
+	getFrameSnapshot(tabId: number): FrameSnapshotPayload {
+		return {
+			topFrameId: this.attached.get(tabId)?.topFrameId ?? null,
+			frames: this.getFrames(tabId),
+		}
+	}
+
 	/**
-	 * Read cookies from the attached tab's cookie store so extension-mode auth export can keep
-	 * sibling subdomain session cookies such as `auth.example.com`.
+	 * Re-read `Page.getFrameTree` for the root and every child session, then return the
+	 * fresh table. Serves `frame_snapshot_request { refresh: true }` (bootstrap and target
+	 * recovery on the watcher side). Marks the result as published — the caller ships it
+	 * as the request's reply, so no push should follow for the same state.
 	 */
+	async resyncFrames(tabId: number): Promise<FrameSnapshotPayload> {
+		const target = this.getRequiredTarget(tabId)
+		await this.refreshFrameTree(tabId, null)
+		for (const sessionId of target.childSessions.keys()) {
+			try {
+				await this.refreshFrameTree(tabId, sessionId)
+			} catch {
+				// A child session can die mid-resync (iframe removed); its frames are pruned on detach.
+			}
+		}
+		this.lastPublishedFrames.set(tabId, serializeFrameTable(target))
+		return this.getFrameSnapshot(tabId)
+	}
+
+	/** Read cookies from the attached tab's cookie store (see tab-cookies.ts). */
 	async getCookies(tabId: number, query: CookieQuery = {}): Promise<NativeCookie[]> {
 		this.getRequiredTarget(tabId)
-		const storeId = await this.findCookieStoreId(tabId)
-		const cookies = await chrome.cookies.getAll({
-			domain: query.domain,
-			storeId: storeId ?? undefined,
-			url: query.domain ? undefined : query.url,
-		})
-
-		return cookies.map((cookie) => ({
-			name: cookie.name,
-			value: cookie.value,
-			domain: cookie.domain,
-			path: cookie.path,
-			secure: cookie.secure,
-			httpOnly: cookie.httpOnly,
-			session: cookie.session,
-			expires: typeof cookie.expirationDate === 'number' ? cookie.expirationDate : null,
-			sameSite: cookie.sameSite ?? null,
-		}))
+		return readTabCookies(tabId, query)
 	}
 
 	private async configureAutoAttach(tabId: number, sessionId?: string | null): Promise<void> {
@@ -265,12 +282,6 @@ export class DebuggerManager {
 		return { tabId: target.tabId, sessionId } as chrome.debugger.Debuggee
 	}
 
-	private async findCookieStoreId(tabId: number): Promise<string | null> {
-		const stores = await chrome.cookies.getAllCookieStores()
-		const store = stores.find((candidate) => candidate.tabIds.includes(tabId))
-		return store?.id ?? null
-	}
-
 	private handleCdpEvent(debuggee: chrome.debugger.Debuggee, method: string, params?: object): void {
 		const tabId = debuggee.tabId
 		if (!tabId || !this.attached.has(tabId)) return
@@ -319,6 +330,7 @@ export class DebuggerManager {
 			await this.configureAutoAttach(tabId, record.sessionId)
 			await this.enableChildSessionDomains(tabId, record.sessionId)
 			await this.refreshFrameTree(tabId, record.sessionId)
+			this.emitFramesChangedIfNeeded(tabId, 'child_attached')
 		} catch (error) {
 			console.warn('[DebuggerManager] Failed to bootstrap child target:', error)
 		}
@@ -343,79 +355,11 @@ export class DebuggerManager {
 
 	private async refreshFrameTree(tabId: number, sessionId: string | null): Promise<void> {
 		const result = (await this.sendCommand(tabId, 'Page.getFrameTree', undefined, sessionId)) as { frameTree?: CdpFrameTreeNode }
-		this.replaceFrameTreeSnapshot(tabId, sessionId, result.frameTree)
-	}
-
-	/**
-	 * Each `Page.getFrameTree` result is a full snapshot for that session, so merge the refreshed
-	 * nodes and then prune frames from the same session that no longer exist after reload.
-	 */
-	private replaceFrameTreeSnapshot(tabId: number, sessionId: string | null, node: CdpFrameTreeNode | undefined): void {
-		if (!node?.frame?.id) {
-			return
-		}
-
 		const target = this.attached.get(tabId)
 		if (!target) {
 			return
 		}
-
-		const nextFrameIds = new Set<string>()
-		this.mergeFrameTree(tabId, sessionId, node, nextFrameIds)
-		this.pruneMissingSessionFrames(tabId, sessionId, nextFrameIds)
-	}
-
-	private mergeFrameTree(tabId: number, sessionId: string | null, node: CdpFrameTreeNode | undefined, nextFrameIds: Set<string>): void {
-		if (!node?.frame?.id) {
-			return
-		}
-
-		const target = this.attached.get(tabId)
-		if (!target) {
-			return
-		}
-
-		const frameId = node.frame.id
-		nextFrameIds.add(frameId)
-		target.frames.set(frameId, this.toFrameRecord(node.frame, sessionId))
-
-		if (!node.frame.parentId && !sessionId) {
-			target.topFrameId = frameId
-		}
-
-		this.emitEvent(
-			tabId,
-			'Page.frameNavigated',
-			{
-				frame: {
-					id: frameId,
-					parentId: node.frame.parentId ?? null,
-					url: node.frame.url ?? '',
-					name: node.frame.name ?? null,
-				},
-			},
-			sessionId,
-		)
-
-		for (const child of node.childFrames ?? []) {
-			this.mergeFrameTree(tabId, sessionId, child, nextFrameIds)
-		}
-	}
-
-	private pruneMissingSessionFrames(tabId: number, sessionId: string | null, nextFrameIds: Set<string>): void {
-		const target = this.attached.get(tabId)
-		if (!target) {
-			return
-		}
-
-		for (const [frameId, frame] of target.frames.entries()) {
-			if (frame.sessionId !== sessionId || nextFrameIds.has(frameId)) {
-				continue
-			}
-
-			target.frames.delete(frameId)
-			this.emitEvent(tabId, 'Page.frameDetached', { frameId }, sessionId)
-		}
+		applyFrameTreeSnapshot(target, sessionId, result.frameTree)
 	}
 
 	private updateStateFromEvent(tabId: number, sessionId: string | null, method: string, params?: object): void {
@@ -424,45 +368,29 @@ export class DebuggerManager {
 			return
 		}
 
-		if (method === 'Page.frameNavigated' && params) {
-			const frame = (params as { frame?: { id?: string; parentId?: string | null; url?: string; name?: string } }).frame
-			if (!frame?.id) {
-				return
-			}
+		if (applyFrameEvent(target, sessionId, method, params)) {
+			// The real event is re-emitted right after this and the watcher applies it too,
+			// so the resulting table is state the watcher already knows: fold it into the
+			// publish cache so the next snapshot publish diffs against what the watcher has.
+			this.lastPublishedFrames.set(tabId, serializeFrameTable(target))
+		}
+	}
 
-			target.frames.set(frame.id, this.toFrameRecord(frame, sessionId))
-
-			if (!frame.parentId && !sessionId && frame.url) {
-				target.url = frame.url
-				target.topFrameId = frame.id
-			}
+	/** Publish the tab's frame table through onFramesChanged, unless it matches the last publish. */
+	private emitFramesChangedIfNeeded(tabId: number, reason: FrameSnapshotReason): void {
+		const target = this.attached.get(tabId)
+		if (!target) {
 			return
 		}
 
-		if (method === 'Page.frameAttached' && params) {
-			const frame = params as { frameId?: string; parentFrameId?: string }
-			if (!frame.frameId) {
-				return
-			}
-
-			const existing = target.frames.get(frame.frameId)
-			target.frames.set(frame.frameId, {
-				frameId: frame.frameId,
-				parentFrameId: frame.parentFrameId ?? target.topFrameId,
-				url: existing?.url ?? '',
-				title: existing?.title ?? null,
-				sessionId: existing?.sessionId ?? sessionId,
-			})
+		const serialized = serializeFrameTable(target)
+		if (this.lastPublishedFrames.get(tabId) === serialized) {
 			return
 		}
 
-		if (method === 'Page.frameDetached' && params) {
-			const frame = params as { frameId?: string }
-			if (!frame.frameId) {
-				return
-			}
-
-			target.frames.delete(frame.frameId)
+		this.lastPublishedFrames.set(tabId, serialized)
+		for (const handler of this.framesChangedHandlers) {
+			handler(tabId, reason)
 		}
 	}
 
@@ -483,9 +411,13 @@ export class DebuggerManager {
 
 		const timer = setTimeout(() => {
 			this.frameTreeSyncTimers.delete(key)
-			void this.refreshFrameTree(tabId, sessionId).catch((error) => {
-				console.warn('[DebuggerManager] Failed to refresh frame tree after navigation:', error)
-			})
+			void this.refreshFrameTree(tabId, sessionId)
+				.then(() => {
+					this.emitFramesChangedIfNeeded(tabId, 'navigation_resync')
+				})
+				.catch((error) => {
+					console.warn('[DebuggerManager] Failed to refresh frame tree after navigation:', error)
+				})
 		}, FRAME_TREE_SYNC_DELAY_MS)
 
 		this.frameTreeSyncTimers.set(key, timer)
@@ -513,16 +445,6 @@ export class DebuggerManager {
 		}
 	}
 
-	private toFrameRecord(frame: { id?: string; parentId?: string | null; url?: string; name?: string }, sessionId: string | null): FrameRecord {
-		return {
-			frameId: frame.id!,
-			parentFrameId: frame.parentId ?? null,
-			url: frame.url ?? '',
-			title: frame.name ?? null,
-			sessionId,
-		}
-	}
-
 	private handleDetach(tabId: number, sessionId: string | null, reason: string): void {
 		const target = this.attached.get(tabId)
 		if (!target) {
@@ -538,6 +460,7 @@ export class DebuggerManager {
 
 		this.clearAllFrameTreeSync(tabId)
 		this.attached.delete(tabId)
+		this.lastPublishedFrames.delete(tabId)
 		this.emitDetach(tabId, reason)
 	}
 
@@ -548,12 +471,8 @@ export class DebuggerManager {
 		}
 
 		target.childSessions.delete(sessionId)
-		for (const [frameId, frame] of target.frames.entries()) {
-			if (frame.sessionId !== sessionId) {
-				continue
-			}
-			target.frames.delete(frameId)
-			this.emitEvent(tabId, 'Page.frameDetached', { frameId }, sessionId)
+		if (dropSessionFrames(target, sessionId)) {
+			this.emitFramesChangedIfNeeded(tabId, 'child_detached')
 		}
 	}
 }

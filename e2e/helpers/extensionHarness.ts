@@ -21,7 +21,7 @@ import path from 'node:path'
 import { execSync, spawn, type ChildProcess } from 'node:child_process'
 import { delay } from '@vforsh/argus-core'
 import { ARGUS_EXTENSION_ID, installNativeHostsTo } from '@vforsh/argus/internal'
-import { startPlaygroundServers, type PlaygroundServers } from '../../playground/harness.ts'
+import { startPlaygroundServers } from '../../playground/harness.ts'
 import { getFreePort } from './ports.js'
 import { runCommandWithExit, type CommandResultWithExit } from './process.js'
 

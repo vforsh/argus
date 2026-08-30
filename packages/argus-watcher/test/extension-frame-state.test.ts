@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test'
 import {
-	collectFrameTree,
 	createEmptyFrameState,
 	createRequestedFrameHint,
 	isSelectedTargetReady,
@@ -125,35 +124,6 @@ describe('extension-frame-state', () => {
 		expect(parseExtensionTargetId('42')).toEqual({ tabId: 42, frameId: null })
 	})
 
-	it('preserves known session ownership when a frame tree refresh updates metadata', () => {
-		const state = createEmptyFrameState()
-		state.frames.set(
-			'child-frame',
-			createFrame({ frameId: 'child-frame', parentFrameId: 'root-frame', url: 'https://old.example/frame', sessionId: 'child-session' }),
-		)
-
-		collectFrameTree(
-			{
-				frame: { id: 'root-frame', url: 'https://root.example/' },
-				childFrames: [
-					{
-						frame: { id: 'child-frame', parentId: 'root-frame', url: 'https://new.example/frame', name: 'Nested Frame' },
-					},
-				],
-			},
-			state,
-		)
-
-		expect(state.topFrameId).toBe('root-frame')
-		expect(state.frames.get('child-frame')).toEqual({
-			frameId: 'child-frame',
-			parentFrameId: 'root-frame',
-			url: 'https://new.example/frame',
-			title: 'Nested Frame',
-			sessionId: 'child-session',
-		})
-	})
-
 	it('keeps reporting the selected iframe while frame metadata is temporarily missing', () => {
 		const state = createEmptyFrameState()
 		state.activeFrameId = 'frame-active'
@@ -177,6 +147,7 @@ describe('extension-frame-state', () => {
 					getTargetContext: () => ({ kind: 'page' as const }),
 					getReadyTargetContext: async () => ({ kind: 'page' as const }),
 				},
+				requestFrameSnapshot: async () => ({ tabId: 42, topFrameId: null, frames: [], reason: 'requested' as const }),
 			},
 			state,
 		)

@@ -110,11 +110,10 @@ liveTest(
 
 		const navigationsAfter = await pageNavigations()
 		const delta = navigationsAfter - navigationsBefore
-		// Baseline (pre-redesign) behavior replays the top-frame navigation through the
-		// synthetic frame-tree resync, so the counter can exceed 1 per real navigation.
-		// The C2 redesign tightens this assertion to exactly 1.
-		console.log(`[extension-live] pageNavigations delta for one navigation: ${delta}`)
-		expect(delta).toBeGreaterThanOrEqual(1)
+		// Exactly one: the real top-frame Page.frameNavigated and nothing else. Pre-C2 this
+		// was 2 — the extension replayed a fabricated copy through the frame-tree resync,
+		// re-rotating logs and dropping sourcemap caches for a navigation that never happened.
+		expect(delta).toBe(1)
 	},
 	STEP_TIMEOUT_MS,
 )
@@ -141,8 +140,8 @@ liveTest(
 		await waitForEval('location.href', (value) => typeof value === 'string' && value.includes(`${crossOriginSubstring}/iframe.html`), 45_000)
 
 		const delta = (await pageNavigations()) - navigationsBefore
-		console.log(`[extension-live] pageNavigations delta for one reload: ${delta}`)
-		expect(delta).toBeGreaterThanOrEqual(1)
+		// Exactly one, same contract as scenario C (pre-C2 a reload also counted twice).
+		expect(delta).toBe(1)
 	},
 	STEP_TIMEOUT_MS,
 )

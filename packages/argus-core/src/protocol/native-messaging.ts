@@ -16,7 +16,7 @@
  * Bump on any breaking change to the message shapes below. Peers exchange it in the
  * `host_info` handshake and refuse to proceed on a mismatch.
  */
-export const NATIVE_MESSAGING_PROTOCOL_VERSION = 1 as const
+export const NATIVE_MESSAGING_PROTOCOL_VERSION = 2 as const
 
 /** Type-level alias for the current native-messaging protocol version. */
 export type NativeMessagingProtocolVersion = typeof NATIVE_MESSAGING_PROTOCOL_VERSION
@@ -47,6 +47,40 @@ export type CdpEventMessage = {
 	method: string
 	params: unknown
 	sessionId?: string
+}
+
+/** Why the extension published a frame snapshot; informational (diagnostics/logs only). */
+export type FrameSnapshotReason = 'navigation_resync' | 'child_attached' | 'child_detached' | 'requested'
+
+/**
+ * Authoritative frame table for one attached tab, pushed by the extension whenever its
+ * table changes and returned in response to {@link FrameSnapshotRequestMessage}.
+ *
+ * `frames` is always the FULL table for the tab (never a delta) so applying a snapshot is
+ * idempotent: the watcher replaces its copy wholesale instead of replaying synthetic
+ * `Page.frameNavigated`/`Page.frameDetached` events. Real CDP events still flow as
+ * `cdp_event` and remain the immediate-reaction channel; snapshots are the reconciliation.
+ */
+export type FrameSnapshotMessage = {
+	type: 'frame_snapshot'
+	tabId: number
+	topFrameId: string | null
+	frames: FrameSnapshot[]
+	reason: FrameSnapshotReason
+	/** Present when this snapshot answers a `frame_snapshot_request`; absent on pushes. */
+	requestId?: number
+}
+
+/**
+ * Host -> extension pull for the current frame table (bootstrap and target recovery).
+ * With `refresh: true` the extension re-reads `Page.getFrameTree` for the root and every
+ * child session before answering, so the reply reflects Chrome, not just cached state.
+ */
+export type FrameSnapshotRequestMessage = {
+	type: 'frame_snapshot_request'
+	requestId: number
+	tabId: number
+	refresh?: boolean
 }
 
 export type CdpResponseMessage = {
@@ -215,6 +249,7 @@ export type ExtensionToHost =
 	| CdpResponseMessage
 	| CookieQueryResponseMessage
 	| TargetSelectedMessage
+	| FrameSnapshotMessage
 
 export type ExtensionToControlHost = ListTabsResponseMessage | TabActionResponseMessage | ControlStatusResponseMessage
 
@@ -273,7 +308,14 @@ export type CookieQueryMessage = {
 	url?: string
 }
 
-export type HostToExtension = DetachTabMessage | CdpCommandMessage | CookieQueryMessage | HostInfoMessage | HostReadyMessage | TargetInfoMessage
+export type HostToExtension =
+	| DetachTabMessage
+	| CdpCommandMessage
+	| CookieQueryMessage
+	| FrameSnapshotRequestMessage
+	| HostInfoMessage
+	| HostReadyMessage
+	| TargetInfoMessage
 
 export type ControlHostToExtension =
 	| AttachTabWatcherMessage

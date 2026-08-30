@@ -3,7 +3,6 @@ import type { CdpSourceTarget } from './types.js'
 import {
 	buildFrameTargets,
 	buildPageTarget,
-	collectFrameTree,
 	createRequestedFrameHint,
 	formatFrameTargetId,
 	formatPageTargetId,
@@ -96,16 +95,6 @@ export const reconcileExtensionTargetSelection = (session: ExtensionSession, sta
 	}
 
 	return activateFrameTarget(state, resolution.frameId, onTargetChanged)
-}
-
-export const refreshExtensionFrameTree = async (
-	session: ExtensionSession,
-	state: ExtensionFrameState,
-	refreshFrameTitle: (frameId: string) => Promise<void>,
-): Promise<void> => {
-	const frameTree = await session.handle.sendAndWait('Page.getFrameTree')
-	collectFrameTree(frameTree.frameTree, state)
-	await Promise.all([...state.executionContexts.keys()].map((frameId) => refreshFrameTitle(frameId)))
 }
 
 export const removeExtensionFrame = (state: ExtensionFrameState, frameId: string): void => {

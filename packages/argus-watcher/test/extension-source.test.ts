@@ -111,7 +111,9 @@ async function createHarness() {
 	const commands: Array<Extract<TabHostToExtension, { type: 'cdp_command' }>> = []
 	const statuses: CdpSourceStatus[] = []
 	const rootFrame = { id: 'root', url: 'https://host.test/app' }
-	let childFrames = [{ frame: { id: 'old', parentId: 'root', url: 'https://game.test/embed?token=old' } }]
+	let childFrames: Array<{ frame: { id: string; parentId: string; url: string }; sessionId?: string }> = [
+		{ frame: { id: 'old', parentId: 'root', url: 'https://game.test/embed?token=old' } },
+	]
 	let attached: () => void = () => {}
 	const bootstrapped = new Promise<void>((resolve) => {
 		attached = resolve
@@ -125,10 +127,31 @@ async function createHarness() {
 		start: () => {},
 		stop: () => {},
 		send: (message) => {
+			// The fake extension mirrors the real one: it owns the frame table and answers
+			// pulls with the full current table.
+			if (message.type === 'frame_snapshot_request') {
+				receive({
+					type: 'frame_snapshot',
+					tabId: message.tabId,
+					requestId: message.requestId,
+					reason: 'requested',
+					topFrameId: 'root',
+					frames: [
+						{ frameId: 'root', parentFrameId: null, url: rootFrame.url, title: null, sessionId: null },
+						...childFrames.map((child) => ({
+							frameId: child.frame.id,
+							parentFrameId: child.frame.parentId,
+							url: child.frame.url,
+							title: null,
+							sessionId: child.sessionId ?? null,
+						})),
+					],
+				})
+				return
+			}
 			if (message.type !== 'cdp_command') return
 			commands.push(message)
-			const result = message.method === 'Page.getFrameTree' ? { frameTree: { frame: rootFrame, childFrames } } : commandResult(message.method)
-			receive({ type: 'cdp_response', requestId: message.requestId, result })
+			receive({ type: 'cdp_response', requestId: message.requestId, result: commandResult(message.method) })
 		},
 	}
 	// `createNativeMessaging` is generic over the message pair; the spy's return type erases to unknown.
@@ -172,7 +195,7 @@ async function createHarness() {
 		},
 		restore: (frameId: string, contextId: number, sessionId?: string) => {
 			const frame = { id: frameId, parentId: 'root', url: 'https://game.test/embed?token=new' }
-			childFrames = [{ frame }]
+			childFrames = [{ frame, sessionId }]
 			emit('Page.frameNavigated', { frame }, sessionId)
 			emit('Runtime.executionContextCreated', { context: { id: contextId, auxData: { frameId, isDefault: true } } }, sessionId)
 		},

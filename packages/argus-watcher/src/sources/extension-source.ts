@@ -18,12 +18,12 @@ import type { IgnoreMatcher } from '../cdp/ignoreList.js'
 import { registerExtensionSessionEventHandlers } from './extension-session-events.js'
 import { createControlExtensionSource } from './extension-control-source.js'
 import { createTargetRecovery } from './extension-target-recovery.js'
+import { applyExtensionFrameSnapshot, type ApplyFrameSnapshotDeps } from './extension-frame-snapshot.js'
 import {
 	getSelectedExtensionTarget,
 	listExtensionTargets,
 	reconcileExtensionTargetSelection,
 	refreshExtensionFrameTitle,
-	refreshExtensionFrameTree,
 	removeExtensionFrame,
 	seedExtensionFrameState,
 	setRequestedTargetSelection,
@@ -73,6 +73,13 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		reconcileTargetSelection,
 	})
 
+	const frameSnapshotDeps: ApplyFrameSnapshotDeps = {
+		removeFrame,
+		refreshFrameTitle: (session, frameId) => refreshFrameTitle(session, frameId),
+		reconcileTargetSelection,
+		emitTargetChanged,
+	}
+
 	const sessionManager = new SessionManager(messaging, {
 		onAttach: (session: ExtensionSession) => {
 			console.error(`[ExtensionSource] Tab attached: ${session.tabId} - ${session.url}`)
@@ -102,6 +109,14 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				return
 			}
 			requestTargetSelection(session, frameId)
+		},
+
+		onFrameSnapshot: (snapshot) => {
+			const session = currentSession
+			if (!session || session.tabId !== snapshot.tabId) {
+				return
+			}
+			applyExtensionFrameSnapshot(session, getOrCreateFrameState(snapshot.tabId), snapshot, frameSnapshotDeps)
 		},
 	})
 
@@ -425,9 +440,15 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		return changed
 	}
 
+	/**
+	 * Pull the extension's authoritative frame table, forcing a Chrome re-read. Replaces
+	 * the pre-C2 direct `Page.getFrameTree` call so the extension's table and this state
+	 * can no longer drift. The reply is applied by the onFrameSnapshot handler in wire
+	 * order before this resolves — applying it here too would reintroduce the stale-apply
+	 * inversion documented on SessionManager.handleFrameSnapshot.
+	 */
 	async function refreshFrameTree(session: ExtensionSession): Promise<void> {
-		const state = getOrCreateFrameState(session.tabId)
-		await refreshExtensionFrameTree(session, state, (frameId) => refreshFrameTitle(session, frameId))
+		await session.requestFrameSnapshot({ refresh: true })
 	}
 
 	function removeFrame(tabId: number, frameId: string): void {

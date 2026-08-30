@@ -11,12 +11,16 @@ import type {
 	CdpEventHandler,
 	CdpEventMeta,
 	FrameSnapshot,
+	FrameSnapshotMessage,
 	TabAttachedMessage,
 	NativeCookie,
 	ExtensionToTabHost,
 	TabHostToExtension,
 } from './types.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
+
+/** Authoritative frame table published by the extension for one tab. */
+export type ExtensionFrameSnapshot = Pick<FrameSnapshotMessage, 'tabId' | 'topFrameId' | 'frames' | 'reason'>
 
 export type ExtensionSession = {
 	tabId: number
@@ -27,12 +31,29 @@ export type ExtensionSession = {
 	topFrameId: string | null
 	frames: FrameSnapshot[]
 	handle: CdpSessionHandle
+	/**
+	 * Pull the extension's current frame table. With `refresh: true` the extension re-reads
+	 * `Page.getFrameTree` for the root and every child session first, so the result reflects
+	 * Chrome rather than cached state. Used at bootstrap and by target recovery.
+	 *
+	 * The reply is APPLIED through `SessionManagerEvents.onFrameSnapshot` in wire order
+	 * before this resolves — treat the returned snapshot as a completion signal, never
+	 * apply it yourself (see handleFrameSnapshot for the ordering hazard).
+	 */
+	requestFrameSnapshot: (options?: { refresh?: boolean; timeoutMs?: number }) => Promise<ExtensionFrameSnapshot>
 }
 
 export type SessionManagerEvents = {
 	onAttach: (session: ExtensionSession) => void
 	onDetach: (tabId: number, reason: string) => void
 	onTargetSelected: (tabId: number, frameId: string | null) => void
+	/**
+	 * A frame table from the extension (deduplicated pushes AND pull replies — every
+	 * snapshot flows through here, synchronously, in wire order). Replaces the pre-C2
+	 * stream of synthetic Page.frameNavigated/frameDetached events: apply it wholesale,
+	 * idempotently.
+	 */
+	onFrameSnapshot: (snapshot: ExtensionFrameSnapshot) => void
 }
 
 /**
@@ -92,6 +113,26 @@ export class SessionManager {
 			case 'target_selected':
 				this.events.onTargetSelected(message.tabId, message.frameId ?? null)
 				break
+
+			case 'frame_snapshot':
+				this.handleFrameSnapshot(message)
+				break
+		}
+	}
+
+	/**
+	 * Every snapshot — pushed or pulled — is applied HERE, synchronously, in wire order.
+	 *
+	 * Routing a pull reply only through its awaiting caller would apply it on a later
+	 * microtask, after real cdp_events that arrived behind it on the pipe were already
+	 * handled — a stale table would then delete frames those events just created and
+	 * selection could rematch onto the wrong frame. Applying in message order makes that
+	 * inversion impossible; the settled promise is a completion signal.
+	 */
+	private handleFrameSnapshot(message: FrameSnapshotMessage): void {
+		this.events.onFrameSnapshot(message)
+		if (message.requestId != null) {
+			this.pendingRequests.settle(message.requestId, message)
 		}
 	}
 
@@ -223,6 +264,21 @@ export class SessionManager {
 			topFrameId: message.topFrameId ?? null,
 			frames: message.frames ?? [],
 			handle,
+			requestFrameSnapshot: async (options) => {
+				if (!this.sessions.has(tabId)) {
+					throw createNotAttachedError()
+				}
+				return this.sendBridgeRequest<ExtensionFrameSnapshot>(
+					(requestId) =>
+						({
+							type: 'frame_snapshot_request',
+							requestId,
+							tabId,
+							refresh: options?.refresh,
+						}) satisfies TabHostToExtension,
+					options?.timeoutMs ?? 10_000,
+				)
+			},
 		}
 
 		this.sessions.set(tabId, session)

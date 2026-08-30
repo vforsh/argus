@@ -26,6 +26,7 @@ describe('extension session events', () => {
 				topFrameId: 'root-frame',
 				frames: [],
 				handle: stub.session,
+				requestFrameSnapshot: async () => ({ tabId: 1, topFrameId: null, frames: [], reason: 'requested' as const }),
 			},
 			events: {
 				onLog: () => {},
