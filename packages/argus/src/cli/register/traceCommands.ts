@@ -1,5 +1,6 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runTrace, runTraceStart, runTraceStop } from '../../commands/trace.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const traceCommands: readonly ArgusCommandDefinition[] = [
 	{
@@ -11,7 +12,7 @@ export const traceCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--out <file>', description: 'Output trace file path (relative to artifacts base directory)' },
 			{ flags: '--categories <categories>', description: 'Comma-separated tracing categories' },
 			{ flags: '--options <options>', description: 'Tracing options string' },
-			{ flags: '--json', description: 'Output JSON for automation' },
+			jsonOption,
 		],
 		examples: ['argus trace app --duration 3s --out trace.json'],
 		action: async (id, options) => {
@@ -26,7 +27,7 @@ export const traceCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--out <file>', description: 'Output trace file path (relative to artifacts base directory)' },
 					{ flags: '--categories <categories>', description: 'Comma-separated tracing categories' },
 					{ flags: '--options <options>', description: 'Tracing options string' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: ['argus trace start app --out trace.json'],
 				action: async (id, options) => {
@@ -40,7 +41,7 @@ export const traceCommands: readonly ArgusCommandDefinition[] = [
 				options: [
 					{ flags: '--trace-id <id>', description: 'Trace id returned from start' },
 					{ flags: '--out <file>', description: 'Move the saved trace file to this path before returning' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: ['argus trace stop app', 'argus trace stop app --out trace.json --json'],
 				action: async (id, options) => {

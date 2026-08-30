@@ -2,6 +2,7 @@ import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineComman
 import { runEval } from '../../commands/eval.js'
 import { runEvalUntil } from '../../commands/evalUntil.js'
 import { runIframeHelper } from '../../commands/iframeHelper.js'
+import { jsonOption } from './sharedOptions.js'
 
 const collectValue = (value: string, previous: string[] = []): string[] => [...previous, value]
 
@@ -9,7 +10,7 @@ const collectValue = (value: string, previous: string[] = []): string[] => [...p
 const sharedEvalHeadOptions = (timeoutDescription: string): readonly ArgusCommandOption[] => [
 	{ flags: '--no-await', description: 'Do not await promises' },
 	{ flags: '--timeout <duration>', description: timeoutDescription },
-	{ flags: '--json', description: 'Output JSON for automation' },
+	jsonOption,
 	{ flags: '--no-return-by-value', description: 'Disable returnByValue (use preview)' },
 	{ flags: '--no-fail-on-exception', description: 'Do not exit with code 1 when the evaluation throws' },
 	{ flags: '--retry <n>', description: 'Retry failed evaluations up to N times' },

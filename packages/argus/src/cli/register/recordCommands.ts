@@ -1,6 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
 import { runRecord, runRecordStart, runRecordStop } from '../../commands/record.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const recordCommands: readonly ArgusCommandDefinition[] = [
 	{
@@ -15,7 +16,7 @@ export const recordCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
 			{ flags: '--fps <n>', description: 'Output frames per second (1-60, default 30)' },
 			{ flags: '--format <format>', description: 'Output format: mp4 or webm (default mp4, inferred from --out extension)' },
-			{ flags: '--json', description: 'Output JSON for automation' },
+			jsonOption,
 		],
 		examples: [
 			'argus record app --duration 5s --out demo.mp4',
@@ -39,7 +40,7 @@ export const recordCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
 					{ flags: '--fps <n>', description: 'Output frames per second (1-60, default 30)' },
 					{ flags: '--format <format>', description: 'Output format: mp4 or webm (default mp4, inferred from --out extension)' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: ['argus record start app --selector "canvas" --out canvas.mp4'],
 				action: async (id, options) => {
@@ -54,7 +55,7 @@ export const recordCommands: readonly ArgusCommandDefinition[] = [
 				options: [
 					{ flags: '--record-id <id>', description: 'Record id returned from start' },
 					{ flags: '--out <file>', description: 'Move the saved recording to this .mp4 or .webm path before returning' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: ['argus record stop app', 'argus record stop app --out demo.mp4 --json'],
 				action: async (id, options) => {

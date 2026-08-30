@@ -1,11 +1,12 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runPluginList } from '../../commands/pluginList.js'
 import { runPluginAdd, runPluginRemove } from '../../commands/pluginConfig.js'
+import { jsonOption } from './sharedOptions.js'
 
 const configFileOptions = [
 	{ flags: '--path <file>', description: 'Config file to update (default: discovered config or .argus/config.json)' },
 	{ flags: '--global', description: 'Update the per-user Argus config at ARGUS_HOME/config.json' },
-	{ flags: '--json', description: 'Output JSON for automation' },
+	jsonOption,
 ] as const
 
 export const pluginCommands: readonly ArgusCommandDefinition[] = [
@@ -18,7 +19,7 @@ export const pluginCommands: readonly ArgusCommandDefinition[] = [
 				name: 'list',
 				alias: 'ls',
 				description: 'List plugins discovered for this invocation',
-				options: [{ flags: '--json', description: 'Output JSON for automation' }],
+				options: [jsonOption],
 				examples: ['argus plugin list', 'argus --plugin ./plugins/foo.js plugin list --json'],
 				action: (options) => {
 					runPluginList(options)

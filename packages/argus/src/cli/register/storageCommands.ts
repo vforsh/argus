@@ -1,10 +1,11 @@
 import type { StorageArea } from '@vforsh/argus-core'
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runStorageClear, runStorageGet, runStorageList, runStorageRemove, runStorageSet } from '../../commands/storage.js'
+import { jsonOption } from './sharedOptions.js'
 
 const sharedOptions = [
 	{ flags: '--origin <origin>', description: 'Validate page origin matches this value' },
-	{ flags: '--json', description: 'Output JSON for automation' },
+	jsonOption,
 ] as const
 
 const storageAreaCommand = (area: StorageArea): ArgusCommandDefinition => {

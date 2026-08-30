@@ -12,6 +12,7 @@ import { runNetWatch } from '../../commands/netWatch.js'
 import { runNetMockAdd, runNetMockClear, runNetMockList, runNetMockRemove } from '../../commands/netMock.js'
 import { runNetWebSocket, runNetWebSocketShow } from '../../commands/netWebSocket.js'
 import { collectValues } from '../validation.js'
+import { jsonOption } from './sharedOptions.js'
 
 const RELOAD_SELECTED_SCOPE_NOTE = '\n\nNote:\n  --reload does not support --scope selected or --frame selected.\n'
 
@@ -57,8 +58,6 @@ const netSettleOptions = (description: string): ArgusCommandOption[] => [
 	{ flags: '--settle-after <expression>', description: 'Wait for this JS expression to become truthy before the quiet window can start' },
 	{ flags: '--settle-after-interval <duration>', description: 'Polling interval for --settle-after (default: 250ms)' },
 ]
-
-const jsonOption = { flags: '--json', description: 'Output JSON for automation' } as const
 
 const netMockCommand: ArgusCommandDefinition = {
 	name: 'mock',

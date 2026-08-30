@@ -1,5 +1,6 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runDialogAccept, runDialogDismiss, runDialogPrompt, runDialogStatus } from '../../commands/dialog.js'
+import { jsonOption } from './sharedOptions.js'
 
 const simpleDialogCommand = (input: {
 	name: string
@@ -10,7 +11,7 @@ const simpleDialogCommand = (input: {
 	name: input.name,
 	description: input.description,
 	arguments: [{ flags: '[id]', description: 'Watcher ID' }],
-	options: [{ flags: '--json', description: 'Output JSON for automation' }],
+	options: [jsonOption],
 	examples: input.examples,
 	action: async (id, options) => {
 		await input.run(id, options)
@@ -47,7 +48,7 @@ export const dialogCommands: readonly ArgusCommandDefinition[] = [
 				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
 				options: [
 					{ flags: '--text <text>', description: 'Prompt response text', required: true },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: ['argus dialog prompt app --text "hello"', 'argus dialog prompt app --text "hello" --json'],
 				action: async (id, options) => {

@@ -9,6 +9,7 @@ import { runWatcherPrune } from '../../commands/watcherPrune.js'
 import { runWatcherNativeHost } from '../../commands/watcherNativeHost.js'
 import { resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const watcherCommands: readonly ArgusCommandDefinition[] = [
 	{
@@ -34,7 +35,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--no-page-indicator', description: 'Disable the in-page watcher indicator' },
 					{ flags: '--inject <path>', description: 'Path to JavaScript file to inject on watcher attach' },
 					{ flags: '--config <path>', description: 'Path to Argus config file' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus watcher start --url localhost:3000              # auto-generated id',
@@ -80,7 +81,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				alias: 'ping',
 				description: 'Check watcher status',
 				arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
-				options: [{ flags: '--json', description: 'Output JSON for automation' }],
+				options: [jsonOption],
 				examples: ['argus watcher status app', 'argus watcher status app --json'],
 				action: async (id, options) => {
 					await runWatcherStatus(id, options)
@@ -91,7 +92,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				alias: 'list',
 				description: 'List registered watchers',
 				options: [
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 					{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
 				],
 				examples: ['argus watcher ls', 'argus watcher ls --json', 'argus watcher ls --by-cwd my-project'],
@@ -105,7 +106,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				arguments: [{ flags: '[id]', description: 'Watcher id to reload' }],
 				options: [
 					{ flags: '--ignore-cache', description: 'Bypass browser cache' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: ['argus watcher reload app', 'argus watcher reload app --ignore-cache', 'argus watcher reload app --json'],
 				action: async (id, options) => {
@@ -116,7 +117,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				name: 'show',
 				description: "Lock the watcher's attached page as shown+focused (alias for `argus page show`)",
 				arguments: [{ flags: '[id]', description: 'Watcher id whose page to lock as shown+focused' }],
-				options: [{ flags: '--json', description: 'Output JSON for automation' }],
+				options: [jsonOption],
 				configure: (command) => {
 					command.addHelpText(
 						'after',
@@ -131,7 +132,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				name: 'hide',
 				description: "Release the watcher's visibility lock (alias for `argus page hide`)",
 				arguments: [{ flags: '[id]', description: 'Watcher id whose page to release from the visibility lock' }],
-				options: [{ flags: '--json', description: 'Output JSON for automation' }],
+				options: [jsonOption],
 				examples: ['argus watcher hide app', 'argus watcher hide app --json'],
 				action: async (id, options) => {
 					await runPageHide(id, options)
@@ -144,7 +145,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				options: [
 					{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
 					{ flags: '--dry-run', description: 'Preview what would be removed without changing the registry' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus watcher prune',
@@ -162,7 +163,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				options: [
 					{ flags: '--id <watcherId>', description: 'Watcher id (default: extension)' },
 					{ flags: '--role <role>', description: 'Native host role: tab or control (default: tab)' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				action: async (options) => {
 					await runWatcherNativeHost(options)

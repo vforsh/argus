@@ -1,5 +1,6 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runThrottleSet, runThrottleClear, runThrottleStatus } from '../../commands/throttle.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const throttleCommands: readonly ArgusCommandDefinition[] = [
 	{
@@ -13,7 +14,7 @@ export const throttleCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '[id]', description: 'Watcher ID' },
 					{ flags: '<rate>', description: 'Throttle rate (1 = none, 4 = 4x slowdown)' },
 				],
-				options: [{ flags: '--json', description: 'Output JSON for automation' }],
+				options: [jsonOption],
 				examples: [
 					'argus throttle set app 4',
 					'argus throttle set app 6',
@@ -28,7 +29,7 @@ export const throttleCommands: readonly ArgusCommandDefinition[] = [
 				name: 'clear',
 				description: 'Clear CPU throttle',
 				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
-				options: [{ flags: '--json', description: 'Output JSON for automation' }],
+				options: [jsonOption],
 				examples: ['argus throttle clear app', 'argus throttle clear app --json'],
 				action: async (id, options) => {
 					await runThrottleClear(id, options)
@@ -38,7 +39,7 @@ export const throttleCommands: readonly ArgusCommandDefinition[] = [
 				name: 'status',
 				description: 'Show current CPU throttle state',
 				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
-				options: [{ flags: '--json', description: 'Output JSON for automation' }],
+				options: [jsonOption],
 				examples: ['argus throttle status app', 'argus throttle status app --json'],
 				action: async (id, options) => {
 					await runThrottleStatus(id, options)

@@ -5,11 +5,12 @@ import { runChromeStart } from '../../commands/chromeStart.js'
 import { runChromeVersion, runChromeStatus, runChromeList, runChromeStop } from '../../commands/chrome.js'
 import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig } from '../../config/mergeConfig.js'
+import { jsonOption } from './sharedOptions.js'
 
 const cdpTargetOptions = [
 	{ flags: '--cdp <host:port>', description: 'CDP host:port' },
 	{ flags: '--id <watcherId>', description: 'Use chrome config from a registered watcher' },
-	{ flags: '--json', description: 'Output JSON for automation' },
+	jsonOption,
 ] as const
 
 export const chromeCommands: readonly ArgusCommandDefinition[] = [
@@ -32,7 +33,7 @@ export const chromeCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--dev-tools', description: 'Open DevTools for new tabs' },
 					{ flags: '--headless', description: 'Run Chrome in headless mode (no visible window)' },
 					{ flags: '--config <path>', description: 'Path to Argus config file' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus chrome start',
@@ -65,7 +66,7 @@ export const chromeCommands: readonly ArgusCommandDefinition[] = [
 				alias: 'list',
 				description: 'List running Chrome instances with CDP enabled',
 				options: [
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 					{ flags: '--pages', description: 'List individual pages for each instance' },
 				],
 				examples: ['argus chrome ls', 'argus chrome ls --pages', 'argus chrome ls --json --pages'],

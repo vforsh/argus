@@ -1,12 +1,13 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runLocateLabel, runLocateRole, runLocateText } from '../../commands/locate.js'
+import { jsonOption } from './sharedOptions.js'
 
 const sharedLocateOptions = [
 	{ flags: '--exact', description: 'Require an exact normalized text match' },
 	{ flags: '--all', description: 'Return all matches (default: error if >1 match)' },
 	{ flags: '--action <action>', description: 'Immediately run one action: click, fill, focus, hover' },
 	{ flags: '--value <text>', description: 'Fill value when used with --action fill' },
-	{ flags: '--json', description: 'Output JSON for automation' },
+	jsonOption,
 ] as const
 
 export const locateCommands: readonly ArgusCommandDefinition[] = [

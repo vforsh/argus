@@ -6,6 +6,7 @@ import { runDoctor } from '../../commands/doctor.js'
 import { runReload } from '../../commands/reload.js'
 import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 	{
@@ -13,7 +14,7 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 		alias: 'ls',
 		description: 'List watchers and Chrome instances',
 		options: [
-			{ flags: '--json', description: 'Output JSON for automation' },
+			jsonOption,
 			{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
 		],
 		examples: ['argus list', 'argus ls', 'argus list --json', 'argus list --by-cwd my-project'],
@@ -45,7 +46,7 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--inject <path>', description: 'Path to JavaScript file to inject on watcher attach' },
 			{ flags: '--artifacts <dir>', description: 'Artifacts base directory' },
 			{ flags: '--config <path>', description: 'Path to Argus config file' },
-			{ flags: '--json', description: 'Output JSON for automation' },
+			jsonOption,
 		],
 		examples: [
 			'argus start --id app --url localhost:3000',
@@ -78,7 +79,7 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 	{
 		name: 'doctor',
 		description: 'Run environment diagnostics for Argus',
-		options: [{ flags: '--json', description: 'Output JSON for automation' }],
+		options: [jsonOption],
 		examples: ['argus doctor', 'argus doctor --json'],
 		action: async (options) => {
 			await runDoctor(options)
@@ -90,7 +91,7 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 		arguments: [{ flags: '[id]', description: 'Watcher id to reload' }],
 		options: [
 			{ flags: '--ignore-cache', description: 'Bypass browser cache' },
-			{ flags: '--json', description: 'Output JSON for automation' },
+			jsonOption,
 		],
 		examples: ['argus reload app', 'argus reload app --ignore-cache', 'argus reload app --json'],
 		action: async (id, options) => {

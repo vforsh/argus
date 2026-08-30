@@ -11,6 +11,7 @@ import { runDomScrollTo } from '../../commands/domScrollTo.js'
 import { runDomModifyAttr, runDomModifyClass, runDomModifyStyle, runDomModifyText, runDomModifyHtml } from '../../commands/domModify.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
 import { domSelectorCommand } from './domCommandBuilder.js'
+import { jsonOption } from './sharedOptions.js'
 
 const textFilterOption = {
 	flags: '--text <string>',
@@ -38,7 +39,7 @@ const domModifyCommand: ArgusCommandDefinition = {
 				{ flags: '--remove <attrs...>', description: 'Attributes to remove' },
 				{ flags: '--all', description: 'Apply to all matches (default: error if >1 match)' },
 				textFilterOption,
-				{ flags: '--json', description: 'Output JSON for automation' },
+				jsonOption,
 			],
 			examples: [
 				'argus dom modify attr app --selector "#btn" disabled',
@@ -63,7 +64,7 @@ const domModifyCommand: ArgusCommandDefinition = {
 				{ flags: '--toggle <classes...>', description: 'Classes to toggle' },
 				{ flags: '--all', description: 'Apply to all matches (default: error if >1 match)' },
 				textFilterOption,
-				{ flags: '--json', description: 'Output JSON for automation' },
+				jsonOption,
 			],
 			examples: [
 				'argus dom modify class app --selector "#btn" --add active highlighted',
@@ -87,7 +88,7 @@ const domModifyCommand: ArgusCommandDefinition = {
 				{ flags: '--remove <props...>', description: 'Style properties to remove' },
 				{ flags: '--all', description: 'Apply to all matches (default: error if >1 match)' },
 				textFilterOption,
-				{ flags: '--json', description: 'Output JSON for automation' },
+				jsonOption,
 			],
 			examples: [
 				'argus dom modify style app --selector "#btn" color=red font-size=14px',
@@ -108,7 +109,7 @@ const domModifyCommand: ArgusCommandDefinition = {
 				...modifyTargetOptions,
 				{ flags: '--all', description: 'Apply to all matches (default: error if >1 match)' },
 				{ flags: '--text-filter <string>', description: 'Filter by textContent (trimmed). Supports /regex/flags syntax' },
-				{ flags: '--json', description: 'Output JSON for automation' },
+				jsonOption,
 			],
 			examples: ['argus dom modify text app --selector "#msg" "Hello World"', 'argus dom modify text app --selector ".counter" --all "0"'],
 			action: async (id, text, options) => {
@@ -126,7 +127,7 @@ const domModifyCommand: ArgusCommandDefinition = {
 				...modifyTargetOptions,
 				{ flags: '--all', description: 'Apply to all matches (default: error if >1 match)' },
 				textFilterOption,
-				{ flags: '--json', description: 'Output JSON for automation' },
+				jsonOption,
 			],
 			examples: ['argus dom modify html app --selector "#container" "<p>New <strong>content</strong></p>"'],
 			action: async (id, html, options) => {
@@ -151,7 +152,7 @@ const addScriptCommand: ArgusCommandDefinition = {
 		{ flags: '--type <type>', description: 'Script type attribute (e.g. "module")' },
 		{ flags: '--id <id>', description: 'Script element id attribute' },
 		{ flags: '--target <el>', description: 'Append to "head" (default) or "body"' },
-		{ flags: '--json', description: 'Output JSON for automation' },
+		jsonOption,
 	],
 	examples: [
 		`argus dom add-script app "console.log('hello')"`,

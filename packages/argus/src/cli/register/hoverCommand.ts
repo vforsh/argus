@@ -1,6 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runDomHover } from '../../commands/domHover.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const hoverCommand: ArgusCommandDefinition = {
 	name: 'hover',
@@ -12,7 +13,7 @@ export const hoverCommand: ArgusCommandDefinition = {
 		{ flags: '--ref <elementRef>', description: 'Stable element ref from snapshot/locate output' },
 		{ flags: '--all', description: 'Allow multiple matches (default: error if >1 match)' },
 		{ flags: '--text <string>', description: 'Filter by textContent (trimmed). Supports /regex/flags syntax' },
-		{ flags: '--json', description: 'Output JSON for automation' },
+		jsonOption,
 	],
 	examples: [
 		'argus hover app --selector "#btn"',

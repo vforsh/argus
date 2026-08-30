@@ -8,6 +8,7 @@ import {
 	runAuthCookieSet,
 	runAuthExportCookies,
 } from '../../commands/authCookies.js'
+import { jsonOption } from './sharedOptions.js'
 
 const cookieScopeOptions: readonly ArgusCommandOption[] = [
 	{ flags: '--for-origin', description: 'Only include first-party cookies for the attached page origin' },
@@ -21,7 +22,7 @@ const cookieListOptions: readonly ArgusCommandOption[] = [
 	{ flags: '--http-only', description: 'Show only HttpOnly cookies' },
 	{ flags: '--secure', description: 'Show only Secure cookies' },
 	{ flags: '--show-values', description: 'Reveal raw cookie values instead of previews' },
-	{ flags: '--json', description: 'Output JSON for automation' },
+	jsonOption,
 ]
 
 export const authCommands: readonly ArgusCommandDefinition[] = [
@@ -71,7 +72,7 @@ export const authCommands: readonly ArgusCommandDefinition[] = [
 							{ flags: '--domain <domain>', description: 'Exact cookie domain', required: true },
 							{ flags: '--path <path>', description: 'Exact cookie path', required: true },
 							{ flags: '--show-value', description: 'Reveal the raw cookie value' },
-							{ flags: '--json', description: 'Output JSON for automation' },
+							jsonOption,
 						],
 						examples: [
 							'argus auth cookies get app session --domain .example.com --path /',
@@ -97,7 +98,7 @@ export const authCommands: readonly ArgusCommandDefinition[] = [
 							{ flags: '--same-site <mode>', description: 'Cookie SameSite mode: Strict, Lax, or None' },
 							{ flags: '--expires <value>', description: 'Expiry as Unix seconds or ISO timestamp' },
 							{ flags: '--session', description: 'Create a session cookie (cannot be combined with --expires)' },
-							{ flags: '--json', description: 'Output JSON for automation' },
+							jsonOption,
 						],
 						examples: [
 							'argus auth cookies set app session token123 --domain .example.com --path / --secure --http-only',
@@ -117,7 +118,7 @@ export const authCommands: readonly ArgusCommandDefinition[] = [
 						options: [
 							{ flags: '--domain <domain>', description: 'Exact cookie domain', required: true },
 							{ flags: '--path <path>', description: 'Exact cookie path', required: true },
-							{ flags: '--json', description: 'Output JSON for automation' },
+							jsonOption,
 						],
 						examples: [
 							'argus auth cookies delete app session --domain .example.com --path /',
@@ -138,7 +139,7 @@ export const authCommands: readonly ArgusCommandDefinition[] = [
 							{ flags: '--browser-context', description: 'Clear all cookies visible to the current browser context' },
 							{ flags: '--session-only', description: 'Only clear session cookies' },
 							{ flags: '--auth-only', description: 'Only clear auth-looking cookies' },
-							{ flags: '--json', description: 'Output JSON for automation' },
+							jsonOption,
 						],
 						examples: [
 							'argus auth cookies clear app --for-origin',
@@ -198,7 +199,7 @@ export const authCommands: readonly ArgusCommandDefinition[] = [
 				options: [
 					{ flags: '--in <path>', description: 'Read the auth snapshot from a file', required: true },
 					{ flags: '--url <url>', description: 'Override the final URL opened after hydration' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus auth load-state app --in auth.json',
@@ -220,7 +221,7 @@ export const authCommands: readonly ArgusCommandDefinition[] = [
 				options: [
 					{ flags: '--to <watcherId>', description: 'Target watcher id', required: true },
 					{ flags: '--url <url>', description: 'Override the final URL opened after hydration' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus auth clone extension-2 --to app',

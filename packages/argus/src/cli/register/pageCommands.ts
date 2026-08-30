@@ -5,11 +5,12 @@ import { runPageEmulationSet, runPageEmulationClear, runPageEmulationStatus } fr
 import { runPageShow, runPageHide } from '../../commands/pageVisibility.js'
 import { listPresetNames } from '../../emulation/devices.js'
 import { collectParam } from '../validation.js'
+import { jsonOption } from './sharedOptions.js'
 
 const cdpTargetOptions = [
 	{ flags: '--cdp <host:port>', description: 'CDP host:port' },
 	{ flags: '--id <watcherId>', description: 'Use chrome config from a registered watcher' },
-	{ flags: '--json', description: 'Output JSON for automation' },
+	jsonOption,
 ] as const
 
 const presetList = listPresetNames().join(', ')
@@ -33,7 +34,7 @@ const emulationCommand: ArgusCommandDefinition = {
 				{ flags: '--touch', description: 'Enable touch emulation' },
 				{ flags: '--no-touch', description: 'Disable touch emulation' },
 				{ flags: '--ua <string>', description: 'Override user-agent string' },
-				{ flags: '--json', description: 'Output JSON for automation' },
+				jsonOption,
 			],
 			configure: (command) => {
 				command.addHelpText(
@@ -49,7 +50,7 @@ const emulationCommand: ArgusCommandDefinition = {
 			name: 'clear',
 			description: 'Clear device emulation (restore defaults)',
 			arguments: [{ flags: '[id]', description: 'Watcher ID' }],
-			options: [{ flags: '--json', description: 'Output JSON for automation' }],
+			options: [jsonOption],
 			examples: ['argus page emulation clear app', 'argus page emu clear app --json'],
 			action: async (id, options) => {
 				await runPageEmulationClear(id, options)
@@ -59,7 +60,7 @@ const emulationCommand: ArgusCommandDefinition = {
 			name: 'status',
 			description: 'Show current emulation state',
 			arguments: [{ flags: '[id]', description: 'Watcher ID' }],
-			options: [{ flags: '--json', description: 'Output JSON for automation' }],
+			options: [jsonOption],
 			examples: ['argus page emulation status app', 'argus page emu status app --json'],
 			action: async (id, options) => {
 				await runPageEmulationStatus(id, options)
@@ -143,7 +144,7 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 				name: 'show',
 				description: 'Lock the attached page as shown+focused (unthrottles rAF/timers when window is covered)',
 				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
-				options: [{ flags: '--json', description: 'Output JSON for automation' }],
+				options: [jsonOption],
 				configure: (command) => {
 					command.addHelpText(
 						'after',
@@ -158,7 +159,7 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 				name: 'hide',
 				description: 'Release the visibility lock (restore default Chrome throttling behavior)',
 				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
-				options: [{ flags: '--json', description: 'Output JSON for automation' }],
+				options: [jsonOption],
 				examples: ['argus page hide app', 'argus page hide app --json'],
 				action: async (id, options) => {
 					await runPageHide(id, options)
@@ -178,7 +179,7 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 						defaultValue: [],
 					},
 					{ flags: '--params <a=b&c=d>', description: 'Update query params from string (overwrite semantics)' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus page reload ABCD1234',

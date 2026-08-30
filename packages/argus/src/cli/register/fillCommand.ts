@@ -1,6 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runDomFill } from '../../commands/domFill.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const fillCommand: ArgusCommandDefinition = {
 	name: 'fill',
@@ -20,7 +21,7 @@ export const fillCommand: ArgusCommandDefinition = {
 		{ flags: '--all', description: 'Allow multiple matches (default: error if >1 match)' },
 		{ flags: '--text <string>', description: 'Filter by textContent (trimmed). Supports /regex/flags syntax' },
 		{ flags: '--wait <duration>', description: 'Wait for selector to appear (e.g. 5s, 500ms)' },
-		{ flags: '--json', description: 'Output JSON for automation' },
+		jsonOption,
 	],
 	examples: [
 		'argus fill app --selector "#username" "Bob"',

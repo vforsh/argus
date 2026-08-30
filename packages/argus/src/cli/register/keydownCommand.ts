@@ -1,6 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runDomKeydown } from '../../commands/domKeydown.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const keydownCommand: ArgusCommandDefinition = {
 	name: 'keydown',
@@ -18,7 +19,7 @@ export const keydownCommand: ArgusCommandDefinition = {
 		{ flags: '--meta', description: 'Shortcut for --modifiers meta' },
 		{ flags: '--cmd', description: 'Alias for --meta' },
 		{ flags: '--print-event', description: 'Print resolved key/code/modifier event details' },
-		{ flags: '--json', description: 'Output JSON for automation' },
+		jsonOption,
 	],
 	examples: [
 		'argus keydown app --key Enter',

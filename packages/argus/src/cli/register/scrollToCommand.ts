@@ -1,6 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runDomScrollTo } from '../../commands/domScrollTo.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const scrollToCommand: ArgusCommandDefinition = {
 	name: 'scroll-to',
@@ -13,7 +14,7 @@ export const scrollToCommand: ArgusCommandDefinition = {
 		{ flags: '--by <x,y>', description: 'Scroll by delta (viewport or element)' },
 		{ flags: '--all', description: 'Allow multiple matches (default: error if >1 match)' },
 		{ flags: '--text <string>', description: 'Filter by textContent (trimmed). Supports /regex/flags syntax' },
-		{ flags: '--json', description: 'Output JSON for automation' },
+		jsonOption,
 	],
 	examples: [
 		'argus scroll-to app --selector "#footer"',

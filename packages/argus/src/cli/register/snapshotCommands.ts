@@ -2,6 +2,7 @@ import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runScreenshot } from '../../commands/screenshot.js'
 import { runSnapshot } from '../../commands/snapshot.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const snapshotCommands: readonly ArgusCommandDefinition[] = [
 	{
@@ -13,7 +14,7 @@ export const snapshotCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--selector <selector>', description: 'Optional CSS selector for element-only capture' },
 			{ flags: '--clip <x,y,width,height>', description: 'Viewport-relative rectangle crop in CSS pixels' },
 			{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
-			{ flags: '--json', description: 'Output JSON for automation' },
+			jsonOption,
 		],
 		examples: [
 			'argus screenshot app',
@@ -37,7 +38,7 @@ export const snapshotCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
 			{ flags: '--depth <n>', description: 'Max tree depth' },
 			{ flags: '-i, --interactive', description: 'Only show interactive elements (buttons, links, inputs, etc.)' },
-			{ flags: '--json', description: 'Output JSON for automation' },
+			jsonOption,
 		],
 		examples: [
 			'argus snapshot app',

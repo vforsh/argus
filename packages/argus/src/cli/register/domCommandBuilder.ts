@@ -1,5 +1,6 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
+import { jsonOption } from './sharedOptions.js'
 
 type DomCommandOptions = {
 	selector?: string
@@ -48,7 +49,7 @@ export const domSelectorCommand = (spec: DomSelectorCommandSpec): ArgusCommandDe
 		options.push({ flags: '--wait <duration>', description: 'Wait for selector to appear (e.g. 5s, 500ms)' })
 	}
 	options.push(...(spec.options ?? []))
-	options.push({ flags: '--json', description: 'Output JSON for automation' })
+	options.push(jsonOption)
 
 	return {
 		name: spec.name,

@@ -1,6 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runCodeDeminify, runCodeGrep, runCodeList, runCodeRead, runCodeStrings } from '../../commands/code.js'
 import { runCodeEdit } from '../../commands/codeEdit.js'
+import { jsonOption } from './sharedOptions.js'
 
 export const codeCommands: readonly ArgusCommandDefinition[] = [
 	{
@@ -13,7 +14,7 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 				arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 				options: [
 					{ flags: '--pattern <substring>', description: 'Case-insensitive substring filter over resource URLs' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: ['argus code ls playground', 'argus code ls playground --pattern index'],
 				action: async (id, options) => {
@@ -27,7 +28,7 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--id <watcherId>', description: 'Watcher id to query' },
 					{ flags: '--offset <n>', description: 'Zero-based line offset' },
 					{ flags: '--limit <n>', description: 'Max number of lines to return' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus code read http://127.0.0.1:3333/ --id playground',
@@ -44,7 +45,7 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--id <watcherId>', description: 'Watcher id to query' },
 					{ flags: '--url <substring>', description: 'Limit search to resource URLs containing this substring' },
 					{ flags: '--pretty', description: 'Render compact context snippets for human output' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus code grep playground --id playground',
@@ -60,7 +61,7 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 				arguments: [{ flags: '<url>', description: 'Runtime resource URL from `argus code ls`' }],
 				options: [
 					{ flags: '--id <watcherId>', description: 'Watcher id to query' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus code deminify http://127.0.0.1:3333/app.js --id playground',
@@ -79,7 +80,7 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--search <pattern>', description: 'Plain string or /regex/flags to find in the existing source' },
 					{ flags: '--replace <text>', description: 'Replacement text (required with --search)' },
 					{ flags: '--all', description: 'Replace all occurrences (with --search/--replace)' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus code edit http://127.0.0.1:3333/app.js --id playground --search "DEBUG=false" --replace "DEBUG=true"',
@@ -100,7 +101,7 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--kind <list>', description: 'Comma-separated kinds: url,key,identifier,message,other' },
 					{ flags: '--match <pattern>', description: 'Filter string values by plain text or /regex/flags pattern' },
 					{ flags: '--all', description: 'Include low-signal strings instead of only interesting ones' },
-					{ flags: '--json', description: 'Output JSON for automation' },
+					jsonOption,
 				],
 				examples: [
 					'argus code strings playground',

@@ -12,8 +12,7 @@ import { runExtensionUse } from '../../commands/extension/use.js'
 import { runExtensionDoctor } from '../../commands/extension/doctor.js'
 import { runExtensionTargets } from '../../commands/extension/targets.js'
 import { runExtensionSelect } from '../../commands/extension/select.js'
-
-const jsonOption = { flags: '--json', description: 'Output JSON for automation' } as const
+import { jsonOption } from './sharedOptions.js'
 
 const tabTargetOptions = [
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
