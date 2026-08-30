@@ -13,7 +13,6 @@ import type {
 	DomInfoResponse,
 	DomTreeResponse,
 	EvalResponse,
-	LogsResponse,
 	ScreenshotResponse,
 	StorageListResponse,
 	VisibilityResponse,
@@ -180,19 +179,24 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 		await page.click('[data-testid="btn-sourcemapped-log"]')
 		await page.click('[data-testid="btn-inline-mapped-log"]')
 
+		// `logs --json` emits the previewed event array itself, not the wrapped LogsResponse.
 		const read = async (match: string) => {
 			const { stdout } = await runCommand('bun', [BIN_PATH, 'logs', 'playground', '--json', '--match', match], { env })
-			const response = JSON.parse(stdout) as LogsResponse
-			expect(response.events.length).toBeGreaterThan(0)
-			return response.events.at(-1)!
+			const events = JSON.parse(stdout) as Array<{ text: string; file: string | null; line: number | null }>
+			expect(events.length).toBeGreaterThan(0)
+			return events.at(-1)!
 		}
 
 		// The bundle is served at `?v=abc123` with its map under /maps/ — `<script>.map` would 404.
+		// Line numbers are asserted too: a reformatted fixture would still resolve to the right file
+		// while silently pointing at the wrong line.
 		const mapped = await read('sourcemapped fixture log')
 		expect(mapped.file).toEndWith('/src/sourcemapped-fixture.ts')
+		expect(mapped.line).toBe(6)
 
 		const inline = await read('inline mapped fixture log')
 		expect(inline.file).toEndWith('/src/inline-fixture.ts')
+		expect(inline.line).toBe(4)
 	})
 
 	test('eval bundles local imports from --file', async () => {

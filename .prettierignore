@@ -2,3 +2,10 @@ node_modules
 dist
 coverage
 *.tsbuildinfo
+
+# Sourcemap fixtures: the committed .map files encode exact line/column positions in these
+# bundles, so reformatting them silently desyncs the mapping.
+playground/sourcemapped-app.js
+playground/inline-mapped-app.js
+playground/maps
+playground/src
