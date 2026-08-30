@@ -1,16 +1,30 @@
 import type {
-	ElementRef,
+	DomClickRequest,
+	DomClickResponse,
+	EvalRequest,
+	EvalResponse,
 	LogEvent,
 	LogEpoch,
 	LogLevel,
-	MouseButton,
+	NetClearResponse,
+	NetResponse,
 	NetworkRequestDetail,
-	NetworkRequestSummary,
-	RecordClipRegion,
-	RecordFormat,
-	ScreenshotClipRegion,
+	RecordRequest,
+	RecordStartRequest,
+	RecordStartResponse,
+	RecordStopRequest,
+	RecordStopResponse,
+	ReloadRequest,
+	ResponseData,
+	ScreenshotRequest,
+	ScreenshotResponse,
 	StatusResponse,
-	VisibilityLock,
+	TraceStartRequest,
+	TraceStartResponse,
+	TraceStopRequest,
+	TraceStopResponse,
+	VisibilityRequest,
+	VisibilityResponse,
 	WatcherRecord,
 } from '@vforsh/argus-core'
 
@@ -103,194 +117,72 @@ export type NetOptions = {
 }
 
 /** Network request summary results with pagination cursor. */
-export type NetResult = {
-	requests: NetworkRequestSummary[]
-	nextAfter: number
-}
+export type NetResult = ResponseData<NetResponse>
 
-/** Options for evaluating a JS expression in the connected page. */
-export type EvalOptions = {
-	/** JS expression to execute. */
-	expression: string
-	/** String-only values exposed to the expression as `args`. */
-	args?: Record<string, string>
-	/** Await promises before returning. Defaults to true. */
-	awaitPromise?: boolean
-	/**
-	 * Enable Chrome's REPL mode for console-style evaluation.
-	 * Defaults to true and allows native top-level `await`.
-	 */
-	replMode?: boolean
-	/** Command timeout in milliseconds. */
-	timeoutMs?: number
-	/** Return by value when possible. Defaults to true. */
-	returnByValue?: boolean
-	/**
-	 * Serialize the result inside the page and return that JSON string as `result`,
-	 * wrapped as `{"v":<value>}`. Defaults to false.
-	 *
-	 * Prefer {@link ArgusClient.evalValue}, which sets this and parses the envelope
-	 * for you. See {@link EvalValueOptions.jsonValue} for why the mode exists.
-	 */
-	jsonValue?: boolean
-	/** Install the temporary host bridge expected by bundled Argus scenario code. */
-	scenario?: boolean
-}
+/**
+ * Options for evaluating a JS expression in the connected page.
+ *
+ * This *is* the POST /eval body — it is sent verbatim — so it aliases the protocol
+ * request type rather than restating it.
+ */
+export type EvalOptions = EvalRequest
 
 /** Result of a remote evaluation. */
-export type EvalResult = {
-	result: unknown
-	type: string | null
-	exception: { text: string; details?: unknown } | null
-}
+export type EvalResult = ResponseData<EvalResponse>
 
 /** Options for starting a Chrome trace. */
-export type TraceStartOptions = {
-	outFile?: string
-	categories?: string
-	options?: string
-}
+export type TraceStartOptions = TraceStartRequest
 
 /** Trace start result metadata. */
-export type TraceStartResult = {
-	traceId: string
-	sessionName: string
-	outFile: string
-}
+export type TraceStartResult = ResponseData<TraceStartResponse>
 
 /** Options for stopping an active trace. */
-export type TraceStopOptions = {
-	traceId?: string
-	outFile?: string
-}
+export type TraceStopOptions = TraceStopRequest
 
 /** Trace stop result metadata. */
-export type TraceStopResult = {
-	sessionName: string
-	outFile: string
-	eventCount: number
-	durationMs: number
-}
+export type TraceStopResult = ResponseData<TraceStopResponse>
 
 /** Options for capturing a screenshot. */
-export type ScreenshotOptions = {
-	outFile?: string
-	selector?: string
-	/** Viewport-relative crop rectangle in CSS pixels. Mutually exclusive with `selector`. */
-	clip?: ScreenshotClipRegion
-	format?: 'png'
-}
+export type ScreenshotOptions = ScreenshotRequest
 
 /** Screenshot result metadata. */
-export type ScreenshotResult = {
-	outFile: string
-	clipped: boolean
-}
+export type ScreenshotResult = ResponseData<ScreenshotResponse>
 
 /** Options for clicking in the connected page. Mirrors CLI `argus click` semantics. */
-export type DomClickOptions = {
-	/** CSS selector to match element(s). */
-	selector?: string
-	/** Stable element ref to click. Mutually exclusive with `selector`. */
-	ref?: ElementRef
-	/** Allow multiple matches. If false and >1 match, the watcher errors. Defaults to false. */
-	all?: boolean
-	/** Viewport x-coordinate, or x-offset from element top-left when `selector` is set. */
-	x?: number
-	/** Viewport y-coordinate, or y-offset from element top-left when `selector` is set. */
-	y?: number
-	/** Mouse button to click. Defaults to 'left'. */
-	button?: MouseButton
-	/** Filter elements by trimmed textContent. Plain string = exact match, `/regex/flags` = regex test. */
-	text?: string
-	/** Wait up to this many ms for the selector to appear before clicking. */
-	wait?: number
-}
+export type DomClickOptions = DomClickRequest
 
 /** Result of a click, reporting selector matches separately from actual clicks. */
-export type DomClickResult = {
-	/** Number of elements matched by the selector. */
-	matches: number
-	/** Number of elements actually clicked. */
-	clicked: number
-}
+export type DomClickResult = ResponseData<DomClickResponse>
 
 /** Result of clearing the watcher's buffered network log. */
-export type NetClearResult = {
-	/** Number of buffered requests removed. */
-	cleared: number
-}
+export type NetClearResult = ResponseData<NetClearResponse>
 
 /** Options for the page visibility lock. */
-export type VisibilityOptions = {
-	/** `show` locks the page shown+focused; `hide` releases the lock. */
-	action: 'show' | 'hide'
-}
+export type VisibilityOptions = VisibilityRequest
 
 /**
  * Visibility lock result. The desired lock is sticky across detach/reattach:
  * the watcher remembers it and re-applies on the next attach when `attached` is false.
  */
-export type VisibilityResult = {
-	/** Whether the watcher was attached to a CDP target at response time. */
-	attached: boolean
-	/** Current desired visibility lock. */
-	state: VisibilityLock
-}
+export type VisibilityResult = ResponseData<VisibilityResponse>
 
 /** Options for reloading the connected page. */
-export type ReloadOptions = {
-	/** Bypass the browser cache. Defaults to false. */
-	ignoreCache?: boolean
-}
+export type ReloadOptions = ReloadRequest
 
 /** Shared options for video recording requests. */
-export type RecordOptions = {
-	/** Destination path on the watcher host. Extension may determine `format`. */
-	outFile?: string
-	/** Record only the element matched by this CSS selector. Mutually exclusive with `clip`. */
-	selector?: string
-	/** Viewport-relative crop rectangle in CSS pixels. Mutually exclusive with `selector`. */
-	clip?: RecordClipRegion
-	/** Output frames per second (1-60). Defaults to 30. */
-	fps?: number
-	/** Output container. Defaults to mp4 unless inferred from the `outFile` extension. */
-	format?: RecordFormat
-}
+export type RecordOptions = RecordStartRequest
 
 /** Options for a fixed-duration one-shot recording. */
-export type RecordCaptureOptions = RecordOptions & {
-	/** Capture duration in milliseconds. Must be greater than 0. */
-	durationMs: number
-}
+export type RecordCaptureOptions = RecordRequest
 
 /** Metadata returned when a recording starts. */
-export type RecordStartResult = {
-	/** Handle for the active recording, accepted by `recordStop`. */
-	recordId: string
-	sessionName: string
-	outFile: string
-	format: RecordFormat
-	fps: number
-	/** Whether a `selector` or `clip` crop was applied. */
-	clipped: boolean
-}
+export type RecordStartResult = ResponseData<RecordStartResponse>
 
 /** Metadata returned when a recording is finalized. */
-export type RecordStopResult = RecordStartResult & {
-	/** Number of frames written to `outFile`. */
-	frameCount: number
-	/** Wall-clock capture duration in milliseconds. */
-	durationMs: number
-}
+export type RecordStopResult = ResponseData<RecordStopResponse>
 
 /** Options for stopping an active recording. */
-export type RecordStopOptions = {
-	/** Recording to stop. Defaults to the watcher's active recording. */
-	recordId?: string
-	/** Move the finalized file to this path before returning. */
-	outFile?: string
-}
+export type RecordStopOptions = RecordStopRequest
 
 /**
  * Options for {@link ArgusClient.evalValue}.

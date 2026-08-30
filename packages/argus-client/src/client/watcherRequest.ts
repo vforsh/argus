@@ -1,4 +1,4 @@
-import type { WatcherRecord } from '@vforsh/argus-core'
+import type { WatcherRecord, ResponseData } from '@vforsh/argus-core'
 import { isHttpResponseError } from '@vforsh/argus-core'
 import type { HttpOptions } from '../http/fetchJson.js'
 import { fetchJson } from '../http/fetchJson.js'
@@ -69,4 +69,21 @@ const formatUnknownError = (error: unknown): string => {
 		return error.message
 	}
 	return String(error)
+}
+
+/**
+ * Issue a watcher request and return the response payload without its `ok` discriminant.
+ *
+ * SDK methods throw on failure, so the caller already knows `ok` was `true`; stripping it
+ * here means a method never has to re-list the response fields to drop one of them, and a
+ * new protocol field reaches callers without touching the method.
+ */
+export const requestWatcherData = async <T extends { ok: true }>(
+	context: RegistryContext,
+	watcherId: string,
+	options: WatcherRequestOptions,
+): Promise<ResponseData<T>> => {
+	const { data } = await requestWatcher<T>(context, watcherId, options)
+	const { ok: _ok, ...rest } = data
+	return rest
 }
