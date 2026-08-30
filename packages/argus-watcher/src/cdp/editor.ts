@@ -49,12 +49,48 @@ export type RuntimeEditor = {
 	read: (options: { url: string; offset?: number; limit?: number }) => Promise<CodeReadResponse>
 	grep: (options: { pattern: string; urlPattern?: string }) => Promise<CodeGrepResponse>
 	edit: (options: { url: string; source: string }) => Promise<CodeEditResponse>
+	/**
+	 * The page navigated: drop the inventory, keep the enable.
+	 *
+	 * Deliberately leaves the editor enabled and its listeners bound. CDP domains and their event
+	 * subscriptions survive a navigation on the same target, so the new document's `scriptParsed` and
+	 * `styleSheetAdded` events repopulate the inventory through the listeners that are already there.
+	 */
 	reset: () => void
+	/**
+	 * The watcher (re)attached: the old connection is gone.
+	 *
+	 * Unbinds the listeners (their subscriptions died with the old session), drops the inventory, and
+	 * clears `enabled` so the next command enables the domains again on the new target.
+	 */
 	rebind: () => void
 }
 
 /**
  * Runtime JS/CSS inspector backed by CDP Debugger + CSS domains.
+ *
+ * **Lifecycle.** Four pieces of state, and the reason each exists:
+ *
+ * - `scripts` / `stylesheets` / `sources` — the inventory. Never fetched; it is assembled purely
+ *   from CDP events, and `sources` caches text per resource handle.
+ * - `enabled` — the three domains are on *for the current CDP connection* and the inventory has
+ *   settled. Enabling is lazy: nothing here runs until an `argus code` command asks, because
+ *   `Debugger.enable` is not free for a page the watcher is only meant to be observing.
+ * - `enabling` — the in-flight enable, so two concurrent commands share one round-trip instead of
+ *   racing two `Debugger.enable` calls.
+ * - `listenersBound` / `listenerDisposers` — whether the three event subscriptions exist on this
+ *   session handle. Bound on the first `ensureEnabled`, and only torn down by {@link RuntimeEditor.rebind}.
+ *
+ * **The quiet period.** `*.enable` makes Chrome replay every already-parsed script and stylesheet,
+ * with no "that's all" marker. `waitForResourceQuietPeriod` therefore treats 100 ms without a
+ * resource event as the end of the replay, which is what makes the first `list()` complete rather
+ * than a snapshot of however much had arrived. Every later resource event also touches that timer,
+ * so a command issued mid-navigation waits for the new document to settle too.
+ *
+ * **Where this breaks.** `reset()` keeping `enabled === true` reads like a bug until you know
+ * domains survive navigation — change it to `false` and every navigation pays a redundant
+ * three-command enable. Conversely `rebind()` *must* clear it: the flag describes a connection, not
+ * a page. Both hooks are called from `startWatcherRuntime`, on `onPageNavigation` and `onAttach`.
  */
 export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor => {
 	const scripts = new Map<string, RuntimeResource>()
@@ -339,6 +375,7 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 		}
 	}
 
+	/** Resolve once {@link QUIET_PERIOD_MS} passes with no resource event. See the lifecycle note above. */
 	function waitForResourceQuietPeriod(): Promise<void> {
 		return new Promise((resolve) => {
 			settleResolvers.add(resolve)
@@ -346,6 +383,7 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 		})
 	}
 
+	/** Restart the quiet-period timer. Called by every resource event, so the window slides. */
 	function touchResources(): void {
 		if (settleTimer) {
 			clearTimeout(settleTimer)
@@ -359,6 +397,7 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 		}, QUIET_PERIOD_MS)
 	}
 
+	/** Drop the inventory and release anyone mid-`ensureEnabled`, so a navigation cannot strand a wait. */
 	function resetState(): void {
 		clearResourceState()
 		if (settleTimer) {
