@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { formatError } from '../cli/parse.js'
 
 export type ConfigInitOptions = {
 	path?: string
@@ -45,7 +46,7 @@ const ensureParentDir = async (filePath: string): Promise<boolean> => {
 		await fs.mkdir(dir, { recursive: true })
 		return true
 	} catch (error) {
-		console.error(`Failed to create config directory ${dir}: ${error instanceof Error ? error.message : String(error)}`)
+		console.error(`Failed to create config directory ${dir}: ${formatError(error)}`)
 		process.exitCode = 2
 		return false
 	}
@@ -61,7 +62,7 @@ const writeConfigFile = async (filePath: string, contents: string, force?: boole
 			process.exitCode = 2
 			return false
 		}
-		console.error(`Failed to write config at ${filePath}: ${error instanceof Error ? error.message : String(error)}`)
+		console.error(`Failed to write config at ${filePath}: ${formatError(error)}`)
 		process.exitCode = 2
 		return false
 	}
@@ -77,7 +78,7 @@ const ensureSchemaFile = async (schemaPath: string): Promise<boolean> => {
 		}
 		return true
 	} catch (error) {
-		console.error(`Schema not found at ${schemaPath}: ${error instanceof Error ? error.message : String(error)}`)
+		console.error(`Schema not found at ${schemaPath}: ${formatError(error)}`)
 		process.exitCode = 2
 		return false
 	}

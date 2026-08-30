@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { usageError } from './cliArgs.js'
 import type { Output } from './sheetCommandUtils.js'
+import { formatError } from '@vforsh/argus-core'
 
 export type BatchOperation =
 	| {
@@ -34,7 +35,7 @@ export const loadBatchOperations = async (
 		const text = options.file ? await readFile(options.file, 'utf8') : await readStdin()
 		parsed = JSON.parse(text)
 	} catch (error) {
-		return usageError(output, `Failed to read batch JSON: ${error instanceof Error ? error.message : String(error)}`)
+		return usageError(output, `Failed to read batch JSON: ${formatError(error)}`)
 	}
 
 	if (!Array.isArray(parsed)) return usageError(output, 'Batch JSON must be an array')

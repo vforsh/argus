@@ -8,6 +8,7 @@ import {
 	type AuthStateSnapshot,
 	type AuthStateSnapshotMetadata,
 } from '../protocol/http/auth.js'
+import { formatError } from '../errorMessage.js'
 
 /**
  * Transport-agnostic driver for replaying an auth snapshot into a browser tab.
@@ -276,6 +277,6 @@ export const authStateLoadRequestSchema = defineProtocolSchema<AuthStateLoadRequ
 		const snapshot = parseAuthStateSnapshot(value.snapshot, 'auth state snapshot')
 		return validProtocolPayload(value.url === undefined ? { snapshot } : { snapshot, url: value.url })
 	} catch (error) {
-		return invalidProtocolPayload(error instanceof Error ? error.message : String(error))
+		return invalidProtocolPayload(formatError(error))
 	}
 })

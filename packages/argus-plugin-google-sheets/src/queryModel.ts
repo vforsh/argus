@@ -1,5 +1,6 @@
 import { indexToColumnLetters } from './a1.js'
 import { resolveHeader, type SheetHeader, type SheetSchema } from './schema.js'
+import { formatError } from '@vforsh/argus-core'
 
 /** Supported query predicate. */
 export type QueryPredicate =
@@ -144,7 +145,7 @@ const parseRegex = (value: string): { source: string; flags: string } | string =
 		new RegExp(source, flags)
 		return { source, flags }
 	} catch (error) {
-		return `Invalid regex: ${error instanceof Error ? error.message : String(error)}`
+		return `Invalid regex: ${formatError(error)}`
 	}
 }
 

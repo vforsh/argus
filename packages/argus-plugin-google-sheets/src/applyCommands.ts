@@ -15,6 +15,7 @@ import { buildReadCsvExpression, type SheetCsvResult } from './sheetDataPageScri
 import { evalInWatcher, renewSheetLease, runSheetCommand, switchSheetTarget, type Output, withSheetLease } from './sheetCommandUtils.js'
 import { clearTypedRange, setTypedRange, type TypedMutationResult } from './typedMutationRuntime.js'
 import { compareTypedMatrix, shiftedRawValueMatches, type RawCellValue } from './typedValues.js'
+import { formatError } from '@vforsh/argus-core'
 
 type ApplyOptions = {
 	json?: boolean
@@ -105,7 +106,7 @@ const runApply = (ctx: ArgusPluginContextV1, id: string | undefined, options: Ap
 				}
 			} catch (error) {
 				// The planner and executor signal preflight and step failures by throwing.
-				return runtimeError(output, error instanceof Error ? error.message : String(error))
+				return runtimeError(output, formatError(error))
 			}
 		},
 		formatHuman: (payload, output) => writeApplyHuman(output, payload),
@@ -209,7 +210,7 @@ const executePlan = async (
 		return { journal }
 	} catch (error) {
 		journal.status = completed.length > 0 ? 'partial' : 'failed'
-		journal.failure = error instanceof Error ? error.message : String(error)
+		journal.failure = formatError(error)
 		const rollbackSteps = attempted ? [...completed, await captureAttemptedState(adapter, attempted)] : completed
 		await persistJournal(journalPath, rollbackPath, journal, rollbackSteps)
 		throw new Error(`${journal.failure} Partial journal: ${journalPath}; rollback manifest: ${rollbackPath}.`)
@@ -324,7 +325,7 @@ const loadManifest = async (options: ApplyOptions, output: Output): Promise<Shee
 		}
 		return parsed
 	} catch (error) {
-		usageError(output, `Failed to load manifest: ${error instanceof Error ? error.message : String(error)}`)
+		usageError(output, `Failed to load manifest: ${formatError(error)}`)
 		return null
 	}
 }

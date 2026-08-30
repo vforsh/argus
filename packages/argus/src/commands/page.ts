@@ -188,7 +188,7 @@ const reloadTarget = async (target: ChromeTargetResponse, context: ReloadContext
 		try {
 			await sendCdpCommand(target.webSocketDebuggerUrl, { id: 1, method: 'Page.reload' })
 		} catch (error) {
-			output.writeWarn(`Failed to reload target ${target.id}: ${error instanceof Error ? error.message : error}`)
+			output.writeWarn(`Failed to reload target ${target.id}: ${formatError(error)}`)
 			process.exitCode = 1
 			return
 		}
@@ -217,7 +217,7 @@ const reloadTarget = async (target: ChromeTargetResponse, context: ReloadContext
 	try {
 		parsedUrl = new URL(target.url)
 	} catch (error) {
-		output.writeWarn(`Invalid target URL "${target.url}": ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Invalid target URL "${target.url}": ${formatError(error)}`)
 		process.exitCode = 2
 		return
 	}
@@ -253,7 +253,7 @@ const reloadTarget = async (target: ChromeTargetResponse, context: ReloadContext
 	try {
 		await sendCdpCommand(target.webSocketDebuggerUrl, { id: 1, method: 'Page.navigate', params: { url: nextUrl } })
 	} catch (error) {
-		output.writeWarn(`Failed to navigate target ${target.id}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to navigate target ${target.id}: ${formatError(error)}`)
 		process.exitCode = 1
 		return
 	}

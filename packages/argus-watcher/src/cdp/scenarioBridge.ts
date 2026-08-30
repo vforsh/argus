@@ -3,6 +3,7 @@ import { LOG_LEVELS, type ArgusScenarioLogsResult, type ArgusScenarioScreenshotO
 import type { LogBuffer, LogFilters } from '../buffer/LogBuffer.js'
 import type { Screenshotter } from './screenshot.js'
 import type { CdpEventMeta, CdpSessionHandle } from './connection.js'
+import { formatError } from '@vforsh/argus-core'
 
 const SCENARIO_ACTION_TIMEOUT_MS = 30_000
 const DEFAULT_LOG_LIMIT = 500
@@ -362,4 +363,3 @@ const buildScenarioExpression = (
   }
 })()`
 
-const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error))

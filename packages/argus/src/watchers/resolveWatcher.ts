@@ -3,6 +3,7 @@ import { describeProtocolMismatch } from '@vforsh/argus-core'
 import type { StatusResponse } from '@vforsh/argus-core'
 import { pruneRegistry } from '../registry.js'
 import { fetchWatcherJson } from './requestWatcher.js'
+import { formatError } from '../cli/parse.js'
 
 export type ResolveWatcherInput = {
 	id?: string
@@ -17,7 +18,7 @@ export const resolveWatcher = async (input: ResolveWatcherInput): Promise<Resolv
 	try {
 		registry = await pruneRegistry()
 	} catch (error) {
-		return { ok: false, error: `Failed to load registry: ${error instanceof Error ? error.message : error}`, exitCode: 1 }
+		return { ok: false, error: `Failed to load registry: ${formatError(error)}`, exitCode: 1 }
 	}
 
 	const watchers = Object.values(registry.watchers)
@@ -68,6 +69,6 @@ const checkWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; s
 		}
 		return { ok: true, status }
 	} catch (error) {
-		return { ok: false, error: error instanceof Error ? error.message : String(error) }
+		return { ok: false, error: formatError(error) }
 	}
 }

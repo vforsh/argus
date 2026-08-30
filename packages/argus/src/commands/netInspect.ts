@@ -6,6 +6,7 @@ import { resolveWatcherOrExit, writeErrorResponse } from '../watchers/requestWat
 import { appendNetCommandParams } from './netShared.js'
 import { captureNetWindow, parseNetCaptureOptions, type NetCaptureOptions } from './netCapture.js'
 import { fetchNetRequestBody, fetchNetRequestDetail, fetchNetRequestSummaries } from './netRequestClient.js'
+import { formatError } from '../cli/parse.js'
 
 export type NetInspectOptions = NetCaptureOptions & {
 	request?: boolean
@@ -63,7 +64,7 @@ export const runNetInspect = async (id: string | undefined, pattern: string, opt
 
 	const captureStartedAt = Date.now()
 	const captured = await captureNetWindow(resolved.watcher, buildInspectSettleFilters(options), captureOptions.value).catch((error) => {
-		output.writeWarn(`${resolved.watcher.id}: failed to inspect network (${error instanceof Error ? error.message : String(error)})`)
+		output.writeWarn(`${resolved.watcher.id}: failed to inspect network (${formatError(error)})`)
 		process.exitCode = 1
 		return null
 	})

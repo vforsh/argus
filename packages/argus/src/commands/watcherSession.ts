@@ -4,6 +4,7 @@ import type { Output } from '../output/io.js'
 import type { WatcherInjectConfig } from '../config/types.js'
 import { resolvePath } from '../utils/paths.js'
 import { resolveInjectScript } from './startShared.js'
+import { formatError } from '../cli/parse.js'
 
 export type StartManagedWatcherOptions = {
 	output: Output
@@ -52,7 +53,7 @@ export const startManagedWatcher = async (options: StartManagedWatcherOptions): 
 			inject: inject ?? undefined,
 		})
 	} catch (error) {
-		output.writeWarn(`Failed to start watcher: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to start watcher: ${formatError(error)}`)
 		process.exitCode = 1
 		return null
 	}

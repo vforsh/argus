@@ -1,6 +1,7 @@
 import { codedError } from '../errors.js'
 import type { NetRequestBodyPart, NetworkRequestDetail } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
+import { formatError } from '@vforsh/argus-core'
 
 export type ReadNetworkBodyResult = {
 	body: string
@@ -48,7 +49,7 @@ export const readNetworkBody = async (options: {
 }
 
 export const normalizeNetBodyError = (error: unknown, part: NetRequestBodyPart): Error => {
-	const message = unwrapNetBodyErrorMessage(error instanceof Error ? error.message : String(error))
+	const message = unwrapNetBodyErrorMessage(formatError(error))
 	if (isMissingNetBodyError(message)) {
 		return codedError('body_not_available', `${capitalizePart(part)} body not available for this request`)
 	}

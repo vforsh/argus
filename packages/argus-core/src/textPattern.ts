@@ -1,3 +1,4 @@
+import { formatError } from './errorMessage.js'
 export type TextPattern = { type: 'exact'; value: string } | { type: 'regex'; regex: RegExp }
 
 const REGEX_PATTERN = /^\/(.+)\/([imsu]*)$/
@@ -15,7 +16,7 @@ export const parseTextPattern = (text: string): TextPattern => {
 	try {
 		return { type: 'regex', regex: new RegExp(pattern!, flags) }
 	} catch (error) {
-		const msg = error instanceof Error ? error.message : String(error)
+		const msg = formatError(error)
 		throw new Error(`Invalid regex pattern "${text}": ${msg}`)
 	}
 }

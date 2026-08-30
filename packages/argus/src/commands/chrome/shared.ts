@@ -5,6 +5,7 @@ import { resolveCdpEndpoint } from '../../cdp/resolveCdpEndpoint.js'
 import { fetchJson } from '../../httpClient.js'
 import type { Output } from '../../output/io.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
+import { formatError } from '../../cli/parse.js'
 
 export type ChromeEndpointOptions = CdpEndpointOptions
 
@@ -43,7 +44,7 @@ export const loadChromeVersion = async (endpoint: { host: string; port: number }
 	try {
 		return await fetchJson<ChromeVersionResponse>(`http://${endpoint.host}:${endpoint.port}/json/version`)
 	} catch (error) {
-		output.writeWarn(`Failed to connect to Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to connect to Chrome at ${endpoint.host}:${endpoint.port}: ${formatError(error)}`)
 		process.exitCode = 1
 		return null
 	}
@@ -53,7 +54,7 @@ export const loadChromeTargets = async (endpoint: { host: string; port: number }
 	try {
 		return await fetchJson<ChromeTargetResponse[]>(`http://${endpoint.host}:${endpoint.port}/json/list`)
 	} catch (error) {
-		output.writeWarn(`Failed to load targets from ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to load targets from ${endpoint.host}:${endpoint.port}: ${formatError(error)}`)
 		process.exitCode = 1
 		return null
 	}

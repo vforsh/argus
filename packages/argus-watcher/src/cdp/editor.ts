@@ -12,6 +12,7 @@ import {
 	type CodeResourceType,
 } from '@vforsh/argus-core'
 import type { CdpEventMeta, CdpSessionHandle } from './connection.js'
+import { formatError } from '@vforsh/argus-core'
 
 type RuntimeResource = {
 	type: CodeResourceType
@@ -421,7 +422,7 @@ async function editScript(session: CdpSessionHandle, resource: RuntimeResource, 
 	try {
 		result = await session.sendAndWait('Debugger.setScriptSource', { scriptId: resource.id, scriptSource: source }, getSessionOptions(resource))
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = formatError(error)
 		if (/setScriptSource.*no longer available/i.test(message)) {
 			throw new Error(
 				'Live JS editing is not supported in Chrome 145+. Use `argus eval` to modify runtime state, or `argus code edit` on stylesheets.',
@@ -454,7 +455,7 @@ const assertScriptEditAccepted = (result: CdpResult<'Debugger.setScriptSource'>)
 }
 
 const getStaleResourceReason = (resource: RuntimeResource, error: unknown): string | null => {
-	const message = error instanceof Error ? error.message : String(error)
+	const message = formatError(error)
 	if (resource.type === 'stylesheet' && /No style sheet with given id found/i.test(message)) {
 		return message
 	}

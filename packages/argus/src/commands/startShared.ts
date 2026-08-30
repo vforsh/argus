@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import type { WatcherMatch } from '@vforsh/argus-core'
 import type { WatcherInjectConfig } from '../config/types.js'
 import { resolvePath } from '../utils/paths.js'
+import { formatError } from '../cli/parse.js'
 
 type WarningOutput = {
 	writeWarn: (message: string) => void
@@ -35,7 +36,7 @@ export const resolveInjectScript = async (
 		script = await fs.readFile(resolvedPath, 'utf8')
 	} catch (error) {
 		output.writeWarn(
-			`Failed to read inject script at ${resolvedPath}: ${error instanceof Error ? error.message : String(error)}. Skipping injection.`,
+			`Failed to read inject script at ${resolvedPath}: ${formatError(error)}. Skipping injection.`,
 		)
 		return undefined
 	}

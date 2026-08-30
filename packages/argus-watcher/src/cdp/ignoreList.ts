@@ -1,3 +1,4 @@
+import { formatError } from '@vforsh/argus-core'
 const DEFAULT_PATTERNS = ['node_modules', '^node:', '^chrome-extension:']
 
 export type IgnoreMatcher = {
@@ -24,7 +25,7 @@ const compileRule = (pattern: string): RegExp => {
 	try {
 		return new RegExp(pattern)
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = formatError(error)
 		throw new Error(`Invalid ignoreList regex: ${pattern} (${message})`)
 	}
 }

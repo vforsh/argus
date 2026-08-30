@@ -1,5 +1,6 @@
 import type { IgnoreMatcher } from './ignoreList.js'
 import type { LogEvent, WatcherMatch, WatcherChrome } from '@vforsh/argus-core'
+import { formatError } from '@vforsh/argus-core'
 import { createCdpSessionHandle } from './connection.js'
 import type { CdpSessionController, CdpSessionHandle } from './connection.js'
 import { fetchPageIntl, type PageIntlInfo, toConsoleEvent, toExceptionEvent } from './watcherEvents.js'
@@ -197,14 +198,3 @@ const createSystemLog = (message: string): Omit<LogEvent, 'id'> => ({
 	source: 'system',
 })
 
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'Unknown error'
-	}
-
-	if (error instanceof Error) {
-		return error.message
-	}
-
-	return String(error)
-}

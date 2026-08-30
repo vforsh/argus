@@ -1,5 +1,6 @@
 import type { EvalResponse, WatcherRecord } from '@vforsh/argus-core'
 import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/requestWatcher.js'
+import { formatError } from '../cli/parse.js'
 
 const DEFAULT_EVAL_REQUEST_TIMEOUT_MS = 10_000
 const MIN_SUGGESTED_TIMEOUT_MS = 60_000
@@ -84,7 +85,7 @@ export const formatEvalTransportError = (watcher: Pick<WatcherRecord, 'id'>, err
 }
 
 const isTimeoutError = (error: unknown): boolean => {
-	const message = error instanceof Error ? error.message : String(error)
+	const message = formatError(error)
 	return /timed out|timeout/i.test(message)
 }
 

@@ -1,16 +1,6 @@
 import type { WatcherRecord } from '../registry/types.js'
 import { isHttpResponseError, isHttpTimeoutError } from './fetch.js'
-
-/** Extract an error message from an unknown thrown value. */
-export const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}
+import { formatError } from '../errorMessage.js'
 
 /** Build the URL for a watcher endpoint. */
 export const buildWatcherUrl = (watcher: Pick<WatcherRecord, 'host' | 'port'>, path: string, query?: URLSearchParams): string => {

@@ -31,6 +31,7 @@ import type {
 	PopupWatcherStatus,
 } from './popup-protocol.js'
 import type { ControlDiagnostics, TabInfo } from '../types/messages.js'
+import { formatError } from '@vforsh/argus-core/error-message'
 
 const debuggerManager = new DebuggerManager()
 const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
@@ -155,7 +156,7 @@ async function attachTabFromControl(tabId: number, options: TabBridgeSessionOpti
 
 		return { ok: true, tab, watcherId: session.getWatcherInfo()?.watcherId }
 	} catch (error) {
-		return { ok: false, error: error instanceof Error ? error.message : String(error) }
+		return { ok: false, error: formatError(error) }
 	}
 }
 
@@ -172,7 +173,7 @@ async function detachTabFromControl(tabId: number): Promise<TabActionResult> {
 
 		return { ok: true, tab }
 	} catch (error) {
-		return { ok: false, error: error instanceof Error ? error.message : String(error) }
+		return { ok: false, error: formatError(error) }
 	}
 }
 

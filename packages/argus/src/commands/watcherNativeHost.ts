@@ -7,6 +7,7 @@
  */
 
 import { startWatcher, type WatcherHandle } from '@vforsh/argus-watcher'
+import { formatError } from '../cli/parse.js'
 
 export type NativeHostOptions = {
 	id?: string
@@ -35,7 +36,7 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 		})
 	} catch (error) {
 		// Write error to stderr (Native Messaging reads stdout only)
-		console.error(`Failed to start watcher: ${error instanceof Error ? error.message : error}`)
+		console.error(`Failed to start watcher: ${formatError(error)}`)
 		process.exit(1)
 	}
 

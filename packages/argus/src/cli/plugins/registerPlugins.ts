@@ -11,6 +11,7 @@ import { getGlobalArgusConfigPath } from '../../config/argusHome.js'
 import { createOutput } from '../../output/io.js'
 import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from './pluginAliases.js'
 import { createPluginHost } from './pluginHost.js'
+import { formatError } from '../parse.js'
 
 type PluginSource = 'global-config' | 'config' | 'env' | 'cli'
 
@@ -146,7 +147,7 @@ const resolvePluginModuleUrl = (specifier: string, baseDirs: string[]): { ok: tr
 				}
 				errors.push(`${baseDir}: ${resolvedPath} does not exist`)
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error)
+				const msg = formatError(error)
 				errors.push(`${baseDir}: ${msg}`)
 			}
 		}
@@ -158,7 +159,7 @@ const resolvePluginModuleUrl = (specifier: string, baseDirs: string[]): { ok: tr
 	try {
 		return { ok: true, url: resolveWithImportMeta(trimmed, import.meta.url) }
 	} catch (error) {
-		const msg = error instanceof Error ? error.message : String(error)
+		const msg = formatError(error)
 		errors.push(`argus: ${msg}`)
 	}
 
@@ -167,7 +168,7 @@ const resolvePluginModuleUrl = (specifier: string, baseDirs: string[]): { ok: tr
 			const baseUrl = pathToFileURL(path.join(baseDir, 'noop.js')).href
 			return { ok: true, url: resolveWithImportMeta(trimmed, baseUrl) }
 		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error)
+			const msg = formatError(error)
 			errors.push(`${baseDir}: ${msg}`)
 		}
 	}
@@ -289,7 +290,7 @@ export const registerPlugins = async (program: Command, argv: readonly string[] 
 		try {
 			mod = await import(resolved.url)
 		} catch (error) {
-			recordPluginFailure(entries, entry, error instanceof Error ? error.message : String(error), resolved.url)
+			recordPluginFailure(entries, entry, formatError(error), resolved.url)
 			continue
 		}
 
@@ -308,7 +309,7 @@ export const registerPlugins = async (program: Command, argv: readonly string[] 
 			await plugin.register({ ...ctxBase, program })
 			entries.push(createLoadedEntry(entry, plugin, resolved.url))
 		} catch (error) {
-			recordPluginFailure(entries, entry, error instanceof Error ? error.message : String(error), resolved.url)
+			recordPluginFailure(entries, entry, formatError(error), resolved.url)
 		}
 	}
 }

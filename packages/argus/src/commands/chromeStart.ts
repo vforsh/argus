@@ -210,7 +210,7 @@ const waitForCdpReady = async (host: string, port: number, chrome: ChildProcess)
 			}
 			lastError = 'Chrome responded without Browser version.'
 		} catch (error) {
-			lastError = error instanceof Error ? error.message : String(error)
+			lastError = formatError(error)
 		}
 
 		await delay(150)
@@ -313,7 +313,7 @@ export const launchChrome = async (options: LaunchChromeOptions): Promise<Launch
 		})
 	} catch (error) {
 		cleanupDir()
-		throw new Error(`Failed to spawn Chrome: ${error instanceof Error ? error.message : error}`)
+		throw new Error(`Failed to spawn Chrome: ${formatError(error)}`)
 	}
 
 	if (!chrome.pid) {

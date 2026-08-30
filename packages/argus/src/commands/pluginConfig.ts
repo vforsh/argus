@@ -5,6 +5,7 @@ import { createOutput } from '../output/io.js'
 import { resolveArgusConfigPath } from '../config/loadConfig.js'
 import { getGlobalArgusConfigPath } from '../config/argusHome.js'
 import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from '../cli/plugins/pluginAliases.js'
+import { formatError } from '../cli/parse.js'
 
 export type PluginConfigMutationOptions = {
 	path?: string
@@ -50,7 +51,7 @@ const readConfigObject = async (configPath: string, exists: boolean): Promise<Js
 	try {
 		raw = await fs.readFile(configPath, 'utf8')
 	} catch (error) {
-		console.error(`Failed to read Argus config at ${configPath}: ${error instanceof Error ? error.message : String(error)}`)
+		console.error(`Failed to read Argus config at ${configPath}: ${formatError(error)}`)
 		process.exitCode = 2
 		return null
 	}
@@ -62,7 +63,7 @@ const readConfigObject = async (configPath: string, exists: boolean): Promise<Js
 		process.exitCode = 2
 		return null
 	} catch (error) {
-		console.error(`Invalid Argus config at ${configPath}: ${error instanceof Error ? error.message : String(error)}`)
+		console.error(`Invalid Argus config at ${configPath}: ${formatError(error)}`)
 		process.exitCode = 2
 		return null
 	}
@@ -106,7 +107,7 @@ const writeConfigObject = async (configPath: string, config: JsonObject): Promis
 		await fs.writeFile(configPath, `${JSON.stringify(config, null, '\t')}\n`, 'utf8')
 		return true
 	} catch (error) {
-		console.error(`Failed to write Argus config at ${configPath}: ${error instanceof Error ? error.message : String(error)}`)
+		console.error(`Failed to write Argus config at ${configPath}: ${formatError(error)}`)
 		process.exitCode = 2
 		return false
 	}

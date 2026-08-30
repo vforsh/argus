@@ -5,6 +5,7 @@ import { fetchJson, fetchText } from '../../httpClient.js'
 import { createOutput } from '../../output/io.js'
 import type { ChromeCommandOptions } from './shared.js'
 import { loadChromeTargets, normalizeUrl, resolveChromeEndpointOrExit, resolveWatcherOrExit } from './shared.js'
+import { formatError } from '../../cli/parse.js'
 
 export type ChromeTargetsOptions = ChromeCommandOptions & {
 	type?: string
@@ -45,7 +46,7 @@ export const runChromeTargets = async (options: ChromeTargetsOptions): Promise<v
 				renderTargets(response.targets, { output, type: options.type, tree: options.tree, json: options.json })
 				return
 			} catch (error) {
-				output.writeWarn(`Failed to load watcher targets from ${watcher.id}: ${error instanceof Error ? error.message : error}`)
+				output.writeWarn(`Failed to load watcher targets from ${watcher.id}: ${formatError(error)}`)
 				process.exitCode = 1
 				return
 			}
@@ -87,7 +88,7 @@ export const runChromeOpen = async (options: ChromeOpenOptions): Promise<void> =
 		}
 		output.writeHuman(`${target.id} ${target.url}`)
 	} catch (error) {
-		output.writeWarn(`Failed to open tab: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to open tab: ${formatError(error)}`)
 		process.exitCode = 1
 	}
 }
@@ -141,7 +142,7 @@ export const runChromeActivate = async (options: ChromeActivateOptions): Promise
 	try {
 		await fetchText(`http://${endpoint.host}:${endpoint.port}/json/activate/${targetId}`)
 	} catch (error) {
-		output.writeWarn(`Failed to activate target: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to activate target: ${formatError(error)}`)
 		process.exitCode = 1
 		return
 	}
@@ -171,7 +172,7 @@ export const runChromeClose = async (options: ChromeCloseOptions): Promise<void>
 	try {
 		await fetchText(`http://${endpoint.host}:${endpoint.port}/json/close/${targetId}`)
 	} catch (error) {
-		output.writeWarn(`Failed to close target: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to close target: ${formatError(error)}`)
 		process.exitCode = 1
 		return
 	}
@@ -218,7 +219,7 @@ export const runChromeReload = async (options: ChromeReloadOptions): Promise<voi
 	try {
 		await sendCdpCommand(target.webSocketDebuggerUrl, { id: 1, method: 'Page.reload' })
 	} catch (error) {
-		output.writeWarn(`Failed to reload target ${target.id}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to reload target ${target.id}: ${formatError(error)}`)
 		process.exitCode = 1
 		return
 	}

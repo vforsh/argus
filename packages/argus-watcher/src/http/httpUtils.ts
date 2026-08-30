@@ -1,6 +1,6 @@
 import { getErrorCode } from '../errors.js'
 import http from 'node:http'
-import type { ErrorResponse, LogLevel } from '@vforsh/argus-core'
+import { formatError, type ErrorResponse, type LogLevel } from '@vforsh/argus-core'
 
 export const respondJson = <T extends object>(res: http.ServerResponse, body: T, status = 200): void => {
 	const payload = JSON.stringify(body)
@@ -242,12 +242,3 @@ export const normalizeTimeout = (value: unknown): number | undefined => {
 	return parsed
 }
 
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { parseTextPattern, type CodeEditResponse, type CodeReadResponse, type TextPattern } from '@vforsh/argus-core'
 import { requestWatcherCommandAction } from '../cli/defineWatcherCommand.js'
 import { createOutput, type Output } from '../output/io.js'
+import { formatError } from '../cli/parse.js'
 
 const FULL_RESOURCE_CHUNK_LINES = 5_000
 
@@ -83,7 +84,7 @@ async function readFileSource(path: string, output: Output): Promise<ResolvedSou
 	try {
 		return { text: await readFile(path, 'utf8') }
 	} catch (error) {
-		output.writeWarn(`Failed to read file: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to read file: ${formatError(error)}`)
 		process.exitCode = 1
 		return null
 	}
@@ -130,7 +131,7 @@ async function searchReplaceSource(
 	try {
 		pattern = parseTextPattern(search)
 	} catch (error) {
-		output.writeWarn(error instanceof Error ? error.message : String(error))
+		output.writeWarn(formatError(error))
 		process.exitCode = 2
 		return null
 	}

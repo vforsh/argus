@@ -22,6 +22,7 @@ export type ControlBridgeSessionEvents = {
 }
 
 import type { TabActionResult } from '../types/messages.js'
+import { formatError } from '@vforsh/argus-core/error-message'
 export type { TabActionResult } from '../types/messages.js'
 
 /**
@@ -135,7 +136,7 @@ export class ControlBridgeSession {
 				type: 'tab_action_response',
 				requestId,
 				ok: false,
-				error: { message: error instanceof Error ? error.message : String(error) },
+				error: { message: formatError(error) },
 			})
 		}
 	}

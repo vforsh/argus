@@ -13,6 +13,7 @@ import {
 	type SelectorResult,
 	type TabResolutionResult,
 } from './tabSelection.js'
+import { formatError } from '../../cli/parse.js'
 
 export type ExtensionAttachOptions = ExtensionTabActionOptions & { show?: boolean }
 export type ExtensionDetachOptions = ExtensionTabActionOptions
@@ -79,7 +80,7 @@ const runExtensionTabAction = async (action: ExtensionTabAction, options: Extens
 			returnErrorResponse: true,
 		})
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const message = formatError(error)
 		writeCommandError(output, options, `${resolved.watcher.id}: failed to ${action} tab (${message})`, message)
 		return
 	}

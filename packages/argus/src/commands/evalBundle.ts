@@ -167,7 +167,7 @@ const formatBundleFailure = (error: unknown): string => {
 		return issues.map(formatEsbuildMessage).join('\n')
 	}
 
-	return error instanceof Error ? error.message : String(error)
+	return formatError(error)
 }
 
 const formatEsbuildMessage = ({ text, location }: Message): string => {
@@ -183,3 +183,5 @@ const formatEsbuildMessage = ({ text, location }: Message): string => {
 
 	return `${file}:${line}:${column}: ${message}`
 }
+
+import { formatError } from '../cli/parse.js'

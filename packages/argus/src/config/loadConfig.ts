@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { ArgusConfigLoadResult } from './types.js'
 import { EXPECTED_SHAPE_HINT, validateArgusConfig } from './validateConfig.js'
+import { formatError } from '../cli/parse.js'
 
 /** Config locations probed (in order) when no `--config` path is given. */
 const AUTO_CONFIG_CANDIDATES = ['.argus/config.json', '.config/argus.json', 'argus.config.json', 'argus/config.json']
@@ -36,14 +37,14 @@ export const loadArgusConfig = (resolvedPath: string): ArgusConfigLoadResult | n
 	try {
 		raw = fs.readFileSync(resolvedPath, 'utf8')
 	} catch (error) {
-		return invalidConfigPath(resolvedPath, error instanceof Error ? error.message : String(error))
+		return invalidConfigPath(resolvedPath, formatError(error))
 	}
 
 	let parsed: unknown
 	try {
 		parsed = JSON.parse(raw)
 	} catch (error) {
-		return invalidConfig(resolvedPath, error instanceof Error ? error.message : String(error))
+		return invalidConfig(resolvedPath, formatError(error))
 	}
 
 	const validated = validateArgusConfig(parsed)

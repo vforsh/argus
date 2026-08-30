@@ -1,4 +1,4 @@
-import { describeProtocolMismatch, readAndPruneRegistry } from '@vforsh/argus-core'
+import { describeProtocolMismatch, formatError, readAndPruneRegistry } from '@vforsh/argus-core'
 import type {
 	LogCursorResponse,
 	LogEpochResponse,
@@ -132,12 +132,3 @@ const normalizeByCwd = (value?: string): string | undefined => {
 const filterByCwd = (registry: RegistryV1, byCwd: string) =>
 	Object.values(registry.watchers).filter((watcher) => watcher.cwd && watcher.cwd.includes(byCwd))
 
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}

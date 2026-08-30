@@ -11,6 +11,7 @@ import { findExportHeaderIndex, type ExportRowCandidate } from './queryModel.js'
 import { buildSheetSchema, resolveHeader } from './schema.js'
 import { evalInWatcher, type Output, runSheetCommand } from './sheetCommandUtils.js'
 import { readExactPhysicalRow, readSheetCsv } from './sheetRead.js'
+import { formatError } from '@vforsh/argus-core'
 
 type DiffOptions = {
 	json?: boolean
@@ -136,7 +137,7 @@ const readLocalTable = async (against: string, output: Output): Promise<string[]
 	try {
 		text = (await readFile(against, 'utf8')).replace(/^\uFEFF/, '')
 	} catch (error) {
-		return usageError(output, `Failed to read --against file: ${error instanceof Error ? error.message : String(error)}`)
+		return usageError(output, `Failed to read --against file: ${formatError(error)}`)
 	}
 
 	const table = (against.toLowerCase().endsWith('.tsv') ? parseTsv(text) : parseCsv(text)).filter((row) => row.some((cell) => cell !== ''))
@@ -214,7 +215,7 @@ const emitApplyPlan = async (
 		await writeFile(options.emitPlan, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 		return options.emitPlan
 	} catch (error) {
-		runtimeError(output, `Failed to write --emit-plan: ${error instanceof Error ? error.message : String(error)}`)
+		runtimeError(output, `Failed to write --emit-plan: ${formatError(error)}`)
 		return false
 	}
 }

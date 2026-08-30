@@ -2,6 +2,7 @@ import type { StatusResponse, RegistryV1, WatcherRecord } from '@vforsh/argus-co
 import { pruneRegistry } from '../../registry.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { CONTROL_WATCHER_ID } from './nativeHost.js'
+import { formatError } from '../../cli/parse.js'
 
 export type ResolveExtensionWatcherInput = {
 	id?: string
@@ -20,7 +21,7 @@ export const resolveExtensionWatcher = async (input: ResolveExtensionWatcherInpu
 	try {
 		registry = await pruneRegistry()
 	} catch (error) {
-		return { ok: false, error: `Failed to load registry: ${error instanceof Error ? error.message : error}`, exitCode: 1 }
+		return { ok: false, error: `Failed to load registry: ${formatError(error)}`, exitCode: 1 }
 	}
 
 	const allWatchers = Object.values(registry.watchers)
@@ -68,6 +69,6 @@ const checkWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; s
 		const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 1_500 })
 		return { ok: true, status }
 	} catch (error) {
-		return { ok: false, error: error instanceof Error ? error.message : String(error) }
+		return { ok: false, error: formatError(error) }
 	}
 }

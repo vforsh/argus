@@ -1,4 +1,4 @@
-import type { EvalResponse } from '@vforsh/argus-core'
+import { formatError, type EvalResponse } from '@vforsh/argus-core'
 import type { EvalOptions, EvalResult, EvalUntilOptions, EvalUntilResult, EvalValueOptions } from '../../types.js'
 import { ArgusEvalError } from '../../eval/ArgusEvalError.js'
 import { pollEval } from '../../eval/pollEval.js'
@@ -143,12 +143,3 @@ const toEvalUntilError = (outcome: { kind: string; [key: string]: unknown }, exp
 	return new Error(`evalUntil aborted while waiting for: ${expression}`)
 }
 
-const formatError = (error: unknown): string => {
-	if (!error) {
-		return 'unknown error'
-	}
-	if (error instanceof Error) {
-		return error.message
-	}
-	return String(error)
-}

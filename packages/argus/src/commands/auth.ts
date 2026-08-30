@@ -5,6 +5,7 @@ import { requestWatcherCommandAction, requestWatcherCommandJson } from '../cli/d
 import type { Output } from '../output/io.js'
 import { createOutput } from '../output/io.js'
 import type { WatcherRequestSuccess } from '../watchers/requestWatcher.js'
+import { formatError } from '../cli/parse.js'
 
 // Intentionally not on `defineWatcherCommand`: these flows compose multiple
 // watcher calls (clone = export from one watcher + load into another).
@@ -93,7 +94,7 @@ export const loadAuthStateSnapshot = async (inputPath: string): Promise<AuthStat
 	try {
 		parsed = JSON.parse(raw)
 	} catch (error) {
-		throw new Error(`Invalid auth state from ${source}: ${error instanceof Error ? error.message : String(error)}`)
+		throw new Error(`Invalid auth state from ${source}: ${formatError(error)}`)
 	}
 
 	return parseAuthStateSnapshot(parsed, `auth state ${source}`)
@@ -151,7 +152,7 @@ const readAuthStateSnapshotOrExit = async (inputPath: string, output: Output): P
 	try {
 		return await loadAuthStateSnapshot(inputPath)
 	} catch (error) {
-		output.writeWarn(error instanceof Error ? error.message : String(error))
+		output.writeWarn(formatError(error))
 		process.exitCode = 1
 		return null
 	}

@@ -2,6 +2,7 @@ import { sendCdpCommand } from '../../cdp/sendCdpCommand.js'
 import { createOutput } from '../../output/io.js'
 import type { ChromeCommandOptions } from './shared.js'
 import { loadChromeVersion, resolveChromeEndpointOrExit } from './shared.js'
+import { formatError } from '../../cli/parse.js'
 
 export const runChromeVersion = async (options: ChromeCommandOptions): Promise<void> => {
 	const output = createOutput(options)
@@ -71,7 +72,7 @@ export const runChromeStop = async (options: ChromeCommandOptions): Promise<void
 	try {
 		await sendCdpCommand(response.webSocketDebuggerUrl, { id: 1, method: 'Browser.close' })
 	} catch (error) {
-		output.writeWarn(`Failed to close Chrome at ${endpoint.host}:${endpoint.port}: ${error instanceof Error ? error.message : error}`)
+		output.writeWarn(`Failed to close Chrome at ${endpoint.host}:${endpoint.port}: ${formatError(error)}`)
 		process.exitCode = 1
 		return
 	}

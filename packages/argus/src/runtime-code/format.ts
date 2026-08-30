@@ -5,6 +5,7 @@ import babelPlugin from 'prettier/plugins/babel'
 import estreePlugin from 'prettier/plugins/estree'
 import postcssPlugin from 'prettier/plugins/postcss'
 import type { PrettyCodeLine, PrettyCodeMatch, RuntimeSourceFormatResult } from './types.js'
+import { formatError } from '../cli/parse.js'
 
 const PRETTY_CONTEXT_BEFORE = 1
 const PRETTY_CONTEXT_AFTER = 1
@@ -31,7 +32,7 @@ export const formatRuntimeSource = async (source: string, type: CodeResourceType
 		return {
 			source,
 			changed: false,
-			error: error instanceof Error ? error.message : String(error),
+			error: formatError(error),
 		}
 	}
 }

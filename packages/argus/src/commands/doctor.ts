@@ -7,6 +7,7 @@ import { fetchJson } from '../httpClient.js'
 import { loadRegistry } from '../registry.js'
 import { createOutput } from '../output/io.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
+import { formatError } from '../cli/parse.js'
 
 export type DoctorOptions = {
 	json?: boolean
@@ -48,7 +49,7 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 	try {
 		registry = await loadRegistry()
 	} catch (error) {
-		registryLoadError = error instanceof Error ? error.message : String(error)
+		registryLoadError = formatError(error)
 	}
 
 	const watcherEntries = registry ? Object.values(registry.watchers) : []
@@ -152,7 +153,7 @@ const checkWatcherStatus = async (host: string, port: number): Promise<{ ok: tru
 		const status = await fetchJson<StatusResponse>(url, { timeoutMs: 2_000 })
 		return { ok: true, status }
 	} catch (error) {
-		return { ok: false, error: error instanceof Error ? error.message : String(error) }
+		return { ok: false, error: formatError(error) }
 	}
 }
 
@@ -165,7 +166,7 @@ const checkCdp = async (host: string, port: number): Promise<{ ok: true; version
 		}
 		return { ok: true, version: response.Browser }
 	} catch (error) {
-		return { ok: false, error: error instanceof Error ? error.message : String(error) }
+		return { ok: false, error: formatError(error) }
 	}
 }
 

@@ -8,6 +8,7 @@ import { buildHarFromNetworkRequests } from '../net/har.js'
 import { createOutput } from '../output/io.js'
 import { resolvePath } from '../utils/paths.js'
 import { fetchWatcherJson, formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { formatError } from '../cli/parse.js'
 
 const NET_EXPORT_PAGE_LIMIT = 5_000
 
@@ -63,7 +64,7 @@ export const runNetExport = async (id: string | undefined, options: NetExportOpt
 	try {
 		await writeHarFile(outPath, har)
 	} catch (error) {
-		output.writeWarn(`Failed to write HAR file: ${error instanceof Error ? error.message : String(error)}`)
+		output.writeWarn(`Failed to write HAR file: ${formatError(error)}`)
 		process.exitCode = 1
 		return
 	}

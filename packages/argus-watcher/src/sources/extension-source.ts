@@ -28,6 +28,7 @@ import {
 	seedExtensionFrameState,
 	setRequestedTargetSelection,
 } from './extension-frame-runtime.js'
+import { formatError } from '@vforsh/argus-core'
 
 export type ExtensionSourceOptions = CdpSourceBaseOptions & {
 	role?: 'tab' | 'control'
@@ -310,7 +311,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			await events.onAttach?.(session.handle, target)
 			reconcileTargetSelection(session)
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = formatError(error)
 			console.error(`[ExtensionSource] Failed to bootstrap attached tab ${session.tabId}: ${message}`)
 
 			if (currentSession?.tabId === session.tabId) {

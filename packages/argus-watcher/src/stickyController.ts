@@ -1,5 +1,6 @@
 import type { ErrorDetail } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './cdp/connection.js'
+import { formatError } from '@vforsh/argus-core'
 
 /**
  * The "desired state survives detach" machine, written once.
@@ -67,7 +68,7 @@ export const createStickyController = <TState>(options: StickyControllerOptions<
 			return { attached: true, applied: true, state: desired, lastError: null }
 		} catch (error) {
 			applied = false
-			lastError = { message: error instanceof Error ? error.message : String(error) }
+			lastError = { message: formatError(error) }
 			return { attached: true, applied: false, state: desired, lastError }
 		}
 	}
@@ -113,7 +114,7 @@ export const createStickyController = <TState>(options: StickyControllerOptions<
 				lastError = null
 			} catch (error) {
 				applied = false
-				lastError = { message: error instanceof Error ? error.message : String(error) }
+				lastError = { message: formatError(error) }
 				console.warn(`[${options.label}] Failed to re-apply on attach: ${lastError.message}`)
 			}
 		},
