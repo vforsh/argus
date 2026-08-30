@@ -6,11 +6,14 @@ import { sendCdpCommand } from '../cdp/sendCdpCommand.js'
 import { fetchJson } from '../httpClient.js'
 import { pruneRegistry } from '../registry.js'
 import { createOutput } from '../output/io.js'
+import { formatError } from '../cli/parse.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
 import { getCdpPort } from '../utils/ports.js'
 import type { ChromeVersionResponse } from './chrome.js'
 import { normalizeHttpUrl, registerTerminationHandlers, waitForever } from './startShared.js'
-import { applyAuthStateToChrome } from './chrome/authState.js'
+import type { AuthStateSnapshot } from '@vforsh/argus-core'
+import { applyAuthStateSnapshotToChrome } from './chrome/authState.js'
+import { loadAuthStateSnapshot } from './auth.js'
 
 export type ChromeStartOptions = {
 	url?: string
@@ -35,6 +38,15 @@ export type LaunchChromeOptions = {
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
 	headless?: boolean
+	/**
+	 * Hydrate this saved auth state into the fresh profile before returning.
+	 *
+	 * Hydration owns the first navigation, so Chrome starts with no URL and the returned
+	 * `startupUrl` is the hydrated one. Forces a temp profile — hydrating into the user's real
+	 * profile would write their cookies there. A hydration failure closes Chrome before throwing,
+	 * so a caller never inherits a browser it has no handle for.
+	 */
+	authState?: AuthStateSnapshot | null
 }
 
 export type LaunchChromeResult = {
@@ -229,24 +241,19 @@ const normalizeProfile = (profile?: string): ChromeStartOptions['profile'] | nul
 	return null
 }
 
-const resolveProfileForChromeStart = (options: ChromeStartOptions): ChromeStartOptions['profile'] | undefined => {
-	if (!options.authState) {
-		return options.profile
-	}
-	return 'temp'
-}
-
 /**
  * Launch Chrome with CDP enabled. Returns a handle with the child process,
  * CDP coordinates, and a cleanup function. Throws on failure.
  */
 export const launchChrome = async (options: LaunchChromeOptions): Promise<LaunchChromeResult> => {
-	const profile = normalizeProfile(options.profile)
+	const profile = normalizeProfile(options.authState ? 'temp' : options.profile)
 	if (!profile) {
 		throw new Error('Invalid --profile value. Use temp, default-full, default-medium, or default-lite.')
 	}
 
+	// Hydration performs the first navigation itself, so Chrome must not open the URL as well.
 	const startupUrl = options.url ?? null
+	const launchUrl = options.authState ? null : startupUrl
 
 	const chromeBin = resolveChromeBin()
 	if (!chromeBin) {
@@ -294,8 +301,8 @@ export const launchChrome = async (options: LaunchChromeOptions): Promise<Launch
 	if (options.headless) {
 		args.push('--headless=new')
 	}
-	if (startupUrl) {
-		args.push(startupUrl)
+	if (launchUrl) {
+		args.push(launchUrl)
 	}
 
 	let chrome: ChildProcess
@@ -362,7 +369,33 @@ export const launchChrome = async (options: LaunchChromeOptions): Promise<Launch
 		cleanupDir()
 	}
 
-	return { chrome, cdpHost, cdpPort, userDataDir, startupUrl, cleanup, closeGracefully }
+	// The temp profile dir is created here, so its removal belongs here too. Callers used to reach
+	// into `result.userDataDir` and re-implement this, each in their own exit handler.
+	chrome.on('exit', cleanupDir)
+
+	const resolvedStartupUrl = options.authState
+		? (await hydrateAuthState(options.authState, { cdpHost, cdpPort, startupUrl, closeGracefully })).startupUrl
+		: startupUrl
+
+	return { chrome, cdpHost, cdpPort, userDataDir, startupUrl: resolvedStartupUrl, cleanup, closeGracefully }
+}
+
+/** Apply a snapshot to the freshly launched browser, closing it if hydration fails. */
+const hydrateAuthState = async (
+	snapshot: AuthStateSnapshot,
+	context: { cdpHost: string; cdpPort: number; startupUrl: string | null; closeGracefully: () => Promise<void> },
+): Promise<{ startupUrl: string | null }> => {
+	try {
+		return await applyAuthStateSnapshotToChrome({
+			snapshot,
+			cdpHost: context.cdpHost,
+			cdpPort: context.cdpPort,
+			startupUrl: context.startupUrl,
+		})
+	} catch (error) {
+		await context.closeGracefully()
+		throw error
+	}
 }
 
 export const runChromeStart = async (options: ChromeStartOptions): Promise<void> => {
@@ -393,47 +426,38 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		startupUrl = normalizeHttpUrl(options.url)
 	}
 
-	const profile = resolveProfileForChromeStart(options)
-
-	let result: LaunchChromeResult
-	try {
-		result = await launchChrome({
-			url: options.authState ? null : startupUrl,
-			profile: profile ?? options.profile,
-			devTools: options.devTools,
-			headless: options.headless,
-		})
-	} catch (error) {
-		output.writeWarn(error instanceof Error ? error.message : String(error))
-		process.exitCode = 1
-		return
-	}
-
+	// Read the auth-state file before spawning, so a bad path fails without launching a browser.
+	let authStateSnapshot: AuthStateSnapshot | null = null
 	if (options.authState) {
 		try {
-			const hydrated = await applyAuthStateToChrome({
-				authStatePath: options.authState,
-				cdpHost: result.cdpHost,
-				cdpPort: result.cdpPort,
-				startupUrl,
-			})
-			startupUrl = hydrated.startupUrl
+			authStateSnapshot = await loadAuthStateSnapshot(options.authState)
 		} catch (error) {
-			await result.closeGracefully()
-			output.writeWarn(error instanceof Error ? error.message : String(error))
+			output.writeWarn(formatError(error))
 			process.exitCode = 1
 			return
 		}
 	}
 
+	let result: LaunchChromeResult
+	try {
+		result = await launchChrome({
+			url: startupUrl,
+			profile: options.profile,
+			devTools: options.devTools,
+			headless: options.headless,
+			authState: authStateSnapshot,
+		})
+	} catch (error) {
+		output.writeWarn(formatError(error))
+		process.exitCode = 1
+		return
+	}
+
+	startupUrl = result.startupUrl
+
 	registerTerminationHandlers(() => result.closeGracefully())
 
 	result.chrome.on('exit', () => {
-		if (result.userDataDir) {
-			try {
-				rmSync(result.userDataDir, { recursive: true, force: true })
-			} catch {}
-		}
 		process.exit(0)
 	})
 

@@ -9,26 +9,6 @@ import type { ChromeTargetResponse } from '../../cdp/types.js'
 import { sendCdpCommand, sendCdpRequest } from '../../cdp/sendCdpCommand.js'
 import { fetchJson } from '../../httpClient.js'
 import { normalizeUrl } from './shared.js'
-import { loadAuthStateSnapshot } from '../auth.js'
-
-/**
- * Load an auth-state file into a fresh Chrome instance by seeding cookies first,
- * then restoring storage in the same tab so sessionStorage survives the final navigation.
- */
-export const applyAuthStateToChrome = async (input: {
-	authStatePath: string
-	cdpHost: string
-	cdpPort: number
-	startupUrl?: string | null
-}): Promise<{ startupUrl: string | null }> => {
-	const snapshot = await loadAuthStateSnapshot(input.authStatePath)
-	return applyAuthStateSnapshotToChrome({
-		snapshot,
-		cdpHost: input.cdpHost,
-		cdpPort: input.cdpPort,
-		startupUrl: input.startupUrl,
-	})
-}
 
 /** Apply an in-memory auth-state snapshot to a fresh Chrome hydration target. */
 export const applyAuthStateSnapshotToChrome = async (input: {

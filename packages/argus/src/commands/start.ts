@@ -1,10 +1,9 @@
 import { createAuthStateOriginUrl, type AuthStateSnapshot } from '@vforsh/argus-core'
-import { rmSync } from 'node:fs'
 import type { PageConsoleLogging } from '@vforsh/argus-core'
 import { requestAuthStateSnapshot } from './auth.js'
-import { applyAuthStateSnapshotToChrome } from './chrome/authState.js'
 import { launchChrome, type LaunchChromeResult } from './chromeStart.js'
 import { createOutput } from '../output/io.js'
+import { formatError } from '../cli/parse.js'
 import type { WatcherInjectConfig } from '../config/types.js'
 import { buildWatcherMatch, normalizeHttpUrl, registerTerminationHandlers, waitForever } from './startShared.js'
 import { startManagedWatcher } from './watcherSession.js'
@@ -75,33 +74,19 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 	let chrome: LaunchChromeResult
 	try {
 		chrome = await launchChrome({
-			url: authState.snapshot ? null : authState.startupUrl,
-			profile: authState.snapshot ? 'temp' : options.profile,
+			url: authState.startupUrl,
+			profile: options.profile,
 			devTools: options.devTools,
 			headless: options.headless,
+			authState: authState.snapshot,
 		})
 	} catch (error) {
-		output.writeWarn(error instanceof Error ? error.message : String(error))
+		output.writeWarn(formatError(error))
 		process.exitCode = 1
 		return
 	}
 
-	if (authState.snapshot) {
-		try {
-			const hydrated = await applyAuthStateSnapshotToChrome({
-				snapshot: authState.snapshot,
-				cdpHost: chrome.cdpHost,
-				cdpPort: chrome.cdpPort,
-				startupUrl: authState.startupUrl,
-			})
-			authState.startupUrl = hydrated.startupUrl
-		} catch (error) {
-			await chrome.closeGracefully()
-			output.writeWarn(error instanceof Error ? error.message : String(error))
-			process.exitCode = 1
-			return
-		}
-	}
+	authState.startupUrl = chrome.startupUrl
 
 	if (!options.json) {
 		output.writeHuman(`Chrome started (pid=${chrome.chrome.pid}, cdp=${chrome.cdpHost}:${chrome.cdpPort})`)
@@ -142,11 +127,6 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 	registerTerminationHandlers(shutdown)
 
 	chrome.chrome.on('exit', () => {
-		if (chrome.userDataDir) {
-			try {
-				rmSync(chrome.userDataDir, { recursive: true, force: true })
-			} catch {}
-		}
 		void handle.close().then(() => process.exit(0))
 	})
 
