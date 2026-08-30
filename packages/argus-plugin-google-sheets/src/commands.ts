@@ -11,6 +11,7 @@ import { findExportMatches, resolveFindColumn } from './findModel.js'
 import { collectGidsStepped } from './gidTraversal.js'
 import { buildLocateCellsExpression, type ExactCellMatch, type ExactLocatorResult } from './locatorPageScripts.js'
 import { parseTimeoutMs, registerSheetMutationCommands } from './mutationCommands.js'
+import { runSheetCommand } from './sheetCommandUtils.js'
 import {
 	buildAddSheetExpression,
 	buildInfoSheetsExpression,
@@ -201,39 +202,40 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 	registerSheetApplyCommand(ctx, sheets)
 }
 
-const runList = async (ctx: ArgusPluginContextV1, id: string | undefined, options: ListOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
+const runList = (ctx: ArgusPluginContextV1, id: string | undefined, options: ListOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output) => requireDeadline(opts, output),
+		execute: async ({ output }) => {
+			const deadlineMs = parseTimeoutMs(options.deadline, 20_000)!
+			const base = await evalInWatcher<SheetListResult>(ctx, id, buildListSheetsExpression({ withGid: false }), output)
+			if (!base) return null
+			return options.withGid ? await collectGidsStepped(ctx, id, output, base, options, Math.min(25_000, deadlineMs)) : base
+		},
+		formatHuman: (result, output) => output.writeHuman(formatSheetList(result.sheets)),
+	})
+
+const runInfo = (ctx: ArgusPluginContextV1, id: string | undefined, options: InfoOptions): Promise<void> =>
+	runSheetCommand(ctx, id, options, {
+		validate: (opts, output) => requireDeadline(opts, output),
+		execute: async ({ output }) => {
+			const deadlineMs = parseTimeoutMs(options.deadline, 20_000)!
+			const base = await evalInWatcher<SheetInfoResult>(ctx, id, buildInfoSheetsExpression({ withGid: false }), output)
+			if (!base) return null
+			const list = options.withGid ? await collectGidsStepped(ctx, id, output, base, options, Math.min(25_000, deadlineMs)) : base
+			if (!list) return null
+			return { ...base, sheets: list.sheets, active: list.sheets.find((sheet) => sheet.active) ?? null } satisfies SheetInfoResult
+		},
+		formatHuman: (result, output) => output.writeHuman(formatSheetInfo(result)),
+	})
+
+/** Shared `--deadline` guard: three commands accept the same flag with the same message. */
+const requireDeadline = (options: { deadline?: string }, output: Output): number | null => {
 	const deadlineMs = parseTimeoutMs(options.deadline, 20_000)
-	if (deadlineMs == null) return usageError(output, '--deadline must be a positive duration such as 10s or 20s')
-	const base = await evalInWatcher<SheetListResult>(ctx, id, buildListSheetsExpression({ withGid: false }), output)
-	if (!base) return
-	const result = options.withGid ? await collectGidsStepped(ctx, id, output, base, options, Math.min(25_000, deadlineMs)) : base
-	if (!result) return
-
-	if (options.json) {
-		output.writeJson(result)
-		return
+	if (deadlineMs == null) {
+		usageError(output, '--deadline must be a positive duration such as 10s or 20s')
+		return null
 	}
-
-	output.writeHuman(formatSheetList(result.sheets))
-}
-
-const runInfo = async (ctx: ArgusPluginContextV1, id: string | undefined, options: InfoOptions): Promise<void> => {
-	const output = ctx.host.createOutput(options)
-	const deadlineMs = parseTimeoutMs(options.deadline, 20_000)
-	if (deadlineMs == null) return usageError(output, '--deadline must be a positive duration such as 10s or 20s')
-	const base = await evalInWatcher<SheetInfoResult>(ctx, id, buildInfoSheetsExpression({ withGid: false }), output)
-	if (!base) return
-	const list = options.withGid ? await collectGidsStepped(ctx, id, output, base, options, Math.min(25_000, deadlineMs)) : base
-	if (!list) return
-	const result: SheetInfoResult = { ...base, sheets: list.sheets, active: list.sheets.find((sheet) => sheet.active) ?? null }
-
-	if (options.json) {
-		output.writeJson(result)
-		return
-	}
-
-	output.writeHuman(formatSheetInfo(result))
+	return deadlineMs
 }
 
 const runResolve = async (ctx: ArgusPluginContextV1, id: string | undefined, sheet: string, options: CommonOptions): Promise<void> => {

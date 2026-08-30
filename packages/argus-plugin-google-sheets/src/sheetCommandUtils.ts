@@ -190,3 +190,62 @@ const markIndeterminateTimeout = (message: string): void => {
 }
 
 export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Spec for a sheets command, mirroring `defineWatcherCommand`'s shape.
+ *
+ * Eighteen `run*` functions hand-rolled the identical pipeline — createOutput, validate
+ * flags (warn + exitCode = 2 + return null), evaluate in the watcher, then
+ * `if (options.json) writeJson else writeHuman`. Every command added before this landed
+ * became copy number nineteen.
+ */
+export type SheetCommandSpec<TOptions extends { json?: boolean }, TResult> = {
+	/**
+	 * Validate flags and derive whatever `execute` needs.
+	 *
+	 * Return `null` to abort; report the reason with {@link usageError} first.
+	 */
+	validate?: (options: TOptions, output: Output) => unknown | null
+	/** Perform the work. Return `null` to abort after reporting the failure. */
+	execute: (input: { ctx: ArgusPluginContextV1; id: string | undefined; options: TOptions; output: Output }) => Promise<TResult | null>
+	/** Render for humans. Defaults to pretty-printed JSON. */
+	formatHuman?: (result: TResult, output: Output, options: TOptions) => void
+	/** Map the result to the JSON payload. Defaults to the result itself. */
+	formatJson?: (result: TResult, options: TOptions) => unknown
+}
+
+/**
+ * Run a sheets command through the shared pipeline.
+ *
+ * Keeps `process.exitCode` writes at the command layer: library helpers below return
+ * discriminated results and never set it themselves.
+ */
+export const runSheetCommand = async <TOptions extends { json?: boolean }, TResult>(
+	ctx: ArgusPluginContextV1,
+	id: string | undefined,
+	options: TOptions,
+	spec: SheetCommandSpec<TOptions, TResult>,
+): Promise<void> => {
+	const output = ctx.host.createOutput(options)
+
+	if (spec.validate && spec.validate(options, output) === null) {
+		return
+	}
+
+	const result = await spec.execute({ ctx, id, options, output })
+	if (result == null) {
+		return
+	}
+
+	if (options.json) {
+		output.writeJson(spec.formatJson ? spec.formatJson(result, options) : result)
+		return
+	}
+
+	if (spec.formatHuman) {
+		spec.formatHuman(result, output, options)
+		return
+	}
+
+	output.writeHuman(JSON.stringify(result, null, 2))
+}
