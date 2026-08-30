@@ -9,7 +9,7 @@
 
 ## Progress
 
-All six sequencing steps are done except one deliberately declined item (C2). 36 commits, `bf19320..HEAD`. **What is left is in [Remaining work](#remaining-work) below**, re-measured against the current tree. Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. **Full `test:e2e`: 25/25 files pass.**
+All six sequencing steps are done, plus a follow-up pass closing C1, A7, A4, C3, D7, C8, D6, D4, and D5 — everything except one deliberately declined item (C2). 45 commits, `bf19320..HEAD`. **What is left is in [Remaining work](#remaining-work) below**, re-measured against the current tree. Gate after each batch: `npm run typecheck`, `npm run lint`, `npm run test:playground`. **Full `test:e2e`: 25/25 files pass.**
 
 **One regression found by testing against a live extension watcher and fixed** (`d1b9e68`): merging Commander options by value let a parent's option _default_ win when a subcommand declares the same flag but the user omits it — `net --resource-type` is a repeatable filter defaulting to `[]`, `net mock add --resource-type` is a scalar, so the subcommand received the parent's empty array and the watcher schema rejected it. The rule is now "the nearest command declaring an option owns it, even when absent". The unit test added with B2 had missed this because it only covered flags that were actually typed.
 
@@ -53,8 +53,17 @@ All six sequencing steps are done except one deliberately declined item (C2). 36
 | **D12 + D14** — concurrent watcher probes; coded errors get an owner                                                                                      | `2a97ac3`            |
 | **C4** — second CDP transport deleted                                                                                                                     | `0aa5b8a`            |
 | D17 (partial) — three `runtimeClient` adapters, two `escapeHtml`, two `formatError` families                                                              | across the above     |
+| **C1** — one log pipeline for both sources; extension mode gets sourcemaps, remote-object args, and `assert` → `error`                                    | `d4f1319`            |
+| **A7** — `Ok<T>`/`ApiResult<T>`/`ArgusErrorCode`; envelope and error codes are typed                                                                      | `dfb2db4`            |
+| **A4** — typed GET query shapes; the SDK gains the eight net filters it could not express                                                                 | `f8d6fdf`            |
+| **C3** — one watcher transport + eviction policy for CLI and SDK; typed `HttpTimeoutError`                                                                | `f90b511`            |
+| **D7** — one endpoint list and one request-query shape                                                                                                    | `1ee4186`            |
+| **C8** — Chrome temp profile and auth-state hydration get a single owner                                                                                  | `bca86f2`            |
+| **D6** — `moveArtifactFile` + `createDeferred` shared; ffmpeg split out of `recording.ts`                                                                 | `afb61eb`            |
+| **D4** — `defineExtensionRoute`; `getTargetContext`/`getReadyTargetContext` required                                                                      | `2d554d4`            |
+| **D5** — `auth.ts` split four ways; four cookie normalizers collapse to two                                                                               | `66d9348`            |
 
-Three `AGENTS.md` entries changed with the code: the `readJsonBody` gotcha is retired (replaced by a schema-only rule), and the Golden Path now requires a request schema alongside the types.
+`AGENTS.md` changed with the code: the `readJsonBody` gotcha is retired (replaced by a schema-only rule), the Golden Path requires a request schema alongside the types plus a `WATCHER_ENDPOINTS` entry, and three new invariants are recorded — `Ok<T>`/`ApiResult<T>` for the envelope, `ARGUS_ERROR_CODES` as a closed union, and typed GET query shapes.
 
 ## Remaining work
 
@@ -62,35 +71,32 @@ Counts below were re-measured against the current tree, not copied from the orig
 
 ### 1. Finish what this pass started
 
-| Item    | State                                                   | What is left                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **B10** | runner exists, 2 of 18 commands on it                   | 22 `run*` functions across `commands.ts`, `applyCommands.ts`, `inspectionCommands.ts`, `diffCommands.ts`, `dimensionCommands.ts`, `mutationCommands.ts` still hand-roll the createOutput → validate → eval → json/human pipeline. Mechanical: each becomes a `runSheetCommand` spec.                                                                                                                                   |
-| **D13** | blocked on B10                                          | 11 sheets files still write `process.exitCode` from library depth. Once every command goes through `runSheetCommand`, the writes collapse to that one site and the helpers return discriminated results.                                                                                                                                                                                                               |
-| **A7**  | `ErrorDetail` + `ResponseData<T>` landed in `errors.ts` | `ok: true` is still inlined 72× across 21 protocol files, there is still no `Ok<T>`/`ApiResult<T>` union for consumers to reuse, `ArgusErrorCode` does not exist (codes stay stringly), and 8 inline `{ message: string; code?: string } \| null` re-declarations remain in `netMock.ts`, `emulation.ts`, and `throttle.ts` — all of which are now just `ErrorDetail`.                                                 |
-| **D17** | 3 adapter/helper families deleted                       | Sweeps still open, with current counts: 33 inline `error instanceof Error ? … : String(error)` in `packages/argus/src`; 12 `delay`/`sleep` one-liners; 67 copies of the `--json` option literal in register files; 10 `nextAfter` computations across net routes; 20 hand-rolled `{ ok: false, error: { … } }` literals in routes (`httpUtils` still lacks the general `respondApiError(res, status, code, message)`). |
+| Item    | State                                 | What is left                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **B10** | runner exists, 2 of 18 commands on it | 22 `run*` functions across `commands.ts`, `applyCommands.ts`, `inspectionCommands.ts`, `diffCommands.ts`, `dimensionCommands.ts`, `mutationCommands.ts` still hand-roll the createOutput → validate → eval → json/human pipeline. Mechanical: each becomes a `runSheetCommand` spec.                                                                                                                                                                          |
+| **D13** | blocked on B10                        | 11 sheets files still write `process.exitCode` from library depth. Once every command goes through `runSheetCommand`, the writes collapse to that one site and the helpers return discriminated results.                                                                                                                                                                                                                                                      |
+| **D17** | 5 helper families deleted             | Sweeps still open, re-measured: 29 inline `error instanceof Error ? … : String(error)` in `packages/argus/src` (`formatError` is now canonical in argus-core); 14 `delay`/`sleep` one-liners; 69 copies of the `--json` option literal in register files; 10 `nextAfter` computations across net routes; 15 hand-rolled `{ ok: false, error: { … } }` literals in routes (`httpUtils` still lacks the general `respondApiError(res, status, code, message)`). |
 
-### 2. Contract seams still open
+### 2. Watcher internals
 
-- **A4 — the GET half of the protocol.** `argus/src/watchers/queryParams.ts` (205 LOC) and `argus-client/src/client/queryParams.ts` (178 LOC) remain two independent builders for one contract, and the divergence the audit found is still live: the CLI serializes 11 net filters, the client serializes 3, so **the SDK still cannot express filters the protocol supports**. `parseDurationMs` was the easy half and is done; the typed query shapes are not.
-- **C3 — CLI and SDK unwrap the same envelope differently.** `buildWatcherUrl` and `formatWatcherTransportError` are still declared in both `requestWatcher.ts` and `watcherRequest.ts`, and the client still evicts a watcher from the shared on-disk registry (`removeWatcherAndPersist`) where the CLI does not. The same outage still produces different persistent state depending on which stack saw it.
-- **D7 — the endpoint union.** Still 65 literal entries in `http/server.ts` and 65 in `events.ts`, plus two incompatible `query` models bridged through a weak-type loophole. Deriving it from the route definitions is the fix.
-- **D4 — `CdpSourceHandle` capability.** Still an 8-optional-method bag checked three times per request. Note `postAttach.ts`/`postDetach.ts` are now typed but remain byte-for-byte twins apart from the method called — a `defineExtensionRoute` wrapper would collapse them.
-
-### 3. Watcher internals
-
-- **C1 — extension mode reimplements the log pipeline** (`sources/extension-log-events.ts`, 144 LOC) and, verified again here, still never calls `resolveSourcemappedLocation`: **extension-mode watchers get unmapped minified locations while CDP-mode watchers get sourcemapped ones.** This is the one remaining item with a user-visible behavioral fork, and it is worth doing before the cosmetic ones.
-- **D5** — `cdp/auth.ts` is 510 LOC mixing cookie CRUD, snapshot export, and page-state eval, with four overlapping normalizers.
-- **D6** — `recording.ts` (493 LOC) and `tracing.ts` still duplicate the exclusive-artifact-session lifecycle; ffmpeg is still ~170 LOC of non-CDP code inside `recording.ts`.
 - **D9** — `startWatcherRuntime.ts` is still 417 LOC and `createWatcherRuntimeServices` still builds the service block twice.
 - **D10** — `editor.ts` (472 LOC) still hides the `reset()`/`rebind()` lifecycle in a closure with four coordinating flags.
 - **D15** — `LogBuffer` still runs both waiter subsystems (`waitForAfter`/`flushWaiters` alongside `waitForAfterEpoch`/`flushEpochWaiters`); the id-based path survives only as the `kind: 'all'` position query.
 - **D16** — module-level mutable state without lifecycle: the sourcemap trace-map cache is still unbounded and never invalidated, so a dev-server rebuild mid-session keeps resolving against the old map.
-- **C8** — Chrome launch/cleanup ownership still split across `launchChrome` and its two callers.
 
-### 4. Test-surface debt
+### 3. Test-surface debt
 
-- **`e2e/` still deep-imports package internals** — 19 distinct `../packages/*/src/*.js` paths across the suite. Export hygiene and the "public API must be documented" rule stay unenforced, and a green e2e run still says nothing about the published surface.
+- **`e2e/` still deep-imports package internals** — 21 distinct `../packages/*/src/*.js` paths across the suite. Export hygiene and the "public API must be documented" rule stay unenforced, and a green e2e run still says nothing about the published surface.
+- **`e2e/` is not typechecked.** `npm run typecheck` covers the app, the packages, and the extension — not `e2e/`. Making `CdpSessionHandle.getTargetContext` required during D4 therefore broke `e2e/record.test.ts`'s hand-written stub at _runtime_, in a suite that takes minutes, instead of at compile time. Adding `e2e/` to the typecheck is a small change that pays for itself the next time an interface moves; it pairs naturally with the deep-import cleanup above.
 - **`boundedTraversal.ts` and `leaseModel.ts`** (google-sheets) are still test-mirror modules: their only consumer is `lease-deadline.test.ts`, while the logic that ships lives in the page scripts. Deleting them removes a test that never covered shipping code; the honest fix is to test the real path, which needs a browser.
+
+### 4. Found while closing the nine above
+
+Each was surfaced by a type the change introduced, not by a test — the argument for the whole "derive, don't copy" direction:
+
+- **Two emitted error codes existed nowhere in the protocol.** Closing `ArgusErrorCode` immediately rejected `extension_frame_not_ready` and the three CLI-local setup codes.
+- **The SDK evicted watchers on timeouts.** Eviction fired on any non-HTTP failure, so a slow command against a healthy watcher could delete its shared-registry entry. It is now typed on `HttpTimeoutError` and narrowed to failures that were never answered — and the CLI applies the same policy, which was the point of C3.
+- **`createNetBodyError` was a pass-through** that only ever supplied `body_not_available`, visible once the code argument had to be a union member.
 
 ### 5. Declined
 

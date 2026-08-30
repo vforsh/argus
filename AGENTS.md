@@ -120,13 +120,16 @@
 ## Golden Paths (checklists)
 
 - **New CLI command (no new watcher API)**: add to `register*.ts` → implement in `packages/argus/src/commands/*` → ensure `--json` → add/adjust `e2e/*` → update `skill/argus/SKILL.md`.
-- **New watcher endpoint**: add types **and a request `ProtocolSchema`** in `packages/argus-core/src/protocol/http/<domain>.ts` → add route in `packages/argus-watcher/src/http/routes/*` + wire in `packages/argus-watcher/src/http/router.ts` → call via `requestWatcherJson` (CLI) / `createArgusClient` (client) → `e2e/*` → SKILL + (if interactive) playground UI.
+- **New watcher endpoint**: add types **and a request `ProtocolSchema`** in `packages/argus-core/src/protocol/http/<domain>.ts` → add the endpoint to `WATCHER_ENDPOINTS` (`argus-watcher/src/http/endpoints.ts`) → add route in `packages/argus-watcher/src/http/routes/*` + wire in `packages/argus-watcher/src/http/router.ts` → call via `requestWatcherJson` (CLI) / `createArgusClient` (client) → `e2e/*` → SKILL + (if interactive) playground UI.
+- **Extension-only route**: use `defineExtensionRoute` with the `capability` the route needs. It owns the availability guard, the `not_available` response, and the `extension_action_failed` mapping — don't re-check `ctx.sourceHandle?.x` in the handler.
 - **Protocol change rules**: additive-by-default; breaking => bump `ARGUS_PROTOCOL_VERSION`; keep `ok`/`error` shapes stable.
 
 ---
 
 ## Contracts / Invariants (don’t break these)
 
-- **HTTP payload shape**: success `ok: true`; failure `ok: false` with `{ error: { message, code? } }` (see `packages/argus-core/src/protocol/http/errors.ts`).
+- **HTTP payload shape**: success `Ok<{…}>`; failure `ok: false` with `{ error: ErrorDetail }` (see `packages/argus-core/src/protocol/http/errors.ts`). Consumers take `ApiResult<TResponse>` rather than writing `TResponse | ErrorResponse`.
+- **Error codes are a closed union**: add a member to `ARGUS_ERROR_CODES` before emitting a new one. `codedError`/`getErrorCode` are typed to it, so a foreign code (Node's `ENOENT`) can't reach the wire, and a rename breaks every reader at compile time.
+- **Query params are typed too**: a GET endpoint's params belong in `protocol/http/query.ts` (`LogsQuery`/`NetQuery`), serialized with `toSearchParams`. The CLI and SDK builders both construct those shapes; the watcher reads params through `keyof`-checked helpers. Don't add a `params.set('…')` the type doesn't know about.
 - **Watcher route conventions**: GET vs POST, path naming, `extensionOnly` behavior in `packages/argus-watcher/src/http/router.ts`.
 - **POST bodies are schema-only**: a route reads a body by declaring `bodySchema`; there is no unvalidated path. Write the `ProtocolSchema` next to the request type in `packages/argus-core/src/protocol/http/<domain>.ts`, composing the readers in `protocol/schemaFields.ts` — don't hand-roll `typeof` checks in the route. An empty body simply fails schema parse with a real message.
