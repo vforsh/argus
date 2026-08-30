@@ -1,4 +1,3 @@
-import type { Command } from 'commander'
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runTrace, runTraceStart, runTraceStop } from '../../commands/trace.js'
 
@@ -15,8 +14,8 @@ export const traceCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--json', description: 'Output JSON for automation' },
 		],
 		examples: ['argus trace app --duration 3s --out trace.json'],
-		action: async (id, options, command) => {
-			await runTrace(id, resolveActionOptions(options, command))
+		action: async (id, options) => {
+			await runTrace(id, options)
 		},
 		subcommands: [
 			{
@@ -30,8 +29,8 @@ export const traceCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--json', description: 'Output JSON for automation' },
 				],
 				examples: ['argus trace start app --out trace.json'],
-				action: async (id, options, command) => {
-					await runTraceStart(id, resolveActionOptions(options, command))
+				action: async (id, options) => {
+					await runTraceStart(id, options)
 				},
 			},
 			{
@@ -44,34 +43,10 @@ export const traceCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--json', description: 'Output JSON for automation' },
 				],
 				examples: ['argus trace stop app', 'argus trace stop app --out trace.json --json'],
-				action: async (id, options, command) => {
-					await runTraceStop(id, resolveActionOptions(options, command))
+				action: async (id, options) => {
+					await runTraceStop(id, options)
 				},
 			},
 		],
 	},
 ]
-
-/**
- * `trace` is both a command and a subcommand parent, so Commander may pass
- * either (options, command) or just the command. Merge parent + own opts.
- */
-function resolveActionOptions(options: Record<string, unknown>, command: Command | undefined): Record<string, unknown> {
-	const maybeCommand = options as unknown as Command | undefined
-	if (typeof maybeCommand?.opts === 'function') {
-		return {
-			...(typeof maybeCommand.parent?.opts === 'function' ? maybeCommand.parent.opts() : {}),
-			...maybeCommand.opts(),
-		}
-	}
-
-	if (typeof command?.opts === 'function') {
-		return {
-			...(typeof command.parent?.opts === 'function' ? command.parent.opts() : {}),
-			...command.opts(),
-			...options,
-		}
-	}
-
-	return options
-}

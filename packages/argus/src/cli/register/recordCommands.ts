@@ -1,7 +1,5 @@
-import type { Command } from 'commander'
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
-import type { RecordOptions, RecordStartOptions, RecordStopOptions } from '../../commands/record.js'
 import { runRecord, runRecordStart, runRecordStop } from '../../commands/record.js'
 
 export const recordCommands: readonly ArgusCommandDefinition[] = [
@@ -25,10 +23,9 @@ export const recordCommands: readonly ArgusCommandDefinition[] = [
 			'argus record app --duration 3s --clip 100,80,640,360 --out crop.mp4',
 			'argus record app --duration 3s --format webm --out canvas.webm',
 		],
-		action: async (id, options, command) => {
-			const resolved = resolveActionOptions<RecordOptions>(options, command)
-			if (!resolveTestId(resolved)) return
-			await runRecord(id, resolved)
+		action: async (id, options) => {
+			if (!resolveTestId(options)) return
+			await runRecord(id, options)
 		},
 		subcommands: [
 			{
@@ -45,10 +42,9 @@ export const recordCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--json', description: 'Output JSON for automation' },
 				],
 				examples: ['argus record start app --selector "canvas" --out canvas.mp4'],
-				action: async (id, options, command) => {
-					const resolved = resolveActionOptions<RecordStartOptions>(options, command)
-					if (!resolveTestId(resolved)) return
-					await runRecordStart(id, resolved)
+				action: async (id, options) => {
+					if (!resolveTestId(options)) return
+					await runRecordStart(id, options)
 				},
 			},
 			{
@@ -61,34 +57,10 @@ export const recordCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--json', description: 'Output JSON for automation' },
 				],
 				examples: ['argus record stop app', 'argus record stop app --out demo.mp4 --json'],
-				action: async (id, options, command) => {
-					await runRecordStop(id, resolveActionOptions<RecordStopOptions>(options, command))
+				action: async (id, options) => {
+					await runRecordStop(id, options)
 				},
 			},
 		],
 	},
 ]
-
-/**
- * `record` is both a command and a subcommand parent, so Commander may pass
- * either (options, command) or just the command. Merge parent + own opts.
- */
-function resolveActionOptions<TOptions extends Record<string, unknown>>(options: Record<string, unknown>, command: Command | undefined): TOptions {
-	const maybeCommand = options as unknown as Command | undefined
-	if (typeof maybeCommand?.opts === 'function') {
-		return {
-			...(typeof maybeCommand.parent?.opts === 'function' ? maybeCommand.parent.opts() : {}),
-			...maybeCommand.opts(),
-		} as TOptions
-	}
-
-	if (typeof command?.opts === 'function') {
-		return {
-			...(typeof command.parent?.opts === 'function' ? command.parent.opts() : {}),
-			...command.opts(),
-			...options,
-		} as TOptions
-	}
-
-	return options as TOptions
-}

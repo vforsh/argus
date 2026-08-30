@@ -53,8 +53,8 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 				arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 				options: [{ flags: '--json', description: 'Output one JSON document for automation' }],
 				examples: ['argus logs epoch app', 'argus logs epoch app --json'],
-				action: async (id, options, command) => {
-					await runLogEpoch(id, command.optsWithGlobals?.() ?? options)
+				action: async (id, options) => {
+					await runLogEpoch(id, options)
 				},
 			},
 			{
@@ -63,8 +63,8 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 				arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 				options: [{ flags: '--json', description: 'Output one JSON document for automation' }],
 				examples: ['argus logs cursor app', 'argus logs cursor app --json'],
-				action: async (id, options, command) => {
-					await runLogCursor(id, command.optsWithGlobals?.() ?? options)
+				action: async (id, options) => {
+					await runLogCursor(id, options)
 				},
 			},
 			{
@@ -86,8 +86,8 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 					'argus logs tail app --json',
 					'argus logs tail app --json-full',
 				],
-				action: async (id, options, command) => {
-					const resolvedOptions = command.optsWithGlobals?.() ?? options
+				action: async (id, options) => {
+					const resolvedOptions = options
 					if (!validateLogsOptions(resolvedOptions)) return
 					await runTail(id, resolvedOptions)
 				},

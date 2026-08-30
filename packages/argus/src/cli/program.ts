@@ -13,6 +13,10 @@ export function createProgram(): Command {
 			outputError: (str, write) => write(str),
 		})
 		.showSuggestionAfterError(true)
+		// Options belong to the command they follow. Several parents declare the same flag
+		// name as a subcommand (`net --method` is a repeatable filter, `net mock add
+		// --method` is a scalar match), and without this the parent claims the value.
+		.enablePositionalOptions()
 		.exitOverride((error) => {
 			if (error.code === 'commander.helpDisplayed' || error.code === 'commander.version') {
 				process.exit(0)

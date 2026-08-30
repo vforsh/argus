@@ -106,7 +106,7 @@ const netMockCommand: ArgusCommandDefinition = {
 				'argus net mock add app --url "cdn.prod.com" --rewrite-host localhost:3000',
 			],
 			action: async (id, options) => {
-				await runNetMockAdd(id, resolveNetMockAddOptions(options))
+				await runNetMockAdd(id, options)
 			},
 		},
 		{
@@ -117,7 +117,7 @@ const netMockCommand: ArgusCommandDefinition = {
 			options: [jsonOption],
 			examples: ['argus net mock ls app', 'argus net mock ls app --json'],
 			action: async (id, options) => {
-				await runNetMockList(id, resolveCommandOptions(options))
+				await runNetMockList(id, options)
 			},
 		},
 		{
@@ -131,7 +131,7 @@ const netMockCommand: ArgusCommandDefinition = {
 			options: [jsonOption],
 			examples: ['argus net mock rm 2 app', 'argus net mock rm 2 app --json'],
 			action: async (rule, id, options) => {
-				await runNetMockRemove(id, rule, resolveCommandOptions(options))
+				await runNetMockRemove(id, rule, options)
 			},
 		},
 		{
@@ -141,7 +141,7 @@ const netMockCommand: ArgusCommandDefinition = {
 			options: [jsonOption],
 			examples: ['argus net mock clear app', 'argus net mock clear app --json'],
 			action: async (id, options) => {
-				await runNetMockClear(id, resolveCommandOptions(options))
+				await runNetMockClear(id, options)
 			},
 		},
 	],
@@ -160,11 +160,8 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 			jsonOption,
 		],
 		examples: ['argus net app --since 5m', 'argus net app --grep api', 'argus net app --ignore-host mc.yandex.ru', 'argus net app --json'],
-		configure: (command) => {
-			command.enablePositionalOptions()
-		},
 		action: async (id, options) => {
-			await runNet(id, resolveCommandOptions(options))
+			await runNet(id, options)
 		},
 		subcommands: [
 			{
@@ -185,7 +182,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 					'argus net tail app --json',
 				],
 				action: async (id, options) => {
-					await runNetTail(id, resolveCommandOptions(options))
+					await runNetTail(id, options)
 				},
 			},
 			{
@@ -195,7 +192,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 				options: [jsonOption],
 				examples: ['argus net clear app', 'argus net clear app --json'],
 				action: async (id, options) => {
-					await runNetClear(id, resolveCommandOptions(options))
+					await runNetClear(id, options)
 				},
 			},
 			{
@@ -218,7 +215,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 					)
 				},
 				action: async (id, options) => {
-					await runNetWatch(id, resolveCommandOptions(options))
+					await runNetWatch(id, options)
 				},
 			},
 			{
@@ -243,7 +240,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 					)
 				},
 				action: async (id, options) => {
-					await runNetExport(id, resolveCommandOptions(options))
+					await runNetExport(id, options)
 				},
 			},
 			{
@@ -256,7 +253,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 				options: [jsonOption],
 				examples: ['argus net show 42 app', 'argus net show 90829.507 extension --json'],
 				action: async (request, id, options) => {
-					await runNetShow(id, request, resolveCommandOptions(options))
+					await runNetShow(id, request, options)
 				},
 			},
 			{
@@ -272,7 +269,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 				],
 				examples: ['argus net body 42 app', 'argus net body 42 app --request', 'argus net body 90829.507 extension --json'],
 				action: async (request, id, options) => {
-					await runNetBody(id, request, resolveCommandOptions(options))
+					await runNetBody(id, request, options)
 				},
 			},
 			{
@@ -299,7 +296,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 					'argus net inspect /api/post app --settle-after "window.appReady" --settle 400ms --json',
 				],
 				action: async (pattern, id, options) => {
-					await runNetInspect(id, pattern, resolveCommandOptions(options))
+					await runNetInspect(id, pattern, options)
 				},
 			},
 			{
@@ -309,7 +306,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 				options: [...netFilterOptions({ includeSince: true }), jsonOption],
 				examples: ['argus net summary app', 'argus net summary app --ignore-host mc.yandex.ru', 'argus net summary app --json'],
 				action: async (id, options) => {
-					await runNetSummary(id, resolveCommandOptions(options))
+					await runNetSummary(id, options)
 				},
 			},
 			{
@@ -324,7 +321,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 				],
 				examples: ['argus net ws app', 'argus net ws app --grep socket', 'argus net ws app --json', 'argus net ws show 1 app'],
 				action: async (id, options) => {
-					await runNetWebSocket(id, resolveCommandOptions(options))
+					await runNetWebSocket(id, options)
 				},
 				subcommands: [
 					{
@@ -337,7 +334,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 						options: [jsonOption],
 						examples: ['argus net ws show 1 app', 'argus net ws show 90829.42 app --json'],
 						action: async (connection, id, options) => {
-							await runNetWebSocketShow(id, connection, resolveCommandOptions(options))
+							await runNetWebSocketShow(id, connection, options)
 						},
 					},
 				],
@@ -355,144 +352,9 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 				],
 				examples: ['argus net sse app', 'argus net sse app --mime text/event-stream', 'argus net sse app --json'],
 				action: async (id, options) => {
-					await runNetSse(id, resolveCommandOptions(options))
+					await runNetSse(id, options)
 				},
 			},
 		],
 	},
 ]
-
-/**
- * `net` enables positional options, so depending on how a subcommand is reached
- * Commander may deliver an options object or the Command instance. Re-parse the
- * raw argv as a fallback so shared filter flags are never silently dropped.
- */
-const resolveCommandOptions = (value: unknown, argv: string[] = process.argv.slice(2)): Record<string, unknown> => {
-	const fallback = parseNetArgv(argv)
-
-	if (value && typeof value === 'object' && 'opts' in value && typeof value.opts === 'function') {
-		return {
-			...value.opts(),
-			...fallback,
-		}
-	}
-
-	return {
-		...(value && typeof value === 'object' ? (value as Record<string, unknown>) : {}),
-		...fallback,
-	}
-}
-
-/**
- * Mock-add reuses filter flag names whose filter form is repeatable. Restore
- * their scalar shape after the raw-argv fallback has preserved parent options.
- */
-export const resolveNetMockAddOptions = (value: unknown, argv: string[] = process.argv.slice(2)): Record<string, unknown> => {
-	const resolved = resolveCommandOptions(value, argv)
-	for (const key of ['method', 'status', 'resourceType'] as const) {
-		const option = resolved[key]
-		if (Array.isArray(option)) {
-			resolved[key] = option.at(-1)
-		}
-	}
-	return resolved
-}
-
-const parseNetArgv = (argv: string[]): Record<string, unknown> => {
-	const parsed: Record<string, unknown> = {}
-	const readValue = (flag: string): string | undefined => {
-		const index = argv.lastIndexOf(flag)
-		const value = index >= 0 ? argv[index + 1] : undefined
-		return value && !value.startsWith('--') ? value : undefined
-	}
-	const readValues = (flag: string): string[] => {
-		const values: string[] = []
-		for (let index = 0; index < argv.length; index++) {
-			if (argv[index] === flag) {
-				const value = argv[index + 1]
-				if (value && !value.startsWith('--')) {
-					values.push(value)
-				}
-			}
-		}
-		return values
-	}
-
-	if (argv.includes('--json')) {
-		parsed.json = true
-	}
-	if (argv.includes('--reload')) {
-		parsed.reload = true
-	}
-	if (argv.includes('--ignore-cache')) {
-		parsed.ignoreCache = true
-	}
-	if (argv.includes('--no-clear')) {
-		parsed.clear = false
-	}
-	if (argv.includes('--first-party')) {
-		parsed.firstParty = true
-	}
-	if (argv.includes('--third-party')) {
-		parsed.thirdParty = true
-	}
-	if (argv.includes('--failed-only')) {
-		parsed.failedOnly = true
-	}
-	if (argv.includes('--request')) {
-		parsed.request = true
-	}
-	if (argv.includes('--response')) {
-		parsed.response = true
-	}
-
-	for (const flag of [
-		'--after',
-		'--limit',
-		'--timeout',
-		'--since',
-		'--grep',
-		'--settle',
-		'--settle-after',
-		'--settle-after-interval',
-		'--max-timeout',
-		'--scope',
-		'--frame',
-		'--slow-over',
-		'--large-over',
-		'--format',
-		'--out',
-	] as const) {
-		const value = readValue(flag)
-		if (value) {
-			parsed[toCamelCase(flag)] = value
-		}
-	}
-
-	for (const [flag, key] of [
-		['--host', 'host'],
-		['--method', 'method'],
-		['--status', 'status'],
-		['--resource-type', 'resourceType'],
-		['--mime', 'mime'],
-	] as const) {
-		const values = readValues(flag)
-		if (values.length > 0) {
-			parsed[key] = values
-		}
-	}
-
-	const ignoreHost = readValues('--ignore-host')
-	if (ignoreHost.length > 0) {
-		parsed.ignoreHost = ignoreHost
-	}
-
-	const ignorePattern = readValues('--ignore-pattern')
-	if (ignorePattern.length > 0) {
-		parsed.ignorePattern = ignorePattern
-	}
-
-	return parsed
-}
-
-const toCamelCase = (flag: string): string => flag.replace(/^--/, '').replace(/-([a-z])/g, (_match, char: string) => char.toUpperCase())

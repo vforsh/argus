@@ -18,6 +18,18 @@ export type ArgusCommandDefinition = {
 	options?: readonly ArgusCommandOption[]
 	examples?: readonly string[]
 	configure?: (command: Command) => void
+	/**
+	 * Command body. Always invoked as `(...declaredArgs, options, command)`.
+	 *
+	 * `options` is `optsWithGlobals()`, so a subcommand already sees its parent's flags
+	 * merged in — register files must not re-derive that themselves.
+	 *
+	 * The parameter list stays `any[]` on purpose: arity varies per command, and under
+	 * `strictFunctionTypes` a `unknown[]` rest would reject every action that names its
+	 * own parameters, forcing ~230 `as` casts into files that should read as inert option
+	 * tables. What used to make this signature dangerous was not the `any` but the
+	 * unpredictable `options` argument, which {@link createActionRunner} now pins down.
+	 */
 	action?: (...args: any[]) => Promise<void> | void
 	subcommands?: readonly ArgusCommandDefinition[]
 }
@@ -54,10 +66,63 @@ export const defineCommand = (parent: Command, definition: ArgusCommandDefinitio
 		defineCommand(command, subcommand)
 	}
 	if (definition.action) {
-		command.action(definition.action)
+		command.action(createActionRunner(command, definition.action))
 	}
 
 	return command
+}
+
+/**
+ * Normalize Commander's action arguments once, for every command.
+ *
+ * Commander invokes an action as `(...declaredArgs, options, command)`, but which object
+ * arrives as `options` shifts with `enablePositionalOptions` and with whether a command
+ * is also a subcommand parent. Every register file that hit this invented its own
+ * defensive fix — two verbatim copies of a `resolveActionOptions` helper, three
+ * `command.optsWithGlobals?.() ?? options` call sites, and a 135-line shadow argv parser
+ * — while 30-plus other actions did nothing at all. Deriving everything from the trailing
+ * Command instance makes all of that unnecessary.
+ */
+const createActionRunner =
+	(command: Command, action: NonNullable<ArgusCommandDefinition['action']>) =>
+	async (...args: unknown[]): Promise<void> => {
+		const last = args.at(-1)
+		const instance = last instanceof Command ? last : command
+		const declaredArgs = last instanceof Command ? args.slice(0, -2) : args
+
+		await action(...declaredArgs, mergeCommandOptions(instance), instance)
+	}
+
+/**
+ * Merge a command's options with its ancestors'.
+ *
+ * Not `optsWithGlobals()`: that reduces from the command outwards, so an ancestor's value
+ * — including an untouched default — overwrites the subcommand's own. Here the chain is
+ * walked root-to-leaf so the nearest command wins, and a value the user actually typed is
+ * never replaced by a default from either direction.
+ */
+const mergeCommandOptions = (command: Command): Record<string, unknown> => {
+	const chain: Command[] = []
+	for (let current: Command | null = command; current; current = current.parent) {
+		chain.unshift(current)
+	}
+
+	const merged: Record<string, unknown> = {}
+	const typed = new Set<string>()
+	for (const current of chain) {
+		for (const [key, value] of Object.entries(current.opts())) {
+			const fromCli = current.getOptionValueSource(key) === 'cli'
+			if (typed.has(key) && !fromCli) {
+				continue
+			}
+			merged[key] = value
+			if (fromCli) {
+				typed.add(key)
+			}
+		}
+	}
+
+	return merged
 }
 
 /** Register a list of command definitions in order. */
