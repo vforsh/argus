@@ -1,14 +1,8 @@
 import { createOutput } from '../output/io.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { pollEval } from './evalPolling.js'
-import {
-	createEvalEmitter,
-	parseDurationFlagMs,
-	parseEvalCommonFlags,
-	prepareEvalExpression,
-	printSuccess,
-	type EvalCommonOptions,
-} from './evalShared.js'
+import { createEvalEmitter, writeEvalSuccess } from './evalEmit.js'
+import { parseDurationFlagMs, parseEvalCommonFlags, prepareEvalExpression, type EvalCommonOptions } from './evalShared.js'
 import { validateEvalResultFileOptions } from './evalResultOutput.js'
 
 /** Options for the eval-until command. */
@@ -66,7 +60,7 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		totalTimeoutMs: totalTimeoutMs.value,
 		onResult: (response) => {
 			if (!response.result && options.verbose) {
-				printSuccess(response, options, output, true)
+				writeEvalSuccess(response, options, output, true)
 			}
 		},
 		shouldStop: ({ response }) => ({ ok: true, matched: Boolean(response.result) }),

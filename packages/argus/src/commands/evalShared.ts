@@ -1,20 +1,12 @@
-import type { EvalResponse } from '@vforsh/argus-core'
-import { previewStringify } from '@vforsh/argus-core'
 import { readFile } from 'node:fs/promises'
-import { formatError, parseNumber } from '../cli/parse.js'
+import { formatError } from '../cli/parse.js'
 import type { Output } from '../output/io.js'
 import { parseDurationMs } from '@vforsh/argus-core'
 import { type EvalArgMap, type EvalArgSourceOptions, hasEvalArgs, resolveEvalArgs } from './evalArgs.js'
 import { bundleEvalEntry } from './evalBundle.js'
 import { fileUsesModuleSyntax } from './evalModuleSyntax.js'
-import { createEvalResultFileSink, type EvalResultFileOptions } from './evalResultOutput.js'
+import { wrapForIframeEval } from './evalIframe.js'
 import { readTextInput, selectTextInput, type TextInputSelection } from './inputSource.js'
-
-// Re-export eval arg helpers for existing imports and tests.
-export { type EvalArgMap, hasEvalArgs, parseEvalArgFlags as parseEvalArgs } from './evalArgs.js'
-
-// Re-export shared parsers so existing eval imports keep working.
-export { formatError, parseNumber } from '../cli/parse.js'
 
 // ---------------------------------------------------------------------------
 // Expression resolution
@@ -211,7 +203,6 @@ const prependInjectSource = async (expression: string, injectPath: string | unde
 	}
 }
 
-
 // ---------------------------------------------------------------------------
 // Parsing helpers
 // ---------------------------------------------------------------------------
@@ -280,151 +271,6 @@ export const wrapExpressionWithArgs = (source: string, args: EvalArgMap): string
 	}
 
 	return `const args = Object.freeze(${JSON.stringify(args)});\n${source}`
-}
-
-// ---------------------------------------------------------------------------
-// Formatting
-// ---------------------------------------------------------------------------
-
-/** Format an exception response into a human-readable string. */
-export const formatException = (response: EvalResponse): string => {
-	if (!response.exception) {
-		return ''
-	}
-	if (response.exception.details) {
-		return `Exception: ${response.exception.text}\n${previewStringify(response.exception.details)}`
-	}
-	return `Exception: ${response.exception.text}`
-}
-
-// ---------------------------------------------------------------------------
-// Output helpers
-// ---------------------------------------------------------------------------
-
-/** Failure shape used by eval emitters. */
-export type EvalAttemptFailure = {
-	ok: false
-	kind: 'transport' | 'exception'
-	error: string
-	response?: EvalResponse
-	attempt: number
-}
-
-export type EvalEmitOptions = EvalResultFileOptions & {
-	json?: boolean
-	silent?: boolean
-}
-
-/** Writes eval results to stdout/stderr and optionally to `--out`. */
-export type EvalEmitter = {
-	emitSuccess: (response: EvalResponse, streaming: boolean) => Promise<void>
-	emitError: (error: EvalAttemptFailure | { kind: 'until'; error: string }) => void
-}
-
-/** Create stdout/stderr and optional file sinks for eval command output. */
-export const createEvalEmitter = (options: EvalEmitOptions, output: Output): EvalEmitter => {
-	const fileSink = createEvalResultFileSink(options)
-
-	return {
-		emitSuccess: async (response, streaming) => {
-			await fileSink?.write(response, streaming)
-			writeEvalSuccess(response, options, output, streaming)
-
-			if (fileSink && !streaming && !options.silent) {
-				output.writeHuman(`Result saved: ${fileSink.displayPath}`)
-			}
-		},
-		emitError: (error) => {
-			writeEvalError(error, options, output)
-		},
-	}
-}
-
-const writeEvalSuccess = (response: EvalResponse, options: EvalEmitOptions, output: Output, streaming: boolean): void => {
-	if (options.silent) {
-		return
-	}
-
-	if (options.json) {
-		if (streaming) {
-			output.writeJsonLine(response)
-		} else {
-			output.writeJson(response)
-		}
-		return
-	}
-
-	if (response.exception) {
-		output.writeHuman(formatException(response))
-		return
-	}
-
-	output.writeHuman(previewStringify(response.result))
-}
-
-const writeEvalError = (error: EvalAttemptFailure | { kind: 'until'; error: string }, options: EvalEmitOptions, output: Output): void => {
-	if (options.json && 'response' in error && error.response) {
-		output.writeJsonLine(error.response)
-	}
-
-	if (error.kind === 'exception' && 'response' in error && error.response?.exception) {
-		output.writeWarn(formatException(error.response))
-		return
-	}
-
-	output.writeWarn(error.error)
-}
-
-/** Write a successful eval response to stdout/stderr only. */
-export const printSuccess = writeEvalSuccess
-
-/** Write an eval error to stdout/stderr only. */
-export const printError = writeEvalError
-
-// ---------------------------------------------------------------------------
-// Iframe wrapping
-// ---------------------------------------------------------------------------
-
-/** Configuration for wrapping an expression for iframe eval via postMessage. */
-export type IframeWrapConfig = {
-	selector: string
-	namespace: string
-	timeoutMs: number
-}
-
-/**
- * Wrap an expression to eval it in an iframe via postMessage.
- * The iframe must have the argus helper script loaded.
- */
-export const wrapForIframeEval = (code: string, config: IframeWrapConfig): string => {
-	const { selector, namespace, timeoutMs } = config
-	const evalType = `${namespace}:eval`
-	const resultType = `${namespace}:eval-result`
-
-	// Escape the code for embedding in a string
-	const escapedCode = JSON.stringify(code)
-
-	return `(async () => {
-  const iframe = document.querySelector(${JSON.stringify(selector)});
-  if (!iframe) throw new Error('Iframe not found: ${selector.replace(/'/g, "\\'")}');
-  if (!iframe.contentWindow) throw new Error('Iframe has no contentWindow');
-  const id = crypto.randomUUID();
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      window.removeEventListener('message', handler);
-      reject(new Error('Iframe eval timeout after ${timeoutMs}ms'));
-    }, ${timeoutMs});
-    const handler = (e) => {
-      if (e.data?.type !== '${resultType}' || e.data.id !== id) return;
-      clearTimeout(timeout);
-      window.removeEventListener('message', handler);
-      if (e.data.ok) resolve(e.data.result);
-      else reject(new Error(e.data.error));
-    };
-    window.addEventListener('message', handler);
-    iframe.contentWindow.postMessage({ type: '${evalType}', id, code: ${escapedCode} }, '*');
-  });
-})()`
 }
 
 /**

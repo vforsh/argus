@@ -3,7 +3,9 @@ import { evalWithRetries } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { pollEval } from './evalPolling.js'
-import { createEvalEmitter, formatError, parseEvalCommonFlags, prepareEvalExpression, type EvalCommonOptions } from './evalShared.js'
+import { formatError } from '../cli/parse.js'
+import { createEvalEmitter } from './evalEmit.js'
+import { parseEvalCommonFlags, prepareEvalExpression, type EvalCommonOptions } from './evalShared.js'
 import { validateEvalResultFileOptions } from './evalResultOutput.js'
 
 /** Options for the eval command. */
