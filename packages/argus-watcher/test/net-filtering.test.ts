@@ -47,7 +47,8 @@ describe('net filters', () => {
 			}),
 		)
 
-		const matching = buffer.list(
+		const matching = buffer.listAfter(
+			0,
 			{
 				hosts: ['stark.games'],
 				methods: ['POST'],
@@ -66,7 +67,7 @@ describe('net filters', () => {
 		expect(matching).toHaveLength(1)
 		expect(matching[0]?.requestId).toBe('game-init')
 
-		const failed = buffer.list({ failedOnly: true }, 10)
+		const failed = buffer.listAfter(0, { failedOnly: true }, 10)
 		expect(failed.map((entry) => entry.requestId)).toEqual(['game-fail'])
 	})
 
@@ -141,7 +142,7 @@ describe('net filters', () => {
 		})
 
 		expect(parsed.error).toBeUndefined()
-		const matching = buffer.list(parsed.value ?? {}, 10)
+		const matching = buffer.listAfter(0, parsed.value ?? {}, 10)
 		expect(matching).toHaveLength(1)
 		expect(matching[0]?.requestId).toBe('reloaded-frame')
 	})

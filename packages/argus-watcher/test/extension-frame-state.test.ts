@@ -175,7 +175,6 @@ describe('extension-frame-state', () => {
 					sendAndWait: async () => undefined,
 					onEvent: () => () => {},
 				},
-				enabledDomains: new Set(),
 			},
 			state,
 		)

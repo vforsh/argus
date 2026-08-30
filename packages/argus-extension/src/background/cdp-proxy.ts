@@ -5,16 +5,7 @@
 
 import type { DebuggerManager } from './debugger-manager.js'
 import type { BridgeClient } from './bridge-client.js'
-import type {
-	CdpCommandMessage,
-	AttachTabMessage,
-	DetachTabMessage,
-	EnableDomainMessage,
-	CookieQueryMessage,
-	ExtensionToTabHost,
-	TabInfo,
-	TabHostToExtension,
-} from '../types/messages.js'
+import type { CdpCommandMessage, DetachTabMessage, CookieQueryMessage, ExtensionToTabHost, TabInfo, TabHostToExtension } from '../types/messages.js'
 import { listBrowserTabs } from './tab-list.js'
 
 export class CdpProxy {
@@ -77,10 +68,6 @@ export class CdpProxy {
 	 */
 	private async handleMessage(message: TabHostToExtension): Promise<void> {
 		switch (message.type) {
-			case 'attach_tab':
-				await this.handleAttachTab(message)
-				break
-
 			case 'detach_tab':
 				await this.handleDetachTab(message)
 				break
@@ -91,10 +78,6 @@ export class CdpProxy {
 
 			case 'cookie_query':
 				await this.handleCookieQuery(message)
-				break
-
-			case 'enable_domain':
-				await this.handleEnableDomain(message)
 				break
 
 			case 'host_info':
@@ -108,11 +91,11 @@ export class CdpProxy {
 	}
 
 	/**
-	 * Attach to a tab.
+	 * Attach to a tab (driven by the popup; the host never requests attachment).
 	 */
-	private async handleAttachTab(message: AttachTabMessage): Promise<void> {
+	async attachTab(tabId: number): Promise<void> {
 		try {
-			const target = await this.debuggerManager.attach(message.tabId)
+			const target = await this.debuggerManager.attach(tabId)
 
 			this.bridgeClient.send({
 				type: 'tab_attached',
@@ -127,7 +110,7 @@ export class CdpProxy {
 			console.error('[CdpProxy] Failed to attach:', err)
 			this.bridgeClient.send({
 				type: 'tab_detached',
-				tabId: message.tabId,
+				tabId,
 				reason: err instanceof Error ? err.message : 'attach_failed',
 			})
 			throw err
@@ -188,24 +171,6 @@ export class CdpProxy {
 				},
 			})
 		}
-	}
-
-	/**
-	 * Enable a CDP domain for a tab.
-	 */
-	private async handleEnableDomain(message: EnableDomainMessage): Promise<void> {
-		try {
-			await this.debuggerManager.enableDomain(message.tabId, message.domain)
-		} catch (err) {
-			console.error('[CdpProxy] Failed to enable domain:', err)
-		}
-	}
-
-	/**
-	 * Manually attach to a tab (called from popup).
-	 */
-	async attachTab(tabId: number): Promise<void> {
-		await this.handleAttachTab({ type: 'attach_tab', tabId })
 	}
 
 	/**

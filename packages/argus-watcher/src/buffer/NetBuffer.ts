@@ -45,24 +45,9 @@ export class NetBuffer {
 		return this.listMatchingSummaries(limit, (event) => event.summary.id > after && matchesNetFilters(event.summary, filters))
 	}
 
-	/** List buffered events without an `after` cursor. */
-	list(filters: NetFilters, limit = this.maxSize): NetworkRequestSummary[] {
-		return this.listMatchingSummaries(limit, (event) => matchesNetFilters(event.summary, filters))
-	}
-
 	/** List detailed request records after the given id, respecting filters and limit. */
 	listDetailsAfter(after: number, filters: NetFilters, limit: number): NetworkRequestDetail[] {
 		return this.listMatchingDetails(limit, (event) => event.summary.id > after && matchesNetFilters(event.summary, filters))
-	}
-
-	/** Retrieve one buffered request by Argus numeric id. */
-	getById(id: number): NetworkRequestDetail | null {
-		return this.findRecordById(id)?.detail ?? null
-	}
-
-	/** Retrieve the most recent buffered request by CDP request id. */
-	getByRequestId(requestId: string): NetworkRequestDetail | null {
-		return this.findRecordByRequestId(requestId)?.detail ?? null
 	}
 
 	/** Retrieve the full stored record by Argus numeric id. */

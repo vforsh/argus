@@ -76,8 +76,8 @@ export const createRecorder = (options: {
 		const recordId = crypto.randomUUID()
 		const sessionName = `record-${new Date().toISOString().replace(/[:.]/g, '-')}`
 		const defaultName = `recordings/${sessionName}.${format}`
-		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
-		validateOutputPathFormat(displayPath, format)
+		const absolutePath = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
+		validateOutputPathFormat(absolutePath, format)
 		await ensureParentDir(absolutePath)
 
 		const capturePlan = await createVisualCapturePlan(options.session, options.pageSession, request)
@@ -86,7 +86,7 @@ export const createRecorder = (options: {
 			recordId,
 			sessionName,
 			absolutePath: path.resolve(absolutePath),
-			outFile: displayPath,
+			outFile: absolutePath,
 			session: capturePlan.session,
 			removeFrameHandler: () => {},
 			ffmpeg: null,
@@ -138,7 +138,7 @@ export const createRecorder = (options: {
 				ok: true,
 				recordId,
 				sessionName,
-				outFile: displayPath,
+				outFile: absolutePath,
 				format,
 				fps,
 				clipped: Boolean(state.clip),
@@ -204,8 +204,8 @@ export const createRecorder = (options: {
 			return
 		}
 
-		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, outFile, `recordings/${state.sessionName}.${state.format}`)
-		validateOutputPathFormat(displayPath, state.format)
+		const absolutePath = resolveArtifactPath(options.artifactsDir, outFile, `recordings/${state.sessionName}.${state.format}`)
+		validateOutputPathFormat(absolutePath, state.format)
 		if (path.resolve(absolutePath) === state.absolutePath) {
 			return
 		}
@@ -224,7 +224,7 @@ export const createRecorder = (options: {
 		}
 
 		state.absolutePath = path.resolve(absolutePath)
-		state.outFile = displayPath
+		state.outFile = absolutePath
 	}
 }
 

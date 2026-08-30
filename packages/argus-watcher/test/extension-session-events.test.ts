@@ -24,7 +24,6 @@ describe('extension session events', () => {
 				topFrameId: 'root-frame',
 				frames: [],
 				handle: stub.session,
-				enabledDomains: new Set(),
 			},
 			events: {
 				onLog: () => {},

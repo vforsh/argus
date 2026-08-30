@@ -67,6 +67,5 @@ function createExtensionSessionStub(overrides: { sendAndWait: NonNullable<Extens
 			sendAndWait: overrides.sendAndWait,
 			onEvent: () => () => {},
 		},
-		enabledDomains: new Set(),
 	}
 }

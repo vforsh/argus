@@ -11,26 +11,18 @@ export const ensureParentDir = async (filePath: string): Promise<void> => {
 }
 
 /**
- * Resolve an artifact output path.
+ * Resolve an artifact output path to an absolute path.
  * - If `outFile` is an absolute path, use it directly (no restriction).
  * - If `outFile` is relative, resolve it under `artifactsDir`.
  * - If `outFile` is empty/undefined, use `defaultName` under `artifactsDir`.
  */
-export const resolveArtifactPath = (
-	artifactsDir: string,
-	outFile: string | undefined,
-	defaultName: string,
-): { absolutePath: string; displayPath: string } => {
+export const resolveArtifactPath = (artifactsDir: string, outFile: string | undefined, defaultName: string): string => {
 	const trimmed = outFile?.trim()
 
 	if (trimmed && path.isAbsolute(trimmed)) {
-		const resolved = path.resolve(trimmed)
-		return { absolutePath: resolved, displayPath: resolved }
+		return path.resolve(trimmed)
 	}
 
 	const baseDir = path.resolve(artifactsDir)
-	const fileName = trimmed || defaultName
-	const resolved = path.resolve(baseDir, fileName)
-
-	return { absolutePath: resolved, displayPath: resolved }
+	return path.resolve(baseDir, trimmed || defaultName)
 }

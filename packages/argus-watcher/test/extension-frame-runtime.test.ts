@@ -79,7 +79,6 @@ function createSessionStub() {
 			sendAndWait: async () => undefined,
 			onEvent: () => () => {},
 		},
-		enabledDomains: new Set(),
 	}
 }
 

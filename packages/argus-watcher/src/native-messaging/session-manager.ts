@@ -25,7 +25,6 @@ export type ExtensionSession = {
 	topFrameId: string | null
 	frames: FrameSnapshot[]
 	handle: CdpSessionHandle
-	enabledDomains: Set<string>
 }
 
 export type SessionManagerEvents = {
@@ -171,7 +170,6 @@ export class SessionManager {
 	 */
 	private createSession(message: TabAttachedMessage): ExtensionSession {
 		const { tabId, url, title, faviconUrl } = message
-		const enabledDomains = new Set<string>()
 		const tabHandlers = new Map<string, Set<CdpEventHandler>>()
 		this.eventHandlers.set(tabId, tabHandlers)
 
@@ -220,7 +218,6 @@ export class SessionManager {
 			topFrameId: message.topFrameId ?? null,
 			frames: message.frames ?? [],
 			handle,
-			enabledDomains,
 		}
 
 		this.sessions.set(tabId, session)
@@ -249,17 +246,6 @@ export class SessionManager {
 	}
 
 	/**
-	 * Request to attach to a tab.
-	 */
-	attachTab(tabId: number): void {
-		const message: TabHostToExtension = {
-			type: 'attach_tab',
-			tabId,
-		}
-		this.messaging.send(message)
-	}
-
-	/**
 	 * Request to detach from a tab.
 	 */
 	detachTab(tabId: number): void {
@@ -268,49 +254,6 @@ export class SessionManager {
 			tabId,
 		}
 		this.messaging.send(message)
-	}
-
-	/**
-	 * Request to enable a CDP domain for a tab.
-	 */
-	enableDomain(tabId: number, domain: string): void {
-		const message: TabHostToExtension = {
-			type: 'enable_domain',
-			tabId,
-			domain,
-		}
-		this.messaging.send(message)
-	}
-
-	/**
-	 * Get a session by tab ID.
-	 */
-	getSession(tabId: number): ExtensionSession | undefined {
-		return this.sessions.get(tabId)
-	}
-
-	/**
-	 * Get all active sessions.
-	 */
-	listSessions(): ExtensionSession[] {
-		return [...this.sessions.values()]
-	}
-
-	/**
-	 * Check if a tab is attached.
-	 */
-	isAttached(tabId: number): boolean {
-		return this.sessions.has(tabId)
-	}
-
-	/**
-	 * Get the first attached session (for single-tab mode).
-	 */
-	getFirstSession(): ExtensionSession | undefined {
-		for (const session of this.sessions.values()) {
-			return session
-		}
-		return undefined
 	}
 
 	/**

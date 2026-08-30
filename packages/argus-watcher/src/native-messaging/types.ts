@@ -175,11 +175,6 @@ export type ExtensionToTabHost = ExtensionToHost | InitTabWatcherMessage
 // Host -> Extension messages
 // ============================================================
 
-export type AttachTabMessage = {
-	type: 'attach_tab'
-	tabId: number
-}
-
 export type AttachTabWatcherMessage = {
 	type: 'attach_tab_watcher'
 	requestId: number
@@ -221,12 +216,6 @@ export type ControlStatusMessage = {
 	requestId: number
 }
 
-export type EnableDomainMessage = {
-	type: 'enable_domain'
-	tabId: number
-	domain: string
-}
-
 export type CookieQueryMessage = {
 	type: 'cookie_query'
 	requestId: number
@@ -235,15 +224,7 @@ export type CookieQueryMessage = {
 	url?: string
 }
 
-export type HostToExtension =
-	| AttachTabMessage
-	| DetachTabMessage
-	| CdpCommandMessage
-	| CookieQueryMessage
-	| EnableDomainMessage
-	| HostInfoMessage
-	| HostReadyMessage
-	| TargetInfoMessage
+export type HostToExtension = DetachTabMessage | CdpCommandMessage | CookieQueryMessage | HostInfoMessage | HostReadyMessage | TargetInfoMessage
 
 export type ControlHostToExtension =
 	| AttachTabWatcherMessage

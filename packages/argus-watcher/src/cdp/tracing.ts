@@ -67,14 +67,14 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		}
 	})
 
-	const resolveFinalPath = async (state: TraceState, outFile: string | undefined): Promise<{ absolutePath: string; displayPath: string }> => {
+	const resolveFinalPath = async (state: TraceState, outFile: string | undefined): Promise<void> => {
 		if (!outFile?.trim()) {
-			return { absolutePath: state.absolutePath, displayPath: state.outFile }
+			return
 		}
 
-		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, outFile, `traces/${state.sessionName}.json`)
+		const absolutePath = resolveArtifactPath(options.artifactsDir, outFile, `traces/${state.sessionName}.json`)
 		if (absolutePath === state.absolutePath) {
-			return { absolutePath, displayPath }
+			return
 		}
 
 		await ensureParentDir(absolutePath)
@@ -91,8 +91,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		}
 
 		state.absolutePath = absolutePath
-		state.outFile = displayPath
-		return { absolutePath, displayPath }
+		state.outFile = absolutePath
 	}
 
 	options.session.onEvent('Tracing.tracingComplete', () => {
@@ -120,7 +119,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		const traceId = crypto.randomUUID()
 		const sessionName = `trace-${new Date().toISOString().replace(/[:.]/g, '-')}`
 		const defaultName = `traces/${sessionName}.json`
-		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
+		const absolutePath = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
 		await ensureParentDir(absolutePath)
 
 		const stream = fs.createWriteStream(path.resolve(absolutePath), { encoding: 'utf8' })
@@ -131,7 +130,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 			traceId,
 			sessionName,
 			absolutePath: path.resolve(absolutePath),
-			outFile: displayPath,
+			outFile: absolutePath,
 			stream,
 			hasWritten: false,
 			eventCount: 0,
@@ -148,7 +147,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 			transferMode: 'ReportEvents',
 		})
 
-		return { ok: true, traceId, sessionName, outFile: displayPath }
+		return { ok: true, traceId, sessionName, outFile: absolutePath }
 	}
 
 	const stop = async ({ traceId, outFile }: { traceId?: string; outFile?: string }): Promise<TraceStopResponse> => {

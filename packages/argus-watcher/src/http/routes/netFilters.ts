@@ -79,7 +79,7 @@ export const parseNetRequestFilters = (searchParams: URLSearchParams, options: P
 	}
 
 	const context = options.context ?? null
-	const resolvedScope = scope.value ?? defaultScope(context)
+	const resolvedScope = scope.value ?? DEFAULT_NET_SCOPE
 	const resolvedFrameId = resolveFrameId({ frame: frame.value ?? null, scope: resolvedScope, context })
 	const partyHost = derivePartyHost(resolvePartyReferenceUrl(resolvedScope, context))
 
@@ -149,8 +149,6 @@ const resolveDocumentUrlKey = (options: { frame: string | null; scope: NetScope;
 	return normalizeNetUrlKey(baseUrl)
 }
 
-const defaultScope = (_context: NetFilterContext | null): NetScope => 'tab'
-
 const resolveFrameId = (options: { frame: string | null; scope: NetScope; context: NetFilterContext | null }): string | undefined => {
 	if (options.frame === 'selected') {
 		return options.context?.selectedFrameId ?? options.context?.topFrameId ?? undefined
@@ -187,6 +185,9 @@ const resolvePartyReferenceUrl = (scope: NetScope, context: NetFilterContext | n
 	return context.pageUrl ?? context.selectedTargetUrl
 }
 
+/** Scope applied when a request does not specify one. */
+const DEFAULT_NET_SCOPE: NetScope = 'tab'
+
 const normalizeScope = (value: string | null): NormalizedValueResult<NetScope> => {
 	return normalizeChoice(value, ['selected', 'page', 'tab'], 'scope filter')
 }
@@ -195,10 +196,6 @@ const normalizeFrame = (value: string | null): NormalizedValueResult<string | nu
 	const normalized = normalizeQueryValue(value)
 	if (!normalized) {
 		return {}
-	}
-
-	if (normalized === 'selected' || normalized === 'page') {
-		return { value: normalized }
 	}
 
 	return { value: normalized }

@@ -136,8 +136,8 @@ describe('network capture', () => {
 			cookie: 'session=<redacted>; theme=<redacted>',
 		})
 
-		const detailById = buffer.getById(summary?.id ?? 0)
-		const detailByRequestId = buffer.getByRequestId('req-1')
+		const detailById = buffer.getRecordById(summary?.id ?? 0)?.detail ?? null
+		const detailByRequestId = buffer.getRecordByRequestId('req-1')?.detail ?? null
 		const recordById = buffer.getRecordById(summary?.id ?? 0)
 		expect(detailById).toEqual(detailByRequestId)
 		expect(detailById).toMatchObject({

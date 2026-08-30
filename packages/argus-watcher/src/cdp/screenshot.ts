@@ -25,7 +25,7 @@ export const createScreenshotter = (options: { session: CdpSessionHandle; pageSe
 
 		await ensureArtifactsDir(options.artifactsDir)
 		const defaultName = `screenshots/${new Date().toISOString().replace(/[:.]/g, '-')}.png`
-		const { absolutePath, displayPath } = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
+		const absolutePath = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
 		await ensureParentDir(absolutePath)
 		const capturePlan = await createVisualCapturePlan(options.session, options.pageSession, request)
 
@@ -35,7 +35,7 @@ export const createScreenshotter = (options: { session: CdpSessionHandle; pageSe
 		})
 
 		await fs.writeFile(absolutePath, Buffer.from(result.data, 'base64'))
-		return { ok: true, outFile: displayPath, clipped: result.clipped }
+		return { ok: true, outFile: absolutePath, clipped: result.clipped }
 	}
 
 	return { capture }
