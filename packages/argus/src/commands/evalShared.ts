@@ -473,3 +473,83 @@ export const wrapForIframeEval = (code: string, config: IframeWrapConfig): strin
   });
 })()`
 }
+
+/**
+ * Flags `eval` and `eval-until` both accept.
+ *
+ * The two commands share their entire expression/args/iframe/out surface; only `--until`
+ * versus `--total-timeout` semantics differ. Declaring the shared half once means a new
+ * shared flag is added in one place instead of four.
+ */
+export type EvalCommonOptions = {
+	json?: boolean
+	await?: boolean
+	timeout?: string
+	returnByValue?: boolean
+	failOnException?: boolean
+	retry?: string
+	silent?: boolean
+	interval?: string
+	count?: string
+	/** Read expression from a file path. */
+	file?: string
+	/** Bundle local imports from `--file` before eval. */
+	bundle?: boolean
+	/** Do not bundle `--file` (disables auto-bundle for import/export). */
+	noBundle?: boolean
+	/** Read expression from stdin. Also activated when expression is `-`. */
+	stdin?: boolean
+	/** Read setup code from a file and run it before the expression. */
+	inject?: string
+	/** CSS selector for iframe to eval in via postMessage (extension mode). */
+	iframe?: string
+	/** Message type prefix for iframe eval (default: argus). */
+	iframeNamespace?: string
+	/** Timeout for iframe postMessage response (default: 5000; accepts duration syntax). */
+	iframeTimeout?: string
+	/** Repeated key=value arguments exposed to scripts as `args`. */
+	arg?: string[]
+	/** Load args from a JSON object file. */
+	args?: string
+	/** Write the eval result to a file. */
+	out?: string
+}
+
+/** Values both eval commands derive from {@link EvalCommonOptions}. */
+export type EvalCommonFlags = {
+	/** Retry attempts. `parseRetryCount` defaults this to 0, so it is never absent. */
+	retryCount: number
+	intervalMs: number | undefined
+	count: number | undefined
+	timeoutMs: number | undefined
+}
+
+/**
+ * Parse the flags both eval commands share, reporting the first failure.
+ *
+ * Each command used to walk the same six-rung parse-warn-exit ladder inline.
+ *
+ * @returns The parsed values, or `null` when a warning has been written and
+ *   `process.exitCode` set.
+ */
+export const parseEvalCommonFlags = (options: EvalCommonOptions, output: Output): EvalCommonFlags | null => {
+	const retryCount = parseRetryCount(options.retry)
+	const intervalMs = parseIntervalMs(options.interval)
+	const count = parseCount(options.count)
+	const timeoutMs = parseTimeoutMs(options.timeout)
+
+	for (const parsed of [retryCount, intervalMs, count, timeoutMs]) {
+		if (parsed.error) {
+			output.writeWarn(parsed.error)
+			process.exitCode = 2
+			return null
+		}
+	}
+
+	return {
+		retryCount: retryCount.value,
+		intervalMs: intervalMs.value,
+		count: count.value,
+		timeoutMs: timeoutMs.value,
+	}
+}

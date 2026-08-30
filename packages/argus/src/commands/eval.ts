@@ -3,43 +3,13 @@ import { evalWithRetries } from '../eval/evalClient.js'
 import { createOutput } from '../output/io.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { pollEval } from './evalPolling.js'
-import { createEvalEmitter, formatError, parseCount, parseIntervalMs, parseRetryCount, parseTimeoutMs, prepareEvalExpression } from './evalShared.js'
+import { createEvalEmitter, formatError, parseEvalCommonFlags, prepareEvalExpression, type EvalCommonOptions } from './evalShared.js'
 import { validateEvalResultFileOptions } from './evalResultOutput.js'
 
 /** Options for the eval command. */
-export type EvalOptions = {
-	json?: boolean
-	await?: boolean
-	timeout?: string
-	returnByValue?: boolean
-	failOnException?: boolean
-	retry?: string
-	silent?: boolean
-	interval?: string
-	count?: string
+export type EvalOptions = EvalCommonOptions & {
+	/** Stop polling once this expression over `result` becomes truthy. Requires --interval. */
 	until?: string
-	/** Read expression from a file path. */
-	file?: string
-	/** Bundle local imports from `--file` before eval. */
-	bundle?: boolean
-	/** Do not bundle `--file` (disables auto-bundle for import/export). */
-	noBundle?: boolean
-	/** Read expression from stdin. Also activated when expression is `-`. */
-	stdin?: boolean
-	/** Read setup code from a file and run it before the expression. */
-	inject?: string
-	/** CSS selector for iframe to eval in via postMessage (extension mode). */
-	iframe?: string
-	/** Message type prefix for iframe eval (default: argus). */
-	iframeNamespace?: string
-	/** Timeout for iframe postMessage response (default: 5000; accepts duration syntax). */
-	iframeTimeout?: string
-	/** Repeated key=value arguments exposed to scripts as `args`. */
-	arg?: string[]
-	/** Load args from a JSON object file. */
-	args?: string
-	/** Write the eval result to a file. */
-	out?: string
 	/** With --interval, write one file per iteration instead of appending NDJSON. */
 	rotate?: boolean
 }
@@ -54,33 +24,16 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		return
 	}
 
-	const retryCount = parseRetryCount(options.retry)
-	if (retryCount.error) {
-		output.writeWarn(retryCount.error)
-		process.exitCode = 2
-		return
-	}
+	const flags = parseEvalCommonFlags(options, output)
+	if (!flags) return
 
-	const intervalMs = parseIntervalMs(options.interval)
-	if (intervalMs.error) {
-		output.writeWarn(intervalMs.error)
-		process.exitCode = 2
-		return
-	}
-
-	const countValue = parseCount(options.count)
-	if (countValue.error) {
-		output.writeWarn(countValue.error)
-		process.exitCode = 2
-		return
-	}
-	if (countValue.value != null && intervalMs.value == null) {
+	if (flags.count != null && flags.intervalMs == null) {
 		output.writeWarn('Invalid --count usage: --count requires --interval')
 		process.exitCode = 2
 		return
 	}
 
-	if (options.until && intervalMs.value == null) {
+	if (options.until && flags.intervalMs == null) {
 		output.writeWarn('Invalid --until usage: --until requires --interval')
 		process.exitCode = 2
 		return
@@ -97,13 +50,6 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		return
 	}
 
-	const timeoutMs = parseTimeoutMs(options.timeout)
-	if (timeoutMs.error) {
-		output.writeWarn(timeoutMs.error)
-		process.exitCode = 2
-		return
-	}
-
 	const emitter = createEvalEmitter(options, output)
 
 	const resolved = await resolveWatcherOrExit({ id }, output)
@@ -111,16 +57,16 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 
 	const { watcher } = resolved
 
-	if (intervalMs.value == null) {
+	if (flags.intervalMs == null) {
 		const singleResult = await evalWithRetries({
 			watcher,
 			expression: prepared.expression,
 			args: prepared.args,
 			awaitPromise: options.await ?? true,
 			returnByValue: options.returnByValue ?? true,
-			timeoutMs: timeoutMs.value,
+			timeoutMs: flags.timeoutMs,
 			failOnException: options.failOnException ?? true,
-			retryCount: retryCount.value,
+			retryCount: flags.retryCount,
 			scenario: prepared.scenario,
 		})
 
@@ -140,12 +86,12 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		args: prepared.args,
 		awaitPromise: options.await ?? true,
 		returnByValue: options.returnByValue ?? true,
-		timeoutMs: timeoutMs.value,
+		timeoutMs: flags.timeoutMs,
 		failOnException: options.failOnException ?? true,
-		retryCount: retryCount.value,
+		retryCount: flags.retryCount,
 		scenario: prepared.scenario,
-		intervalMs: intervalMs.value,
-		count: countValue.value,
+		intervalMs: flags.intervalMs,
+		count: flags.count,
 		onResult: async (response) => {
 			await emitter.emitSuccess(response, true)
 		},

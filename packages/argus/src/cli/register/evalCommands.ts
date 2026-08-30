@@ -72,35 +72,9 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			'argus eval app "document.title" --iframe "iframe" --iframe-timeout 10000',
 		],
 		action: async (id, expression, options) => {
-			if (expression != null && options.expression != null) {
-				console.error('Provide either a positional expression or --expression, not both.')
-				process.exitCode = 2
-				return
-			}
-			await runEval(id, expression ?? options.expression, {
-				json: options.json,
-				await: options.await,
-				timeout: options.timeout,
-				returnByValue: options.returnByValue,
-				failOnException: options.failOnException,
-				retry: options.retry,
-				silent: options.silent,
-				interval: options.interval,
-				count: options.count,
-				until: options.until,
-				file: options.file,
-				bundle: options.bundle,
-				noBundle: options.noBundle,
-				stdin: options.stdin,
-				inject: options.inject,
-				iframe: options.iframe,
-				iframeNamespace: options.iframeNamespace,
-				iframeTimeout: options.iframeTimeout,
-				arg: options.arg,
-				args: options.args,
-				out: options.out,
-				rotate: options.rotate,
-			})
+			const resolved = resolveEvalExpression(expression, options)
+			if (resolved === REJECTED) return
+			await runEval(id, resolved, options)
 		},
 		subcommands: [
 			{
@@ -155,35 +129,31 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			'argus wait app --file ./ready.js --args ./args.json --out ./ready.json',
 		],
 		action: async (id, expression, options) => {
-			if (expression != null && options.expression != null) {
-				console.error('Provide either a positional expression or --expression, not both.')
-				process.exitCode = 2
-				return
-			}
-			await runEvalUntil(id, expression ?? options.expression, {
-				json: options.json,
-				await: options.await,
-				timeout: options.timeout,
-				returnByValue: options.returnByValue,
-				failOnException: options.failOnException,
-				retry: options.retry,
-				silent: options.silent,
-				interval: options.interval,
-				count: options.count,
-				totalTimeout: options.totalTimeout,
-				verbose: options.verbose,
-				file: options.file,
-				bundle: options.bundle,
-				noBundle: options.noBundle,
-				stdin: options.stdin,
-				inject: options.inject,
-				iframe: options.iframe,
-				iframeNamespace: options.iframeNamespace,
-				iframeTimeout: options.iframeTimeout,
-				arg: options.arg,
-				args: options.args,
-				out: options.out,
-			})
+			const resolved = resolveEvalExpression(expression, options)
+			if (resolved === REJECTED) return
+			await runEvalUntil(id, resolved, options)
 		},
 	},
 ]
+
+/** Returned when the positional/flag conflict has already been reported. */
+const REJECTED = Symbol('eval-expression-rejected')
+
+/**
+ * Resolve the expression from either the positional argument or `--expression`.
+ *
+ * `eval` and `eval-until` share their whole expression/args/iframe/out surface, and both
+ * used to re-map ~22 option properties into a new object where every key mapped to the
+ * same name — a pure identity projection written twice, where missing a key meant a flag
+ * parsed but never reached the command. The options object is passed through now, so
+ * `RunEvalOptions` is the contract instead of a hand-copied mirror.
+ */
+const resolveEvalExpression = (expression: string | undefined, options: { expression?: string }): string | undefined | typeof REJECTED => {
+	if (expression != null && options.expression != null) {
+		console.error('Provide either a positional expression or --expression, not both.')
+		process.exitCode = 2
+		return REJECTED
+	}
+
+	return expression ?? options.expression
+}

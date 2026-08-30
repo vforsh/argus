@@ -3,51 +3,20 @@ import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { pollEval } from './evalPolling.js'
 import {
 	createEvalEmitter,
-	parseCount,
 	parseDurationFlagMs,
-	parseIntervalMs,
-	parseRetryCount,
-	parseTimeoutMs,
+	parseEvalCommonFlags,
 	prepareEvalExpression,
 	printSuccess,
+	type EvalCommonOptions,
 } from './evalShared.js'
 import { validateEvalResultFileOptions } from './evalResultOutput.js'
 
 /** Options for the eval-until command. */
-export type EvalUntilOptions = {
-	json?: boolean
-	await?: boolean
-	timeout?: string
-	returnByValue?: boolean
-	failOnException?: boolean
-	retry?: string
-	silent?: boolean
-	interval?: string
-	count?: string
+export type EvalUntilOptions = EvalCommonOptions & {
+	/** Give up after this much wall-clock time. */
 	totalTimeout?: string
+	/** Report each poll instead of only the match. */
 	verbose?: boolean
-	/** Read expression from a file path. */
-	file?: string
-	/** Bundle local imports from `--file` before eval. */
-	bundle?: boolean
-	/** Do not bundle `--file` (disables auto-bundle for import/export). */
-	noBundle?: boolean
-	/** Read expression from stdin. Also activated when expression is `-`. */
-	stdin?: boolean
-	/** Read setup code from a file and run it before the expression. */
-	inject?: string
-	/** CSS selector for iframe to eval in via postMessage (extension mode). */
-	iframe?: string
-	/** Message type prefix for iframe eval (default: argus). */
-	iframeNamespace?: string
-	/** Timeout for iframe postMessage response (default: 5000; accepts duration syntax). */
-	iframeTimeout?: string
-	/** Repeated key=value arguments exposed to scripts as `args`. */
-	arg?: string[]
-	/** Load args from a JSON object file. */
-	args?: string
-	/** Write the matched eval result to a file. */
-	out?: string
 }
 
 /** Execute the eval-until command: poll until the expression returns a truthy value. */
@@ -60,38 +29,13 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		return
 	}
 
-	const retryCount = parseRetryCount(options.retry)
-	if (retryCount.error) {
-		output.writeWarn(retryCount.error)
-		process.exitCode = 2
-		return
-	}
-
-	const intervalMs = parseIntervalMs(options.interval)
-	if (intervalMs.error) {
-		output.writeWarn(intervalMs.error)
-		process.exitCode = 2
-		return
-	}
-	const pollIntervalMs = intervalMs.value ?? 250
-
-	const countValue = parseCount(options.count)
-	if (countValue.error) {
-		output.writeWarn(countValue.error)
-		process.exitCode = 2
-		return
-	}
+	const flags = parseEvalCommonFlags(options, output)
+	if (!flags) return
+	const pollIntervalMs = flags.intervalMs ?? 250
 
 	const totalTimeoutMs = parseDurationFlagMs(options.totalTimeout, '--total-timeout')
 	if (totalTimeoutMs.error) {
 		output.writeWarn(totalTimeoutMs.error)
-		process.exitCode = 2
-		return
-	}
-
-	const timeoutMs = parseTimeoutMs(options.timeout)
-	if (timeoutMs.error) {
-		output.writeWarn(timeoutMs.error)
 		process.exitCode = 2
 		return
 	}
@@ -113,12 +57,12 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		args: prepared.args,
 		awaitPromise: options.await ?? true,
 		returnByValue: options.returnByValue ?? true,
-		timeoutMs: timeoutMs.value,
+		timeoutMs: flags.timeoutMs,
 		failOnException: options.failOnException ?? true,
-		retryCount: retryCount.value,
+		retryCount: flags.retryCount,
 		scenario: prepared.scenario,
 		intervalMs: pollIntervalMs,
-		count: countValue.value,
+		count: flags.count,
 		totalTimeoutMs: totalTimeoutMs.value,
 		onResult: (response) => {
 			if (!response.result && options.verbose) {
