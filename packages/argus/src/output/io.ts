@@ -2,6 +2,7 @@ type OutputOptions = {
 	json?: boolean
 }
 
+import type { ArgusOutput } from '@vforsh/argus-plugin-api'
 const ensureTrailingNewline = (value: string): string => (value.endsWith('\n') ? value : `${value}\n`)
 
 /** Route incidental console progress to stderr before JSON-mode plugins are loaded. */
@@ -16,15 +17,13 @@ export const configureMachineSafeConsole = (argv: readonly string[]): void => {
 	console.debug = writeConsoleError
 }
 
-export type Output = {
-	json: boolean
-	/** Write the command's single machine-readable JSON document. */
-	writeJson: (value: unknown) => void
-	/** Write one NDJSON record for explicitly streaming commands only. */
-	writeJsonLine: (value: unknown) => void
-	writeHuman: (text: string) => void
-	writeWarn: (text: string) => void
-}
+/**
+ * Output helpers that enforce JSON/stdout vs human/stderr rules.
+ *
+ * Declared by `@vforsh/argus-plugin-api`, which is the published contract: the CLI hands
+ * this exact object to plugins, so re-declaring it here would let the two drift silently.
+ */
+export type Output = ArgusOutput
 
 /** Output helpers that enforce JSON/stdout vs human/stderr rules. */
 export const createOutput = (options: OutputOptions): Output => {

@@ -1,6 +1,11 @@
+import type {
+	ArgusWatcherRequestError,
+	ArgusWatcherRequestInput,
+	ArgusWatcherRequestResult,
+	ArgusWatcherRequestSuccess,
+} from '@vforsh/argus-plugin-api'
 import type { ErrorResponse, WatcherRecord } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
-import type { HttpOptions } from '../httpClient.js'
 import { fetchJson } from '../httpClient.js'
 import { formatError } from '../cli/parse.js'
 import { formatWatcherLine } from '../output/format.js'
@@ -10,34 +15,20 @@ import { resolveWatcher } from './resolveWatcher.js'
 // Request helper
 // ---------------------------------------------------------------------------
 
+// These shapes are declared by `@vforsh/argus-plugin-api` — the published contract every
+// plugin compiles against. The CLI aliases them rather than re-declaring them, so the
+// compiler catches drift at the seam instead of plugins failing at runtime.
+
 /** Input for a one-shot watcher request. */
-export type WatcherRequestInput = {
-	id?: string
-	path: string
-	query?: URLSearchParams
-	method?: HttpOptions['method']
-	body?: unknown
-	timeoutMs?: number
-	returnErrorResponse?: boolean
-}
+export type WatcherRequestInput = ArgusWatcherRequestInput
 
 /** Successful watcher request. */
-export type WatcherRequestSuccess<T> = {
-	ok: true
-	watcher: WatcherRecord
-	data: T
-}
+export type WatcherRequestSuccess<T> = ArgusWatcherRequestSuccess<T>
 
 /** Failed watcher request (resolve failure or transport error). */
-export type WatcherRequestError = {
-	ok: false
-	watcher?: WatcherRecord
-	exitCode: number
-	message: string
-	candidates?: WatcherRecord[]
-}
+export type WatcherRequestError = ArgusWatcherRequestError
 
-export type WatcherRequestResult<T> = WatcherRequestSuccess<T> | WatcherRequestError
+export type WatcherRequestResult<T> = ArgusWatcherRequestResult<T>
 
 export const buildWatcherUrl = (watcher: Pick<WatcherRecord, 'host' | 'port'>, path: string, query?: URLSearchParams): string => {
 	const qs = query?.toString()

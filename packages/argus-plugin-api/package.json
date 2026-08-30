@@ -22,12 +22,17 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@vforsh/argus-core": "^0.3.0",
-		"commander": "14.0.2"
+		"@vforsh/argus-core": "^0.3.0"
 	},
 	"scripts": {
 		"clean": "node ../../scripts/clean-dist.mjs",
 		"build": "npm run clean && tsc -b",
 		"typecheck": "tsc -b --pretty false --noEmit"
+	},
+	"peerDependencies": {
+		"commander": "^14.0.0"
+	},
+	"devDependencies": {
+		"commander": "14.0.2"
 	}
 }

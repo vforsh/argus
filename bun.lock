@@ -58,7 +58,12 @@
       "version": "0.3.0",
       "dependencies": {
         "@vforsh/argus-core": "^0.3.0",
+      },
+      "devDependencies": {
         "commander": "14.0.2",
+      },
+      "peerDependencies": {
+        "commander": "^14.0.0",
       },
     },
     "packages/argus-plugin-google-sheets": {

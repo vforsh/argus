@@ -87,13 +87,16 @@ export type ArgusChromeOpenOptions = {
 /** Open a new tab via Chrome CDP using the same resolution rules as the built-in CLI command. */
 export type ArgusRunChromeOpen = (options: ArgusChromeOpenOptions) => Promise<void>
 
-/** Plan for a watcher request produced by a plugin command. */
-export type ArgusWatcherCommandRequestPlan = {
-	path: string
+/**
+ * Plan for a watcher request produced by a plugin command.
+ *
+ * The same path/method/body/query/timeout shape as {@link ArgusWatcherRequestInput}: a
+ * command spec cannot pick the watcher (`id` comes from the CLI argument) or ask for the
+ * raw error response (the runner owns failure rendering), and it never issues a PUT.
+ */
+export type ArgusWatcherCommandRequestPlan = Omit<ArgusWatcherRequestInput, 'id' | 'returnErrorResponse' | 'method'> & {
+	/** HTTP method. Defaults to `'POST'` when `body` is set, else `'GET'`. */
 	method?: 'GET' | 'POST'
-	body?: unknown
-	query?: URLSearchParams
-	timeoutMs?: number
 }
 
 /** Context passed to plugin command formatters after a successful watcher request. */

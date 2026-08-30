@@ -1,4 +1,4 @@
-import type { ArgusBrowserHelpers, ArgusDefineWatcherCommand, ArgusPluginHostV1 } from '@vforsh/argus-plugin-api'
+import type { ArgusBrowserHelpers, ArgusPluginHostV1 } from '@vforsh/argus-plugin-api'
 import { createOutput } from '../../output/io.js'
 import { runChromeOpen } from '../../commands/chrome.js'
 import { defineWatcherCommand } from '../defineWatcherCommand.js'
@@ -31,6 +31,6 @@ export const createPluginHost = (): ArgusPluginHostV1 => ({
 	requestWatcherJson,
 	writeRequestError,
 	runChromeOpen,
-	defineWatcherCommand: defineWatcherCommand as ArgusDefineWatcherCommand,
+	defineWatcherCommand,
 	argus,
 })
