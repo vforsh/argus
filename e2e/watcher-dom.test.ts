@@ -1,3 +1,4 @@
+import { waitForWatcherPortAttached } from './helpers/watcher.js'
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import path from 'node:path'
 import os from 'node:os'
@@ -225,21 +226,7 @@ describe('dom tree and dom info e2e', () => {
 		const watcherInfo = JSON.parse(watcherStdout)
 
 		// 3. Wait for attachment
-		let attached = false
-		for (let i = 0; i < 50; i++) {
-			try {
-				const res = await fetch(`http://127.0.0.1:${watcherInfo.port}/status`)
-				const status = (await res.json()) as { attached: boolean }
-				if (status.attached) {
-					attached = true
-					break
-				}
-			} catch {
-				// ignore connection errors during startup
-			}
-			await new Promise((r) => setTimeout(r, 200))
-		}
-		expect(attached).toBe(true)
+		await waitForWatcherPortAttached(watcherInfo.port)
 	})
 
 	afterAll(async () => {

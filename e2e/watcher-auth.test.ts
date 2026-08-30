@@ -1,3 +1,4 @@
+import { waitForWatcherAttached, waitForWatcherPortAttached } from './helpers/watcher.js'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import type { ChildProcess } from 'node:child_process'
 import http from 'node:http'
@@ -99,19 +100,7 @@ describe('auth e2e', () => {
 
 		const watcherInfo = JSON.parse(stdout)
 
-		let attached = false
-		for (let attempt = 0; attempt < 50; attempt++) {
-			try {
-				const res = await fetch(`http://127.0.0.1:${watcherInfo.port}/status`)
-				const status = (await res.json()) as { attached: boolean }
-				if (status.attached) {
-					attached = true
-					break
-				}
-			} catch {}
-			await new Promise((resolve) => setTimeout(resolve, 200))
-		}
-		expect(attached).toBe(true)
+		await waitForWatcherPortAttached(watcherInfo.port)
 	})
 
 	afterAll(async () => {
@@ -149,6 +138,10 @@ describe('auth e2e', () => {
 			{ env },
 			new RegExp(`\\{"id":"${freshWatcherId}"`),
 		)
+
+		// The watcher prints its id before it has attached, so a command issued right after
+		// this returns can fail with "Watcher not attached to a CDP target".
+		await waitForWatcherAttached(BIN_PATH, freshWatcherId, { env })
 
 		return {
 			chromeProc,

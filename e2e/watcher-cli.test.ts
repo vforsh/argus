@@ -1,3 +1,4 @@
+import { waitForWatcherPortAttached } from './helpers/watcher.js'
 import { test, expect } from 'bun:test'
 import path from 'node:path'
 import os from 'node:os'
@@ -57,22 +58,7 @@ test(
 				const watcherInfo = JSON.parse(watcherStdout)
 
 				// 3. Wait for attachment
-				let attached = false
-				for (let i = 0; i < 50; i++) {
-					try {
-						const res = await fetch(`http://127.0.0.1:${watcherInfo.port}/status`)
-						const status = (await res.json()) as { attached: boolean }
-						if (status.attached) {
-							attached = true
-							break
-						}
-					} catch (error) {
-						// ignore connection errors during startup
-						void error
-					}
-					await new Promise((r) => setTimeout(r, 200))
-				}
-				expect(attached).toBe(true)
+				await waitForWatcherPortAttached(watcherInfo.port)
 
 				const fetchDialogStatus = async (): Promise<DialogStatusResponse> => {
 					const { stdout } = await runCommand('bun', [BIN_PATH, 'dialog', 'status', watcherId, '--json'], { env })

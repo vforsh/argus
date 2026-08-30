@@ -1,3 +1,4 @@
+import { waitForWatcherPortAttached } from './helpers/watcher.js'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import type { ChildProcess } from 'node:child_process'
 import http from 'node:http'
@@ -147,20 +148,7 @@ describe('network workflow e2e', () => {
 		watcherProc = proc
 
 		const watcherInfo = JSON.parse(stdout) as { port: number }
-		let attached = false
-		for (let attempt = 0; attempt < 50; attempt++) {
-			try {
-				const res = await fetch(`http://127.0.0.1:${watcherInfo.port}/status`)
-				const status = (await res.json()) as { attached: boolean }
-				if (status.attached) {
-					attached = true
-					break
-				}
-			} catch {}
-			await new Promise((resolve) => setTimeout(resolve, 200))
-		}
-
-		expect(attached).toBe(true)
+		await waitForWatcherPortAttached(watcherInfo.port)
 	})
 
 	afterAll(async () => {
