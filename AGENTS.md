@@ -113,7 +113,8 @@
 
 - **Quick**: `npm run lint` + `npm run typecheck`.
 - **Focused**: `npm run test:playground` (browser) or `npm run test:unit` (`packages/*/test`, no browser, ~4s).
-- **Full**: `npm run test:e2e` — builds packages, runs `test:unit`, then every `e2e/*.test.ts`.
+- **Extension mode**: `npm run test:e2e:extension` — real Chromium, unpacked extension, real native hosts, all in a temp profile. Run it for any change to `packages/argus-extension` or the extension source in `argus-watcher`. Needs a Chrome for Testing/Chromium binary (branded Chrome 137+ ignores `--load-extension`); auto-found in the Playwright cache, else set `ARGUS_E2E_CHROME_BIN`. **It skips itself when no such binary exists** — a green run that printed a skip warning proves nothing. `ARGUS_E2E_HEADED=1` to watch it.
+- **Full**: `npm run test:e2e` — builds packages + extension, runs `test:unit`, then every `e2e/*.test.ts`.
 
 ---
 
@@ -133,3 +134,6 @@
 - **Query params are typed too**: a GET endpoint's params belong in `protocol/http/query.ts` (`LogsQuery`/`NetQuery`), serialized with `toSearchParams`. The CLI and SDK builders both construct those shapes; the watcher reads params through `keyof`-checked helpers. Don't add a `params.set('…')` the type doesn't know about.
 - **Watcher route conventions**: GET vs POST, path naming, `extensionOnly` behavior in `packages/argus-watcher/src/http/router.ts`.
 - **POST bodies are schema-only**: a route reads a body by declaring `bodySchema`; there is no unvalidated path. Write the `ProtocolSchema` next to the request type in `packages/argus-core/src/protocol/http/<domain>.ts`, composing the readers in `protocol/schemaFields.ts` — don't hand-roll `typeof` checks in the route. An empty body simply fails schema parse with a real message.
+- **`cdp_event` carries only real Chrome events**: the extension must never fabricate one. The frame table is the extension's (`background/frame-table.ts`) and travels as full, deduplicated `frame_snapshot` messages; the watcher applies every snapshot — pushed or pulled — through `applyExtensionFrameSnapshot`, and reacts to navigation (log rotation, sourcemap reset, indicator) only on the real top-frame `Page.frameNavigated`. Synthesizing events to keep the watcher's copy fresh is what C2 removed; it double-fired those side effects.
+- **Frame snapshots apply in wire order**: `SessionManager.handleFrameSnapshot` applies a pull reply before resolving its promise. Applying it in the awaiting caller instead runs a microtask later, after real events that arrived behind it — a stale table then deletes frames those events just created.
+- **Native-messaging changes bump `NATIVE_MESSAGING_PROTOCOL_VERSION`**: the `host_info` handshake refuses mismatched peers, so extension and CLI ship as a pair. Additive fields are fine without a bump; a new required message or a changed shape is not.

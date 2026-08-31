@@ -122,18 +122,26 @@ Notes worth keeping:
 
 ## Still open
 
-**C2 only** — see [`c2-frame-snapshot.md`](./c2-frame-snapshot.md), whose start precondition (finish
-this file first) is now met. Three things this pass hands it:
+No audit findings — **C2 closed too** (`2bb2d1f..0fdf983`): live-extension e2e harness first, green
+on the pre-redesign tree, then the `frame_snapshot` redesign; see
+[`c2-frame-snapshot.md`](./c2-frame-snapshot.md) and the audit's "Closed last: C2" section.
 
-1. `tsconfig.tests.json` already covers `e2e/`, so the new extension harness is written under the
-   compiler from the first line.
-2. The import rule is set: harness code reaches packages through `./internal`, never `../src/`.
-3. 3c's deleted lease/traversal mirrors are recorded there as a scenario the harness should cover.
+Two of this pass's three hand-offs were used as intended: `tsconfig.tests.json` already covered
+`e2e/`, so the harness was written under the compiler from its first line, and it reaches packages
+through `./internal` rather than `../src/`.
+
+**The third is the one thing left over.** 3c deleted the sheets lease/traversal mirrors on the
+argument that an honest test needs a browser — which the C2 harness now provides. That scenario
+(lease taken by a foreign token → busy; TTL expiry → retake; traversal cut by deadline →
+`complete: false` and the original gid restored) is still unwritten: it lives in a different plugin
+surface than the frame bookkeeping C2 covered, so it was out of scope for that pass rather than
+forgotten. The blocker it was waiting on is gone.
 
 Smaller things noticed in passing and deliberately not done — none of them audit findings:
 
 - `e2e/watcher-dom.test.ts` (704), `e2e/playground-smoke.test.ts` (665), and `e2e/watcher-net.test.ts`
   (608) are over the ~500 LOC guideline. They are flat lists of independent cases, so splitting is
   mechanical whenever someone touches them.
-- `argus-extension/src/background/service-worker.ts` (586) and `debugger-manager.ts` (572) are over
-  too, but C2 rewrites both — leave them.
+- `argus-extension/src/background/service-worker.ts` is over too, at 586, and C2 did **not** touch it
+  — it rewrote `debugger-manager.ts` (572 → 491, now under) and `cdp-proxy.ts`, nothing else in the
+  background scripts.
