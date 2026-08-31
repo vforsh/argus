@@ -2,7 +2,8 @@
  * Live-extension e2e harness: real Chromium, the unpacked Argus extension, real native
  * messaging hosts — everything isolated inside one temp directory.
  *
- * Isolation model, verified empirically on macOS (see tasks/c2-frame-snapshot.md):
+ * Isolation model, each point verified empirically on macOS — none of it is guesswork,
+ * and every one of these cost a debugging round when it was missing:
  * - Chromium resolves user-level native messaging manifests under the active
  *   `--user-data-dir`, so manifests written to `<profile>/NativeMessagingHosts` are picked
  *   up while the real Chrome profile stays untouched.

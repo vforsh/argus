@@ -1,9 +1,11 @@
 /**
  * Live extension-mode e2e: real Chromium + unpacked extension + native messaging hosts.
  *
- * This is the safety net for the C2 frame_snapshot redesign (tasks/c2-frame-snapshot.md):
- * it drives iframe selection across navigations and reloads — the exact path the
- * extension's frame bookkeeping and the watcher's reconstruction must keep working.
+ * This is the safety net for the frame_snapshot redesign (0fdf983): it drives iframe
+ * selection across navigations and reloads — the exact path the extension's frame
+ * bookkeeping and the watcher's reconstruction must keep working. It was written and run
+ * green against the pre-redesign tree first, where it measured the defect the redesign
+ * removed: two onPageNavigation firings per real navigation, now asserted as exactly one.
  * Skips itself when no Chromium/Chrome for Testing binary is available (branded Chrome
  * 137+ ignores --load-extension).
  */
