@@ -88,6 +88,8 @@ echo "hello" | argus fill app --selector "#input" --value-stdin
 argus keydown app --key Enter
 argus keydown app --key G
 argus keydown app --code KeyG --print-event
+argus keydown app --code Backquote
+argus keydown app --code Backquote --shift
 argus keydown app --key a --selector "#input"
 argus keydown app --key a --shift --ctrl
 argus scroll-to app --selector "#footer"
@@ -96,6 +98,8 @@ argus scroll-to app --selector ".panel" --by 0,500
 ```
 
 `drag` uses real Chrome mouse input (`mousePressed` → `mouseMoved` → `mouseReleased`), which works for canvas/WebGL game interactions. With `--selector`/`--ref`, `--pos` is an offset from the element top-left; without an element target, `--pos` is the viewport start.
+
+`keydown` accepts `--key` (a `KeyboardEvent.key` value) and/or `--code` (a `KeyboardEvent.code` value); both are case-insensitive. Recognized codes: `KeyA`–`KeyZ`, `Digit0`–`Digit9`, `F1`–`F12`, `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `Space`, the arrows, `Home`/`End`/`PageUp`/`PageDown`/`Insert`, and the US-layout punctuation row (`Backquote`, `Minus`, `Equal`, `BracketLeft`, `BracketRight`, `Backslash`, `Semicolon`, `Quote`, `Comma`, `Period`, `Slash`). With `--shift`, punctuation and digits resolve to their shifted character while keeping the physical code — `--code Backquote --shift` dispatches `key: ~`, `code: Backquote`, `keyCode: 192`.
 
 `--wait <duration>` on click/fill/drag polls for the selector before acting. Duration examples: `5s`, `500ms`, `2m`.
 

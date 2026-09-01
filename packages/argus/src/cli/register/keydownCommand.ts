@@ -9,7 +9,7 @@ export const keydownCommand: ArgusCommandDefinition = {
 	arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 	options: [
 		{ flags: '--key <name>', description: 'KeyboardEvent.key value (e.g. Enter, a, ArrowUp)' },
-		{ flags: '--code <code>', description: 'KeyboardEvent.code value (e.g. KeyG, Digit1)' },
+		{ flags: '--code <code>', description: 'KeyboardEvent.code value (e.g. KeyG, Digit1, Backquote)' },
 		{ flags: '--selector <css>', description: 'Focus element before dispatching' },
 		{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
 		{ flags: '--modifiers <list>', description: 'Comma-separated modifiers: shift,ctrl,alt,meta' },
@@ -25,6 +25,7 @@ export const keydownCommand: ArgusCommandDefinition = {
 		'argus keydown app --key Enter',
 		'argus keydown app --key G',
 		'argus keydown app --code KeyG',
+		'argus keydown app --code Backquote --shift',
 		'argus keydown app --key a --selector "#input"',
 		'argus keydown app --key a --shift --ctrl',
 	],

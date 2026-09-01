@@ -38,6 +38,7 @@ type DragCanvasState = {
 type KeyEventSnapshot = {
 	key: string
 	code: string
+	keyCode: number
 	shiftKey: boolean
 	ctrlKey: boolean
 	altKey: boolean
@@ -105,6 +106,7 @@ const TEST_HTML = `
       window.__keyEvents.push({
         key: e.key,
         code: e.code,
+        keyCode: e.keyCode,
         shiftKey: e.shiftKey,
         ctrlKey: e.ctrlKey,
         altKey: e.altKey,
@@ -657,6 +659,34 @@ describe('dom tree and dom info e2e', () => {
 
 		const keyEvents = await readKeyEvents()
 		expect(keyEvents.some((event) => event.key === 'G' && event.code === 'KeyG' && event.shiftKey === true)).toBe(true)
+	})
+
+	test('dom keydown dispatches Backquote', async () => {
+		await resetKeyEvents()
+
+		const { stdout } = await runArgus(['keydown', watcherId, '--code', 'Backquote', '--json'])
+		const response = JSON.parse(stdout) as DomKeydownResponse
+		expect(response.ok).toBe(true)
+		expect(response.key).toBe('`')
+		expect(response.code).toBe('Backquote')
+		expect(response.event).toMatchObject({ key: '`', code: 'Backquote', keyCode: 192, text: '`', shiftKey: false })
+
+		const keyEvents = await readKeyEvents()
+		expect(keyEvents.some((event) => event.key === '`' && event.code === 'Backquote' && event.keyCode === 192)).toBe(true)
+	})
+
+	test('dom keydown dispatches shifted Backquote as tilde', async () => {
+		await resetKeyEvents()
+
+		const { stdout } = await runArgus(['keydown', watcherId, '--code', 'Backquote', '--shift', '--json'])
+		const response = JSON.parse(stdout) as DomKeydownResponse
+		expect(response.ok).toBe(true)
+		expect(response.key).toBe('~')
+		expect(response.code).toBe('Backquote')
+		expect(response.event).toMatchObject({ key: '~', code: 'Backquote', keyCode: 192, text: '~', shiftKey: true })
+
+		const keyEvents = await readKeyEvents()
+		expect(keyEvents.some((event) => event.key === '~' && event.code === 'Backquote' && event.shiftKey === true)).toBe(true)
 	})
 
 	test('dom keydown unknown key returns error', async () => {

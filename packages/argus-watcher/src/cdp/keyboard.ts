@@ -12,6 +12,8 @@ type KeyDefinition = {
 	code: string
 	keyCode: number
 	text?: string
+	/** `key` value produced when Shift is held (US layout). Absent for keys Shift does not change. */
+	shiftKey?: string
 }
 
 type KeyMaps = {
@@ -28,6 +30,13 @@ const buildKeyMaps = (): KeyMaps => {
 		byCode.set(def.code.toLowerCase(), def)
 	}
 
+	// Lets `--key ~` resolve to the same physical key as `--key \`` without overriding its code lookup.
+	const putShiftAlias = (def: KeyDefinition): void => {
+		if (def.shiftKey) {
+			byKey.set(def.shiftKey.toLowerCase(), def)
+		}
+	}
+
 	// Letters a-z
 	for (let i = 0; i < 26; i++) {
 		const lower = String.fromCharCode(97 + i)
@@ -38,11 +47,34 @@ const buildKeyMaps = (): KeyMaps => {
 	}
 
 	// Digits 0-9
+	const DIGIT_SHIFT_KEYS = ')!@#$%^&*('
 	for (let i = 0; i < 10; i++) {
 		const digit = String(i)
 		const code = `Digit${digit}`
 		const keyCode = 48 + i
-		put(digit, { key: digit, code, keyCode, text: digit })
+		const def: KeyDefinition = { key: digit, code, keyCode, text: digit, shiftKey: DIGIT_SHIFT_KEYS[i] }
+		put(digit, def)
+		putShiftAlias(def)
+	}
+
+	// Punctuation (US layout): standard KeyboardEvent.code values with their legacy keyCodes
+	const PUNCTUATION: Array<[code: string, key: string, shiftKey: string, keyCode: number]> = [
+		['Backquote', '`', '~', 192],
+		['Minus', '-', '_', 189],
+		['Equal', '=', '+', 187],
+		['BracketLeft', '[', '{', 219],
+		['BracketRight', ']', '}', 221],
+		['Backslash', '\\', '|', 220],
+		['Semicolon', ';', ':', 186],
+		['Quote', "'", '"', 222],
+		['Comma', ',', '<', 188],
+		['Period', '.', '>', 190],
+		['Slash', '/', '?', 191],
+	]
+	for (const [code, key, shiftKey, keyCode] of PUNCTUATION) {
+		const def: KeyDefinition = { key, code, keyCode, text: key, shiftKey }
+		put(key, def)
+		putShiftAlias(def)
 	}
 
 	// Special keys
@@ -184,7 +216,7 @@ export const resolveKeyboardEvent = (options: ResolveKeyboardEventOptions): DomK
 
 	const event: DomKeydownEvent = {
 		key,
-		code: codeInput ?? baseDef.code,
+		code: codeDef?.code ?? codeInput ?? baseDef.code,
 		keyCode: baseDef.keyCode,
 		modifiers,
 		altKey: (modifiers & MODIFIER_BITS.alt) !== 0,
@@ -207,6 +239,10 @@ const resolveEventKey = (keyInput: string | undefined, def: KeyDefinition, modif
 	const semanticKey = keyInput ?? def.key
 	if (isSingleLetter(semanticKey)) {
 		return isShift(modifiers) ? semanticKey.toUpperCase() : semanticKey.toLowerCase()
+	}
+	// Only shift the unshifted form: an explicit `--key ~` already names the shifted character.
+	if (isShift(modifiers) && def.shiftKey && semanticKey === def.key) {
+		return def.shiftKey
 	}
 	return semanticKey
 }

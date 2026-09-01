@@ -143,6 +143,7 @@ argus fill app --selector "#email" --value "user@example.com"
 argus keydown app --key Enter
 argus keydown app --key G
 argus keydown app --code KeyG --print-event
+argus keydown app --code Backquote --shift
 argus scroll-to app --selector "#footer"
 ```
 
