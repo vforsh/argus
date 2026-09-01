@@ -8,9 +8,17 @@ export const buildWatcherUrl = (watcher: Pick<WatcherRecord, 'host' | 'port'>, p
 	return `http://${watcher.host}:${watcher.port}${path}${qs ? `?${qs}` : ''}`
 }
 
-/** Describe a failure to reach a watcher, in the phrasing both the CLI and the SDK surface. */
+/**
+ * Describe a failed watcher request, in the phrasing both the CLI and the SDK surface.
+ *
+ * A watcher that answered with an error is *not* a watcher we failed to reach, and saying so sent
+ * readers hunting for a dead process while the real explanation sat in the parentheses — which
+ * matters more now that the watcher's own reply carries a layered diagnosis of what stalled.
+ */
 export const formatWatcherTransportError = (watcher: Pick<WatcherRecord, 'id'>, error: unknown): string =>
-	`${watcher.id}: failed to reach watcher (${formatError(error)})`
+	classifyWatcherFailure(error) === 'api-rejection'
+		? `${watcher.id}: watcher rejected the request (${formatError(error)})`
+		: `${watcher.id}: failed to reach watcher (${formatError(error)})`
 
 /**
  * How a failed watcher request should be interpreted.

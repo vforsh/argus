@@ -162,6 +162,14 @@ export type DomKeydownResponse = Ok<{
 	modifiers: number
 	/** Whether a selector was focused before dispatch. */
 	focused: boolean
+	/**
+	 * Whether the page had to be activated (focus emulation) so the renderer would accept the key.
+	 *
+	 * A hidden/headless page drops `Input.dispatchKeyEvent` silently, so the route activates it
+	 * first and reports the fact here. Activation is sticky, exactly as if `argus page show` had
+	 * been run; release it with `argus page hide`.
+	 */
+	activated: boolean
 	/** Full resolved event shape for debugging exact key/code/modifier dispatch. */
 	event: DomKeydownEvent
 }>

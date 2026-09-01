@@ -147,6 +147,10 @@ argus keydown app --code Backquote --shift
 argus scroll-to app --selector "#footer"
 ```
 
+Chrome drops keyboard input aimed at an unfocused page, so `keydown` checks focus first. On a hidden page (headless, background tab, covered window) it activates the page — the same sticky state as `argus page show` — and reports `activated: true`; release it with `argus page hide <id>`. If activation does not take, it fails with `target_not_focused` instead of reporting a key the page never received.
+
+Artifact `--out` paths (`screenshot`, `record`, `trace`) are absolute or relative to **your** working directory, not the watcher's.
+
 For generated commands, `argus eval app --expression "document.title"` is equivalent to the positional expression form.
 
 For iframe-active extension watchers, commands run against the selected iframe target. Screenshots, recordings, selectors, and eval are resolved relative to that iframe.
@@ -224,6 +228,8 @@ Keep these commands in the background in agent shells. See [START.md](./referenc
 **Wrong CDP target matched** — Use `--type iframe`, `--origin`, `--parent`, or `--target`. See [IFRAMES.md](./reference/IFRAMES.md).
 
 **Need to keep a page unthrottled** — Use `argus page show <id>` or `argus ext show <id>`. Hide later with `argus page hide <id>`.
+
+**Command timed out** — Read the layer the error names before raising `--timeout`; only `cdp_timeout` ("the expression itself exceeded its deadline") is fixed by a longer one. `chrome_unreachable` means restart the browser, `cdp_target_replaced` means retry (Argus is reattaching), `cdp_renderer_unresponsive` means the page's main thread is blocked — `argus reload <id>` — and `dialog_blocking` means dismiss the dialog. A timeout reported as "failed to reach watcher" is the watcher itself not answering: `argus watcher status <id>`, then `argus doctor`.
 
 ## Google Sheets Safety Flow
 

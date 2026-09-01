@@ -3,10 +3,12 @@
  * Wraps the existing CDP watcher with the unified source interface.
  */
 
-import type { WatcherMatch, WatcherChrome } from '@vforsh/argus-core'
-import { startCdpWatcher, type CdpWatcherOptions } from '../cdp/watcher.js'
+import { formatError, type WatcherMatch, type WatcherChrome } from '@vforsh/argus-core'
+import { startCdpWatcher, type CdpWatcherOptions, type CdpWatcherHandle } from '../cdp/watcher.js'
 import { createCdpBrowserCookieReader } from '../cdp/browserCookies.js'
 import { createCdpSessionHandle, type CdpSessionController } from '../cdp/connection.js'
+import { CDP_HEALTH_PROBE_TIMEOUT_MS, type CdpTransportCheck } from '../cdp/health.js'
+import { fetchCdpTargets } from '../cdp/watcherTargets.js'
 import type { IgnoreMatcher } from '../cdp/ignoreList.js'
 import type { CdpSourceHandle, CdpSourceBaseOptions } from './types.js'
 
@@ -78,8 +80,39 @@ export const createCdpSource = (options: CdpSourceOptions): CdpSourceHandle => {
 				pageUrl: target?.url ?? null,
 			}
 		},
+		healthChecks: {
+			checkTransport: () => checkCdpTransport(chrome, watcher),
+			onTargetGone: watcher.reconnect,
+		},
 		stop: watcher.stop,
 		// CDP mode doesn't support listTargets/attachTarget/detachTarget
 		// (auto-attaches based on match criteria)
 	}
+}
+
+/**
+ * Ask Chrome directly whether the browser and our target are still there.
+ *
+ * The WebSocket is a poor witness here: a renderer stranded by a cross-origin navigation leaves the
+ * socket open and simply stops answering, so the only way to tell "browser gone" from "target
+ * replaced" from "renderer wedged" is to read the target list out of band.
+ */
+const checkCdpTransport = async (chrome: WatcherChrome, watcher: CdpWatcherHandle): Promise<CdpTransportCheck> => {
+	let targets
+	try {
+		targets = await fetchCdpTargets(chrome, CDP_HEALTH_PROBE_TIMEOUT_MS)
+	} catch (error) {
+		return { state: 'unreachable', detail: `${chrome.host}:${chrome.port}: ${formatError(error)}` }
+	}
+
+	const target = watcher.getTarget()
+	if (!target) {
+		return { state: 'target_gone', detail: 'the watcher holds no target' }
+	}
+
+	if (!targets.some((candidate) => candidate.id === target.id)) {
+		return { state: 'target_gone', detail: `Chrome no longer lists target ${target.id} (${target.url})` }
+	}
+
+	return { state: 'ok' }
 }

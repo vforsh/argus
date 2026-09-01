@@ -3,7 +3,7 @@ import type { HttpRequestEventMetadata } from '../server.js'
 import type { ProtocolSchema } from '@vforsh/argus-core'
 import type { RouteContext, RouteHandler } from './types.js'
 import { formatProtocolValidationIssues } from '@vforsh/argus-core'
-import { readJsonBody, respondError, respondInvalidBody, respondJson } from '../httpUtils.js'
+import { readJsonBody, respondCdpError, respondInvalidBody, respondJson } from '../httpUtils.js'
 import { emitRequest } from './types.js'
 
 export type WatcherRouteDefinition = {
@@ -75,7 +75,7 @@ export const defineJsonRoute = <TBody = undefined, TResponse extends object = ob
 			if (input.handleError?.(res, error)) {
 				return
 			}
-			respondError(res, error)
+			await respondCdpError(res, error, ctx.diagnoseCdp)
 		}
 	},
 })

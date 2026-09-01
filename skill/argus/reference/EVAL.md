@@ -92,6 +92,8 @@ argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rota
 | `--out <path>`           | Write result to file                |
 | `--rotate`               | One file per poll iteration         |
 
+`--timeout` defaults to 10s and is enforced _in the watcher_, which then reports which layer ran out of time. Only `cdp_timeout` — "the expression itself exceeded its deadline" — is the one a longer `--timeout` fixes. `chrome_unreachable`, `cdp_target_replaced`, `cdp_renderer_unresponsive`, and `dialog_blocking` each name a different failure and their own recovery; raising the timeout there only buys a slower version of the same error.
+
 ## Script Args
 
 `--arg <key=value>` is repeatable on `eval`/`js` and `eval-until`/`wait`. It exposes a frozen `args` object to the evaluated source:

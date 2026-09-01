@@ -42,6 +42,13 @@ export type CdpWatcherHandle = {
 	session: CdpSessionHandle
 	stop: () => Promise<void>
 	getTarget: () => CdpTarget | null
+	/**
+	 * Drop the current socket so the connect loop re-selects a target.
+	 *
+	 * The only way back from a target Chrome has replaced under us: the loop already reconnects on
+	 * socket close, and `findTarget` re-runs the match, so closing is the whole reattachment.
+	 */
+	reconnect: () => void
 }
 
 /** Start CDP polling + websocket subscriptions for console/exception events. */
@@ -57,6 +64,13 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		if (socket) {
 			socket.close()
 		}
+	}
+
+	const reconnect = (): void => {
+		if (stopped) {
+			return
+		}
+		socket?.close()
 	}
 
 	void runLoop()
@@ -96,6 +110,7 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 
 	return {
 		stop,
+		reconnect,
 		session,
 		getTarget: () => (currentTarget ? { ...currentTarget } : null),
 	}
@@ -184,7 +199,6 @@ const parseNavigation = (params: unknown): { url: string } | null => {
 	return { url }
 }
 
-
 const createSystemLog = (message: string): Omit<LogEvent, 'id'> => ({
 	ts: Date.now(),
 	level: 'warning',
@@ -197,4 +211,3 @@ const createSystemLog = (message: string): Omit<LogEvent, 'id'> => ({
 	pageTitle: null,
 	source: 'system',
 })
-

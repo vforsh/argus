@@ -1,4 +1,5 @@
 import { getErrorCode } from '../errors.js'
+import { isCdpTimeoutError, toDiagnosedError, type CdpHealthDiagnosis } from '../cdp/health.js'
 import http from 'node:http'
 import { formatError, type ArgusErrorCode, type ErrorResponse, type LogLevel } from '@vforsh/argus-core'
 
@@ -44,6 +45,33 @@ export const respondPayloadTooLarge = (res: http.ServerResponse): void => {
 
 export const respondError = (res: http.ServerResponse, error: unknown): void => {
 	respondApiError(res, 500, getErrorCode(error), formatError(error))
+}
+
+/**
+ * Send a failure, upgrading a bare CDP timeout into a layered diagnosis first.
+ *
+ * "Timed out" is the least informative thing Argus can say: the same message covers a dead browser,
+ * a target a navigation replaced, a blocked main thread, and an expression that genuinely needed
+ * longer — and only the last one is fixed by raising the timeout. Every route funnels its failures
+ * through here so the answer is the same wherever the stall surfaced.
+ *
+ * The diagnosis is best-effort: if it throws or the probes are unavailable, the original error is
+ * reported unchanged rather than replaced by a second failure.
+ */
+export const respondCdpError = async (
+	res: http.ServerResponse,
+	error: unknown,
+	diagnose: (() => Promise<CdpHealthDiagnosis>) | undefined,
+): Promise<void> => {
+	if (!diagnose || !isCdpTimeoutError(error)) {
+		return respondError(res, error)
+	}
+
+	try {
+		respondError(res, toDiagnosedError(await diagnose(), error))
+	} catch {
+		respondError(res, error)
+	}
 }
 
 /**
@@ -252,4 +280,3 @@ export const normalizeTimeout = (value: unknown): number | undefined => {
 	}
 	return parsed
 }
-

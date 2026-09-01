@@ -15,6 +15,12 @@ export const ensureParentDir = async (filePath: string): Promise<void> => {
  * - If `outFile` is an absolute path, use it directly (no restriction).
  * - If `outFile` is relative, resolve it under `artifactsDir`.
  * - If `outFile` is empty/undefined, use `defaultName` under `artifactsDir`.
+ *
+ * The watcher is a separate process whose cwd is unrelated to the caller's, so a relative path
+ * can only be resolved against something the watcher owns. Callers that want cwd-relative
+ * semantics resolve the path on their side first — the CLI does exactly that for
+ * `screenshot`/`record`/`trace` (`resolveArtifactOutFile`), so a relative `--out` lands next to
+ * the user rather than in this temp directory.
  */
 export const resolveArtifactPath = (artifactsDir: string, outFile: string | undefined, defaultName: string): string => {
 	const trimmed = outFile?.trim()

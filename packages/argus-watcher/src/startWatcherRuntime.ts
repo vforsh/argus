@@ -3,6 +3,7 @@ import { startHttpServer } from './http/server.js'
 import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
 
 import { ElementRefRegistry } from './cdp/elementRefs.js'
+import { createSessionRendererProbe, diagnoseCdpHealth, type CdpHealthDiagnosis } from './cdp/health.js'
 import { DialogTracker } from './dialogs/DialogTracker.js'
 import type { CdpSourceHandle, CdpSourceStatus, CdpSourceTarget } from './sources/types.js'
 import type { StartWatcherOptions, WatcherHandle } from './index.js'
@@ -185,6 +186,19 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		},
 	})
 
+	/**
+	 * Compose the transport-specific health checks with the ones every session has, so a stalled
+	 * command is explained by layer instead of always reading as a slow expression.
+	 */
+	const diagnoseCdp = (): Promise<CdpHealthDiagnosis> =>
+		diagnoseCdpHealth({
+			watcherId,
+			isAttached: () => sourceHandle.session.isAttached(),
+			probeRenderer: createSessionRendererProbe(sourceHandle.session),
+			getBlockingDialog: () => dialogTracker.getActive(),
+			...sourceHandle.healthChecks,
+		})
+
 	const dialogSession = getPageSession()
 	dialogSession.onEvent('Page.javascriptDialogOpening', (params) => {
 		const dialog = parseDialogStatus(params)
@@ -218,6 +232,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		throttleController,
 		visibilityController,
 		netMockController,
+		diagnoseCdp,
 		getNetFilterContext: sourceHandle.getNetFilterContext,
 		readBrowserCookies: sourceHandle.readBrowserCookies,
 		sourceHandle: sourceMode === 'extension' ? sourceHandle : undefined,

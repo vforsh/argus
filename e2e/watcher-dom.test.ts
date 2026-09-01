@@ -611,6 +611,29 @@ describe('dom tree and dom info e2e', () => {
 		expect(events).toContain('input-keydown:a')
 	})
 
+	test('dom keydown delivers to a page that is not the active tab', async () => {
+		// A hidden page drops Input.dispatchKeyEvent while CDP still acks it, so the route activates
+		// the page first. This is the reported failure: `ok: true` for a key nothing received.
+		await resetKeyEvents()
+		const otherPage = await page.context().newPage()
+		await otherPage.bringToFront()
+
+		try {
+			const { stdout } = await runArgus(['keydown', watcherId, '--key', 'ArrowUp', '--json'])
+			const response = JSON.parse(stdout) as DomKeydownResponse
+			expect(response.ok).toBe(true)
+			expect(typeof response.activated).toBe('boolean')
+
+			const keyEvents = await readKeyEvents()
+			expect(keyEvents.some((event) => event.key === 'ArrowUp')).toBe(true)
+		} finally {
+			await otherPage.close()
+			await page.bringToFront()
+			// Activation is sticky by design; drop it so later tests see the original state.
+			await runArgus(['page', 'hide', watcherId, '--json'])
+		}
+	})
+
 	test('dom keydown with --modifiers sets bitmask', async () => {
 		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'a', '--modifiers', 'shift', '--json'])
 		const response = JSON.parse(stdout) as DomKeydownResponse

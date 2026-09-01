@@ -16,6 +16,13 @@ export type RecordFormat = (typeof RECORD_FORMATS)[number]
 
 /** Shared options for video recording requests. */
 export type RecordOptions = {
+	/**
+	 * Where the watcher writes the artifact.
+	 *
+	 * An absolute path is used verbatim. A relative path resolves under the *watcher's* artifacts
+	 * directory (a temp dir), never the caller's cwd — the watcher is a separate process. Callers
+	 * that mean "next to me" must resolve the path before sending it; the CLI does.
+	 */
 	outFile?: string
 	selector?: string
 	/** Viewport-relative crop rectangle in CSS pixels. Mutually exclusive with `selector`. */
@@ -48,6 +55,7 @@ export type RecordStartResponse = Ok<{
 /** Request payload for POST /record/stop. */
 export type RecordStopRequest = {
 	recordId?: string
+	/** Final path for the saved recording. Same resolution rules as {@link RecordOptions.outFile}. */
 	outFile?: string
 }
 

@@ -4,6 +4,7 @@ import type { LogBuffer } from '../buffer/LogBuffer.js'
 import type { NetBuffer } from '../buffer/NetBuffer.js'
 import type { RealtimeNetBuffer } from '../buffer/RealtimeNetBuffer.js'
 import type { CdpSessionHandle } from '../cdp/connection.js'
+import type { CdpHealthDiagnosis } from '../cdp/health.js'
 import type { ElementRefRegistry } from '../cdp/elementRefs.js'
 import type { RuntimeEditor } from '../cdp/editor.js'
 import type { TraceRecorder } from '../cdp/tracing.js'
@@ -62,6 +63,13 @@ export type HttpServerOptions = {
 	getNetFilterContext?: () => NetFilterContext | null
 	/** Optional browser-cookie reader when the source can access cookies outside the page's request scope. */
 	readBrowserCookies?: (query: CdpSourceCookieQuery) => Promise<AuthStateCookie[]>
+	/**
+	 * Explain which layer swallowed a CDP command that timed out.
+	 *
+	 * Routes call it only on the failure path, so every endpoint reports a stalled browser the same
+	 * way instead of each one guessing that the caller's expression was merely slow.
+	 */
+	diagnoseCdp?: () => Promise<CdpHealthDiagnosis>
 	/** Optional callback invoked when logs or tail are requested. */
 	onRequest?: (event: HttpRequestEventMetadata) => void
 	/** Optional callback invoked when a shutdown request is received. */

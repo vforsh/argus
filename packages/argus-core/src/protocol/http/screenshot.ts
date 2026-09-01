@@ -23,6 +23,13 @@ export type ScreenshotClipRegion = {
 
 /** Request payload for POST /screenshot. */
 export type ScreenshotRequest = {
+	/**
+	 * Where the watcher writes the artifact.
+	 *
+	 * An absolute path is used verbatim. A relative path resolves under the *watcher's* artifacts
+	 * directory (a temp dir), never the caller's cwd — the watcher is a separate process. Callers
+	 * that mean "next to me" must resolve the path before sending it; the CLI does.
+	 */
 	outFile?: string
 	selector?: string
 	/** Viewport-relative crop rectangle in CSS pixels. Mutually exclusive with `selector`. */

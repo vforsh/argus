@@ -13,6 +13,12 @@ argus screenshot app --testid "game-canvas" --out game.png
 
 `--selector` and `--clip` are mutually exclusive. `--clip` is viewport-relative in CSS pixels. `--testid <id>` is shorthand for `--selector "[data-testid='<id>']"`.
 
+## Output Paths
+
+`--out` is absolute, or relative to the working directory of the process running the CLI — `--out build/shots/page.png` lands under your cwd, and `~` expands. This holds for `screenshot`, `record`, and `trace`; the response's `outFile` is always the absolute path that was written.
+
+The watcher writes the file, and its own working directory is a temp artifacts dir, so callers that skip the CLI (the SDK, raw HTTP) must send an absolute path — a relative one resolves under that temp dir instead.
+
 ## Recording
 
 ```bash

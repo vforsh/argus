@@ -10,7 +10,7 @@ export const recordCommands: readonly ArgusCommandDefinition[] = [
 		arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 		options: [
 			{ flags: '--duration <duration>', description: 'Capture for duration (e.g. 3s, 500ms)' },
-			{ flags: '--out <file>', description: 'Output .mp4 or .webm path (absolute or relative to artifacts directory)' },
+			{ flags: '--out <file>', description: 'Output .mp4 or .webm path (absolute, or relative to the current working directory)' },
 			{ flags: '--selector <selector>', description: 'Optional CSS selector for element-only recording' },
 			{ flags: '--clip <x,y,width,height>', description: 'Viewport-relative rectangle crop in CSS pixels' },
 			{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
@@ -34,7 +34,7 @@ export const recordCommands: readonly ArgusCommandDefinition[] = [
 				description: 'Start a silent video recording',
 				arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 				options: [
-					{ flags: '--out <file>', description: 'Output .mp4 or .webm path (absolute or relative to artifacts directory)' },
+					{ flags: '--out <file>', description: 'Output .mp4 or .webm path (absolute, or relative to the current working directory)' },
 					{ flags: '--selector <selector>', description: 'Optional CSS selector for element-only recording' },
 					{ flags: '--clip <x,y,width,height>', description: 'Viewport-relative rectangle crop in CSS pixels' },
 					{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
@@ -54,7 +54,10 @@ export const recordCommands: readonly ArgusCommandDefinition[] = [
 				arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 				options: [
 					{ flags: '--record-id <id>', description: 'Record id returned from start' },
-					{ flags: '--out <file>', description: 'Move the saved recording to this .mp4 or .webm path before returning' },
+					{
+						flags: '--out <file>',
+						description: 'Move the saved recording to this .mp4 or .webm path (absolute, or relative to the current working directory)',
+					},
 					jsonOption,
 				],
 				examples: ['argus record stop app', 'argus record stop app --out demo.mp4 --json'],

@@ -10,7 +10,7 @@ export const snapshotCommands: readonly ArgusCommandDefinition[] = [
 		description: 'Capture a screenshot to disk on the watcher',
 		arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 		options: [
-			{ flags: '--out <file>', description: 'Output file path (absolute or relative to artifacts directory)' },
+			{ flags: '--out <file>', description: 'Output file path (absolute, or relative to the current working directory)' },
 			{ flags: '--selector <selector>', description: 'Optional CSS selector for element-only capture' },
 			{ flags: '--clip <x,y,width,height>', description: 'Viewport-relative rectangle crop in CSS pixels' },
 			{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },

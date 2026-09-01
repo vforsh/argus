@@ -4,6 +4,15 @@ import { evaluateExpression } from '../../cdp/eval.js'
 import { defineJsonRoute } from './defineRoute.js'
 import { normalizeBoolean, normalizeTimeout } from '../httpUtils.js'
 
+/**
+ * Deadline applied when the caller names none.
+ *
+ * Without it a wedged renderer leaves `Runtime.evaluate` pending forever and the failure surfaces
+ * on the *client's* clock, where nothing knows why — the watcher can diagnose the stall only if it
+ * is the one that gives up. Generous on purpose: it is a backstop, not a policy.
+ */
+const DEFAULT_EVAL_CDP_TIMEOUT_MS = 30_000
+
 export const route = defineJsonRoute<EvalRequest, EvalResponse>({
 	method: 'POST',
 	path: '/eval',
@@ -17,7 +26,7 @@ export const route = defineJsonRoute<EvalRequest, EvalResponse>({
 			replMode: normalizeBoolean(payload.replMode, true),
 			returnByValue: normalizeBoolean(payload.returnByValue, true),
 			jsonValue: normalizeBoolean(payload.jsonValue, false),
-			timeoutMs: normalizeTimeout(payload.timeoutMs),
+			timeoutMs: normalizeTimeout(payload.timeoutMs) ?? DEFAULT_EVAL_CDP_TIMEOUT_MS,
 			scenario: normalizeBoolean(payload.scenario, false),
 			scenarioServices: {
 				buffer: ctx.buffer,

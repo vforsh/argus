@@ -101,6 +101,8 @@ argus scroll-to app --selector ".panel" --by 0,500
 
 `keydown` accepts `--key` (a `KeyboardEvent.key` value) and/or `--code` (a `KeyboardEvent.code` value); both are case-insensitive. Recognized codes: `KeyA`–`KeyZ`, `Digit0`–`Digit9`, `F1`–`F12`, `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `Space`, the arrows, `Home`/`End`/`PageUp`/`PageDown`/`Insert`, and the US-layout punctuation row (`Backquote`, `Minus`, `Equal`, `BracketLeft`, `BracketRight`, `Backslash`, `Semicolon`, `Quote`, `Comma`, `Period`, `Slash`). With `--shift`, punctuation and digits resolve to their shifted character while keeping the physical code — `--code Backquote --shift` dispatches `key: ~`, `code: Backquote`, `keyCode: 192`.
 
+Chrome delivers keyboard input only to a focused page, and acks the CDP command either way — so `keydown` proves focus before dispatching. A hidden page (headless, background tab, covered window) is activated first, using the same sticky lock as `argus page show`, and the response says `activated: true`; `argus page hide <id>` releases it. When activation does not take, the command fails with `target_not_focused` rather than reporting a key the page never received. Visible pages are untouched: `activated` stays `false` and nothing extra is sent.
+
 `--wait <duration>` on click/fill/drag polls for the selector before acting. Duration examples: `5s`, `500ms`, `2m`.
 
 ## Dialogs

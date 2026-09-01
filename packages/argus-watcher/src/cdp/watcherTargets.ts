@@ -22,7 +22,7 @@ export type CdpTarget = {
 }
 
 export const findTarget = async (chrome: WatcherChrome, match?: WatcherMatch): Promise<CdpTarget> => {
-	const targets = await fetchTargets(chrome)
+	const targets = await fetchCdpTargets(chrome)
 	if (targets.length === 0) {
 		throw new Error('No CDP targets available')
 	}
@@ -99,8 +99,18 @@ const matchesTarget = (
 	return true
 }
 
-const fetchTargets = async (chrome: WatcherChrome): Promise<CdpTarget[]> => {
-	const response = await fetch(`http://${chrome.host}:${chrome.port}/json`)
+/** Default budget for the `/json` round-trip, so a wedged browser cannot stall the connect loop. */
+const TARGET_LIST_TIMEOUT_MS = 5_000
+
+/**
+ * List Chrome's debuggable targets.
+ *
+ * @param chrome DevTools endpoint to query.
+ * @param timeoutMs Abort budget for the request. Health probes pass a shorter one.
+ * @throws {Error} When the endpoint is unreachable, times out, or answers with a non-2xx status.
+ */
+export const fetchCdpTargets = async (chrome: WatcherChrome, timeoutMs = TARGET_LIST_TIMEOUT_MS): Promise<CdpTarget[]> => {
+	const response = await fetch(`http://${chrome.host}:${chrome.port}/json`, { signal: AbortSignal.timeout(timeoutMs) })
 	if (!response.ok) {
 		throw new Error(`Failed to fetch CDP targets (status ${response.status})`)
 	}

@@ -66,8 +66,12 @@ export const runDomKeydown = defineWatcherCommand<DomKeydownOptions, DomKeydownR
 	formatHuman: (response, { options, output }) => {
 		if (options.printEvent) {
 			output.writeHuman(`Dispatched keydown event: ${JSON.stringify(response.event)}`)
-			return
+		} else {
+			output.writeHuman(`Dispatched keydown: ${response.key} (code=${response.code})`)
 		}
-		output.writeHuman(`Dispatched keydown: ${response.key} (code=${response.code})`)
+		if (response.activated) {
+			// Sticky, exactly like `argus page show` — say so rather than leaving the page silently locked shown.
+			output.writeHuman('Page was hidden and has been activated (as `argus page show`); release it with `argus page hide`.')
+		}
 	},
 })

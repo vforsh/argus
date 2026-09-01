@@ -3,6 +3,7 @@ import type { RecordClipRegion, RecordFormat, RecordResponse, RecordStartRespons
 import { RECORD_FORMATS } from '@vforsh/argus-core'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
+import { resolveArtifactOutFile } from '../utils/paths.js'
 import { parseDurationMs } from '@vforsh/argus-core'
 
 const RECORD_STOP_TIMEOUT_MS = 60_000
@@ -98,7 +99,7 @@ const buildRecordStopPlan = (options: RecordStopOptions, output: Output): Watche
 		method: 'POST',
 		body: {
 			recordId: normalizeString(options.recordId),
-			outFile: options.out,
+			outFile: resolveArtifactOutFile(options.out),
 		},
 		timeoutMs: RECORD_STOP_TIMEOUT_MS,
 	}
@@ -130,7 +131,7 @@ const buildRecordBody = (
 	}
 
 	return {
-		outFile: options.out,
+		outFile: resolveArtifactOutFile(options.out),
 		selector,
 		clip,
 		fps,

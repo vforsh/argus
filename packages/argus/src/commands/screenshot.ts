@@ -1,6 +1,7 @@
 import type { ScreenshotClipRegion, ScreenshotResponse } from '@vforsh/argus-core'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
+import { resolveArtifactOutFile } from '../utils/paths.js'
 
 const SCREENSHOT_REQUEST_TIMEOUT_MS = 45_000
 
@@ -36,7 +37,7 @@ const buildScreenshotPlan = (options: ScreenshotOptions, output: Output): Watche
 		path: '/screenshot',
 		method: 'POST',
 		body: {
-			outFile: options.out,
+			outFile: resolveArtifactOutFile(options.out),
 			selector,
 			clip,
 			format: 'png',

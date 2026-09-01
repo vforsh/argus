@@ -7,7 +7,7 @@ import { selectTargetFromCandidates } from '../cdp/selectTarget.js'
 import { fetchJson } from '../httpClient.js'
 import { createOutput, type Output } from '../output/io.js'
 import { formatError } from '../cli/parse.js'
-import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { loadChromeTargets } from './chrome/shared.js'
 
 export type PageEndpointOptions = CdpEndpointOptions
@@ -131,7 +131,7 @@ const resolveAttachedTarget = async (options: PageReloadOptions, output: Output)
 	try {
 		status = await fetchJson<StatusResponse>(statusUrl, { timeoutMs: 2_000 })
 	} catch (error) {
-		output.writeWarn(`${resolved.watcher.id}: failed to reach watcher (${formatError(error)})`)
+		output.writeWarn(formatWatcherTransportError(resolved.watcher, error))
 		process.exitCode = 1
 		return null
 	}

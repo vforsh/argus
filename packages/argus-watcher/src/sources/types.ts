@@ -7,6 +7,7 @@ import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
 
 import type { AuthStateCookie, ExtensionDiagnosticsResponse, ExtensionTabActionResponse, LogEvent } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../cdp/connection.js'
+import type { CdpHealthProbe } from '../cdp/health.js'
 import type { NetFilterContext } from '../net/filtering.js'
 
 export type ExtensionTabListFilter = {
@@ -97,6 +98,15 @@ export type CdpSourceHandle = {
 	readBrowserCookies?: (query: CdpSourceCookieQuery) => Promise<AuthStateCookie[]>
 	/** Best-effort target metadata used to resolve network filter scope in HTTP routes. */
 	getNetFilterContext?: () => NetFilterContext | null
+	/**
+	 * Transport-specific layers of the stalled-command diagnosis.
+	 *
+	 * The session-level layers (attached? renderer answering?) are the same for every source and are
+	 * composed by the runtime; a source only contributes what it alone can answer — whether its
+	 * browser endpoint still responds, and how to get back onto a replaced target. Omit it and the
+	 * diagnosis simply skips those layers.
+	 */
+	healthChecks?: Pick<CdpHealthProbe, 'checkTransport' | 'onTargetGone'>
 	/** Resolve the child CDP session that owns a given frame (extension mode only). */
 	getFrameSessionId?: (frameId: string) => string | null
 	/** Stop the source and clean up resources. */

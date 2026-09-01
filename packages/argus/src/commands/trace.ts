@@ -2,6 +2,7 @@ import type { TraceStartResponse, TraceStopResponse, WatcherRecord } from '@vfor
 import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '@vforsh/argus-core'
 import { fetchWatcherJson, formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
+import { resolveArtifactOutFile } from '../utils/paths.js'
 import { delay } from '@vforsh/argus-core'
 
 /** Options for the trace command (start + stop). */
@@ -119,7 +120,7 @@ const runTraceStartInternal = async (
 			path: '/trace/start',
 			method: 'POST',
 			body: {
-				outFile: options.out,
+				outFile: resolveArtifactOutFile(options.out),
 				categories: options.categories,
 				options: options.options,
 			},
@@ -142,7 +143,7 @@ const runTraceStopInternal = async (
 		const response = await fetchWatcherJson<TraceStopResponse>(watcher, {
 			path: '/trace/stop',
 			method: 'POST',
-			body: { traceId: options.traceId, outFile: options.outFile },
+			body: { traceId: options.traceId, outFile: resolveArtifactOutFile(options.outFile) },
 			timeoutMs: 20_000,
 		})
 		return response
@@ -152,6 +153,5 @@ const runTraceStopInternal = async (
 		return null
 	}
 }
-
 
 const formatDurationMs = (ms: number): string => `${(ms / 1000).toFixed(3)}s`

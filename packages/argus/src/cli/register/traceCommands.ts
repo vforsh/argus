@@ -9,7 +9,7 @@ export const traceCommands: readonly ArgusCommandDefinition[] = [
 		arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 		options: [
 			{ flags: '--duration <duration>', description: 'Capture for duration (e.g. 3s, 500ms)' },
-			{ flags: '--out <file>', description: 'Output trace file path (relative to artifacts base directory)' },
+			{ flags: '--out <file>', description: 'Output trace file path (absolute, or relative to the current working directory)' },
 			{ flags: '--categories <categories>', description: 'Comma-separated tracing categories' },
 			{ flags: '--options <options>', description: 'Tracing options string' },
 			jsonOption,
@@ -24,7 +24,7 @@ export const traceCommands: readonly ArgusCommandDefinition[] = [
 				description: 'Start Chrome tracing',
 				arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 				options: [
-					{ flags: '--out <file>', description: 'Output trace file path (relative to artifacts base directory)' },
+					{ flags: '--out <file>', description: 'Output trace file path (absolute, or relative to the current working directory)' },
 					{ flags: '--categories <categories>', description: 'Comma-separated tracing categories' },
 					{ flags: '--options <options>', description: 'Tracing options string' },
 					jsonOption,
@@ -40,7 +40,10 @@ export const traceCommands: readonly ArgusCommandDefinition[] = [
 				arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
 				options: [
 					{ flags: '--trace-id <id>', description: 'Trace id returned from start' },
-					{ flags: '--out <file>', description: 'Move the saved trace file to this path before returning' },
+					{
+						flags: '--out <file>',
+						description: 'Move the saved trace file to this path (absolute, or relative to the current working directory)',
+					},
 					jsonOption,
 				],
 				examples: ['argus trace stop app', 'argus trace stop app --out trace.json --json'],
