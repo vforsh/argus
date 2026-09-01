@@ -1,6 +1,6 @@
 {
 	"name": "@vforsh/argus-plugin-api",
-	"version": "0.4.0",
+	"version": "0.5.0",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/vforsh/argus.git",
@@ -22,7 +22,7 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@vforsh/argus-core": "^0.4.0"
+		"@vforsh/argus-core": "^0.5.0"
 	},
 	"scripts": {
 		"clean": "node ../../scripts/clean-dist.mjs",
