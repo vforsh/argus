@@ -74,7 +74,7 @@ export const buildSessionArgv = (input: {
 	}
 
 	const tail = input.request.argv ? [...input.request.argv] : buildArgvFromArgs(resolved.command, input.request.args ?? {})
-	if (!Array.isArray(tail)) {
+	if (isArgvFailure(tail)) {
 		return tail
 	}
 
@@ -137,6 +137,9 @@ const rejectStdinInput = (argv: readonly string[], path: readonly string[]): Ses
 
 const STDIN_DASH_COMMANDS = new Set(['eval', 'eval-until'])
 
+/** Narrow the `tokens | failure` results the builders below return. */
+const isArgvFailure = (value: string[] | SessionArgvFailure): value is SessionArgvFailure => !Array.isArray(value)
+
 const isJsonFlag = (token: string): boolean => token === '--json' || token === '--no-json' || token === '--json-full'
 
 /** A command whose first declared argument is the watcher id gets it injected. */
@@ -152,6 +155,7 @@ const declaresOption = (command: Command, name: string): boolean => findOptions(
  * command offers both spellings (`argus eval app "1+1"` vs `argus eval app --expression "1+1"`).
  */
 const buildArgvFromArgs = (command: Command, args: Record<string, unknown>): string[] | SessionArgvFailure => {
+	const names = positionalNames(command)
 	const tokens: string[] = []
 	const positionals: Record<string, unknown> = {}
 
@@ -160,11 +164,12 @@ const buildArgvFromArgs = (command: Command, args: Record<string, unknown>): str
 
 		const options = findOptions(command, key)
 		if (options.length === 0) {
-			if (!positionalNames(command).includes(camelCase(key))) {
+			if (!names.includes(camelCase(key))) {
+				const path = commandPath(command)
 				return {
 					ok: false,
 					code: 'session_invalid_request',
-					message: `Unknown argument "${key}" for command "${commandPath(command)}". Run \`argus ${commandPath(command)} --help\` for the accepted flags.`,
+					message: `Unknown argument "${key}" for command "${path}". Run \`argus ${path} --help\` for the accepted flags.`,
 				}
 			}
 			positionals[camelCase(key)] = value
@@ -172,14 +177,14 @@ const buildArgvFromArgs = (command: Command, args: Record<string, unknown>): str
 		}
 
 		const emitted = emitOption(options, key, value)
-		if (!Array.isArray(emitted)) {
+		if (isArgvFailure(emitted)) {
 			return emitted
 		}
 		tokens.push(...emitted)
 	}
 
-	const ordered = orderPositionals(command, positionals)
-	if (!Array.isArray(ordered)) {
+	const ordered = orderPositionals(names, positionals)
+	if (isArgvFailure(ordered)) {
 		return ordered
 	}
 
@@ -217,12 +222,13 @@ const emitOption = (options: readonly Option[], key: string, value: unknown): st
 }
 
 /** Place named positionals into declaration order, rejecting gaps a CLI could not express. */
-const orderPositionals = (command: Command, values: Record<string, unknown>): string[] | SessionArgvFailure => {
-	const names = positionalNames(command).filter((name) => name !== 'id')
+const orderPositionals = (declaredNames: readonly string[], values: Record<string, unknown>): string[] | SessionArgvFailure => {
 	const tokens: string[] = []
 	let missing: string | null = null
 
-	for (const name of names) {
+	for (const name of declaredNames) {
+		if (name === 'id') continue
+
 		const value = values[name]
 		if (value === undefined) {
 			missing ??= name
@@ -249,27 +255,33 @@ const orderPositionals = (command: Command, values: Record<string, unknown>): st
 /** Every option named `key` on the command or its ancestors, excluding the root program. */
 const findOptions = (command: Command, key: string): Option[] => {
 	const wanted = camelCase(key)
-	const matches: Option[] = []
-	for (let current: Command | null = command; current?.parent; current = current.parent) {
-		for (const option of current.options) {
-			if (option.attributeName() === wanted || option.name() === key || option.short === `-${key}`) {
-				matches.push(option)
-			}
-		}
-	}
-	return matches
+	return commandChain(command)
+		.flatMap((current) => current.options)
+		.filter((option) => option.attributeName() === wanted || option.name() === key || option.short === `-${key}`)
 }
 
 const positionalNames = (command: Command): string[] => command.registeredArguments.map((argument) => camelCase(argument.name()))
 
 const flagOf = (option: Option): string => option.long ?? option.short ?? `--${option.name()}`
 
-const commandPath = (command: Command): string => {
-	const parts: string[] = []
+const commandPath = (command: Command): string =>
+	commandChain(command)
+		.map((current) => current.name())
+		.reverse()
+		.join(' ')
+
+/**
+ * The command and its ancestors, nearest first, stopping before the root program.
+ *
+ * Program-level flags (`--plugin`) belong to a one-shot invocation, not to a request the
+ * session dispatches, so they stay out of both name resolution and error messages.
+ */
+const commandChain = (command: Command): Command[] => {
+	const chain: Command[] = []
 	for (let current: Command | null = command; current?.parent; current = current.parent) {
-		parts.unshift(current.name())
+		chain.push(current)
 	}
-	return parts.join(' ')
+	return chain
 }
 
 const camelCase = (value: string): string => value.replace(/[-_]([a-z0-9])/g, (_, character: string) => character.toUpperCase())

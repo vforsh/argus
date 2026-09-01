@@ -24,6 +24,9 @@ export type StdioCapture = {
 
 type StreamWrite = typeof process.stdout.write
 
+/** `process.stdout.write` has three overloads; one loose signature forwards all of them. */
+type LooseWrite = (...args: unknown[]) => boolean
+
 /**
  * Redirect every stdout write made inside a request into that request's own buffer.
  *
@@ -60,16 +63,18 @@ const createCapturingWrite = (
 	original: StreamWrite,
 	select: (sink: CapturedStdio) => string[],
 	mirror: boolean,
-): StreamWrite =>
-	((chunk: string | Uint8Array, encoding?: unknown, callback?: unknown): boolean => {
+): StreamWrite => {
+	const forward = original as LooseWrite
+
+	return ((chunk: string | Uint8Array, encoding?: unknown, callback?: unknown): boolean => {
 		const sink = storage.getStore()
 		if (!sink) {
-			return (original as (...args: unknown[]) => boolean)(chunk, encoding, callback)
+			return forward(chunk, encoding, callback)
 		}
 
 		select(sink).push(decodeChunk(chunk, encoding))
 		if (mirror) {
-			;(original as (...args: unknown[]) => boolean)(chunk, encoding)
+			forward(chunk, encoding)
 		}
 
 		const done = typeof encoding === 'function' ? encoding : callback
@@ -78,6 +83,7 @@ const createCapturingWrite = (
 		}
 		return true
 	}) as StreamWrite
+}
 
 const decodeChunk = (chunk: string | Uint8Array, encoding: unknown): string => {
 	if (typeof chunk === 'string') {

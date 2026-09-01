@@ -23,16 +23,16 @@ export type SessionDispatchInput = {
  */
 export const dispatchSessionRequest = async (input: SessionDispatchInput): Promise<SessionResponse> => {
 	const { request } = input
-	const startedAt = Date.now()
+	const respond = createResponder(request, Date.now())
 
 	const timeoutMs = resolveTimeoutMs(request.timeout, input.defaultTimeoutMs)
 	if (timeoutMs == null) {
-		return failure(request, startedAt, { message: `Invalid timeout "${String(request.timeout)}".`, code: 'session_invalid_request' }, 2)
+		return respond.failure({ message: `Invalid timeout "${String(request.timeout)}".`, code: 'session_invalid_request' }, 2)
 	}
 
 	const built = buildSessionArgv({ program: input.program, request, watcherId: input.watcherId })
 	if (!built.ok) {
-		return failure(request, startedAt, { message: built.message, code: built.code }, 2)
+		return respond.failure({ message: built.message, code: built.code }, 2)
 	}
 
 	const sink: CapturedStdio = { stdout: [], stderr: [] }
@@ -53,32 +53,33 @@ export const dispatchSessionRequest = async (input: SessionDispatchInput): Promi
 	if (settled.timedOut) {
 		// The abandoned command keeps its own sink through {@link installStdioCapture}, so
 		// whatever it writes later cannot land in the next request's output.
-		return failure(request, startedAt, { message: `Request timed out after ${timeoutMs}ms.`, code: 'session_request_timeout' }, 1, stderr)
+		return respond.failure({ message: `Request timed out after ${timeoutMs}ms.`, code: 'session_request_timeout' }, 1, stderr)
 	}
 
-	const exitCode = normalizeExitCode(process.exitCode)
+	// Commands report failure through `process.exitCode`; an untouched code means success.
+	const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0
 	process.exitCode = 0
 	const stdout = sink.stdout.join('')
 
 	if (settled.error) {
-		return fromThrownError(request, startedAt, settled.error, stdout, stderr)
+		return fromThrownError(respond, settled.error, stdout, stderr)
 	}
 	if (exitCode !== 0) {
-		return failure(request, startedAt, errorDetailFrom(stdout, stderr), exitCode, stderr)
+		return respond.failure(errorDetailFrom(stdout, stderr), exitCode, stderr)
 	}
 
-	return success(request, startedAt, stdout, stderr)
+	return respond.success(stdout, stderr)
 }
 
 /** `--help` and `--version` reach us as a zero-exit Commander throw; both are legitimate answers. */
-const fromThrownError = (request: SessionRequest, startedAt: number, error: unknown, stdout: string, stderr: string): SessionResponse => {
-	if (error instanceof CommanderError) {
-		if (error.exitCode === 0) {
-			return success(request, startedAt, stdout, stderr)
-		}
-		return failure(request, startedAt, { message: error.message, code: 'session_invalid_request' }, error.exitCode || 2, stderr)
+const fromThrownError = (respond: Responder, error: unknown, stdout: string, stderr: string): SessionResponse => {
+	if (!(error instanceof CommanderError)) {
+		return respond.failure({ message: formatError(error), code: 'session_command_failed' }, 1, stderr)
 	}
-	return failure(request, startedAt, { message: formatError(error), code: 'session_command_failed' }, 1, stderr)
+	if (error.exitCode === 0) {
+		return respond.success(stdout, stderr)
+	}
+	return respond.failure({ message: error.message, code: 'session_invalid_request' }, error.exitCode || 2, stderr)
 }
 
 /**
@@ -124,32 +125,24 @@ const errorDetailFrom = (stdout: string, stderr: string): ErrorDetail => {
 	return { message: message ?? 'Command failed.', code: 'session_command_failed' }
 }
 
-/** Leading fields every response carries, in the order a host reads them. */
-const head = (request: SessionRequest): { id?: string | number } => (request.id === undefined ? {} : { id: request.id })
+type Responder = {
+	success: (stdout: string, stderr: string) => SessionResponse
+	failure: (error: ErrorDetail, exitCode: number, stderr?: string) => SessionResponse
+}
 
-/** Trailing fields every response carries, whichever arm it lands in. */
-const tail = (startedAt: number, stderr: string): { durationMs: number; stderr?: string } => ({
-	durationMs: Date.now() - startedAt,
-	...(stderr === '' ? {} : { stderr }),
-})
+/**
+ * Bind the fields both response arms share — the correlation id and the elapsed time — so the
+ * seven exit paths above only name what actually differs between them.
+ */
+const createResponder = (request: SessionRequest, startedAt: number): Responder => {
+	const id = request.id === undefined ? {} : { id: request.id }
+	const trailer = (stderr: string) => ({ durationMs: Date.now() - startedAt, ...(stderr === '' ? {} : { stderr }) })
 
-const success = (request: SessionRequest, startedAt: number, stdout: string, stderr: string): SessionResponse => ({
-	...head(request),
-	ok: true,
-	...decodeStdout(stdout),
-	...tail(startedAt, stderr),
-})
-
-const failure = (request: SessionRequest, startedAt: number, error: ErrorDetail, exitCode: number, stderr = ''): SessionResponse => ({
-	...head(request),
-	ok: false,
-	error,
-	exitCode,
-	...tail(startedAt, stderr),
-})
-
-/** Commands report failure through `process.exitCode`; an untouched code means success. */
-const normalizeExitCode = (value: number | string | undefined | null): number => (typeof value === 'number' ? value : 0)
+	return {
+		success: (stdout, stderr) => ({ ...id, ok: true, ...decodeStdout(stdout), ...trailer(stderr) }),
+		failure: (error, exitCode, stderr = '') => ({ ...id, ok: false, error, exitCode, ...trailer(stderr) }),
+	}
+}
 
 const resolveTimeoutMs = (timeout: SessionRequest['timeout'], fallbackMs: number): number | null => {
 	if (timeout == null) {
@@ -176,6 +169,6 @@ const raceWithTimeout = async (running: Promise<unknown>, timeoutMs: number): Pr
 	try {
 		return await Promise.race([running.then((error): Settled => ({ timedOut: false, error })), watchdog])
 	} finally {
-		if (timer) clearTimeout(timer)
+		clearTimeout(timer)
 	}
 }

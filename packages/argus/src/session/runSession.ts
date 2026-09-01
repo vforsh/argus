@@ -1,6 +1,6 @@
 import readline from 'node:readline'
 import type { Command } from 'commander'
-import type { SessionReadyEvent, SessionRequest, SessionResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { SessionOutputLine, SessionReadyEvent, SessionRequest, SessionRequestId, SessionResponse, WatcherRecord } from '@vforsh/argus-core'
 import { SESSION_PROTOCOL_VERSION, SESSION_REQUEST_SCHEMA, formatProtocolValidationIssues, parseDurationMs } from '@vforsh/argus-core'
 import packageJson from '../../package.json' with { type: 'json' }
 import { createProgram } from '../cli/program.js'
@@ -48,11 +48,19 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 
 	const program = await buildSessionProgram()
 	const capture = installStdioCapture()
-	const writeLine = (line: SessionReadyEvent | SessionResponse): void => capture.writeStdout(`${JSON.stringify(line)}\n`)
+	const writeLine = (line: SessionOutputLine): void => capture.writeStdout(`${JSON.stringify(line)}\n`)
 
 	writeLine(readyEvent(resolved.watcher))
 
-	const exitCode = await serveRequests({ program, capture, writeLine, watcher: resolved.watcher, defaultTimeoutMs, options, output })
+	const exitCode = await serveRequests({
+		program,
+		capture,
+		writeLine,
+		output,
+		watcher: resolved.watcher,
+		defaultTimeoutMs,
+		reconnect: options.reconnect === true,
+	})
 
 	capture.restore()
 	await flushStdout()
@@ -64,11 +72,11 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 type ServeInput = {
 	program: Command
 	capture: ReturnType<typeof installStdioCapture>
-	writeLine: (line: SessionResponse) => void
+	writeLine: (line: SessionOutputLine) => void
+	output: Output
 	watcher: WatcherRecord
 	defaultTimeoutMs: number
-	options: RunSessionOptions
-	output: Output
+	reconnect: boolean
 }
 
 /**
@@ -92,11 +100,11 @@ const serveRequests = async (input: ServeInput): Promise<number> => {
 			}
 
 			if (request.value.cmd === 'quit') {
-				input.writeLine({ ...idOf(request.value), ok: true, result: { closed: true }, durationMs: 0 })
+				input.writeLine(controlResponse(request.value.id, { closed: true }))
 				return 0
 			}
 			if (request.value.cmd === 'ping') {
-				input.writeLine({ ...idOf(request.value), ok: true, result: { pong: true, watcher: input.watcher.id }, durationMs: 0 })
+				input.writeLine(controlResponse(request.value.id, { pong: true, watcher: input.watcher.id }))
 				continue
 			}
 
@@ -130,7 +138,7 @@ const serveRequests = async (input: ServeInput): Promise<number> => {
  * restarted under the same id is picked up without restarting the session.
  */
 const watcherLost = async (response: SessionResponse, input: ServeInput): Promise<boolean> => {
-	if (response.ok || input.options.reconnect) return false
+	if (response.ok || input.reconnect) return false
 	// A malformed request says nothing about the watcher's health.
 	if (response.error.code && FRAMING_ERROR_CODES.has(response.error.code)) return false
 
@@ -165,22 +173,25 @@ const parseRequestLine = (line: string): ParsedRequest => {
 
 	const parsed = SESSION_REQUEST_SCHEMA.parse(decoded)
 	if (!parsed.ok) {
-		const id = (decoded as { id?: string | number } | null)?.id
+		const id = (decoded as { id?: SessionRequestId } | null)?.id
 		return { ok: false, response: framingError(formatProtocolValidationIssues(parsed.issues), id) }
 	}
 
 	return { ok: true, value: parsed.value }
 }
 
-const framingError = (message: string, id?: string | number): SessionResponse => ({
-	...(id === undefined ? {} : { id }),
+const framingError = (message: string, id?: SessionRequestId): SessionResponse => ({
+	...idOf(id),
 	ok: false,
 	error: { message, code: 'session_invalid_request' },
 	exitCode: 2,
 	durationMs: 0,
 })
 
-const idOf = (request: SessionRequest): { id?: string | number } => (request.id === undefined ? {} : { id: request.id })
+/** `ping` and `quit` are answered by the session itself, without touching the command tree. */
+const controlResponse = (id: SessionRequestId | undefined, result: unknown): SessionResponse => ({ ...idOf(id), ok: true, result, durationMs: 0 })
+
+const idOf = (id: SessionRequestId | undefined): { id?: SessionRequestId } => (id === undefined ? {} : { id })
 
 /** Build a second, session-mode command tree; the one currently mid-parse cannot re-enter itself. */
 const buildSessionProgram = async (): Promise<Command> => {
