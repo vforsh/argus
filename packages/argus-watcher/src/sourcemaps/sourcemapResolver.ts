@@ -1,6 +1,7 @@
 import { TraceMap } from '@jridgewell/trace-mapping'
 import type { SourceMapInput } from '@jridgewell/trace-mapping'
 import { readSourcemapReference } from './sourceMappingUrl.js'
+import { createScriptFetcher, type ScriptFetcher } from './scriptFetcher.js'
 import { resolveSourcemappedLocationWithMap, type GeneratedLocation, type ResolvedLocation } from './resolveLocation.js'
 
 /**
@@ -22,7 +23,10 @@ export type SourcemapResolverOptions = {
 	maxEntries?: number
 	/** How long a "no usable map" answer is trusted before being retried. Default 30s. */
 	negativeTtlMs?: number
-	/** Bytes requested from the end of a script when hunting for the annotation. Default 64 KiB. */
+	/**
+	 * Bytes requested from the end of a script when hunting for the annotation. Default 64 KiB.
+	 * A server that rejects the resulting suffix `Range` is retried whole — see `createScriptFetcher`.
+	 */
 	tailBytes?: number
 }
 
@@ -46,6 +50,9 @@ export const createSourcemapResolver = (options: SourcemapResolverOptions = {}):
 	const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES
 	const negativeTtlMs = options.negativeTtlMs ?? DEFAULT_NEGATIVE_TTL_MS
 	const tailBytes = options.tailBytes ?? DEFAULT_TAIL_BYTES
+
+	/** Owned per resolver so a range-hostile origin is learned once and remembered across scripts. */
+	const fetchScript = createScriptFetcher()
 
 	const cache = new Map<string, CacheEntry>()
 	const pending = new Map<string, Promise<TraceMap | null>>()
@@ -96,7 +103,7 @@ export const createSourcemapResolver = (options: SourcemapResolverOptions = {}):
 		}
 
 		const startedAt = generation
-		const promise = loadTraceMap(scriptUrl, tailBytes)
+		const promise = loadTraceMap(scriptUrl, tailBytes, fetchScript)
 			.catch(() => null)
 			.then((traceMap) => {
 				if (startedAt === generation) {
@@ -133,7 +140,7 @@ export const createSourcemapResolver = (options: SourcemapResolverOptions = {}):
 	return { resolve, clear }
 }
 
-const loadTraceMap = async (scriptUrl: string, tailBytes: number): Promise<TraceMap | null> => {
+const loadTraceMap = async (scriptUrl: string, tailBytes: number, fetchScript: ScriptFetcher): Promise<TraceMap | null> => {
 	const tail = await fetchScript(scriptUrl, tailBytes)
 	if (!tail) {
 		return null
@@ -161,22 +168,6 @@ const loadTraceMap = async (scriptUrl: string, tailBytes: number): Promise<Trace
 
 	// Base against the map URL, not the script: `sources` are relative to wherever the map lives.
 	return new TraceMap(rawMap, reference.url)
-}
-
-type ScriptText = { text: string; partial: boolean }
-
-/**
- * Fetch a script, asking for only its tail when possible — the annotation is on the last line and
- * bundles are large. Servers that ignore `Range` answer 200 with the whole body, which is fine.
- */
-const fetchScript = async (scriptUrl: string, tailBytes: number | null): Promise<ScriptText | null> => {
-	const init = tailBytes ? { headers: { Range: `bytes=-${tailBytes}` } } : undefined
-	const response = await fetch(scriptUrl, init)
-	if (!response.ok) {
-		return null
-	}
-
-	return { text: await response.text(), partial: response.status === 206 }
 }
 
 /** Fetch and parse a sourcemap. A server answering 200-with-JavaScript fails the parse and yields null. */
