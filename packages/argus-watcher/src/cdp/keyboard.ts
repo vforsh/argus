@@ -294,21 +294,18 @@ export const dispatchKeydown = async (session: CdpSessionHandle, options: Dispat
 	}
 
 	// `rawKeyDown` is Chrome's "this key produces no character" type: it suppresses `keypress` and
-	// every default text action. Enter carries text (`\r`) but was excluded here, so `--key Enter`
-	// reached the page as a bare keydown/keyup pair — no `keypress`, no newline in a textarea, and
-	// no form submission, which is the one thing people send Enter for. The split is simply whether
-	// the key produces text, exactly as Playwright decides it.
+	// every default text action. Enter carries text (`\r`) but was excluded from this split, so
+	// `--key Enter` reached the page as a bare keydown/keyup pair — no newline in a textarea, no
+	// form submission. The split is simply whether the key produces text, as Playwright decides it.
 	const carriesText = event.text != null
 
 	// 3. Dispatch key events
 	//
-	// `nativeVirtualKeyCode` is deliberately absent. It carries the *platform's* key code — a Carbon
-	// keycode on macOS, an X11 keysym on Linux — and Argus only knows the Windows one, so passing
-	// that value here was always a lie. Chrome 152 headless turns the lie into a hang: a printable
-	// keyDown with a foreign native code and no focused element makes the browser repeat the key
-	// thousands of times a second until the renderer stops answering CDP entirely. Chrome 145 and
-	// headful Chrome tolerate it, which is why it went unnoticed. `windowsVirtualKeyCode` alone is
-	// what reaches the page as `KeyboardEvent.keyCode`, and it is what Playwright sends.
+	// `nativeVirtualKeyCode` is deliberately absent: it means the *platform's* key code — a Carbon
+	// keycode on macOS, an X11 keysym on Linux — and Argus only knows the Windows one, so the value
+	// was always wrong off Windows. Chrome 152 headless turns that into a hang, repeating the key
+	// thousands of times a second until the renderer stops answering CDP. `windowsVirtualKeyCode`
+	// alone is what reaches the page as `KeyboardEvent.keyCode`, and it is all Playwright sends.
 	const baseParams = {
 		code: event.code,
 		key: event.key,
@@ -316,18 +313,12 @@ export const dispatchKeydown = async (session: CdpSessionHandle, options: Dispat
 		modifiers: event.modifiers,
 	}
 
-	if (carriesText) {
-		await session.sendAndWait('Input.dispatchKeyEvent', {
-			...baseParams,
-			type: 'keyDown',
-			text: event.text,
-			unmodifiedText: event.text,
-		})
-		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyUp' })
-	} else {
-		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'rawKeyDown' })
-		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyUp' })
-	}
+	const keyDownParams = carriesText
+		? { ...baseParams, type: 'keyDown' as const, text: event.text, unmodifiedText: event.text }
+		: { ...baseParams, type: 'rawKeyDown' as const }
+
+	await session.sendAndWait('Input.dispatchKeyEvent', keyDownParams)
+	await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyUp' })
 
 	return { key: event.key, code: event.code, modifiers: event.modifiers, focused, event }
 }

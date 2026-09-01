@@ -13,7 +13,6 @@ describe('diagnoseCdpHealth', () => {
 	it('blames the expression only when every other layer answers', async () => {
 		const diagnosis = await diagnoseCdpHealth(healthyProbe)
 
-		expect(diagnosis.layer).toBe('evaluation')
 		expect(diagnosis.code).toBe('cdp_timeout')
 		expect(diagnosis.message).toContain('longer timeout')
 	})
@@ -37,7 +36,6 @@ describe('diagnoseCdpHealth', () => {
 			checkTransport: async () => ({ state: 'unreachable', detail: '127.0.0.1:9222: fetch failed' }),
 		})
 
-		expect(diagnosis.layer).toBe('chrome_unreachable')
 		expect(diagnosis.code).toBe('chrome_unreachable')
 		expect(diagnosis.message).toContain('127.0.0.1:9222')
 	})
@@ -73,7 +71,7 @@ describe('diagnoseCdpHealth', () => {
 			probeRenderer: async () => false,
 		})
 
-		expect(diagnosis.layer).toBe('dialog_blocking')
+		expect(diagnosis.code).toBe('dialog_blocking')
 		expect(diagnosis.message).toContain('argus dialog accept app')
 	})
 

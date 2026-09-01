@@ -64,7 +64,8 @@ export const respondCdpError = async (
 	diagnose: (() => Promise<CdpHealthDiagnosis>) | undefined,
 ): Promise<void> => {
 	if (!diagnose || !isCdpTimeoutError(error)) {
-		return respondError(res, error)
+		respondError(res, error)
+		return
 	}
 
 	try {

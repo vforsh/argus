@@ -1,4 +1,5 @@
-import { codedError } from '../errors.js'
+import { formatError } from '@vforsh/argus-core'
+import { codedError, type CodedError } from '../errors.js'
 import type { CdpSessionHandle } from './connection.js'
 import type { VisibilityController } from '../visibility/VisibilityController.js'
 import { tryEvaluateInPage } from './pageState.js'
@@ -27,7 +28,7 @@ export type PageInputActivation = {
  *
  * @param pageSession Top-level page session — focus is a page-level concept, never iframe-scoped.
  * @param visibility Controller owning the sticky show lock.
- * @throws {import('../errors.js').CodedError} `target_not_focused` when the page cannot be activated.
+ * @throws {CodedError} `target_not_focused` when the page cannot be activated.
  */
 export const ensurePageInputFocus = async (pageSession: CdpSessionHandle, visibility: VisibilityController): Promise<PageInputActivation> => {
 	if (!pageSession.isAttached()) {
@@ -42,7 +43,7 @@ export const ensurePageInputFocus = async (pageSession: CdpSessionHandle, visibi
 	try {
 		await visibility.setLock(pageSession, 'shown')
 	} catch (error) {
-		throw notFocusedError(`activating it failed: ${error instanceof Error ? error.message : String(error)}`)
+		throw notFocusedError(`activating it failed: ${formatError(error)}`)
 	}
 
 	if (!(await hasPageFocus(pageSession))) {
@@ -63,7 +64,7 @@ const hasPageFocus = async (pageSession: CdpSessionHandle): Promise<boolean> => 
 	return focused !== false
 }
 
-const notFocusedError = (reason: string) =>
+const notFocusedError = (reason: string): CodedError =>
 	codedError(
 		'target_not_focused',
 		`The page is not focused, so Chrome would drop the keyboard event — ${reason}. ` +

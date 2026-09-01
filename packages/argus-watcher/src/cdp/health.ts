@@ -2,27 +2,17 @@ import type { ArgusErrorCode, DialogStatus } from '@vforsh/argus-core'
 import { codedError, type CodedError } from '../errors.js'
 import type { CdpSessionHandle } from './connection.js'
 
-/** How long a health probe may take. Kept short — it runs *after* something already timed out. */
-const PROBE_TIMEOUT_MS = 2_000
-
-/** Which layer a stalled CDP command actually failed at. */
-export type CdpHealthLayer =
-	/** Nothing is attached; the command never had a target. */
-	| 'not_attached'
-	/** Chrome's DevTools endpoint did not answer — the browser is gone or the port moved. */
-	| 'chrome_unreachable'
-	/** The attached target is no longer listed; a navigation replaced it. */
-	| 'target_replaced'
-	/** A modal dialog is holding the page's main thread. */
-	| 'dialog_blocking'
-	/** The target exists but its renderer will not answer a trivial round-trip. */
-	| 'renderer_unresponsive'
-	/** Every layer answered — the expression itself outlived its deadline. */
-	| 'evaluation'
+/**
+ * How long a health probe may take.
+ *
+ * Kept short — it runs *after* something already timed out, and the caller is still waiting.
+ * Transport checks share the budget so a diagnosis cannot outlast the request it explains.
+ */
+export const CDP_HEALTH_PROBE_TIMEOUT_MS = 2_000
 
 /** A layered explanation for a CDP command that ran out of time. */
 export type CdpHealthDiagnosis = {
-	layer: CdpHealthLayer
+	/** The layer that swallowed the command, in the same vocabulary the wire envelope uses. */
 	code: ArgusErrorCode
 	/** One line: what failed, and what to do about it. */
 	message: string
@@ -62,24 +52,23 @@ export const diagnoseCdpHealth = async (probe: CdpHealthProbe): Promise<CdpHealt
 
 	if (!probe.isAttached()) {
 		return {
-			layer: 'not_attached',
 			code: 'cdp_not_attached',
 			message: `The watcher is not attached to a target. Check \`argus watcher status ${id}\` and \`argus doctor\`.`,
 		}
 	}
 
-	const transport = await probe.checkTransport?.()
-	if (transport?.state === 'unreachable') {
+	// A source with no out-of-band endpoint to ask cannot fail these two layers; treat it as healthy
+	// transport rather than repeating an optional-call dance at every check below.
+	const transport = (await probe.checkTransport?.()) ?? { state: 'ok' }
+	if (transport.state === 'unreachable') {
 		return {
-			layer: 'chrome_unreachable',
 			code: 'chrome_unreachable',
 			message: `Chrome's CDP endpoint did not answer (${transport.detail}). Restart the browser, then \`argus doctor\`.`,
 		}
 	}
-	if (transport?.state === 'target_gone') {
+	if (transport.state === 'target_gone') {
 		probe.onTargetGone?.()
 		return {
-			layer: 'target_replaced',
 			code: 'cdp_target_replaced',
 			message:
 				`The attached page target is gone (${transport.detail}) — a navigation replaced it. ` +
@@ -90,7 +79,6 @@ export const diagnoseCdpHealth = async (probe: CdpHealthProbe): Promise<CdpHealt
 	const dialog = probe.getBlockingDialog?.()
 	if (dialog) {
 		return {
-			layer: 'dialog_blocking',
 			code: 'dialog_blocking',
 			message:
 				`A ${dialog.type} dialog is open and blocking the page. ` +
@@ -100,17 +88,15 @@ export const diagnoseCdpHealth = async (probe: CdpHealthProbe): Promise<CdpHealt
 
 	if (!(await probe.probeRenderer())) {
 		return {
-			layer: 'renderer_unresponsive',
 			code: 'cdp_renderer_unresponsive',
 			message:
-				`The page's renderer did not answer a trivial evaluation within ${PROBE_TIMEOUT_MS}ms — its main thread is blocked, ` +
-				`or a cross-origin navigation stranded it. A longer timeout will not help: reload with \`argus reload ${id}\`, ` +
+				`The page's renderer did not answer a trivial evaluation within ${CDP_HEALTH_PROBE_TIMEOUT_MS}ms — its main thread is ` +
+				`blocked, or a cross-origin navigation stranded it. A longer timeout will not help: reload with \`argus reload ${id}\`, ` +
 				'or restart Chrome.',
 		}
 	}
 
 	return {
-		layer: 'evaluation',
 		code: 'cdp_timeout',
 		message: 'The watcher, target, and renderer all answered, so the expression itself exceeded its deadline. Pass a longer timeout.',
 	}
@@ -134,12 +120,10 @@ export const isCdpTimeoutError = (error: unknown): boolean =>
 /** A renderer probe backed by a CDP session: one trivial evaluation, short deadline, never throws. */
 export const createSessionRendererProbe = (session: CdpSessionHandle) => async (): Promise<boolean> => {
 	try {
-		await session.sendAndWait('Runtime.evaluate', { expression: '1', returnByValue: true, silent: true }, { timeoutMs: PROBE_TIMEOUT_MS })
+		const params = { expression: '1', returnByValue: true, silent: true }
+		await session.sendAndWait('Runtime.evaluate', params, { timeoutMs: CDP_HEALTH_PROBE_TIMEOUT_MS })
 		return true
 	} catch {
 		return false
 	}
 }
-
-/** Budget every health probe shares, exported so transport checks can use the same deadline. */
-export const CDP_HEALTH_PROBE_TIMEOUT_MS = PROBE_TIMEOUT_MS
