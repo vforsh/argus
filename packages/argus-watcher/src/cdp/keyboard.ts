@@ -263,7 +263,7 @@ const isShift = (modifiers: number): boolean => (modifiers & MODIFIER_BITS.shift
  *
  * 1. If `selector` provided: resolve → error if 0 or >1 match → focus
  * 2. Resolve key definition
- * 3. Dispatch: printable → keyDown(text)+keyUp; non-printable → rawKeyDown+keyUp
+ * 3. Dispatch: keys that carry text → keyDown(text)+keyUp; the rest → rawKeyDown+keyUp
  *
  * A `keyDown` carrying `text` already produces the character, so no separate `char` event is
  * sent. Sending one used to double every printable key: the page saw one `keydown`, but two
@@ -293,7 +293,12 @@ export const dispatchKeydown = async (session: CdpSessionHandle, options: Dispat
 		focused = true
 	}
 
-	const isPrintable = event.text != null && event.text !== '\r'
+	// `rawKeyDown` is Chrome's "this key produces no character" type: it suppresses `keypress` and
+	// every default text action. Enter carries text (`\r`) but was excluded here, so `--key Enter`
+	// reached the page as a bare keydown/keyup pair — no `keypress`, no newline in a textarea, and
+	// no form submission, which is the one thing people send Enter for. The split is simply whether
+	// the key produces text, exactly as Playwright decides it.
+	const carriesText = event.text != null
 
 	// 3. Dispatch key events
 	//
@@ -311,7 +316,7 @@ export const dispatchKeydown = async (session: CdpSessionHandle, options: Dispat
 		modifiers: event.modifiers,
 	}
 
-	if (isPrintable) {
+	if (carriesText) {
 		await session.sendAndWait('Input.dispatchKeyEvent', {
 			...baseParams,
 			type: 'keyDown',
@@ -320,7 +325,7 @@ export const dispatchKeydown = async (session: CdpSessionHandle, options: Dispat
 		})
 		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyUp' })
 	} else {
-		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'rawKeyDown', text: event.text })
+		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'rawKeyDown' })
 		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyUp' })
 	}
 

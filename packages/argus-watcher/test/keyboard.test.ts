@@ -100,11 +100,22 @@ describe('dispatchKeydown wire shape', () => {
 		expect(calls[1][1].text).toBeUndefined()
 	})
 
-	it('keeps non-printable keys on the rawKeyDown path', async () => {
+	it('keeps keys that produce no text on the rawKeyDown path', async () => {
 		const { calls } = await captureDispatch({ key: 'ArrowUp' })
 
 		expect(calls.map(([, params]) => params.type)).toEqual(['rawKeyDown', 'keyUp'])
 		expect(calls[0][1]).toMatchObject({ key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 })
+		// `rawKeyDown` means "no character"; carrying text on it would contradict the type.
+		expect(calls[0][1].text).toBeUndefined()
+	})
+
+	it('sends Enter as a text-carrying keyDown so keypress and form submission happen', async () => {
+		// Enter used to take the rawKeyDown path, which suppresses `keypress` and every default text
+		// action — so `--key Enter` never submitted a form or added a newline in a textarea.
+		const { calls } = await captureDispatch({ key: 'Enter' })
+
+		expect(calls.map(([, params]) => params.type)).toEqual(['keyDown', 'keyUp'])
+		expect(calls[0][1]).toMatchObject({ type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' })
 	})
 })
 

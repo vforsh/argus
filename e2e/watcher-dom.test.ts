@@ -85,6 +85,8 @@ const TEST_HTML = `
         Composite choice
       </label>
       <button id="btn" class="action">Click me</button>
+      <form id="enter-form"><input id="enter-input" type="text" /><button type="submit">Go</button></form>
+      <textarea id="enter-textarea"></textarea>
       <canvas id="drag-canvas" width="320" height="180" style="display:block;width:320px;height:180px;border:0"></canvas>
       <div id="multi-1" class="multi">Multi One</div>
       <div id="multi-2" class="multi">Multi Two</div>
@@ -112,6 +114,10 @@ const TEST_HTML = `
         altKey: e.altKey,
         metaKey: e.metaKey,
       })
+    })
+    document.getElementById('enter-form').addEventListener('submit', (e) => {
+      e.preventDefault()
+      window.__events.push('submit:enter-form')
     })
     const input = document.getElementById('input')
     input.addEventListener('focus', () => window.__events.push('focus:input'))
@@ -624,6 +630,29 @@ describe('dom tree and dom info e2e', () => {
 
 		const value = await page.evaluate(() => (document.getElementById('input') as HTMLInputElement).value)
 		expect(value).toBe('a')
+	})
+
+	test('dom keydown Enter submits the focused form', async () => {
+		// Enter used to be dispatched as `rawKeyDown`, which suppresses `keypress` and every default
+		// text action — the page saw the key but the form never submitted.
+		await resetKeyEvents()
+
+		await runArgus(['keydown', watcherId, '--key', 'Enter', '--selector', '#enter-input', '--json'])
+
+		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		expect(events).toContain('submit:enter-form')
+	})
+
+	test('dom keydown Enter inserts a single newline in a textarea', async () => {
+		await resetKeyEvents()
+		await page.evaluate(() => {
+			;(document.getElementById('enter-textarea') as HTMLTextAreaElement).value = ''
+		})
+
+		await runArgus(['keydown', watcherId, '--key', 'Enter', '--selector', '#enter-textarea', '--json'])
+
+		const value = await page.evaluate(() => (document.getElementById('enter-textarea') as HTMLTextAreaElement).value)
+		expect(value).toBe('\n')
 	})
 
 	test('dom keydown delivers to a page that is not the active tab', async () => {
