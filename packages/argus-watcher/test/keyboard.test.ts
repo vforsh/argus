@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import { resolveKeyboardEvent } from '../src/cdp/keyboard.js'
+import type { CdpSessionHandle } from '../src/cdp/connection.js'
+import { dispatchKeydown, resolveKeyboardEvent } from '../src/cdp/keyboard.js'
 
 const SHIFT = 8
 
@@ -71,3 +72,59 @@ describe('resolveKeyboardEvent punctuation', () => {
 		expect(resolveKeyboardEvent({ key: 'Enter', code: 'NumpadEnter' })).toMatchObject({ key: 'Enter', code: 'NumpadEnter', keyCode: 13 })
 	})
 })
+
+/**
+ * These pin the exact CDP traffic, because both of the bugs they guard against were invisible in
+ * the response: the command reported a clean dispatch either way, and only the page could tell.
+ */
+describe('dispatchKeydown wire shape', () => {
+	it('never sends nativeVirtualKeyCode', async () => {
+		// Argus only knows the Windows key code; sending it as the *native* one is wrong on macOS and
+		// Linux, and Chrome 152 headless answers a printable keyDown carrying a foreign native code
+		// with an unbounded key repeat that wedges the renderer.
+		const { calls } = await captureDispatch({ key: '9' })
+
+		for (const [, params] of calls) {
+			expect(params).not.toHaveProperty('nativeVirtualKeyCode')
+			expect(params.windowsVirtualKeyCode).toBe(57)
+		}
+	})
+
+	it('sends one keyDown carrying the text, then keyUp — no separate char', async () => {
+		// A keyDown with `text` already produces the character; the extra `char` event doubled every
+		// printable key, so a single `--key 9` typed "99" into a focused field.
+		const { calls } = await captureDispatch({ key: '9' })
+
+		expect(calls.map(([, params]) => params.type)).toEqual(['keyDown', 'keyUp'])
+		expect(calls[0][1]).toMatchObject({ type: 'keyDown', text: '9', unmodifiedText: '9', key: '9', code: 'Digit9' })
+		expect(calls[1][1].text).toBeUndefined()
+	})
+
+	it('keeps non-printable keys on the rawKeyDown path', async () => {
+		const { calls } = await captureDispatch({ key: 'ArrowUp' })
+
+		expect(calls.map(([, params]) => params.type)).toEqual(['rawKeyDown', 'keyUp'])
+		expect(calls[0][1]).toMatchObject({ key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 })
+	})
+})
+
+type DispatchCall = [method: string, params: Record<string, unknown>]
+
+const captureDispatch = async (options: { key?: string; code?: string }): Promise<{ calls: DispatchCall[] }> => {
+	const calls: DispatchCall[] = []
+	const session = {
+		isAttached: () => true,
+		sendAndWait: (async (method: string, params?: Record<string, unknown>) => {
+			if (method === 'Input.dispatchKeyEvent') {
+				calls.push([method, params ?? {}])
+			}
+			return {}
+		}) as CdpSessionHandle['sendAndWait'],
+		onEvent: () => () => {},
+		getTargetContext: () => ({ kind: 'page' as const }),
+		getReadyTargetContext: async () => ({ kind: 'page' as const }),
+	}
+
+	await dispatchKeydown(session, options)
+	return { calls }
+}

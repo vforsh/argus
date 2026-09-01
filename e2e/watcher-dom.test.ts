@@ -611,6 +611,21 @@ describe('dom tree and dom info e2e', () => {
 		expect(events).toContain('input-keydown:a')
 	})
 
+	test('dom keydown types a printable key exactly once', async () => {
+		// The dispatch used to send `char` after a `keyDown` that already carried the text, so a
+		// single key produced two keypress/beforeinput/input rounds and typed "aa" into the field.
+		await resetKeyEvents()
+		await page.evaluate(() => {
+			const input = document.getElementById('input') as HTMLInputElement
+			input.value = ''
+		})
+
+		await runArgus(['keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'])
+
+		const value = await page.evaluate(() => (document.getElementById('input') as HTMLInputElement).value)
+		expect(value).toBe('a')
+	})
+
 	test('dom keydown delivers to a page that is not the active tab', async () => {
 		// A hidden page drops Input.dispatchKeyEvent while CDP still acks it, so the route activates
 		// the page first. This is the reported failure: `ok: true` for a key nothing received.

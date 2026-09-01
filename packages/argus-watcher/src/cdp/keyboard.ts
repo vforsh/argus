@@ -263,7 +263,12 @@ const isShift = (modifiers: number): boolean => (modifiers & MODIFIER_BITS.shift
  *
  * 1. If `selector` provided: resolve → error if 0 or >1 match → focus
  * 2. Resolve key definition
- * 3. Dispatch: printable → keyDown+char+keyUp; non-printable → rawKeyDown+keyUp
+ * 3. Dispatch: printable → keyDown(text)+keyUp; non-printable → rawKeyDown+keyUp
+ *
+ * A `keyDown` carrying `text` already produces the character, so no separate `char` event is
+ * sent. Sending one used to double every printable key: the page saw one `keydown`, but two
+ * `keypress`/`beforeinput`/`input` rounds, and a focused field ended up with "99" for a single
+ * `--key 9`. Chrome's own automation clients (Playwright) dispatch the same two events.
  */
 export const dispatchKeydown = async (session: CdpSessionHandle, options: DispatchKeydownOptions): Promise<DispatchKeydownResult> => {
 	const { selector } = options
@@ -291,17 +296,28 @@ export const dispatchKeydown = async (session: CdpSessionHandle, options: Dispat
 	const isPrintable = event.text != null && event.text !== '\r'
 
 	// 3. Dispatch key events
+	//
+	// `nativeVirtualKeyCode` is deliberately absent. It carries the *platform's* key code — a Carbon
+	// keycode on macOS, an X11 keysym on Linux — and Argus only knows the Windows one, so passing
+	// that value here was always a lie. Chrome 152 headless turns the lie into a hang: a printable
+	// keyDown with a foreign native code and no focused element makes the browser repeat the key
+	// thousands of times a second until the renderer stops answering CDP entirely. Chrome 145 and
+	// headful Chrome tolerate it, which is why it went unnoticed. `windowsVirtualKeyCode` alone is
+	// what reaches the page as `KeyboardEvent.keyCode`, and it is what Playwright sends.
 	const baseParams = {
 		code: event.code,
 		key: event.key,
 		windowsVirtualKeyCode: event.keyCode,
-		nativeVirtualKeyCode: event.keyCode,
 		modifiers: event.modifiers,
 	}
 
 	if (isPrintable) {
-		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyDown', text: event.text })
-		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'char', text: event.text })
+		await session.sendAndWait('Input.dispatchKeyEvent', {
+			...baseParams,
+			type: 'keyDown',
+			text: event.text,
+			unmodifiedText: event.text,
+		})
 		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'keyUp' })
 	} else {
 		await session.sendAndWait('Input.dispatchKeyEvent', { ...baseParams, type: 'rawKeyDown', text: event.text })
