@@ -155,6 +155,34 @@ For deeper command lists, use [INSPECT.md](./reference/INSPECT.md). For screensh
 
 ---
 
+## Session Transport (Many Commands, One Process)
+
+Use this when a harness drives a page through many sequential steps. One-shot `argus` pays Node
+startup plus watcher discovery (~100-200ms) per command; `argus session` pays it once and then
+serves JSONL requests on stdin.
+
+```bash
+argus session app
+```
+
+```json
+{"id": 1, "cmd": "eval", "args": {"expression": "location.href"}}
+{"id": 2, "cmd": "click", "args": {"selector": "button.start"}}
+{"id": 3, "cmd": "quit"}
+```
+
+Responses are one JSON line each, correlated by `id`, carrying the same payload the matching
+`--json` command prints: `{"id": 1, "ok": true, "result": {…}, "durationMs": 8}`. Failures answer
+`ok: false` and the session stays alive. stdout is JSONL only; human output goes to stderr.
+
+Daemons (`start`, `chrome start`, `watcher start`), stream tails (`logs tail`, `net tail`,
+`net sse`), and anything reading `--stdin` are refused — run those as their own process.
+
+Read [SESSION.md](./reference/SESSION.md) for the full request/response schema, timeout and
+watcher-loss semantics, and a host sketch.
+
+---
+
 ## CDP Quick Start
 
 Use CDP for local apps and clean repros where a temp/debuggable browser is acceptable.
@@ -226,3 +254,4 @@ Never treat whole-export row indexes as physical sheet rows: `exportRow` is only
 - [INJECT.md](./reference/INJECT.md) — Script injection on watcher attach/navigation.
 - [DIALOG.md](./reference/DIALOG.md) — Browser dialog status and handling.
 - [PLUGINS.md](./reference/PLUGINS.md) — CLI plugin loading and Google Sheets plugin.
+- [SESSION.md](./reference/SESSION.md) — Long-lived JSONL session transport for automation harnesses.

@@ -9,8 +9,8 @@
  * Add a member here before emitting a new code; `isArgusErrorCode` keeps foreign codes (Node's
  * `ENOENT`, for instance) from leaking onto the wire when an arbitrary error is mapped.
  *
- * The CLI's own local failures (native-host setup, platform support) use the same envelope and so
- * draw from the same union.
+ * The CLI's own local failures (native-host setup, platform support, the `argus session` JSONL
+ * transport) use the same envelope and so draw from the same union.
  */
 export const ARGUS_ERROR_CODES = [
 	'argus_executable_not_found',
@@ -40,6 +40,11 @@ export const ARGUS_ERROR_CODES = [
 	'not_interactable',
 	'nth_out_of_range',
 	'payload_too_large',
+	'session_command_failed',
+	'session_command_rejected',
+	'session_invalid_request',
+	'session_request_timeout',
+	'session_unknown_command',
 	'unexpected_matches',
 	'unsupported_platform',
 ] as const

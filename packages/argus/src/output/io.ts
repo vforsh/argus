@@ -7,10 +7,31 @@ const ensureTrailingNewline = (value: string): string => (value.endsWith('\n') ?
 
 /** Route incidental console progress to stderr before JSON-mode plugins are loaded. */
 export const configureMachineSafeConsole = (argv: readonly string[]): void => {
-	if (!argv.includes('--json') && !argv.includes('--json-full')) {
-		return
+	if (argv.includes('--json') || argv.includes('--json-full') || isMachineOnlyCommand(argv)) {
+		routeConsoleToStderr()
 	}
+}
 
+/**
+ * Commands whose stdout is machine-only regardless of flags.
+ *
+ * `argus session` writes JSONL from its first byte, and plugins load — and log — before its
+ * action ever runs, so the decision cannot wait for the flag scan the rest of this uses.
+ */
+const MACHINE_ONLY_COMMANDS = new Set(['session'])
+
+const isMachineOnlyCommand = (argv: readonly string[]): boolean => {
+	const command = argv.find((token, index) => !token.startsWith('-') && argv[index - 1] !== '--plugin')
+	return command != null && MACHINE_ONLY_COMMANDS.has(command)
+}
+
+/**
+ * Send `console.log`/`info`/`debug` to stderr for the rest of the process.
+ *
+ * Callers that always speak machine output — `argus session`, whose stdout carries nothing but
+ * JSONL — need this unconditionally rather than keyed off a flag in argv.
+ */
+export const routeConsoleToStderr = (): void => {
 	const writeConsoleError = console.error.bind(console)
 	console.log = writeConsoleError
 	console.info = writeConsoleError

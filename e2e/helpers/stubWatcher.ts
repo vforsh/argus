@@ -93,6 +93,9 @@ export const startStubWatcher = async (routes: StubRoutes, watcherId = 'stub'): 
 			return
 		}
 		stopped = true
+		// Keep-alive sockets keep `close` pending; a test that stops the server to simulate a
+		// dead watcher would otherwise hang instead of failing the next request.
+		server.closeAllConnections()
 		await new Promise<void>((resolve) => server.close(() => resolve()))
 	}
 

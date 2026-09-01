@@ -277,6 +277,24 @@ argus code strings app --url app.js
 argus code strings app --url app.js --kind url,identifier --match '/admin\\/api/'
 ```
 
+### Drive many commands from one process
+
+Spawning `argus` per command costs Node startup plus watcher discovery. For harnesses that issue
+dozens of sequential steps, `argus session` keeps one process alive and takes JSONL on stdin:
+
+```bash
+argus session app
+```
+
+```json
+{"id": 1, "cmd": "eval-until", "args": {"expression": "window.APP_READY", "totalTimeout": "30s"}}
+{"id": 2, "cmd": "click", "args": {"selector": "button.start"}}
+{"id": 3, "cmd": "screenshot", "args": {"out": "./shot.png"}}
+```
+
+Each response is one JSON line correlated by `id`, carrying the same payload the matching `--json`
+command prints. See `skill/argus/reference/SESSION.md`.
+
 ### Capture evidence
 
 ```bash
@@ -361,6 +379,7 @@ Four packages:
 | `screenshot`                                           | Capture screenshot                       |
 | `trace` / `trace start\|stop`                          | Chrome performance tracing               |
 | `storage local\|session get\|set\|remove\|list\|clear` | Manage `localStorage` / `sessionStorage` |
+| `session`                                              | Serve JSONL commands over stdin/stdout   |
 | `config init`                                          | Create config file                       |
 | `extension setup\|remove\|status\|info`                | Chrome extension native messaging        |
 
