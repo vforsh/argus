@@ -109,8 +109,9 @@ const writeActiveRecording = (active: RecordStatusSummary, output: Output): void
 }
 
 const buildRecordPlan = (options: RecordOptions, output: Output): WatcherRequestPlan | null => {
-	const bounds = parseCaptureBounds(options, output)
-	if (!bounds) {
+	const bounds = resolveCaptureBounds(options)
+	if (bounds.error || !bounds.value) {
+		writeRecordOptionError(output, bounds.error ?? 'Unable to resolve recording bounds')
 		return null
 	}
 
@@ -122,53 +123,68 @@ const buildRecordPlan = (options: RecordOptions, output: Output): WatcherRequest
 	return {
 		path: '/record',
 		method: 'POST',
-		body: { ...body, ...bounds },
-		// The client must out-wait the watcher's own deadline, or it gives up on a recording that
-		// is still running and leaves nobody to collect the file.
-		timeoutMs: bounds.maxDurationMs + RECORD_ENCODER_GRACE_MS,
+		body: { ...body, ...bounds.value },
+		timeoutMs: recordCaptureTimeoutMs(bounds.value.maxDurationMs),
 	}
 }
 
-type CaptureBounds = { durationMs?: number; until?: string; pollIntervalMs?: number; maxDurationMs: number }
+/** The bounds the watcher enforces for one capture. */
+export type CaptureBounds = { durationMs?: number; until?: string; pollIntervalMs?: number; maxDurationMs: number }
+
+/**
+ * How long the client waits for a capture whose watcher-side deadline is `maxDurationMs`.
+ *
+ * Strictly longer than the watcher's own deadline, always. If the client gives up first it
+ * abandons a recording that is still running, leaving nobody to collect the file — which is the
+ * orphan that `maxDurationMs` exists to prevent.
+ */
+export const recordCaptureTimeoutMs = (maxDurationMs: number): number => maxDurationMs + RECORD_ENCODER_GRACE_MS
 
 /**
  * Resolve `--duration` / `--until` / `--max` into the bounds the watcher enforces.
  *
- * `--until` is bounded only by `--max`, so that value is sent through as the deadline. `--duration`
- * carries its own end, and `--max` is a backstop that has to sit strictly above it — an equal
- * deadline would race the duration timer and report the wrong stop reason.
+ * `--until` is bounded only by `--max`, so that value is the deadline. `--duration` carries its own
+ * end and `--max` is only a backstop behind it, which has to sit strictly above the requested
+ * window — an equal deadline would race the duration timer and report the wrong stop reason.
+ *
+ * Pure so the deadline arithmetic is testable without a watcher; the caller reports `error`.
  */
-const parseCaptureBounds = (options: RecordOptions, output: Output): CaptureBounds | null => {
+export const resolveCaptureBounds = (options: RecordOptions): ParsedOption<CaptureBounds> => {
 	if (options.duration && options.until) {
-		writeRecordOptionError(output, 'Cannot use both --duration and --until')
-		return null
+		return { error: 'Cannot use both --duration and --until' }
 	}
 
-	const maxDurationMs = readOption(options.max, durationParser('--max'), output)
-	if (maxDurationMs === null) {
-		return null
+	const max = durationParser('--max')(options.max)
+	if (max.error) {
+		return { error: max.error }
 	}
 
 	if (options.until) {
-		const pollIntervalMs = readOption(options.poll, durationParser('--poll', 'ms'), output)
-		if (pollIntervalMs === null) {
-			return null
+		const poll = durationParser('--poll', 'ms')(options.poll)
+		if (poll.error) {
+			return { error: poll.error }
 		}
 
-		return { until: options.until, pollIntervalMs, maxDurationMs: maxDurationMs ?? DEFAULT_UNTIL_MAX_MS }
+		return { value: { until: options.until, pollIntervalMs: poll.value, maxDurationMs: max.value ?? DEFAULT_UNTIL_MAX_MS } }
 	}
 
 	if (!options.duration) {
-		writeRecordOptionError(output, 'Missing --duration value. Pass --duration <duration> or --until <expression>.')
-		return null
+		return { error: 'Missing --duration value. Pass --duration <duration> or --until <expression>.' }
 	}
 
-	const durationMs = readOption(options.duration, durationParser('--duration'), output)
-	if (durationMs == null) {
-		return null
+	const duration = durationParser('--duration')(options.duration)
+	if (duration.error) {
+		return { error: duration.error }
 	}
 
-	return { durationMs, maxDurationMs: Math.max(durationMs, maxDurationMs ?? 0) + RECORD_ENCODER_GRACE_MS }
+	const durationMs = duration.value as number
+	// Taking the larger of the two used to discard a shorter --max without a word, so a capture
+	// asked to stop early ran the full --duration instead.
+	if (max.value != null && max.value < durationMs) {
+		return { error: `--max (${options.max}) is shorter than --duration (${options.duration}); the recording would run past it.` }
+	}
+
+	return { value: { durationMs, maxDurationMs: (max.value ?? durationMs) + RECORD_ENCODER_GRACE_MS } }
 }
 
 const buildRecordStartPlan = (options: RecordStartOptions, output: Output): WatcherRequestPlan | null => {

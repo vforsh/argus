@@ -11,6 +11,8 @@ import {
 	parseRecordFormatValue,
 	parseRecordFpsValue,
 	parseRecordQualityValue,
+	recordCaptureTimeoutMs,
+	resolveCaptureBounds,
 	validateRecordOutFile,
 	validateRecordOutFileForFormat,
 } from '../packages/argus/src/commands/record.js'
@@ -437,5 +439,56 @@ describe('recorder shutdown races', () => {
 		// The move must happen after the encoder closed, or the file is truncated.
 		expect(stopped.sizeBytes).toBe((await fs.stat(path.join(tempDir, 'final.mp4'))).size)
 		expect(stopped.sizeBytes).toBeGreaterThan(0)
+	})
+})
+
+/**
+ * The client's request timeout and the watcher's own deadline are computed in different places, so
+ * nothing but a test keeps them ordered. If the client's timeout ever lands on or below the
+ * watcher's, it abandons a recording that is still running and no one collects the file.
+ */
+describe('record capture bounds', () => {
+	const boundsFor = (options: Parameters<typeof resolveCaptureBounds>[0]) => {
+		const resolved = resolveCaptureBounds(options)
+		expect(resolved.error).toBeUndefined()
+		return resolved.value!
+	}
+
+	test('the client always out-waits the watcher deadline', () => {
+		const cases = [
+			{ duration: '5s' },
+			{ duration: '10m' },
+			{ duration: '5s', max: '2m' },
+			{ until: 'window.done', max: '30s' },
+			{ until: 'window.done' },
+		]
+
+		for (const options of cases) {
+			const { maxDurationMs } = boundsFor(options)
+			expect(recordCaptureTimeoutMs(maxDurationMs)).toBeGreaterThan(maxDurationMs)
+		}
+	})
+
+	test('the watcher backstop sits above the requested window, never on it', () => {
+		const { durationMs, maxDurationMs } = boundsFor({ duration: '5s' })
+
+		expect(durationMs).toBe(5_000)
+		// An equal deadline would race the duration timer and report 'max-duration' at random.
+		expect(maxDurationMs).toBeGreaterThan(durationMs as number)
+	})
+
+	test('until is bounded by --max, or a default when none is given', () => {
+		expect(boundsFor({ until: 'window.done', max: '30s' }).maxDurationMs).toBe(30_000)
+		expect(boundsFor({ until: 'window.done' }).maxDurationMs).toBe(60_000)
+		expect(boundsFor({ until: 'window.done', poll: '100ms' }).pollIntervalMs).toBe(100)
+	})
+
+	test('rejects bounds that contradict each other', () => {
+		// Previously Math.max discarded the shorter --max and ran the full --duration in silence.
+		expect(resolveCaptureBounds({ duration: '10s', max: '5s' }).error).toContain('shorter than --duration')
+		expect(resolveCaptureBounds({ duration: '1s', until: 'x' }).error).toContain('both --duration and --until')
+		expect(resolveCaptureBounds({}).error).toContain('Missing --duration')
+		expect(resolveCaptureBounds({ duration: 'bogus' }).error).toContain('Invalid --duration')
+		expect(resolveCaptureBounds({ duration: '1s', max: 'nope' }).error).toContain('Invalid --max')
 	})
 })
