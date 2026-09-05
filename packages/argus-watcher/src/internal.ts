@@ -13,6 +13,7 @@ export type { CdpEvent, CdpEventPayload, CdpMethod, CdpParams, CdpResult } from 
 export { evaluateExpression } from './cdp/eval.js'
 export { buildIgnoreMatcher } from './cdp/ignoreList.js'
 export { createRecorder } from './cdp/recording.js'
+export { createVisualCapturePlan, toPageClip } from './cdp/visualCapture.js'
 export { selectBestFrame } from './cdp/selectBestFrame.js'
 export { WatcherFileLogger } from './fileLogs/WatcherFileLogger.js'
 export { createSourcemapResolver } from './sourcemaps/sourcemapResolver.js'

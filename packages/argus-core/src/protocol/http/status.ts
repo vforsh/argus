@@ -3,6 +3,7 @@ import { compact, optionalBoolean, readFields, requireObject } from '../schemaFi
 
 import type { WatcherRecord } from '../../registry/types.js'
 import type { DialogStatus } from './dialog.js'
+import type { RecordStatusSummary } from './record.js'
 import type { ArgusProtocolVersion } from '../version.js'
 import type { Ok } from './errors.js'
 
@@ -22,6 +23,14 @@ export type StatusResponse = Ok<{
 		parentId?: string | null
 	} | null
 	dialog?: DialogStatus | null
+	/**
+	 * The active video recording, or `null` when nothing is recording.
+	 *
+	 * An open-ended `record start` is otherwise invisible from outside the watcher: it holds an
+	 * ffmpeg child and a screencast subscription with nothing in `argus list` or `argus status` to
+	 * show for it, so a forgotten one was only discoverable by killing the watcher.
+	 */
+	recording?: RecordStatusSummary | null
 	buffer: {
 		size: number
 		count: number

@@ -3,6 +3,7 @@ import type {
 	RecordResponse,
 	RecordStartRequest,
 	RecordStartResponse,
+	RecordStatusResponse,
 	RecordStopRequest,
 	RecordStopResponse,
 } from '@vforsh/argus-core'
@@ -30,5 +31,14 @@ export const recordRoutes: readonly WatcherRouteDefinition[] = [
 		bodySchema: recordStopRequestSchema,
 		endpoint: 'record/stop',
 		handle: ({ ctx, body }) => ctx.recorder.stop(body),
+	}),
+	defineJsonRoute<undefined, RecordStatusResponse>({
+		method: 'GET',
+		path: '/record/status',
+		endpoint: 'record/status',
+		handle: ({ ctx }) => {
+			const active = ctx.recorder.status()
+			return { ok: true, recording: active != null, active }
+		},
 	}),
 ]

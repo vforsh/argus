@@ -36,6 +36,7 @@ export const WATCHER_ENDPOINTS = [
 	'record',
 	'record/start',
 	'record/stop',
+	'record/status',
 	'screenshot',
 	'snapshot',
 	'locate/role',

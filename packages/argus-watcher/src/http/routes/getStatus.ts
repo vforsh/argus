@@ -23,6 +23,7 @@ const buildStatus = (ctx: RouteContext): StatusResponse => {
 		targetReady: cdpStatus.targetReady ?? null,
 		target: cdpStatus.target,
 		dialog: ctx.getDialog(),
+		recording: ctx.recorder.status(),
 		buffer,
 		watcher,
 		protocolVersion: ARGUS_PROTOCOL_VERSION,
