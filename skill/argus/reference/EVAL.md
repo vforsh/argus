@@ -53,6 +53,7 @@ Context methods:
 - `ctx.checkpoint(name, options?)`: capture to `scenarios/checkpoints/<name>.png`; names are path-safe and deterministic.
 - `ctx.logs.cursor()` / `ctx.logs.read(cursor, options?)`: explicit zero-download opaque baselines. The cursor survives page reloads while the watcher stays alive and rejects stale/restarted sessions.
 - `ctx.logs.session()`: capture a baseline and return a stateful reader whose cursor advances after each `read()`.
+- `ctx.record.start(name, options?)` / `ctx.record.stop()`: record to `scenarios/recordings/<name>.<format>`; same path-safe naming as `checkpoint`. Options mirror the CLI (`selector`, `clip`, `fps`, `format`, `quality`, `maxDurationMs`). Scenario actions time out after 30s, so stop long recordings from the CLI instead.
 - `ctx.args`: frozen string args from `--arg` / `--args`.
 
 The watcher installs a nonce-scoped CDP binding only while the eval is active. Scenario actions are validated host-side, and page code cannot choose arbitrary artifact paths.
