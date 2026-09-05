@@ -31,4 +31,5 @@ export const createWatcherClient = (client: ArgusClient, watcherId: string): Wat
 	record: bind(client.record, watcherId),
 	recordStart: bind(client.recordStart, watcherId),
 	recordStop: bind(client.recordStop, watcherId),
+	recordStatus: bind(client.recordStatus, watcherId),
 })

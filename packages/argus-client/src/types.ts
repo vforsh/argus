@@ -13,6 +13,7 @@ import type {
 	RecordRequest,
 	RecordStartRequest,
 	RecordStartResponse,
+	RecordStatusResponse,
 	RecordStopRequest,
 	RecordStopResponse,
 	ReloadRequest,
@@ -186,6 +187,9 @@ export type RecordStopResult = ResponseData<RecordStopResponse>
 /** Options for stopping an active recording. */
 export type RecordStopOptions = RecordStopRequest
 
+/** The live recording, or `null` when the watcher is not recording. */
+export type RecordStatusResult = ResponseData<RecordStatusResponse>
+
 /**
  * Options for {@link ArgusClient.evalValue}.
  *
@@ -298,6 +302,8 @@ export type ArgusClient = {
 	recordStart: (watcherId: string, options?: RecordOptions) => Promise<RecordStartResult>
 	/** Stop the active recording and finalize the file. */
 	recordStop: (watcherId: string, options?: RecordStopOptions) => Promise<RecordStopResult>
+	/** Report the active recording, or `null` when nothing is recording. */
+	recordStatus: (watcherId: string) => Promise<RecordStatusResult>
 	/** Bind every watcher-scoped method to `watcherId`, removing id-threading at call sites. */
 	watcher: (watcherId: string) => WatcherClient
 }

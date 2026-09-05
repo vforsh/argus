@@ -7,6 +7,7 @@
  */
 import type { LogEpoch, LogEvent, LogLevel } from './logs.js'
 import type { ScreenshotClipRegion, ScreenshotResponse } from './http/screenshot.js'
+import type { RecordFormat, RecordStartResponse, RecordStopResponse } from './http/record.js'
 
 /** Page-side screenshot options accepted by scenario artifact helpers. */
 export type ArgusScenarioScreenshotOptions = {
@@ -14,6 +15,36 @@ export type ArgusScenarioScreenshotOptions = {
 	selector?: string
 	/** Crop to a viewport-relative rectangle. Mutually exclusive with `selector`. */
 	clip?: ScreenshotClipRegion
+}
+
+/** Page-side options accepted by `ctx.record.start`. */
+export type ArgusScenarioRecordOptions = {
+	/** Crop to the first matching element. */
+	selector?: string
+	/** Crop to a viewport-relative rectangle. Mutually exclusive with `selector`. */
+	clip?: ScreenshotClipRegion
+	/** Output frames per second. Defaults to 30 (12 for GIF). */
+	fps?: number
+	/** Output container. Defaults to mp4. */
+	format?: RecordFormat
+	/** JPEG quality (1-100) of the intermediate screencast frames. */
+	quality?: number
+	/** Auto-stop deadline in milliseconds, so an unstopped scenario cannot leak an encoder. */
+	maxDurationMs?: number
+}
+
+/**
+ * Video recording from inside a bundled scenario.
+ *
+ * Unlike the CLI, a scenario names its clip rather than its path: the file always lands under
+ * `scenarios/recordings/` in the watcher artifact directory, the same way `checkpoint` owns its
+ * own naming. A scenario runs on the watcher host with no idea what the caller's cwd looks like.
+ */
+export type ArgusScenarioRecord = {
+	/** Start recording into `scenarios/recordings/<name>.<format>`. */
+	start: (name: string, options?: ArgusScenarioRecordOptions) => Promise<RecordStartResponse>
+	/** Stop the active recording and resolve once the file is encoded. */
+	stop: () => Promise<RecordStopResponse>
 }
 
 /** Filters for reading watcher logs from a scenario cursor. */
@@ -65,4 +96,6 @@ export type ArgusScenarioContext = {
 	checkpoint: (name: string, options?: ArgusScenarioScreenshotOptions) => Promise<ScreenshotResponse>
 	/** Cursor and session helpers for logs produced during the scenario. */
 	readonly logs: ArgusScenarioLogs
+	/** Start and stop a silent video recording for part of the scenario. */
+	readonly record: ArgusScenarioRecord
 }

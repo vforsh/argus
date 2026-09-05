@@ -31,6 +31,7 @@ export const route = defineJsonRoute<EvalRequest, EvalResponse>({
 			scenarioServices: {
 				buffer: ctx.buffer,
 				screenshotter: ctx.screenshotter,
+				recorder: ctx.recorder,
 			},
 		}),
 })

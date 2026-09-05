@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto'
-import { LOG_LEVELS, type ArgusScenarioLogsResult, type ArgusScenarioScreenshotOptions, type LogLevel } from '@vforsh/argus-core'
+import {
+	LOG_LEVELS,
+	RECORD_FORMATS,
+	type ArgusScenarioLogsResult,
+	type ArgusScenarioRecordOptions,
+	type ArgusScenarioScreenshotOptions,
+	type LogLevel,
+	type RecordFormat,
+} from '@vforsh/argus-core'
 import type { LogBuffer, LogFilters } from '../buffer/LogBuffer.js'
 import type { Screenshotter } from './screenshot.js'
+import type { Recorder } from './recording.js'
 import type { CdpEventMeta, CdpSessionHandle } from './connection.js'
 import { formatError } from '@vforsh/argus-core'
 
@@ -28,6 +37,7 @@ type BridgeResponse = { id: number; ok: true; result: unknown } | { id: number; 
 export type ScenarioBridgeServices = {
 	buffer: LogBuffer
 	screenshotter: Screenshotter
+	recorder: Recorder
 }
 
 /** A scenario-wrapped expression plus cleanup for its temporary CDP binding. */
@@ -138,6 +148,16 @@ const handleBridgeRequest = async (request: ScenarioBridgeRequest, services: Sce
 			const fileName = name.endsWith('.png') ? name : `${name}.png`
 			return services.screenshotter.capture({ ...options, outFile: `scenarios/checkpoints/${fileName}` })
 		}
+		case 'record.start': {
+			const payload = requireRecord(request.payload, 'record.start payload')
+			const name = parseArtifactName(payload.name, 'recording name')
+			const options = parseRecordOptions(payload.options)
+			const format = options.format ?? 'mp4'
+			const fileName = name.endsWith(`.${format}`) ? name : `${name}.${format}`
+			return services.recorder.start({ ...options, format, outFile: `scenarios/recordings/${fileName}` })
+		}
+		case 'record.stop':
+			return services.recorder.stop({})
 		case 'logs.cursor':
 			return { cursor: services.buffer.beginLogEpoch() }
 		case 'logs.read':
@@ -180,9 +200,41 @@ const parseClip = (value: unknown): NonNullable<ArgusScenarioScreenshotOptions['
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 
-const parseCheckpointName = (value: unknown): string => {
+const parseCheckpointName = (value: unknown): string => parseArtifactName(value, 'checkpoint name')
+
+/** Artifact names are path segments the scenario chooses, so they may not traverse or nest. */
+const parseArtifactName = (value: unknown, label: string): string => {
 	if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(value)) {
-		throw new Error('checkpoint name must be 1-100 characters using letters, numbers, dot, underscore, or dash')
+		throw new Error(`${label} must be 1-100 characters using letters, numbers, dot, underscore, or dash`)
+	}
+	return value
+}
+
+const parseRecordOptions = (value: unknown): ArgusScenarioRecordOptions => {
+	if (value == null) return {}
+	const record = requireRecord(value, 'record options')
+	const { selector, clip } = parseScreenshotOptions(record)
+
+	return {
+		selector,
+		clip,
+		fps: parseBoundedNumber(record.fps, 'fps', 1, 60),
+		quality: parseBoundedNumber(record.quality, 'quality', 1, 100),
+		maxDurationMs: parseBoundedNumber(record.maxDurationMs, 'maxDurationMs', 1, Number.MAX_SAFE_INTEGER),
+		format: parseRecordFormat(record.format),
+	}
+}
+
+const parseRecordFormat = (value: unknown): RecordFormat | undefined => {
+	if (value == null) return undefined
+	if (typeof value === 'string' && RECORD_FORMATS.includes(value as RecordFormat)) return value as RecordFormat
+	throw new Error(`format must be one of ${RECORD_FORMATS.join(', ')}`)
+}
+
+const parseBoundedNumber = (value: unknown, label: string, min: number, max: number): number | undefined => {
+	if (value == null) return undefined
+	if (!isFiniteNumber(value) || value < min || value > max) {
+		throw new Error(`${label} must be a number from ${min} to ${max}`)
 	}
 	return value
 }
@@ -336,11 +388,16 @@ const buildScenarioExpression = (
         });
       },
     });
+    const record = Object.freeze({
+      start: (name, recordOptions) => request('record.start', { name, options: recordOptions }),
+      stop: () => request('record.stop'),
+    });
     const context = Object.freeze({
       args: Object.freeze(${JSON.stringify(options.args)}),
       screenshot: (screenshotOptions) => request('screenshot', screenshotOptions),
       checkpoint: (name, screenshotOptions) => request('checkpoint', { name, options: screenshotOptions }),
       logs,
+      record,
     });
     return {
       context,
@@ -362,4 +419,3 @@ const buildScenarioExpression = (
     __argusBridge.dispose();
   }
 })()`
-
