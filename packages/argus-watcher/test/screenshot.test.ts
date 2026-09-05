@@ -55,13 +55,8 @@ describe('screenshotter', () => {
 
 			await screenshotter.capture({ outFile: path.join(artifactsDir, 'frame.png'), format: 'png' })
 
-			expect(calls).toEqual([
-				'page:DOM.getFrameOwner',
-				'page:DOM.getBoxModel',
-				'page:Page.getLayoutMetrics',
-				'page:Page.getLayoutMetrics',
-				'page:Page.captureScreenshot',
-			])
+			// One metrics call per session: size, scroll offset, and scale all come from the same response.
+			expect(calls).toEqual(['page:Page.getLayoutMetrics', 'page:DOM.getFrameOwner', 'page:DOM.getBoxModel', 'page:Page.captureScreenshot'])
 		} finally {
 			await fs.rm(artifactsDir, { recursive: true, force: true })
 		}
@@ -100,7 +95,7 @@ describe('screenshotter', () => {
 				clip: { x: 12, y: 24, width: 320, height: 180 },
 			})
 
-			expect(calls).toEqual(['page:Page.getLayoutMetrics', 'page:Page.getLayoutMetrics', 'page:Page.captureScreenshot'])
+			expect(calls).toEqual(['page:Page.getLayoutMetrics', 'page:Page.captureScreenshot'])
 		} finally {
 			await fs.rm(artifactsDir, { recursive: true, force: true })
 		}
@@ -145,12 +140,43 @@ describe('screenshotter', () => {
 				clip: { x: 12, y: 24, width: 320, height: 180 },
 			})
 
-			expect(calls).toEqual([
-				'page:Page.getLayoutMetrics',
-				'page:Page.getLayoutMetrics',
-				'page:Page.captureScreenshot',
-				'page:Page.captureScreenshot',
-			])
+			expect(calls).toEqual(['page:Page.getLayoutMetrics', 'page:Page.captureScreenshot', 'page:Page.captureScreenshot'])
+		} finally {
+			await fs.rm(artifactsDir, { recursive: true, force: true })
+		}
+	})
+
+	it('adds the scroll offset back when the page is scrolled', async () => {
+		const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-screenshot-'))
+		let capturedClip: unknown
+		const pageSession = createSessionStub({
+			targetContext: { kind: 'page' },
+			sendAndWait: async (method, params) => {
+				if (method === 'DOM.enable') return {}
+				if (method === 'DOM.getDocument') return { root: { nodeId: 1 } }
+				if (method === 'DOM.querySelectorAll') return { nodeIds: [2] }
+				if (method === 'DOM.getBoxModel') {
+					// Viewport-relative, exactly as getBoundingClientRect reports it on a scrolled page.
+					return { model: { content: [41, 540, 401, 540, 401, 742, 41, 742] } }
+				}
+				if (method === 'Page.getLayoutMetrics') {
+					return { visualViewport: { pageX: 0, pageY: 2120, scale: 1 } }
+				}
+				if (method === 'Page.captureScreenshot') {
+					capturedClip = (params as { clip?: unknown }).clip
+					return { data: Buffer.from('png').toString('base64') }
+				}
+				throw new Error(`Unexpected page CDP method: ${method}`)
+			},
+		})
+
+		try {
+			const screenshotter = createScreenshotter({ session: pageSession, artifactsDir })
+			await screenshotter.capture({ outFile: path.join(artifactsDir, 'scrolled.png'), format: 'png', selector: '#target' })
+
+			// Page.captureScreenshot clips against the document, so the element's page position is
+			// 540 + 2120. Subtracting the scroll instead put the clip off-screen and returned blank pixels.
+			expect(capturedClip).toEqual({ x: 41, y: 2660, width: 360, height: 202, scale: 1 })
 		} finally {
 			await fs.rm(artifactsDir, { recursive: true, force: true })
 		}
@@ -227,15 +253,14 @@ describe('screenshotter', () => {
 			await screenshotter.capture({ outFile: path.join(artifactsDir, 'frame-selector.png'), format: 'png', selector: '#cta' })
 
 			expect(calls).toEqual([
+				'page:Page.getLayoutMetrics',
 				'page:DOM.getFrameOwner',
 				'page:DOM.getBoxModel',
-				'page:Page.getLayoutMetrics',
-				'page:Page.getLayoutMetrics',
+				'iframe:Page.getLayoutMetrics',
 				'iframe:DOM.enable',
 				'iframe:DOM.getDocument',
 				'iframe:DOM.querySelectorAll',
 				'iframe:DOM.getBoxModel',
-				'iframe:Page.getLayoutMetrics',
 				'page:Page.captureScreenshot',
 			])
 		} finally {
@@ -299,10 +324,9 @@ describe('screenshotter', () => {
 			})
 
 			expect(calls).toEqual([
+				'page:Page.getLayoutMetrics',
 				'page:DOM.getFrameOwner',
 				'page:DOM.getBoxModel',
-				'page:Page.getLayoutMetrics',
-				'page:Page.getLayoutMetrics',
 				'iframe:Page.getLayoutMetrics',
 				'page:Page.captureScreenshot',
 			])

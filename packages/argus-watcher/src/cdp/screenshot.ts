@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import type { ScreenshotRequest, ScreenshotResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import { ensureArtifactsDir, ensureParentDir, resolveArtifactPath } from '../artifacts.js'
-import { createVisualCapturePlan, type VisualCaptureClip } from './visualCapture.js'
+import { createVisualCapturePlan, toPageClip, type VisualCaptureClip } from './visualCapture.js'
 
 const SCREENSHOT_CDP_TIMEOUT_MS = 20_000
 const SCREENSHOT_CDP_MAX_ATTEMPTS = 2
@@ -31,7 +31,8 @@ export const createScreenshotter = (options: { session: CdpSessionHandle; pageSe
 
 		const result = await captureScreenshot(capturePlan.session, {
 			format,
-			clip: capturePlan.clip,
+			// `Page.captureScreenshot` clips in document coordinates, not viewport ones.
+			clip: capturePlan.clip && toPageClip(capturePlan.clip, capturePlan.pageOffset),
 		})
 
 		await fs.writeFile(absolutePath, Buffer.from(result.data, 'base64'))

@@ -17,11 +17,30 @@ export type VisualCaptureRequest = {
 	clip?: ScreenshotClipRegion
 }
 
+/**
+ * A resolved capture target.
+ *
+ * `clip` is always **viewport-relative** CSS pixels — the space `DOM.getBoxModel` reports and the
+ * space a screencast frame lives in. `Page.captureScreenshot` instead wants document coordinates,
+ * so a screenshot adds {@link VisualCapturePlan.pageOffset} before it sends the clip. Keeping one
+ * space here and converting at the one call site that needs the other is what stops the two
+ * consumers from disagreeing about what a clip means.
+ */
 export type VisualCapturePlan = {
 	session: CdpSessionHandle
+	/** Crop rectangle in viewport-relative CSS pixels. */
 	clip?: VisualCaptureClip
 	viewport?: VisualCaptureViewport
+	/** Scroll offset of the captured viewport within the document. Set whenever `clip` is. */
+	pageOffset?: { x: number; y: number }
 }
+
+/** Translate a viewport-relative clip into the document coordinates `Page.captureScreenshot` expects. */
+export const toPageClip = (clip: VisualCaptureClip, pageOffset: { x: number; y: number } | undefined): VisualCaptureClip => ({
+	...clip,
+	x: clip.x + (pageOffset?.x ?? 0),
+	y: clip.y + (pageOffset?.y ?? 0),
+})
 
 type VisualViewport = { pageX?: number; pageY?: number; scale?: number; clientWidth?: number; clientHeight?: number }
 
@@ -45,15 +64,17 @@ export const createVisualCapturePlan = async (
 		})
 	}
 
-	const clip = await resolveSubjectClip(session, subject)
-	if (!clip) {
+	// Whole-viewport capture needs no geometry at all, so it costs no round-trips.
+	if (subject.kind === 'viewport') {
 		return { session }
 	}
 
+	const viewport = await resolveViewportState(session)
 	return {
 		session,
-		clip,
-		viewport: await resolveViewportSize(session),
+		clip: await resolveSubjectClip(session, subject, viewport),
+		viewport: viewport.size,
+		pageOffset: viewport.offset,
 	}
 }
 
@@ -63,25 +84,30 @@ const createFrameCapturePlan = async (options: {
 	frameContext: Extract<CdpTargetContext, { kind: 'frame' }>
 	subject: VisualCaptureSubject
 }): Promise<VisualCapturePlan> => {
-	const frameClip = await resolveFrameViewportClip(options.pageSession, options.frameContext.frameId)
-	const pageViewport = await resolveViewportSize(options.pageSession)
-	const subjectClip = await resolveSubjectClip(options.frameSession, options.subject)
-	if (!subjectClip) {
+	const pageViewport = await resolveViewportState(options.pageSession)
+	const frameClip = await resolveFrameViewportClip(options.pageSession, options.frameContext.frameId, pageViewport)
+	if (options.subject.kind === 'viewport') {
 		return {
 			session: options.pageSession,
 			clip: frameClip,
-			viewport: pageViewport,
+			viewport: pageViewport.size,
+			pageOffset: pageViewport.offset,
 		}
 	}
 
+	const frameViewport = await resolveViewportState(options.frameSession)
+	const subjectClip = await resolveSubjectClip(options.frameSession, options.subject, frameViewport)
+
 	return {
 		session: options.pageSession,
+		// Both are viewport-relative to their own document, so the sum lands in page-viewport space.
 		clip: offsetClip(frameClip, subjectClip),
-		viewport: pageViewport,
+		viewport: pageViewport.size,
+		pageOffset: pageViewport.offset,
 	}
 }
 
-const resolveFrameViewportClip = async (pageSession: CdpSessionHandle, frameId: string): Promise<VisualCaptureClip> => {
+const resolveFrameViewportClip = async (pageSession: CdpSessionHandle, frameId: string, viewport: ViewportState): Promise<VisualCaptureClip> => {
 	const owner = await pageSession.sendAndWait('DOM.getFrameOwner', {
 		frameId,
 	})
@@ -90,26 +116,32 @@ const resolveFrameViewportClip = async (pageSession: CdpSessionHandle, frameId: 
 		throw new Error(`Unable to resolve iframe owner for frame: ${frameId}`)
 	}
 
-	return resolveNodeClip(pageSession, owner)
+	return resolveNodeClip(pageSession, owner, viewport)
 }
 
-const resolveSelectorClip = async (session: CdpSessionHandle, selector: string): Promise<VisualCaptureClip> => {
+const resolveSelectorClip = async (session: CdpSessionHandle, selector: string, viewport: ViewportState): Promise<VisualCaptureClip> => {
 	const nodeId = await resolveFirstSelectorNodeId(session, selector)
 	if (!nodeId) {
 		throw new Error(`No element found for selector: ${selector}`)
 	}
 
-	return resolveNodeClip(session, { nodeId })
+	return resolveNodeClip(session, { nodeId }, viewport)
 }
 
-const resolveSubjectClip = async (session: CdpSessionHandle, subject: VisualCaptureSubject): Promise<VisualCaptureClip | null> => {
-	switch (subject.kind) {
-		case 'viewport':
-			return null
-		case 'selector':
-			return resolveSelectorClip(session, subject.selector)
-		case 'clip':
-			return resolveViewportRectClip(session, subject.clip)
+/** Resolve a crop subject. Viewport subjects never reach here — they have no rectangle to resolve. */
+const resolveSubjectClip = async (
+	session: CdpSessionHandle,
+	subject: Exclude<VisualCaptureSubject, { kind: 'viewport' }>,
+	viewport: ViewportState,
+): Promise<VisualCaptureClip> => {
+	if (subject.kind === 'selector') {
+		return resolveSelectorClip(session, subject.selector, viewport)
+	}
+
+	return {
+		...subject.clip,
+		// CDP clip rectangles always need the current viewport scale, even when x/y are already viewport-relative.
+		scale: viewport.scale,
 	}
 }
 
@@ -123,20 +155,11 @@ export const resolveVisualCaptureSubject = (request: VisualCaptureRequest): Visu
 	return { kind: 'viewport' }
 }
 
-const resolveViewportRectClip = async (session: CdpSessionHandle, clip: ScreenshotClipRegion): Promise<VisualCaptureClip> => {
-	const viewport = await resolveVisualViewport(session)
-
-	return {
-		x: clip.x,
-		y: clip.y,
-		width: clip.width,
-		height: clip.height,
-		// CDP clip rectangles always need the current viewport scale, even when x/y are already viewport-relative.
-		scale: viewport?.scale ?? 1,
-	}
-}
-
-const resolveNodeClip = async (session: CdpSessionHandle, target: { nodeId?: number; backendNodeId?: number }): Promise<VisualCaptureClip> => {
+const resolveNodeClip = async (
+	session: CdpSessionHandle,
+	target: { nodeId?: number; backendNodeId?: number },
+	viewport: ViewportState,
+): Promise<VisualCaptureClip> => {
 	const boxResult = await session.sendAndWait(
 		'DOM.getBoxModel',
 		target.nodeId != null ? { nodeId: target.nodeId } : { backendNodeId: target.backendNodeId },
@@ -154,17 +177,18 @@ const resolveNodeClip = async (session: CdpSessionHandle, target: { nodeId?: num
 		throw new Error('Element has zero area')
 	}
 
-	const viewport = await resolveVisualViewport(session)
-	const pageX = viewport?.pageX ?? 0
-	const pageY = viewport?.pageY ?? 0
-	const scale = viewport?.scale ?? 1
-
+	/**
+	 * No scroll offset is subtracted here: `DOM.getBoxModel` already reports viewport-relative CSS
+	 * pixels, matching `getBoundingClientRect`. Subtracting `pageY` as well double-counted the
+	 * scroll, which was invisible at scroll offset 0 and put the crop entirely off-frame anywhere
+	 * else — a blank screenshot, or a 2px-tall recording.
+	 */
 	return {
-		x: rect.x - pageX,
-		y: rect.y - pageY,
+		x: rect.x,
+		y: rect.y,
 		width: rect.width,
 		height: rect.height,
-		scale,
+		scale: viewport.scale,
 	}
 }
 
@@ -174,8 +198,31 @@ const resolveVisualViewport = async (session: CdpSessionHandle): Promise<VisualV
 	return payload.cssVisualViewport ?? payload.visualViewport
 }
 
-const resolveViewportSize = async (session: CdpSessionHandle): Promise<VisualCaptureViewport> => {
+/**
+ * Everything one capture needs to know about a target's viewport, from a single metrics call.
+ *
+ * Size, scroll offset, and scale used to be fetched by three separate helpers, so planning one
+ * cropped capture cost three or four `Page.getLayoutMetrics` round-trips — and, worse, they could
+ * disagree if the page scrolled between them.
+ */
+type ViewportState = {
+	size: VisualCaptureViewport
+	/** Scroll offset of the visual viewport within the document, in CSS pixels. */
+	offset: { x: number; y: number }
+	scale: number
+}
+
+const resolveViewportState = async (session: CdpSessionHandle): Promise<ViewportState> => {
 	const viewport = await resolveVisualViewport(session)
+
+	return {
+		size: await resolveViewportSize(session, viewport),
+		offset: { x: viewport?.pageX ?? 0, y: viewport?.pageY ?? 0 },
+		scale: viewport?.scale ?? 1,
+	}
+}
+
+const resolveViewportSize = async (session: CdpSessionHandle, viewport: VisualViewport | undefined): Promise<VisualCaptureViewport> => {
 	if (isPositiveFiniteNumber(viewport?.clientWidth) && isPositiveFiniteNumber(viewport?.clientHeight)) {
 		return { width: viewport.clientWidth, height: viewport.clientHeight }
 	}
