@@ -1,4 +1,5 @@
 import type { StatusResponse } from '@vforsh/argus-core'
+import { applyQueryParams } from '@vforsh/argus-core'
 import type { ChromeTargetResponse } from '../cdp/types.js'
 import type { CdpEndpointOptions } from '../cdp/resolveCdpEndpoint.js'
 import { resolveCdpEndpoint } from '../cdp/resolveCdpEndpoint.js'
@@ -14,43 +15,6 @@ export type PageEndpointOptions = CdpEndpointOptions
 
 export type PageCommandOptions = PageEndpointOptions & {
 	json?: boolean
-}
-
-const parseParamPair = (value: string): { key: string; value: string } | { error: string } => {
-	const eqIdx = value.indexOf('=')
-	if (eqIdx === -1) {
-		return { error: `Invalid --param "${value}": missing "=".` }
-	}
-	const key = value.slice(0, eqIdx)
-	if (key === '') {
-		return { error: `Invalid --param "${value}": empty key.` }
-	}
-	return { key, value: value.slice(eqIdx + 1) }
-}
-
-const parseParamsString = (value: string): URLSearchParams | { error: string } => {
-	const params = new URLSearchParams()
-	if (value.trim() === '') {
-		return params
-	}
-
-	const pairs = value.split('&')
-	for (const pair of pairs) {
-		const eqIdx = pair.indexOf('=')
-		if (eqIdx === -1) {
-			return { error: `Invalid --params "${pair}": missing "=".` }
-		}
-		const key = pair.slice(0, eqIdx)
-		if (key === '') {
-			return { error: `Invalid --params "${pair}": empty key.` }
-		}
-		params.set(decodeURIComponent(key), decodeURIComponent(pair.slice(eqIdx + 1)))
-	}
-	return params
-}
-
-const isHttpUrl = (url: string): boolean => {
-	return url.startsWith('http://') || url.startsWith('https://')
 }
 
 export type PageReloadOptions = PageCommandOptions & {
@@ -207,48 +171,15 @@ const reloadTarget = async (target: ChromeTargetResponse, context: ReloadContext
 		return
 	}
 
-	if (!isHttpUrl(target.url)) {
-		output.writeWarn(`Target URL "${target.url}" is not http/https. Cannot update query params.`)
-		process.exitCode = 2
-		return
-	}
-
-	let parsedUrl: URL
-	try {
-		parsedUrl = new URL(target.url)
-	} catch (error) {
-		output.writeWarn(`Invalid target URL "${target.url}": ${formatError(error)}`)
-		process.exitCode = 2
-		return
-	}
-
 	const previousUrl = target.url
-
-	if (context.hasParamsFlag) {
-		const parsed = parseParamsString(options.params!)
-		if ('error' in parsed) {
-			output.writeWarn(parsed.error)
-			process.exitCode = 2
-			return
-		}
-		for (const [key, value] of parsed.entries()) {
-			parsedUrl.searchParams.set(key, value)
-		}
+	const rewritten = applyQueryParams(target.url, { param: options.param, params: options.params })
+	if ('error' in rewritten) {
+		output.writeWarn(rewritten.error)
+		process.exitCode = 2
+		return
 	}
 
-	if (context.hasParamFlag) {
-		for (const paramPair of options.param!) {
-			const parsed = parseParamPair(paramPair)
-			if ('error' in parsed) {
-				output.writeWarn(parsed.error)
-				process.exitCode = 2
-				return
-			}
-			parsedUrl.searchParams.set(parsed.key, parsed.value)
-		}
-	}
-
-	const nextUrl = parsedUrl.toString()
+	const nextUrl = rewritten.url
 
 	try {
 		await sendCdpCommand(target.webSocketDebuggerUrl, { id: 1, method: 'Page.navigate', params: { url: nextUrl } })
