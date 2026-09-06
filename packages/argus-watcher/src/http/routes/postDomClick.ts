@@ -4,6 +4,7 @@ import { respondMissingElementRef, respondMultipleMatches, respondTargetResoluti
 import { defineJsonRoute } from './defineRoute.js'
 import { clickDomNodes, clickAtPoint, resolveNodePoint } from '../../cdp/mouse.js'
 import { resolveElementTargets } from '../../cdp/dom/selector.js'
+import { withNavigationWait } from '../../cdp/navigation.js'
 
 export const route = defineJsonRoute({
 	method: 'POST',
@@ -17,9 +18,15 @@ export const route = defineJsonRoute({
 		const hasElementTarget = payload.selector != null || payload.ref != null
 		const hasCoords = payload.x != null || payload.y != null
 
+		// The navigation wait is armed around the click itself, never around selector resolution:
+		// waiting on the page-scoped session is meaningless until something has actually been clicked.
+		const clickWithNav = async (act: () => Promise<void>, matches: number, clicked: number): Promise<DomClickResponse> => {
+			const { navigation } = await withNavigationWait(ctx.pageCdpSession, payload, () => ctx.buffer.beginLogEpoch(), act)
+			return { ok: true, matches, clicked, navigation }
+		}
+
 		if (!hasElementTarget) {
-			await clickAtPoint(ctx.cdpSession, payload.x!, payload.y!, button)
-			return { ok: true, matches: 0, clicked: 1 } satisfies DomClickResponse
+			return await clickWithNav(() => clickAtPoint(ctx.cdpSession, payload.x!, payload.y!, button), 0, 1)
 		}
 
 		const resolved = await resolveElementTargets(ctx.cdpSession, ctx.elementRefs, {
@@ -46,15 +53,19 @@ export const route = defineJsonRoute({
 		}
 
 		if (hasCoords) {
-			for (const handle of handles) {
-				const point = await resolveNodePoint(ctx.cdpSession, handle, { x: payload.x!, y: payload.y! })
-				await clickAtPoint(ctx.cdpSession, point.x, point.y, button)
-			}
-			return { ok: true, matches: allHandles.length, clicked: handles.length } satisfies DomClickResponse
+			return await clickWithNav(
+				async () => {
+					for (const handle of handles) {
+						const point = await resolveNodePoint(ctx.cdpSession, handle, { x: payload.x!, y: payload.y! })
+						await clickAtPoint(ctx.cdpSession, point.x, point.y, button)
+					}
+				},
+				allHandles.length,
+				handles.length,
+			)
 		}
 
-		await clickDomNodes(ctx.cdpSession, handles, button)
-		return { ok: true, matches: allHandles.length, clicked: handles.length } satisfies DomClickResponse
+		return await clickWithNav(() => clickDomNodes(ctx.cdpSession, handles, button), allHandles.length, handles.length)
 	},
 	handleError: respondTargetResolutionError,
 })

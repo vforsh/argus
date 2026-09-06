@@ -2,6 +2,7 @@ import type { DomKeydownRequest, DomKeydownResponse } from '@vforsh/argus-core'
 import { domKeydownRequestSchema } from '@vforsh/argus-core'
 import { dispatchKeydown, parseModifiers } from '../../cdp/keyboard.js'
 import { ensurePageInputFocus } from '../../cdp/pageFocus.js'
+import { withNavigationWait } from '../../cdp/navigation.js'
 import { defineJsonRoute } from './defineRoute.js'
 
 export const route = defineJsonRoute<DomKeydownRequest, DomKeydownResponse>({
@@ -14,12 +15,19 @@ export const route = defineJsonRoute<DomKeydownRequest, DomKeydownResponse>({
 		// so prove the page can receive it before reporting a dispatch.
 		const activation = await ensurePageInputFocus(ctx.pageCdpSession, ctx.visibilityController)
 
-		const result = await dispatchKeydown(ctx.cdpSession, {
-			key: payload.key,
-			code: payload.code,
-			selector: payload.selector,
-			modifiers: parseModifiers(payload.modifiers),
-		})
+		const { result, navigation } = await withNavigationWait(
+			ctx.pageCdpSession,
+			payload,
+			() => ctx.buffer.beginLogEpoch(),
+			() =>
+				dispatchKeydown(ctx.cdpSession, {
+					key: payload.key,
+					code: payload.code,
+					selector: payload.selector,
+					modifiers: parseModifiers(payload.modifiers),
+				}),
+		)
+
 		return {
 			ok: true,
 			key: result.key,
@@ -28,6 +36,7 @@ export const route = defineJsonRoute<DomKeydownRequest, DomKeydownResponse>({
 			focused: result.focused,
 			activated: activation.activated,
 			event: result.event,
+			navigation,
 		}
 	},
 })

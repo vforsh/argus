@@ -52,6 +52,8 @@ import { route as getDialog } from './getDialog.js'
 import { route as postDialog } from './postDialog.js'
 import { route as postVisibility } from './postVisibility.js'
 import { storageRoutes } from './storage.js'
+import { route as postNavigate } from './postNavigate.js'
+import { route as postNavigateHistory } from './postNavigateHistory.js'
 import { route as postReload } from './postReload.js'
 import { route as postShutdown } from './postShutdown.js'
 import { route as getExtensionTabs } from './getExtensionTabs.js'
@@ -120,6 +122,8 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	postDialog,
 	postVisibility,
 	...storageRoutes,
+	postNavigate,
+	postNavigateHistory,
 	postReload,
 	postShutdown,
 	getExtensionTabs,

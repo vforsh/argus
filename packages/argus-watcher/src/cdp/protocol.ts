@@ -75,6 +75,16 @@ export type CdpFrame = {
 	parentId?: string
 	url?: string
 	name?: string
+	/** Identifies the navigation that produced this frame state. Used to match load events to a navigation. */
+	loaderId?: string
+}
+
+/** One entry in the `Page.getNavigationHistory` response. */
+export type CdpNavigationHistoryEntry = {
+	id: number
+	url: string
+	title: string
+	transitionType?: string
 }
 
 /** A node in the `Page.getFrameTree` response. */
@@ -265,8 +275,10 @@ export type CdpCommandMap = {
 	'Page.enable': Command<NoParams, unknown>
 	'Page.getFrameTree': Command<NoParams, { frameTree?: CdpFrameTreeNode }>
 	'Page.getLayoutMetrics': Command<NoParams, { cssVisualViewport?: CdpVisualViewport; visualViewport?: CdpVisualViewport }>
+	'Page.getNavigationHistory': Command<NoParams, { currentIndex?: number; entries?: CdpNavigationHistoryEntry[] }>
 	'Page.handleJavaScriptDialog': Command<{ accept: boolean; promptText?: string }, unknown>
 	'Page.navigate': Command<{ url: string; frameId?: string }, { frameId?: string; loaderId?: string; errorText?: string }>
+	'Page.navigateToHistoryEntry': Command<{ entryId: number }, unknown>
 	'Page.reload': Command<{ ignoreCache?: boolean; scriptToEvaluateOnLoad?: string }, unknown>
 	'Page.screencastFrameAck': Command<{ sessionId: number }, unknown>
 	'Page.startScreencast': Command<{ format?: string; quality?: number; maxWidth?: number; maxHeight?: number; everyNthFrame?: number }, unknown>
@@ -392,8 +404,10 @@ export type CdpEventMap = {
 	'Page.domContentEventFired': { timestamp?: number }
 	'Page.frameAttached': { frameId?: string; parentFrameId?: string }
 	'Page.frameDetached': { frameId?: string; reason?: string }
-	'Page.frameNavigated': { frame?: CdpFrame }
+	'Page.frameNavigated': { frame?: CdpFrame; type?: 'Navigation' | 'BackForwardCacheRestore' }
 	'Page.javascriptDialogClosed': { result?: boolean; userInput?: string }
+	'Page.loadEventFired': { timestamp?: number }
+	'Page.navigatedWithinDocument': { frameId?: string; url?: string }
 	'Page.javascriptDialogOpening': { url?: string; message?: string; type?: string; hasBrowserHandler?: boolean; defaultPrompt?: string }
 	'Page.screencastFrame': { data?: string; sessionId?: number; metadata?: Record<string, unknown> }
 

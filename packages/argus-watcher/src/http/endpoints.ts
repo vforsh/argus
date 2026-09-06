@@ -68,6 +68,8 @@ export const WATCHER_ENDPOINTS = [
 	'storage/local',
 	'storage/session',
 	'reload',
+	'navigate',
+	'navigate/history',
 	'shutdown',
 	'tabs',
 	'extension/diagnostics',
