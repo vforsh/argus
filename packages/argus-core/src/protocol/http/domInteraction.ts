@@ -1,6 +1,9 @@
 import { domTargetPayload } from './dom.js'
+import { navigationWaitFields } from './navigation.js'
 import { defineProtocolSchema, invalidProtocolPayload, isProtocolObject, validProtocolPayload } from '../schema.js'
+import { readFields } from '../schemaFields.js'
 import type { DomElementTarget, ElementRef } from './dom.js'
+import type { NavigationSummary, NavigationWaitOptions } from './navigation.js'
 import type { Ok } from './errors.js'
 
 /** Viewport coordinate or delta used by pointer/mouse interaction commands. */
@@ -40,7 +43,7 @@ export const MOUSE_BUTTONS = ['left', 'middle', 'right'] as const
 /**
  * Request payload for POST /dom/click.
  */
-export type DomClickRequest = {
+export type DomClickRequest = NavigationWaitOptions & {
 	/** CSS selector to match element(s). */
 	selector?: string
 	/** Stable element ref to click. Mutually exclusive with selector. */
@@ -93,11 +96,16 @@ export const domClickRequestSchema = defineProtocolSchema<DomClickRequest>((valu
 		return invalidProtocolPayload('text must be a string')
 	}
 
+	const navFields = readFields(value, navigationWaitFields)
+	if (!navFields.ok) return navFields
+
 	const request: DomClickRequest = {
 		all: value.all ?? false,
 		button: value.button ?? 'left',
 		wait: value.wait ?? 0,
 	}
+	if (navFields.value.waitNav != null) request.waitNav = navFields.value.waitNav
+	if (navFields.value.navTimeoutMs != null) request.navTimeoutMs = navFields.value.navTimeoutMs
 	if (hasSelector) request.selector = selector
 	if (hasRef) request.ref = ref
 	if (hasCoords) {
@@ -119,6 +127,8 @@ export type DomClickResponse = Ok<{
 	matches: number
 	/** Number of elements clicked. */
 	clicked: number
+	/** Navigation observed after the click. Present only when `waitNav` was requested. */
+	navigation?: NavigationSummary
 }>
 
 /**

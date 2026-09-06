@@ -16,6 +16,8 @@ import {
 	requiredString,
 	type FieldError,
 } from '../schemaFields.js'
+import { navigationWaitFields } from './navigation.js'
+import type { NavigationSummary, NavigationWaitOptions } from './navigation.js'
 import type { Ok } from './errors.js'
 
 /** Stable element ref emitted by `snapshot` / `locate` and accepted by ref-aware commands. */
@@ -121,7 +123,7 @@ export type DomInfoResponse = Ok<{
 /**
  * Request payload for POST /dom/keydown.
  */
-export type DomKeydownRequest = {
+export type DomKeydownRequest = NavigationWaitOptions & {
 	/** Semantic key name (e.g. "Enter", "a", "ArrowUp"). Required unless `code` is provided. */
 	key?: string
 	/** Physical KeyboardEvent.code override (e.g. "KeyG", "Digit1"). Required unless `key` is provided. */
@@ -172,6 +174,8 @@ export type DomKeydownResponse = Ok<{
 	activated: boolean
 	/** Full resolved event shape for debugging exact key/code/modifier dispatch. */
 	event: DomKeydownEvent
+	/** Navigation observed after the key was dispatched. Present only when `waitNav` was requested. */
+	navigation?: NavigationSummary
 }>
 
 /** Valid positions for insertAdjacentHTML. */
@@ -552,6 +556,7 @@ export const domKeydownRequestSchema = defineProtocolSchema<DomKeydownRequest>((
 		code: optionalNonEmptyString,
 		selector: optionalNonEmptyString,
 		modifiers: optionalString,
+		...navigationWaitFields,
 	})
 	if (!fields.ok) return fields
 
