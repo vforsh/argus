@@ -10,7 +10,7 @@
  * 137+ ignores --load-extension).
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import type { EvalResponse, StatusResponse } from '@vforsh/argus-core'
+import type { ApiResult, EvalResponse, NavigateHistoryResponse, NavigateResponse, StatusResponse } from '@vforsh/argus-core'
 import { resolveTestChromeBin, startExtensionHarness, type ExtensionHarness } from './helpers/extensionHarness.js'
 
 const chromeBin = resolveTestChromeBin()
@@ -175,6 +175,37 @@ liveTest(
 		const status = await harness.cliJson<StatusResponse>('watcher', 'status', WATCHER_ID, '--json')
 		expect(status.ok).toBe(true)
 		expect(status.attached).toBe(true)
+	},
+	STEP_TIMEOUT_MS,
+)
+
+liveTest(
+	'G: goto and back drive navigation over the extension debugger session',
+	async () => {
+		const navigationsBefore = await pageNavigations()
+
+		// Relative to the page's current URL, resolved by the watcher — the same code path as CDP mode.
+		const goto = await harness.cliJson<NavigateResponse>('page', 'goto', WATCHER_ID, '/nav/second.html', '--json')
+		expect(goto.ok).toBe(true)
+		expect(goto.url).toContain('/nav/second.html')
+		// The wait settled, which is only possible if the real Page.loadEventFired reached the
+		// watcher through cdp-proxy's unfiltered debugger-event forwarding.
+		expect(goto.waited).toBe('load')
+		await waitForEval('location.pathname', (value) => value === '/nav/second.html')
+
+		const url = await harness.cliJson<{ url: string }>('page', 'url', WATCHER_ID, '--json')
+		expect(url.url).toContain('/nav/second.html')
+
+		// A back navigation into the bfcache fires no load event, so this also covers the
+		// BackForwardCacheRestore settle path — it hung for the full timeout before that existed.
+		const back = await harness.cliJson<ApiResult<NavigateHistoryResponse>>('page', 'back', WATCHER_ID, '--json')
+		if (!back.ok) throw new Error(`page back failed: ${JSON.stringify(back)}`)
+		expect(back.url).not.toContain('/nav/second.html')
+		expect(back.length).toBeGreaterThan(1)
+		await waitForEval('location.pathname', (value) => value !== '/nav/second.html')
+
+		// Two real top-frame navigations, one each — the same one-per-navigation contract as C and E.
+		expect((await pageNavigations()) - navigationsBefore).toBe(2)
 	},
 	STEP_TIMEOUT_MS,
 )

@@ -339,6 +339,25 @@
 			<pre data-testid="scroll-click-log" id="scroll-click-log">no clicks yet</pre>
 		</section>
 
+		<!-- ── Navigation ── -->
+		<section data-testid="navigation-section" id="navigation-section">
+			<h2>Navigation</h2>
+			<p style="font-size: 0.85rem; color: #666; margin-top: 0">
+				Exercise <code>argus goto</code>, <code>argus page back/forward/url</code>, and <code>--wait-nav</code> on <code>argus click</code>.
+				The "no navigation" button is the false path: clicking it must report <code>navigated: false</code> rather than failing.
+			</p>
+			<div class="btn-row">
+				<a data-testid="nav-link-second" id="nav-link-second" href="/nav/second.html">→ /nav/second.html</a>
+				<a data-testid="nav-link-second-anchor" id="nav-link-second-anchor" href="/nav/second.html#anchor">→ /nav/second.html#anchor</a>
+				<a data-testid="nav-link-hash" id="nav-link-hash" href="#navigation-section">→ #navigation-section (same page)</a>
+			</div>
+			<div class="btn-row">
+				<button data-testid="btn-nav-pushstate" id="btn-nav-pushstate" onclick="pushNavState()">history.pushState()</button>
+				<button data-testid="btn-nav-noop" id="btn-nav-noop" onclick="recordNoNavigation()">no navigation</button>
+			</div>
+			<pre data-testid="navigation-output" id="navigation-output">—</pre>
+		</section>
+
 		<!-- ── Iframe (same-origin) ── -->
 		<section data-testid="iframe-section">
 			<h2>Iframe (same-origin)</h2>
@@ -356,6 +375,33 @@
 		<script src="/minified-app.js"></script>
 		<script src="/sourcemapped-app.js?v=abc123"></script>
 		<script src="/inline-mapped-app.js"></script>
+		<script>
+			// ── Navigation panel ──
+			let navPushCount = 0
+
+			function renderNavigation(message) {
+				document.getElementById('navigation-output').textContent = `${message}\n${location.href}`
+			}
+
+			// Same-document navigation: no load event ever fires, which is why the navigation waiter
+			// also listens for Page.navigatedWithinDocument.
+			function pushNavState() {
+				navPushCount += 1
+				history.pushState({ navPushCount }, '', `?pushed=${navPushCount}`)
+				console.log('playground:pushState', location.href)
+				renderNavigation(`pushState #${navPushCount}`)
+			}
+
+			function recordNoNavigation() {
+				console.log('playground:no-navigation click')
+				renderNavigation('clicked, did not navigate')
+			}
+
+			window.addEventListener('popstate', () => renderNavigation('popstate'))
+			window.addEventListener('hashchange', () => renderNavigation('hashchange'))
+			renderNavigation('ready')
+		</script>
+
 		<script>
 			// ── Event tracking (e2e test pattern) ──
 			window.__events = []

@@ -200,6 +200,31 @@ describe('page command e2e', () => {
 		expect(emptyKeyStderr).toMatch(/empty key/)
 	})
 
+	// Navigation flags are validated before the watcher is resolved, so these need no watcher.
+	test('goto rejects a call with neither a url nor query overrides', async () => {
+		const { stderr, code } = await runCommandWithExit('bun', [BIN_PATH, 'goto', 'no-such-watcher'], { env })
+		expect(code).toBe(2)
+		expect(stderr).toMatch(/<url> is required/)
+	})
+
+	test('goto rejects an unknown --wait mode', async () => {
+		const { stderr, code } = await runCommandWithExit('bun', [BIN_PATH, 'goto', 'no-such-watcher', '/x', '--wait', 'networkidle'], { env })
+		expect(code).toBe(2)
+		expect(stderr).toMatch(/Invalid --wait value/)
+	})
+
+	test('goto rejects an unparseable --timeout', async () => {
+		const { stderr, code } = await runCommandWithExit('bun', [BIN_PATH, 'goto', 'no-such-watcher', '/x', '--timeout', 'soon'], { env })
+		expect(code).toBe(2)
+		expect(stderr).toMatch(/Invalid --timeout value/)
+	})
+
+	test('page back rejects a non-positive --steps', async () => {
+		const { stderr, code } = await runCommandWithExit('bun', [BIN_PATH, 'page', 'back', 'no-such-watcher', '-n', '0'], { env })
+		expect(code).toBe(2)
+		expect(stderr).toMatch(/Invalid --steps value/)
+	})
+
 	test('page close closes tab', async () => {
 		const { stdout: openOut } = await runCommand('bun', [BIN_PATH, 'page', 'open', '--url', 'about:blank', ...cdpArgs, '--json'], { env })
 		const target = JSON.parse(openOut) as { id: string }

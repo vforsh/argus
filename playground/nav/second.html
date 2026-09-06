@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Argus Playground — Second Page</title>
+		<style>
+			body {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				margin: 0;
+				padding: 2rem;
+				max-width: 720px;
+			}
+			#tail {
+				margin-top: 120vh;
+			}
+		</style>
+	</head>
+	<body>
+		<h1 data-testid="nav-second-heading">Second Page</h1>
+		<p>
+			Reached from the playground's Navigation section. Use <code>argus page back &lt;id&gt;</code> to return, or
+			<code>argus page forward &lt;id&gt;</code> to come here again.
+		</p>
+		<p><a data-testid="nav-back-link" id="nav-back-link" href="/">← back to the playground (link)</a></p>
+		<h2 id="anchor" data-testid="nav-second-anchor">Anchor target</h2>
+		<p id="tail">Scrolled into view when the page is opened with <code>#anchor</code>.</p>
+		<script>
+			// Marks the epoch boundary: `argus logs <id> --since-epoch <epoch>` after a goto shows
+			// this line and nothing from the page that was here before.
+			console.log('playground:nav/second.html loaded', location.href)
+		</script>
+	</body>
+</html>
