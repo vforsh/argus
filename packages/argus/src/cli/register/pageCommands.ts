@@ -2,6 +2,8 @@ import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runChromeTargets, runChromeOpen, runChromeActivate, runChromeClose } from '../../commands/chrome.js'
 import { runPageReload } from '../../commands/page.js'
 import { runPageEmulationSet, runPageEmulationClear, runPageEmulationStatus } from '../../commands/pageEmulation.js'
+import { runPageBack, runPageForward, runPageGoto } from '../../commands/pageNavigate.js'
+import { runPageUrl } from '../../commands/pageUrl.js'
 import { runPageShow, runPageHide } from '../../commands/pageVisibility.js'
 import { listPresetNames } from '../../emulation/devices.js'
 import { collectParam } from '../validation.js'
@@ -14,6 +16,52 @@ const cdpTargetOptions = [
 ] as const
 
 const presetList = listPresetNames().join(', ')
+
+/** Wait/timeout flags shared by `goto`, `back`, and `forward`. */
+const navigationWaitOptions = [
+	{ flags: '--wait <mode>', description: 'Wait for: load (default), domcontentloaded, none' },
+	{ flags: '--timeout <duration>', description: 'Wait budget (e.g. 30s, 5000). Default: 30s' },
+	jsonOption,
+] as const
+
+/** History-stepping flags shared by `back` and `forward`. */
+const historyOptions = [
+	{ flags: '-n, --steps <n>', description: 'Number of history entries to move (default: 1)' },
+	...navigationWaitOptions,
+] as const
+
+export const gotoCommand: ArgusCommandDefinition = {
+	name: 'goto',
+	alias: 'nav',
+	description: 'Navigate the attached page to a URL (absolute, scheme-less, or relative)',
+	arguments: [
+		{ flags: '[id]', description: 'Watcher ID' },
+		{ flags: '[url]', description: 'Target URL. Omit to rewrite query params of the current URL' },
+	],
+	options: [
+		{
+			flags: '--param <key=value>',
+			description: 'Set query param (repeatable, overwrite semantics)',
+			parser: collectParam,
+			defaultValue: [],
+		},
+		{ flags: '--params <a=b&c=d>', description: 'Set query params from string (overwrite semantics)' },
+		...navigationWaitOptions,
+	],
+	examples: [
+		'argus page goto app http://localhost:3000/checkout',
+		'argus page goto app localhost:3000',
+		'argus page goto app /settings',
+		'argus page goto app "?tab=2"',
+		'argus page goto app --param debug=1',
+		'argus page goto app /slow --wait domcontentloaded',
+		'argus page goto app /slow --wait none',
+		'argus page goto app /settings --timeout 5s --json',
+	],
+	action: async (id, url, options) => {
+		await runPageGoto(id, url, options)
+	},
+}
 
 const emulationCommand: ArgusCommandDefinition = {
 	name: 'emulation',
@@ -100,11 +148,19 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 				name: 'open',
 				alias: 'new',
 				description: 'Open a new tab in Chrome',
-				options: [{ flags: '--url <url>', description: 'URL to open', required: true }, ...cdpTargetOptions],
+				options: [
+					{ flags: '--url <url>', description: 'URL to open', required: true },
+					{ flags: '--attach', description: 'Attach a watcher to the new tab and stay running (requires --as)' },
+					{ flags: '--as <watcherId>', description: 'Watcher id to register with --attach' },
+					{ flags: '--no-page-indicator', description: 'Disable the in-page watcher indicator (with --attach)' },
+					{ flags: '--artifacts <dir>', description: 'Artifacts base directory (with --attach)' },
+					...cdpTargetOptions,
+				],
 				examples: [
 					'argus page open --url http://localhost:3000',
 					'argus page open --url localhost:3000',
 					'argus page open --url http://example.com --json',
+					'argus page open --url http://localhost:3000 --attach --as app',
 				],
 				action: async (options) => {
 					await runChromeOpen(options)
@@ -191,6 +247,37 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 				],
 				action: async (targetId, options) => {
 					await runPageReload({ ...options, targetId })
+				},
+			},
+			gotoCommand,
+			{
+				name: 'back',
+				description: 'Go back in the session history',
+				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
+				options: [...historyOptions],
+				examples: ['argus page back app', 'argus page back app -n 2', 'argus page back app --wait domcontentloaded --json'],
+				action: async (id, options) => {
+					await runPageBack(id, options)
+				},
+			},
+			{
+				name: 'forward',
+				description: 'Go forward in the session history',
+				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
+				options: [...historyOptions],
+				examples: ['argus page forward app', 'argus page forward app -n 2', 'argus page forward app --json'],
+				action: async (id, options) => {
+					await runPageForward(id, options)
+				},
+			},
+			{
+				name: 'url',
+				description: "Print the attached page's URL (bare URL, pipe-friendly)",
+				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
+				options: [jsonOption],
+				examples: ['argus page url app', 'argus page url app --json'],
+				action: async (id, options) => {
+					await runPageUrl(id, options)
 				},
 			},
 			emulationCommand,

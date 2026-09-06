@@ -19,6 +19,8 @@ export const keydownCommand: ArgusCommandDefinition = {
 		{ flags: '--meta', description: 'Shortcut for --modifiers meta' },
 		{ flags: '--cmd', description: 'Alias for --meta' },
 		{ flags: '--print-event', description: 'Print resolved key/code/modifier event details' },
+		{ flags: '--wait-nav [mode]', description: 'Wait for a top-frame navigation after the key: load (default), domcontentloaded, none' },
+		{ flags: '--nav-timeout <duration>', description: 'Budget for --wait-nav (e.g. 10s). Default: 10s' },
 		jsonOption,
 	],
 	examples: [
@@ -28,6 +30,7 @@ export const keydownCommand: ArgusCommandDefinition = {
 		'argus keydown app --code Backquote --shift',
 		'argus keydown app --key a --selector "#input"',
 		'argus keydown app --key a --shift --ctrl',
+		'argus keydown app --key Enter --selector "#search" --wait-nav',
 	],
 	action: async (id, options) => {
 		if (!resolveTestId(options)) return

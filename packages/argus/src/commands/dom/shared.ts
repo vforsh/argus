@@ -1,5 +1,7 @@
 import type { Output } from '../../output/io.js'
-import { parseDurationMs } from '@vforsh/argus-core'
+import type { NavigationSummary, NavigationWait, NavigationWaitOptions } from '@vforsh/argus-core'
+import { DEFAULT_NAVIGATION_WAIT, NAVIGATION_WAITS, parseDurationMs } from '@vforsh/argus-core'
+import { parseDurationFlagMs } from '../evalShared.js'
 
 export type DomElementTarget = {
 	selector?: string
@@ -88,4 +90,48 @@ export const parseXY = (value: string): { x: number; y: number } | null => {
 	}
 
 	return { x, y }
+}
+
+/** CLI flags behind `--wait-nav` / `--nav-timeout` on interactions that can navigate. */
+export type NavWaitFlags = {
+	/** `--wait-nav` takes an optional value, so a bare flag arrives as `true`. */
+	waitNav?: string | boolean
+	navTimeout?: string
+}
+
+/**
+ * Translate `--wait-nav [mode]` / `--nav-timeout <duration>` into request fields.
+ *
+ * A bare `--wait-nav` means `load`, which is what someone clicking a link wants; naming a mode
+ * is for pages whose `load` is gated on something slow.
+ *
+ * @returns The request fields (empty when no wait was asked for), or `null` after reporting a
+ *   bad value and setting the usage exit code.
+ */
+export const parseNavWaitFlags = (options: NavWaitFlags, output: Output): NavigationWaitOptions | null => {
+	if (options.waitNav == null || options.waitNav === false) {
+		return {}
+	}
+
+	const mode = options.waitNav === true ? DEFAULT_NAVIGATION_WAIT : (options.waitNav.trim() as NavigationWait)
+	if (!NAVIGATION_WAITS.includes(mode)) {
+		output.writeWarn(`Invalid --wait-nav value: expected one of ${NAVIGATION_WAITS.join(', ')}.`)
+		process.exitCode = 2
+		return null
+	}
+
+	const timeout = parseDurationFlagMs(options.navTimeout, '--nav-timeout')
+	if (timeout.error) {
+		output.writeWarn(timeout.error)
+		process.exitCode = 2
+		return null
+	}
+
+	return timeout.value == null ? { waitNav: mode } : { waitNav: mode, navTimeoutMs: timeout.value }
+}
+
+/** Render the navigation outcome of a `--wait-nav` interaction, or nothing when none was requested. */
+export const describeNavigation = (navigation: NavigationSummary | undefined): string => {
+	if (!navigation) return ''
+	return navigation.navigated ? ` → navigated ${navigation.url}` : ' (no navigation)'
 }

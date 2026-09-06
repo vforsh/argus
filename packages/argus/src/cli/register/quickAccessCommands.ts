@@ -4,6 +4,7 @@ import { runList } from '../../commands/list.js'
 import { runStart } from '../../commands/start.js'
 import { runDoctor } from '../../commands/doctor.js'
 import { runReload } from '../../commands/reload.js'
+import { gotoCommand } from './pageCommands.js'
 import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
 import { jsonOption } from './sharedOptions.js'
@@ -14,10 +15,7 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 		name: 'list',
 		alias: 'ls',
 		description: 'List watchers and Chrome instances',
-		options: [
-			jsonOption,
-			{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
-		],
+		options: [jsonOption, { flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' }],
 		examples: ['argus list', 'argus ls', 'argus list --json', 'argus list --by-cwd my-project'],
 		action: async (options) => {
 			await runList(options)
@@ -90,15 +88,15 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 		name: 'reload',
 		description: 'Reload the page attached to a watcher',
 		arguments: [{ flags: '[id]', description: 'Watcher id to reload' }],
-		options: [
-			{ flags: '--ignore-cache', description: 'Bypass browser cache' },
-			jsonOption,
-		],
+		options: [{ flags: '--ignore-cache', description: 'Bypass browser cache' }, jsonOption],
 		examples: ['argus reload app', 'argus reload app --ignore-cache', 'argus reload app --json'],
 		action: async (id, options) => {
 			await runReload(id, options)
 		},
 	},
+	// The only navigation command that also lives at the top level, mirroring `reload` <-> `page reload`.
+	// `back`/`forward`/`url` stay under `page` so the top level does not grow a verb per CDP command.
+	{ ...gotoCommand, examples: (gotoCommand.examples ?? []).map((example) => example.replace('argus page goto', 'argus goto')) },
 ]
 
 const normalizeStartAuthOptions = (command: Command, options: { json?: boolean; authFrom?: string; profile?: string }): boolean => {

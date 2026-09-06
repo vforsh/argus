@@ -1,8 +1,10 @@
 import type { DomKeydownResponse } from '@vforsh/argus-core'
+import { DEFAULT_INTERACTION_NAV_TIMEOUT_MS } from '@vforsh/argus-core'
 import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
+import { describeNavigation, parseNavWaitFlags, type NavWaitFlags } from './dom/shared.js'
 
 /** Options for the dom keydown command. */
-export type DomKeydownOptions = {
+export type DomKeydownOptions = NavWaitFlags & {
 	key?: string
 	code?: string
 	selector?: string
@@ -51,6 +53,10 @@ export const runDomKeydown = defineWatcherCommand<DomKeydownOptions, DomKeydownR
 			return null
 		}
 
+		const navWait = parseNavWaitFlags(options, output)
+		if (navWait == null) return null
+
+		const navBudgetMs = navWait.waitNav ? (navWait.navTimeoutMs ?? DEFAULT_INTERACTION_NAV_TIMEOUT_MS) : 0
 		return {
 			path: '/dom/keydown',
 			method: 'POST',
@@ -59,15 +65,17 @@ export const runDomKeydown = defineWatcherCommand<DomKeydownOptions, DomKeydownR
 				code,
 				selector: options.selector,
 				modifiers: mergeModifierOptions(options),
+				...navWait,
 			},
-			timeoutMs: 30_000,
+			timeoutMs: 30_000 + navBudgetMs,
 		}
 	},
 	formatHuman: (response, { options, output }) => {
+		const navigation = describeNavigation(response.navigation)
 		if (options.printEvent) {
-			output.writeHuman(`Dispatched keydown event: ${JSON.stringify(response.event)}`)
+			output.writeHuman(`Dispatched keydown event: ${JSON.stringify(response.event)}${navigation}`)
 		} else {
-			output.writeHuman(`Dispatched keydown: ${response.key} (code=${response.code})`)
+			output.writeHuman(`Dispatched keydown: ${response.key} (code=${response.code})${navigation}`)
 		}
 		if (response.activated) {
 			// Sticky, exactly like `argus page show` — say so rather than leaving the page silently locked shown.

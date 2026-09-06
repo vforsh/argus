@@ -1,13 +1,22 @@
 import type { DomClickRequest, DomClickResponse } from '@vforsh/argus-core'
-import { domClickRequestSchema } from '@vforsh/argus-core'
+import { DEFAULT_INTERACTION_NAV_TIMEOUT_MS, domClickRequestSchema } from '@vforsh/argus-core'
 import type { ArgusCommandDefinition } from '../cli/defineCommand.js'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
-import { describeElementTarget, parseWaitDuration, parseXY, requireElementTarget, writeNoElementFound } from './dom/shared.js'
+import {
+	describeElementTarget,
+	describeNavigation,
+	parseNavWaitFlags,
+	parseWaitDuration,
+	parseXY,
+	requireElementTarget,
+	writeNoElementFound,
+	type NavWaitFlags,
+} from './dom/shared.js'
 import { resolveTestId } from './resolveTestId.js'
 
 /** Options for the dom click command. */
-export type DomClickOptions = {
+export type DomClickOptions = NavWaitFlags & {
 	selector?: string
 	ref?: string
 	pos?: string
@@ -32,6 +41,8 @@ export const domClickCommandDefinition: ArgusCommandDefinition = {
 		{ flags: '--all', description: 'Allow multiple matches (default: error if >1 match)' },
 		{ flags: '--text <string>', description: 'Filter by textContent (trimmed). Supports /regex/flags syntax' },
 		{ flags: '--wait <duration>', description: 'Wait for selector to appear (e.g. 5s, 500ms)' },
+		{ flags: '--wait-nav [mode]', description: 'Wait for a top-frame navigation after the click: load (default), domcontentloaded, none' },
+		{ flags: '--nav-timeout <duration>', description: 'Budget for --wait-nav (e.g. 10s). Default: 10s' },
 		{ flags: '--json', description: 'Output JSON for automation' },
 	],
 	examples: [
@@ -43,6 +54,8 @@ export const domClickCommandDefinition: ArgusCommandDefinition = {
 		'argus click app --selector ".item" --all',
 		'argus click app --selector "#btn" --button right',
 		'argus click app --pos 100,200 --button middle',
+		'argus click app --selector "a.next" --wait-nav',
+		'argus click app --selector "a.next" --wait-nav domcontentloaded --nav-timeout 5s',
 	],
 	action: async (id, options) => {
 		if (!resolveTestId(options)) return
@@ -60,9 +73,10 @@ export const runDomClick = defineWatcherCommand<DomClickOptions, DomClickRespons
 	schema: domClickRequestSchema,
 	build: (_args, options, output) => buildClickPlan(options, output),
 	formatHuman: (response, { output, meta: { target, xy } }) => {
+		const navigation = describeNavigation(response.navigation)
 		// Coordinate-only click (no selector/ref): build never set matches/clicked beyond 1.
 		if (!target) {
-			output.writeHuman(`Clicked at (${xy?.x}, ${xy?.y})`)
+			output.writeHuman(`Clicked at (${xy?.x}, ${xy?.y})${navigation}`)
 			return
 		}
 		if (response.matches === 0) {
@@ -72,7 +86,7 @@ export const runDomClick = defineWatcherCommand<DomClickOptions, DomClickRespons
 		const label = response.clicked === 1 ? 'element' : 'elements'
 		const desc = describeElementTarget(target)
 		const offset = xy ? ` at offset (${xy.x}, ${xy.y})` : ''
-		output.writeHuman(`Clicked ${response.clicked} ${label} for ${desc}${offset}`)
+		output.writeHuman(`Clicked ${response.clicked} ${label} for ${desc}${offset}${navigation}`)
 	},
 })
 
@@ -99,7 +113,10 @@ const buildClickPlan = (options: DomClickOptions, output: Output): WatcherReques
 	const waitMs = parseWaitDuration(options.wait, output)
 	if (waitMs == null) return null
 
-	const body: Record<string, unknown> = {}
+	const navWait = parseNavWaitFlags(options, output)
+	if (navWait == null) return null
+
+	const body: Record<string, unknown> = { ...navWait }
 	if (target) {
 		if (target.selector) body.selector = target.selector
 		if (target.ref) body.ref = target.ref
@@ -113,12 +130,14 @@ const buildClickPlan = (options: DomClickOptions, output: Output): WatcherReques
 	if (options.button) body.button = options.button
 	if (waitMs > 0) body.wait = waitMs
 
-	// `wait` may exceed 30s; bump request timeout proportionally so the watcher reply is not cut off.
+	// `wait` and `--wait-nav` both extend how long the watcher holds the request; bump the
+	// transport timeout past their sum so the reply is never cut off mid-wait.
+	const navBudgetMs = navWait.waitNav ? (navWait.navTimeoutMs ?? DEFAULT_INTERACTION_NAV_TIMEOUT_MS) : 0
 	return {
 		path: '/dom/click',
 		method: 'POST',
 		body,
-		timeoutMs: Math.max(30_000, waitMs + 5_000),
+		timeoutMs: Math.max(30_000, waitMs + navBudgetMs + 5_000),
 		meta: { target, xy: xy ?? undefined },
 	}
 }

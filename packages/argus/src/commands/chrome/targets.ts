@@ -6,15 +6,17 @@ import { createOutput } from '../../output/io.js'
 import type { ChromeCommandOptions } from './shared.js'
 import { loadChromeTargets, normalizeUrl, resolveChromeEndpointOrExit, resolveWatcherOrExit } from './shared.js'
 import { formatError } from '../../cli/parse.js'
+import { openAndAttachWatcher, type ChromeOpenAttachOptions } from './openAttach.js'
 
 export type ChromeTargetsOptions = ChromeCommandOptions & {
 	type?: string
 	tree?: boolean
 }
 
-export type ChromeOpenOptions = ChromeCommandOptions & {
-	url: string
-}
+export type ChromeOpenOptions = ChromeCommandOptions &
+	ChromeOpenAttachOptions & {
+		url: string
+	}
 
 export type ChromeActivateOptions = ChromeCommandOptions & {
 	targetId?: string
@@ -74,23 +76,37 @@ export const runChromeOpen = async (options: ChromeOpenOptions): Promise<void> =
 		return
 	}
 
+	if (options.attach && !options.as?.trim()) {
+		output.writeWarn('--attach requires --as <watcherId>.')
+		process.exitCode = 2
+		return
+	}
+
 	const endpoint = await resolveChromeEndpointOrExit(options, output)
 	if (!endpoint) {
 		return
 	}
 
 	const encodedUrl = encodeURIComponent(normalizeUrl(options.url.trim()))
+	let target: ChromeTargetResponse
 	try {
-		const target = await fetchJson<ChromeTargetResponse>(`http://${endpoint.host}:${endpoint.port}/json/new?${encodedUrl}`, { method: 'PUT' })
-		if (options.json) {
-			output.writeJson(target)
-			return
-		}
-		output.writeHuman(`${target.id} ${target.url}`)
+		target = await fetchJson<ChromeTargetResponse>(`http://${endpoint.host}:${endpoint.port}/json/new?${encodedUrl}`, { method: 'PUT' })
 	} catch (error) {
 		output.writeWarn(`Failed to open tab: ${formatError(error)}`)
 		process.exitCode = 1
+		return
 	}
+
+	if (options.attach) {
+		await openAndAttachWatcher(target, endpoint, options, output)
+		return
+	}
+
+	if (options.json) {
+		output.writeJson(target)
+		return
+	}
+	output.writeHuman(`${target.id} ${target.url}`)
 }
 
 export const runChromeActivate = async (options: ChromeActivateOptions): Promise<void> => {
