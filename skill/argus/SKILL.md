@@ -37,7 +37,7 @@ Read:
 
 - [START.md](./reference/START.md) for CDP startup, watcher lifecycle, config defaults, and Node API.
 - [EXTENSION.md](./reference/EXTENSION.md) for extension setup and runtime limitations.
-- [INSPECT.md](./reference/INSPECT.md) for command catalogs: logs, eval, capture, DOM, interaction, auth, storage, trace, pages, emulation.
+- [INSPECT.md](./reference/INSPECT.md) for command catalogs: logs, eval, capture, DOM, navigation, interaction, auth, storage, trace, pages, emulation.
 - [CAPTURE.md](./reference/CAPTURE.md) for screenshots, recordings (MP4/WebM/GIF, `--until`, `record status`), crop semantics, iframe capture, and recording troubleshooting.
 - [NET.md](./reference/NET.md) for network capture, filtering, inspection, bodies, WebSockets, SSE, HAR export, and mocks.
 
@@ -57,7 +57,7 @@ open -a "Google Chrome" "$APP_URL"
 argus ext doctor --json
 argus ext tabs --url "$APP_URL" --json
 argus ext use --url "$APP_URL" --as "$WATCHER_ID" --json
-argus eval "$WATCHER_ID" "({ title: document.title, href: location.href })" --json
+argus page url "$WATCHER_ID" --json
 ```
 
 If multiple tabs match, do not guess. Run `argus ext tabs --url "$APP_URL" --json`, choose the intended `tabId`, then use:
@@ -122,7 +122,7 @@ Once a watcher is attached, use quick bounded commands first:
 
 ```bash
 argus logs app --since 10m --levels error,warning
-argus eval app "({ href: location.href, title: document.title })" --json
+argus page url app --json
 argus screenshot app --out shot.png
 argus record app --duration 5s --selector "canvas" --out demo.mp4
 argus record app --until "window.gameOver === true" --max 30s --out run.gif
@@ -131,6 +131,26 @@ argus snapshot app --interactive
 ```
 
 For deterministic multi-step suites, prefer a bundled TypeScript scenario with `export default async function scenario(ctx)`. The context can capture screenshots/checkpoints and open a log session directly; see [EVAL.md](./reference/EVAL.md).
+
+To navigate:
+
+```bash
+argus page url app
+argus goto app /checkout
+argus goto app localhost:3000
+argus goto app --param debug=1
+argus page back app
+argus page forward app
+```
+
+`goto` waits for `load` by default and returns a log epoch covering exactly the new page, so the next read is race-free:
+
+```bash
+EPOCH=$(argus goto app /checkout --json | jq -r .epoch)
+argus logs app --since-epoch "$EPOCH" --levels error,warning
+```
+
+URLs resolve in the watcher against the page's current URL, so `/settings`, `?tab=2`, and `#top` all work; `localhost:3000` gets `http://`. `--wait domcontentloaded` returns before subresources finish, `--wait none` returns as soon as Chrome accepts the command, and `--timeout <duration>` bounds the wait (default 30s). `argus goto` is a top-level alias for `argus page goto`; `back`/`forward`/`url` live only under `page`.
 
 For interaction:
 
@@ -146,7 +166,11 @@ argus keydown app --key G
 argus keydown app --code KeyG --print-event
 argus keydown app --code Backquote --shift
 argus scroll-to app --selector "#footer"
+argus click app --selector "a.next" --wait-nav
+argus keydown app --key Enter --selector "#search" --wait-nav
 ```
+
+`--wait-nav` waits for a top-frame navigation the interaction caused and reports `navigation: { navigated, url, epoch }`. Clicking something that does not navigate is not an error — it answers `navigated: false` after `--nav-timeout` (default 10s).
 
 Chrome drops keyboard input aimed at an unfocused page, so `keydown` checks focus first. On a hidden page (headless, background tab, covered window) it activates the page — the same sticky state as `argus page show` — and reports `activated: true`; release it with `argus page hide <id>`. If activation does not take, it fails with `target_not_focused` instead of reporting a key the page never received.
 
@@ -196,7 +220,7 @@ Use CDP for local apps and clean repros where a temp/debuggable browser is accep
 ```bash
 npm run dev
 argus start --id app --url localhost:3000
-argus eval app "location.href"
+argus page url app
 argus screenshot app --out shot.png
 argus record app --duration 3s --out demo.mp4
 ```
@@ -230,6 +254,8 @@ Keep these commands in the background in agent shells. See [START.md](./referenc
 
 **Need to keep a page unthrottled** — Use `argus page show <id>` or `argus ext show <id>`. Hide later with `argus page hide <id>`.
 
+**Navigation failed** — `navigation_failed` means Chrome refused the URL and names the reason (`net::ERR_NAME_NOT_RESOLVED`, `net::ERR_CONNECTION_REFUSED`); fix the URL or start the server. `navigation_timeout` means the requested phase did not arrive in time — the page may still be loading, so retry with `--wait domcontentloaded` or a longer `--timeout` rather than assuming the navigation failed. `no_history` means the page is already at the first/last session-history entry; check position with `argus page back <id> --json` output (`index`/`length`).
+
 **Command timed out** — Read the layer the error names before raising `--timeout`; only `cdp_timeout` ("the expression itself exceeded its deadline") is fixed by a longer one. `chrome_unreachable` means restart the browser, `cdp_target_replaced` means retry (Argus is reattaching), `cdp_renderer_unresponsive` means the page's main thread is blocked — `argus reload <id>` — and `dialog_blocking` means dismiss the dialog. A timeout reported as "failed to reach watcher" is the watcher itself not answering: `argus watcher status <id>`, then `argus doctor`.
 
 ## Google Sheets Safety Flow
@@ -252,7 +278,7 @@ Never treat whole-export row indexes as physical sheet rows: `exportRow` is only
 
 - [START.md](./reference/START.md) — CDP startup, watcher lifecycle, config defaults, Node API.
 - [EXTENSION.md](./reference/EXTENSION.md) — Extension setup and extension-control details.
-- [INSPECT.md](./reference/INSPECT.md) — Logs, capture summary, DOM, interaction, auth, storage, trace, emulation.
+- [INSPECT.md](./reference/INSPECT.md) — Logs, capture summary, DOM, navigation (`goto`/`back`/`forward`/`url`, `--wait-nav`), interaction, auth, storage, trace, emulation.
 - [CAPTURE.md](./reference/CAPTURE.md) — Screenshots, recordings (MP4/WebM/GIF, `--until`, `record status`), crop semantics, iframe capture, recording troubleshooting.
 - [NET.md](./reference/NET.md) — Network capture, filtering, inspection, export, and mocks.
 - [EVAL.md](./reference/EVAL.md) — Eval syntax, polling, files, args, iframe eval.
