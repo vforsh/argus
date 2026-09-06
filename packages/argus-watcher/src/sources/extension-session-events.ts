@@ -106,6 +106,31 @@ export const registerExtensionSessionEventHandlers = ({
 		}
 	})
 
+	session.handle.onEvent('Page.navigatedWithinDocument', (params, meta) => {
+		const record = params as { frameId?: string; url?: string }
+		if (meta.sessionId || !record.frameId || !record.url) {
+			return
+		}
+
+		const state = getOrCreateFrameState(session.tabId)
+		const frame = state.frames.get(record.frameId)
+		if (!frame) {
+			return
+		}
+
+		// Same-document (hash change, pushState): the URL moved but the document did not, so this
+		// updates the reported URL without firing onPageNavigation — no log rotation, no
+		// sourcemap reset, no indicator repaint for a navigation that replaced nothing.
+		frame.url = record.url
+		if (record.frameId === state.topFrameId) {
+			session.url = record.url
+		}
+
+		if (state.activeFrameId === record.frameId || (state.activeFrameId == null && record.frameId === state.topFrameId)) {
+			emitTargetChanged(session)
+		}
+	})
+
 	session.handle.onEvent('Page.frameAttached', (params, meta) => {
 		const record = params as { frameId?: string; parentFrameId?: string }
 		if (!record.frameId) {

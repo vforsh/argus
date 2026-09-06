@@ -4,6 +4,7 @@ import { formatError } from '@vforsh/argus-core'
 import { createCdpSessionHandle } from './connection.js'
 import type { CdpSessionController, CdpSessionHandle } from './connection.js'
 import { fetchPageIntl, type PageIntlInfo, toConsoleEvent, toExceptionEvent } from './watcherEvents.js'
+import { tryEvaluateInPage } from './pageState.js'
 import { findTarget, type CdpTarget } from './watcherTargets.js'
 import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
 import { delay } from '@vforsh/argus-core'
@@ -56,6 +57,8 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 	let stopped = false
 	let socket: WebSocket | null = null
 	let currentTarget: CdpTarget | null = null
+	/** Top frame of the attached page, so iframe navigation events cannot be mistaken for the page's. */
+	let topFrameId: string | null = null
 
 	const { session, attach, detach } = options.sessionHandle ?? createCdpSessionHandle()
 
@@ -97,14 +100,32 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		if (!navigation) {
 			return
 		}
+		topFrameId = navigation.frameId ?? topFrameId
 		currentTarget.url = navigation.url
+		// The status snapshot is the watcher's public answer to "where is the page" — it backs
+		// `argus page url`, relative URL resolution in /navigate, and the indicator. Emitting only
+		// on attach left it frozen at whatever URL the target had when the socket opened.
+		emitAttachedStatus()
 		options.onPageNavigation?.({ url: navigation.url, title: currentTarget.title ?? null })
+	})
+
+	session.onEvent('Page.navigatedWithinDocument', (params) => {
+		if (!currentTarget || !params.url || (topFrameId != null && params.frameId !== topFrameId)) {
+			return
+		}
+		// Same-document: the URL changed but the document did not. Deliberately not a page
+		// navigation — rotating logs and dropping sourcemaps for a hash change would be wrong.
+		currentTarget.url = params.url
+		emitAttachedStatus()
 	})
 
 	session.onEvent('Page.domContentEventFired', () => {
 		if (!currentTarget) {
 			return
 		}
+		// The new document's title does not exist yet at frameNavigated time; refresh it once the
+		// DOM is parsed so status does not report the previous page's title against the new URL.
+		void refreshTargetTitle()
 		options.onPageLoad?.()
 	})
 
@@ -113,6 +134,37 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		reconnect,
 		session,
 		getTarget: () => (currentTarget ? { ...currentTarget } : null),
+	}
+
+	/** Publish the current target as an attached status. No-op before the first attach. */
+	function emitAttachedStatus(): void {
+		if (!currentTarget) {
+			return
+		}
+		options.onStatus({
+			attached: true,
+			target: {
+				title: currentTarget.title ?? null,
+				url: currentTarget.url ?? null,
+				type: currentTarget.type ?? null,
+				parentId: currentTarget.parentId ?? null,
+			},
+			reason: null,
+		})
+	}
+
+	/** Best-effort title refresh after a navigation. A failed read leaves the old title in place. */
+	async function refreshTargetTitle(): Promise<void> {
+		const target = currentTarget
+		if (!target) {
+			return
+		}
+		const title = await tryEvaluateInPage<string>(session, 'document.title')
+		if (typeof title !== 'string' || target !== currentTarget || target.title === title) {
+			return
+		}
+		target.title = title
+		emitAttachedStatus()
 	}
 
 	async function runLoop(): Promise<void> {
@@ -155,6 +207,7 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		ws.addEventListener('close', () => {
 			const reason = stopped ? 'stopped' : 'socket_closed'
 			currentTarget = null
+			topFrameId = null
 			detach(reason)
 			options.onStatus({ attached: false, target: null, reason })
 			options.onDetach?.(reason)
@@ -167,6 +220,10 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 
 		await session.sendAndWait('Runtime.enable')
 		await session.sendAndWait('Page.enable')
+		// Learn the top frame up front; without it a hash change in an iframe would overwrite the
+		// page's URL before the first top-frame navigation ever names it.
+		const frameTree = await session.sendAndWait('Page.getFrameTree').catch(() => null)
+		topFrameId = frameTree?.frameTree?.frame.id ?? null
 		await options.onAttach?.(session, target)
 
 		// Only signal attached after we've enabled the necessary domains
@@ -187,8 +244,8 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 	}
 }
 
-const parseNavigation = (params: unknown): { url: string } | null => {
-	const record = params as { frame?: { url?: string; parentId?: string | null } }
+const parseNavigation = (params: unknown): { url: string; frameId?: string } | null => {
+	const record = params as { frame?: { id?: string; url?: string; parentId?: string | null } }
 	const url = record.frame?.url
 	if (!url || typeof url !== 'string' || url.trim() === '') {
 		return null
@@ -196,7 +253,7 @@ const parseNavigation = (params: unknown): { url: string } | null => {
 	if (record.frame?.parentId) {
 		return null
 	}
-	return { url }
+	return { url, frameId: record.frame?.id }
 }
 
 const createSystemLog = (message: string): Omit<LogEvent, 'id'> => ({
