@@ -9,6 +9,10 @@ import type {
 	NetClearResponse,
 	NetQuery,
 	NetResponse,
+	NavigateHistoryRequest,
+	NavigateHistoryResponse,
+	NavigateRequest,
+	NavigateResponse,
 	NetworkRequestDetail,
 	RecordRequest,
 	RecordStartRequest,
@@ -172,6 +176,28 @@ export type VisibilityResult = ResponseData<VisibilityResponse>
 /** Options for reloading the connected page. */
 export type ReloadOptions = ReloadRequest
 
+/** Options for navigating the connected page. At least one of `url`, `param`, or `params` is required. */
+export type NavigateOptions = NavigateRequest
+
+/** Where the page landed, plus the log epoch opened just before the navigation started. */
+export type NavigateResult = ResponseData<NavigateResponse>
+
+/** Options for stepping through the connected page's session history. `direction` is implied by the method. */
+export type NavigateHistoryOptions = Omit<NavigateHistoryRequest, 'direction'>
+
+/** Where the page landed, plus its new position in the session history. */
+export type NavigateHistoryResult = ResponseData<NavigateHistoryResponse>
+
+/** The connected page's current URL and title, read from the watcher's status. */
+export type PageUrlResult = {
+	/** Top-frame URL, or `null` when nothing is attached. */
+	url: string | null
+	/** Page title, or `null` when nothing is attached. */
+	title: string | null
+	/** Whether the watcher is attached to a target. */
+	attached: boolean
+}
+
 /** Shared options for video recording requests. */
 export type RecordOptions = RecordStartRequest
 
@@ -286,6 +312,14 @@ export type ArgusClient = {
 	evalUntil: (watcherId: string, expression: string, options?: EvalUntilOptions) => Promise<EvalUntilResult>
 	/** Click in the connected page by selector, element ref, or viewport coordinates. */
 	domClick: (watcherId: string, options: DomClickOptions) => Promise<DomClickResult>
+	/** Navigate the connected page. Relative URLs resolve against the page's current URL. */
+	navigate: (watcherId: string, options: NavigateOptions) => Promise<NavigateResult>
+	/** Go back in the connected page's session history. */
+	back: (watcherId: string, options?: NavigateHistoryOptions) => Promise<NavigateHistoryResult>
+	/** Go forward in the connected page's session history. */
+	forward: (watcherId: string, options?: NavigateHistoryOptions) => Promise<NavigateHistoryResult>
+	/** Read the connected page's current URL and title. */
+	url: (watcherId: string) => Promise<PageUrlResult>
 	/** Lock the page shown+focused, or release the lock. */
 	visibility: (watcherId: string, options: VisibilityOptions) => Promise<VisibilityResult>
 	/** Reload the connected page. Page-scoped even when the active target is an iframe. */

@@ -126,16 +126,33 @@ Evaluation semantics are untouched — statement lists, top-level `await`, and R
 
 A watcher started before this flag existed ignores it; the client detects that and raises an actionable error rather than silently returning transport-dependent key order. Restart the watcher to pick up the current build.
 
+### Navigation
+
+```ts
+client.navigate(watcherId, { url?, param?, params?, wait?, timeoutMs? })
+client.back(watcherId, { steps?, wait?, timeoutMs? })
+client.forward(watcherId, { steps?, wait?, timeoutMs? })
+client.url(watcherId) // -> { url, title, attached }
+```
+
+`url` is resolved by the watcher, so relative forms work against the page's current URL: `/settings`, `?tab=2`, `#top`. A scheme-less `localhost:3000` gets `http://`. Omit `url` and pass `param`/`params` to rewrite the query string in place.
+
+`wait` is `'load'` (default), `'domcontentloaded'`, or `'none'`; `timeoutMs` (default 30000) bounds the wait only. A `navigate`/`back`/`forward` result carries `epoch` — the log epoch opened just before the navigation — so `client.logs(watcherId, { sinceEpoch: epoch })` reads only the new page's output without racing it.
+
+Failures throw: `navigation_failed` (Chrome refused the URL), `navigation_timeout` (the load did not finish in time; the page may still be loading), `no_history` (already at the first/last entry).
+
 ### Page interaction
 
 ```ts
-client.domClick(watcherId, { selector | ref | x, y, all?, button?, text?, wait? })
+client.domClick(watcherId, { selector | ref | x, y, all?, button?, text?, wait?, waitNav?, navTimeoutMs? })
 client.visibility(watcherId, { action: 'show' | 'hide' })
 client.reload(watcherId, { ignoreCache? })
 client.netClear(watcherId)
 ```
 
 `visibility` locks the page shown+focused so backgrounded windows do not throttle rAF/timers. The lock is sticky across detach/reattach.
+
+`waitNav` waits for a top-frame navigation caused by the click and reports it as `navigation: { navigated, url, epoch }`. Clicking something that does not navigate is not an error — it resolves with `navigated: false` once `navTimeoutMs` (default 10000) elapses.
 
 ### Capture
 

@@ -20,6 +20,11 @@ import { createWatcherClient } from './watcherHandle.js'
  * const page = createArgusClient().watcher('playground')
  * await page.reload({ ignoreCache: true })
  * const count = await page.evalValue<number>('document.querySelectorAll("li").length')
+ *
+ * @example Navigate, then read only the new page's logs
+ * const page = createArgusClient().watcher('playground')
+ * const { epoch } = await page.navigate({ url: '/checkout' })
+ * const { events } = await page.logs({ sinceEpoch: epoch })
  */
 export const createArgusClient = (options: ArgusClientOptions = {}): ArgusClient => {
 	const ctx = createClientContext(options)
