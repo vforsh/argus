@@ -1,6 +1,6 @@
 {
 	"name": "@vforsh/argus-extension",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "Argus CDP Bridge Chrome Extension",
 	"repository": {
 		"type": "git",
