@@ -6,5 +6,5 @@
 		"types": ["bun-types", "chrome"],
 		"lib": ["ES2022", "DOM", "DOM.Iterable"]
 	},
-	"include": ["e2e", "packages/*/test"]
+	"include": ["e2e", "packages/*/test", "packages/*/scripts"]
 }
