@@ -14,7 +14,9 @@ import {
 	type SheetWriteVerificationResult,
 } from './mutationPageScripts.js'
 import type { SheetTab } from './pageScripts.js'
-import { clearGridRange, dispatchKey, evalInWatcher, runSheetCommand, type Output, switchSheetTarget, withSheetLease } from './sheetCommandUtils.js'
+import { delay } from '@vforsh/argus-core'
+import { formatA1Cell, parseA1Range } from './a1.js'
+import { dispatchKey, evalInWatcher, runSheetCommand, selectRange, type Output, switchSheetTarget, withSheetLease } from './sheetCommandUtils.js'
 
 type CommonOptions = {
 	json?: boolean
@@ -313,6 +315,30 @@ const clearRangeOperation = async (
 		mismatches: verification?.mismatches ?? [],
 		verificationSkipped: !input.verify || undefined,
 	}
+}
+
+/**
+ * Clear a rectangle one cell at a time.
+ *
+ * Kept only for the legacy `clear` command, whose CSV verification cannot tell a leftover `=""`
+ * from an empty cell. Typed mutations use `clearTypedRange`, which clears the whole selection in one
+ * key press and verifies through a raw rectangle read.
+ */
+const clearGridRange = async (ctx: ArgusPluginContextV1, id: string | undefined, range: string, output: Output): Promise<boolean> => {
+	const bounds = parseA1Range(range)
+	if (!bounds) {
+		usageError(output, `Expected an A1 cell range, got ${range}.`)
+		return false
+	}
+	for (let row = bounds.startRow; row <= bounds.endRow; row++) {
+		for (let column = bounds.startColumn; column <= bounds.endColumn; column++) {
+			const a1 = formatA1Cell(column, row, bounds.sheet)
+			if (!(await selectRange(ctx, id, a1, output))) return false
+			if (!(await dispatchKey(ctx, id, output, { key: 'Backspace' }))) return false
+		}
+	}
+	await delay(150)
+	return true
 }
 
 const switchToSheetTarget = async (

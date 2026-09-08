@@ -1,8 +1,6 @@
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
-import { formatA1Cell, parseA1Range } from './a1.js'
-import { usageError } from './cliArgs.js'
 import { failCommand, withCommandExit } from './commandExit.js'
 import {
 	buildAcquireLeaseExpression,
@@ -45,24 +43,6 @@ export const selectRange = async (
 
 	await delay(200)
 	return result
-}
-
-/** Clear an exact rectangular cell range through native per-cell Backspace operations. */
-export const clearGridRange = async (ctx: ArgusPluginContextV1, id: string | undefined, range: string, output: Output): Promise<boolean> => {
-	const bounds = parseA1Range(range)
-	if (!bounds) {
-		usageError(output, `Expected an A1 cell range, got ${range}.`)
-		return false
-	}
-	for (let row = bounds.startRow; row <= bounds.endRow; row++) {
-		for (let column = bounds.startColumn; column <= bounds.endColumn; column++) {
-			const a1 = formatA1Cell(column, row, bounds.sheet)
-			if (!(await selectRange(ctx, id, a1, output))) return false
-			if (!(await dispatchKey(ctx, id, output, { key: 'Backspace' }))) return false
-		}
-	}
-	await delay(150)
-	return true
 }
 
 export const resolveSheetTarget = async (
@@ -191,7 +171,6 @@ const markIndeterminateTimeout = (message: string): void => {
 		if (execution) execution.indeterminate = true
 	}
 }
-
 
 /**
  * Spec for a sheets command, mirroring `defineWatcherCommand`'s shape.

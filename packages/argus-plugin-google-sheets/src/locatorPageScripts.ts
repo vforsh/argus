@@ -1,5 +1,6 @@
+import { advanceLocator, planLocatorProbes, retryDelaysMs } from './locatorModel.js'
 import { indexToColumnLetters } from './pageA1.js'
-import { getSpreadsheetId, parseCsvInPage } from './sheetDataPageScripts.js'
+import { delay, getSpreadsheetId, parseCsvInPage } from './sheetDataPageScripts.js'
 
 /** Exact physical cell match found through a single-row authenticated read. */
 export type ExactCellMatch = {
@@ -28,7 +29,7 @@ export type ExactLocatorResult<T> = {
 	reason: 'found' | 'max-row' | 'deadline'
 }
 
-/** Build a bounded exact-row locator for corrected `find`. */
+/** Build a bounded exact-cell locator for corrected `find`. */
 export const buildLocateCellsExpression = (input: {
 	gid: string
 	startRow: number
@@ -39,7 +40,7 @@ export const buildLocateCellsExpression = (input: {
 	columnIndex: number | null
 	ignoreCase: boolean
 	limit: number
-	expectedMatches: number
+	candidates: Array<{ exportRow: number; exportColumn: number }>
 	deadlineMs: number
 	batchSize?: number
 }): string => buildLocatorExpression(locateCellsInPage, input)
@@ -55,60 +56,22 @@ export const buildLocateRowsExpression = (input: {
 	batchSize?: number
 }): string => buildLocatorExpression(locateRowsInPage, input)
 
-const locatorHelpers = [getSpreadsheetId, parseCsvInPage, indexToColumnLetters, fetchExactRowInPage, exactRowsEqual]
+const locatorHelpers = [
+	getSpreadsheetId,
+	parseCsvInPage,
+	indexToColumnLetters,
+	delay,
+	planLocatorProbes,
+	advanceLocator,
+	retryDelaysMs,
+	fetchExactRowInPage,
+	exactRowsEqual,
+	rowContainsNeedle,
+]
 const buildLocatorExpression = <T>(fn: (input: T) => unknown, input: T): string => `(() => {
 ${locatorHelpers.map((helper) => helper.toString()).join('\n')}
 return (${fn.toString()})(${JSON.stringify(input)})
 })()`
-
-async function locateCellsInPage(input: {
-	gid: string
-	startRow: number
-	maxRow: number
-	firstColumn?: number
-	lastColumn: number
-	needle: string
-	columnIndex: number | null
-	ignoreCase: boolean
-	limit: number
-	expectedMatches: number
-	deadlineMs: number
-	batchSize?: number
-}): Promise<ExactLocatorResult<ExactCellMatch>> {
-	const spreadsheetId = getSpreadsheetId()
-	const deadlineAt = Date.now() + input.deadlineMs
-	const batchSize = Math.min(25, Math.max(1, input.batchSize ?? 10))
-	const matches: ExactCellMatch[] = []
-	let scannedRows = 0
-	for (let firstRow = input.startRow; firstRow <= input.maxRow; firstRow += batchSize) {
-		if (Date.now() >= deadlineAt) return { ok: true, matches, scannedRows, complete: false, reason: 'deadline' }
-		const rowNumbers = Array.from({ length: Math.min(batchSize, input.maxRow - firstRow + 1) }, (_, index) => firstRow + index)
-		const exactRows = await Promise.all(rowNumbers.map((row) => fetchExactRowInPage(spreadsheetId, input.gid, row, input.lastColumn)))
-		for (let offset = 0; offset < exactRows.length; offset++) {
-			const row = exactRows[offset]
-			const sheetRow = rowNumbers[offset]
-			const start = input.columnIndex ?? input.firstColumn ?? 0
-			const end = input.columnIndex ?? input.lastColumn
-			for (let column = start; column <= end; column++) {
-				const value = row[column] ?? ''
-				const haystack = input.ignoreCase ? value.toLocaleLowerCase() : value
-				if (!haystack.includes(input.needle)) continue
-				matches.push({ sheetRow, column: column + 1, a1: `${indexToColumnLetters(column)}${sheetRow}`, value, exactVerified: true })
-				if (matches.length >= input.limit || matches.length >= input.expectedMatches) {
-					return { ok: true, matches, scannedRows: scannedRows + offset + 1, complete: true, reason: 'found' }
-				}
-			}
-		}
-		scannedRows += exactRows.length
-	}
-	return {
-		ok: true,
-		matches,
-		scannedRows,
-		complete: matches.length >= input.expectedMatches,
-		reason: matches.length >= input.expectedMatches ? 'found' : 'max-row',
-	}
-}
 
 async function locateRowsInPage(input: {
 	gid: string
@@ -122,41 +85,120 @@ async function locateRowsInPage(input: {
 	const spreadsheetId = getSpreadsheetId()
 	const deadlineAt = Date.now() + input.deadlineMs
 	const batchSize = Math.min(25, Math.max(1, input.batchSize ?? 10))
-	const unmatched = [...input.candidates]
+	const candidates = [...input.candidates].sort((left, right) => left.exportRow - right.exportRow)
 	const matches: ExactRowMatch[] = []
 	let scannedRows = 0
-	for (let firstRow = input.startRow; firstRow <= input.maxRow; firstRow += batchSize) {
-		if (Date.now() >= deadlineAt) return { ok: true, matches, scannedRows, complete: false, reason: 'deadline' }
-		const rowNumbers = Array.from({ length: Math.min(batchSize, input.maxRow - firstRow + 1) }, (_, index) => firstRow + index)
-		const exactRows = await Promise.all(rowNumbers.map((row) => fetchExactRowInPage(spreadsheetId, input.gid, row, input.width - 1)))
-		for (let offset = 0; offset < exactRows.length; offset++) {
-			const candidateIndex = unmatched.findIndex((candidate) => exactRowsEqual(exactRows[offset], candidate.values, input.width))
-			if (candidateIndex < 0) continue
-			const candidate = unmatched.splice(candidateIndex, 1)[0]
-			const sheetRow = rowNumbers[offset]
-			matches.push({
-				...candidate,
-				sheetRow,
-				a1: `A${sheetRow}:${indexToColumnLetters(input.width - 1)}${sheetRow}`,
-				exactVerified: true,
-			})
-			if (unmatched.length === 0) return { ok: true, matches, scannedRows: scannedRows + offset + 1, complete: true, reason: 'found' }
+	let offset = 0
+	let minRow = input.startRow
+	for (const candidate of candidates) {
+		let probed = 0
+		let located = false
+		while (!located) {
+			if (Date.now() >= deadlineAt) return { ok: true, matches, scannedRows, complete: false, reason: 'deadline' }
+			const probes = planLocatorProbes({ exportRow: candidate.exportRow, offset, probed, minRow, maxRow: input.maxRow, batchSize })
+			if (probes.length === 0) return { ok: true, matches, scannedRows, complete: false, reason: 'max-row' }
+			const rows = await Promise.all(probes.map((row) => fetchExactRowInPage(spreadsheetId, input.gid, row, input.width - 1, deadlineAt)))
+			scannedRows += rows.length
+			probed += rows.length
+			for (let index = 0; index < rows.length; index++) {
+				if (!exactRowsEqual(rows[index], candidate.values, input.width)) continue
+				const sheetRow = probes[index]
+				matches.push({ ...candidate, sheetRow, a1: `A${sheetRow}:${indexToColumnLetters(input.width - 1)}${sheetRow}`, exactVerified: true })
+				offset = advanceLocator(offset, candidate.exportRow, sheetRow)
+				minRow = sheetRow + 1
+				located = true
+				break
+			}
 		}
-		scannedRows += exactRows.length
 	}
-	return { ok: true, matches, scannedRows, complete: unmatched.length === 0, reason: unmatched.length === 0 ? 'found' : 'max-row' }
+	return { ok: true, matches, scannedRows, complete: true, reason: 'found' }
 }
 
-async function fetchExactRowInPage(spreadsheetId: string, gid: string, row: number, lastColumn: number): Promise<string[]> {
+async function locateCellsInPage(input: {
+	gid: string
+	startRow: number
+	maxRow: number
+	firstColumn?: number
+	lastColumn: number
+	needle: string
+	columnIndex: number | null
+	ignoreCase: boolean
+	limit: number
+	candidates: Array<{ exportRow: number; exportColumn: number }>
+	deadlineMs: number
+	batchSize?: number
+}): Promise<ExactLocatorResult<ExactCellMatch>> {
+	const spreadsheetId = getSpreadsheetId()
+	const deadlineAt = Date.now() + input.deadlineMs
+	const batchSize = Math.min(25, Math.max(1, input.batchSize ?? 10))
+	// One export row can hold several matching cells; locate the row once and emit every cell in it.
+	const exportRows = [...new Set(input.candidates.map((candidate) => candidate.exportRow))].sort((left, right) => left - right)
+	const start = input.columnIndex ?? input.firstColumn ?? 0
+	const end = input.columnIndex ?? input.lastColumn
+	const matches: ExactCellMatch[] = []
+	let scannedRows = 0
+	let offset = 0
+	let minRow = input.startRow
+	for (const exportRow of exportRows) {
+		let probed = 0
+		let located = false
+		while (!located) {
+			if (Date.now() >= deadlineAt) return { ok: true, matches, scannedRows, complete: false, reason: 'deadline' }
+			const probes = planLocatorProbes({ exportRow, offset, probed, minRow, maxRow: input.maxRow, batchSize })
+			if (probes.length === 0) return { ok: true, matches, scannedRows, complete: false, reason: 'max-row' }
+			const rows = await Promise.all(probes.map((row) => fetchExactRowInPage(spreadsheetId, input.gid, row, input.lastColumn, deadlineAt)))
+			scannedRows += rows.length
+			probed += rows.length
+			for (let index = 0; index < rows.length; index++) {
+				if (!rowContainsNeedle(rows[index], input.needle, start, end, input.ignoreCase)) continue
+				const sheetRow = probes[index]
+				for (let column = start; column <= end; column++) {
+					const value = rows[index][column] ?? ''
+					if (!(input.ignoreCase ? value.toLocaleLowerCase() : value).includes(input.needle)) continue
+					matches.push({ sheetRow, column: column + 1, a1: `${indexToColumnLetters(column)}${sheetRow}`, value, exactVerified: true })
+					if (matches.length >= input.limit) return { ok: true, matches, scannedRows, complete: true, reason: 'found' }
+				}
+				offset = advanceLocator(offset, exportRow, sheetRow)
+				minRow = sheetRow + 1
+				located = true
+				break
+			}
+		}
+	}
+	return { ok: true, matches, scannedRows, complete: true, reason: 'found' }
+}
+
+/**
+ * Read one exact physical row through the authenticated gviz export.
+ *
+ * Retries throttling and server errors on the shared backoff; anything else, or a spent backoff,
+ * throws so the locator fails closed instead of treating a missing row as a non-match.
+ */
+async function fetchExactRowInPage(spreadsheetId: string, gid: string, row: number, lastColumn: number, deadlineAt: number): Promise<string[]> {
 	const range = `A${row}:${indexToColumnLetters(Math.max(0, lastColumn))}${row}`
 	const params = new URLSearchParams({ tqx: 'out:csv', gid, range })
-	const response = await fetch(`${location.origin}/spreadsheets/d/${spreadsheetId}/gviz/tq?${params.toString()}`, { credentials: 'include' })
-	const csv = await response.text()
-	if (!response.ok) throw new Error(`Exact row read failed for ${range}: HTTP ${response.status} ${csv.slice(0, 120)}`)
-	return parseCsvInPage(csv)[0] ?? []
+	const url = `${location.origin}/spreadsheets/d/${spreadsheetId}/gviz/tq?${params.toString()}`
+	for (let attempt = 0; ; attempt++) {
+		const response = await fetch(url, { credentials: 'include' })
+		const csv = await response.text()
+		if (response.ok) return parseCsvInPage(csv)[0] ?? []
+		const backoff = response.status === 429 || response.status >= 500 ? retryDelaysMs(attempt) : null
+		if (backoff === null || Date.now() + backoff >= deadlineAt) {
+			throw new Error(`Exact row read failed for ${range}: HTTP ${response.status} ${csv.slice(0, 120)}`)
+		}
+		await delay(backoff)
+	}
 }
 
 function exactRowsEqual(actual: string[], expected: string[], width: number): boolean {
 	for (let column = 0; column < width; column++) if ((actual[column] ?? '') !== (expected[column] ?? '')) return false
 	return true
+}
+
+function rowContainsNeedle(actual: string[], needle: string, start: number, end: number, ignoreCase: boolean): boolean {
+	for (let column = start; column <= end; column++) {
+		const value = actual[column] ?? ''
+		if ((ignoreCase ? value.toLocaleLowerCase() : value).includes(needle)) return true
+	}
+	return false
 }

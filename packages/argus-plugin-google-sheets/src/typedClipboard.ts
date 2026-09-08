@@ -10,24 +10,33 @@ export const buildTypedClipboardPayload = (values: readonly (readonly CellValue[
 	}
 	if (values.every((row) => row.every((value) => value === null))) throw new Error('All-null input must use native clear, not the clipboard.')
 	const text = values.map((row) => row.map(plainCell).join('\t')).join('\n')
-	const html = `<table>${values.map((row) => `<tr>${row.map(htmlCell).join('')}</tr>`).join('')}</table>`
+	const rows = values.map((row) => `<tr>${row.map(htmlCell).join('')}</tr>`).join('')
+	// Sheets only honours `data-sheets-value` inside its own copy envelope. Without the wrapper it
+	// re-parses the visible text instead, so "123", "0123" and "TRUE" silently become number/boolean.
+	const html = `<google-sheets-html-origin><table data-sheets-root="1">${rows}</table></google-sheets-html-origin>`
 	return { text, html, rows: values.length, columns: values[0].length }
 }
 
+/**
+ * The `text/plain` fallback, used only if Sheets ever ignores the HTML flavour.
+ *
+ * It cannot express types, so text keeps its apostrophe prefix and everything else is stringified.
+ * A locale that renders `1.5` as text instead of a number shows up as a verification mismatch rather
+ * than as silently wrong data.
+ */
 const plainCell = (value: CellValue): string => {
 	if (value === null) return ''
 	if (typeof value === 'object') return value.formula.replace(/\r?\n/g, ' ')
 	if (typeof value === 'string') return `'${value.replace(/\r?\n/g, ' ')}`
-	if (typeof value === 'number' && !Number.isInteger(value)) return exactNumberFormula(value)
 	return String(value)
 }
+
 const htmlCell = (value: CellValue): string => {
 	if (value === null) return '<td></td>'
-	if (typeof value === 'object') return `<td data-sheets-formula="${escapeHtml(value.formula)}">${escapeHtml(value.formula)}</td>`
-	if (typeof value === 'number' && !Number.isInteger(value)) {
-		const formula = exactNumberFormula(value)
-		return `<td data-sheets-formula="${escapeHtml(formula)}">${escapeHtml(formula)}</td>`
-	}
+	// A formula is the one thing the envelope does NOT take from an attribute: inside the wrapper
+	// `data-sheets-formula` is parsed as R1C1 (that is what a Sheets copy emits), so an A1 source there
+	// stores as `#ERROR!`. The visible cell text is parsed as A1 in the document locale instead.
+	if (typeof value === 'object') return `<td>${escapeHtml(value.formula)}</td>`
 	const sheetsValue = buildSheetsValue(value)
 	return `<td data-sheets-value="${escapeHtml(JSON.stringify(sheetsValue))}">${escapeHtml(String(value))}</td>`
 }
@@ -38,13 +47,4 @@ const buildSheetsValue = (value: string | number | boolean): Record<number, stri
 	return { 1: 2, 2: value.replace(/\r?\n/g, ' ') }
 }
 
-const exactNumberFormula = (value: number): string => {
-	const [mantissa, exponentText] = Math.abs(value).toString().toLowerCase().split('e')
-	const exponent = Number(exponentText ?? 0)
-	const [integer, fraction = ''] = mantissa.split('.')
-	const digits = `${integer}${fraction}`.replace(/^0+(?=\d)/, '')
-	const scale = fraction.length - exponent
-	const sign = value < 0 ? '-' : ''
-	return scale > 0 ? `=${sign}${digits}/${`1${'0'.repeat(scale)}`}` : `=${sign}${digits}${'0'.repeat(-scale)}`
-}
 const escapeHtml = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')

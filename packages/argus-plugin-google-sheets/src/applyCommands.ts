@@ -4,17 +4,24 @@ import { resolve } from 'node:path'
 import type { ArgusPluginContextV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 import { a1ForOffset } from './a1.js'
-import { planSheetManifest, type ApplyPlan, type ApplyPlannerAdapter, type PlannedApplyStep, type PlannedSheetTarget } from './applyPlanner.js'
+import {
+	expectationFormulaPredicate,
+	planSheetManifest,
+	type ApplyPlan,
+	type ApplyPlannerAdapter,
+	type PlannedApplyStep,
+	type PlannedSheetTarget,
+} from './applyPlanner.js'
 import { mutateDimensionOnce } from './dimensionCommands.js'
 import { parseCsv } from './csv.js'
 import { buildLocateRowsExpression, type ExactLocatorResult, type ExactRowMatch } from './locatorPageScripts.js'
 import { parseSheetManifest, type SheetManifest, type SheetManifestOperation } from './manifest.js'
-import { readTypedMatrixFromClipboard } from './rawCellValues.js'
+import { readTypedMatrix } from './rawCellValues.js'
 import { buildSheetSchema } from './schema.js'
 import { buildReadCsvExpression, type SheetCsvResult } from './sheetDataPageScripts.js'
 import { evalInWatcher, renewSheetLease, runSheetCommand, switchSheetTarget, type Output, withSheetLease } from './sheetCommandUtils.js'
 import { clearTypedRange, setTypedRange, type TypedMutationResult } from './typedMutationRuntime.js'
-import { compareTypedMatrix, shiftedRawValueMatches, type RawCellValue } from './typedValues.js'
+import { blankRawValue, compareTypedMatrix, rawToCellValues, shiftedRawValueMatches, type RawCellValue } from './typedValues.js'
 import { formatError } from '@vforsh/argus-core'
 
 type ApplyOptions = {
@@ -135,9 +142,9 @@ const createPlannerAdapter = (ctx: ArgusPluginContextV1, id: string | undefined,
 			throw new Error(`Exact semantic locator was incomplete (${result?.reason ?? 'transport failure'}); no mutation started.`)
 		return new Map(result.matches.map((match) => [match.exportRow, match.sheetRow]))
 	},
-	readRaw: async (target, range, rows, columns) => {
+	readRaw: async (target, range, rows, columns, resolveFormulaSources) => {
 		if (!(await switchSheetTarget(ctx, id, target.name, output))) throw new Error(`Could not activate ${target.name} for raw precondition.`)
-		const result = await readTypedMatrixFromClipboard(ctx, id, output, { range, rows, columns })
+		const result = await readTypedMatrix(ctx, id, output, { range, rows, columns, resolveFormulaSources })
 		if (!result) throw new Error(`Raw Sheets copy precondition read failed for ${target.name}!${range}.`)
 		return result
 	},
@@ -222,8 +229,8 @@ const captureAttemptedState = async (adapter: ApplyPlannerAdapter, step: Planned
 	try {
 		const rows = step.before.length || step.after.length
 		const columns = step.before[0]?.length || step.after[0]?.length
-		const current = await adapter.readRaw(step.target, step.range, rows, columns)
-		return { ...step, after: current.map((row) => row.map((cell) => (cell.formula ? { formula: cell.formula } : cell.value))) }
+		const current = await adapter.readRaw(step.target, step.range, rows, columns, 'all')
+		return { ...step, after: rawToCellValues(current, step.range) }
 	} catch {
 		return step
 	}
@@ -231,7 +238,7 @@ const captureAttemptedState = async (adapter: ApplyPlannerAdapter, step: Planned
 
 const recheckStep = async (adapter: ApplyPlannerAdapter, step: PlannedApplyStep): Promise<void> => {
 	if (step.before.length === 0) return
-	const actual = await adapter.readRaw(step.target, step.range, step.before.length, step.before[0].length)
+	const actual = await adapter.readRaw(step.target, step.range, step.before.length, step.before[0].length, expectationFormulaPredicate(step.before))
 	const mismatches = compareTypedMatrix(step.range, actual, step.before)
 	if (mismatches.length > 0) throw new Error(`State changed after preflight at ${mismatches[0].a1}; refusing operation ${step.operationIndex}.`)
 }
@@ -267,12 +274,14 @@ const executeStep = async (
 
 const verifyStepAfter = async (adapter: ApplyPlannerAdapter, step: PlannedApplyStep): Promise<void> => {
 	if (step.after.length > 0) {
-		const actual = await adapter.readRaw(step.target, step.range, step.after.length, step.after[0].length)
+		const predicate = expectationFormulaPredicate(step.after)
+		const actual = await adapter.readRaw(step.target, step.range, step.after.length, step.after[0].length, predicate)
 		const mismatches = compareTypedMatrix(step.range, actual, step.after)
 		if (mismatches.length > 0) throw new Error(`Typed readback failed at ${mismatches[0].a1}: ${mismatches[0].reason}.`)
 	}
 	if (step.following) {
-		const actual = await adapter.readRaw(step.target, step.following.range, step.following.before.length, step.following.before[0].length)
+		// Sheets rewrites A1 references during a shift, so the check compares presence, not source text.
+		const actual = await adapter.readRaw(step.target, step.following.range, step.following.before.length, step.following.before[0].length, 'none')
 		const mismatch = firstShiftMismatch(step.following.range, actual, step.following.before)
 		if (mismatch) throw new Error(`Structural shift verification failed at ${mismatch}.`)
 	}
@@ -282,7 +291,7 @@ const firstShiftMismatch = (range: string, actual: RawCellValue[][], expected: R
 	for (let row = 0; row < expected.length; row++) {
 		for (let column = 0; column < expected[row].length; column++) {
 			const before = expected[row][column]
-			const after = actual[row]?.[column] ?? { value: null, formatted: null }
+			const after = actual[row]?.[column] ?? blankRawValue()
 			if (!shiftedRawValueMatches(after, before)) return a1ForOffset(range, row, column)
 		}
 	}

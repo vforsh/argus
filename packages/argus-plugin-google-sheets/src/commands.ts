@@ -390,7 +390,7 @@ const locateExactCells = async (
 	id: string | undefined,
 	output: Output,
 	input: {
-		candidates: unknown[]
+		candidates: Array<{ exportRow: number; exportColumn: number }>
 		data: { targetGid: string }
 		needle: string
 		columnIndex: number | null
@@ -421,7 +421,7 @@ const locateExactCells = async (
 			columnIndex: input.columnIndex,
 			ignoreCase: input.ignoreCase,
 			limit: input.limit,
-			expectedMatches: input.candidates.length,
+			candidates: input.candidates.map(({ exportRow, exportColumn }) => ({ exportRow, exportColumn })),
 			deadlineMs: internalDeadline,
 		}),
 		output,

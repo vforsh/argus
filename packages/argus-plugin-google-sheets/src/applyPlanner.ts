@@ -2,7 +2,8 @@ import { expandA1RangeForShape, formatA1Cell, indexToColumnLetters, parseA1Cell 
 import { hashManifestSnapshot, type SheetManifest, type SheetManifestOperation } from './manifest.js'
 import { findExportHeaderIndex, queryExportRows, type ExportRowCandidate } from './queryModel.js'
 import { resolveHeader, type SheetSchema } from './schema.js'
-import { compareTypedMatrix, type CellValue, type RawCellValue, type TypedMismatch } from './typedValues.js'
+import type { FormulaSourceResolution } from './rawCellValues.js'
+import { compareTypedMatrix, rawToCellValues, type CellValue, type RawCellValue, type TypedMismatch } from './typedValues.js'
 
 /** Concrete sheet target resolved during preflight. */
 export type PlannedSheetTarget = { name: string; gid: string; url: string }
@@ -13,8 +14,27 @@ export type ApplyPlannerAdapter = {
 	readSchema: (target: PlannedSheetTarget, headerRow: number) => Promise<SheetSchema>
 	readExport: (target: PlannedSheetTarget) => Promise<string[][]>
 	locateRows: (target: PlannedSheetTarget, headerRow: number, width: number, candidates: ExportRowCandidate[]) => Promise<Map<number, number>>
-	readRaw: (target: PlannedSheetTarget, range: string, rows: number, columns: number) => Promise<RawCellValue[][]>
+	readRaw: (
+		target: PlannedSheetTarget,
+		range: string,
+		rows: number,
+		columns: number,
+		resolveFormulaSources?: FormulaSourceResolution,
+	) => Promise<RawCellValue[][]>
 }
+
+/**
+ * Formula sources are only worth reading where the expectation is itself a formula.
+ *
+ * A scalar expectation against a formula cell already fails on `hasFormula`, so paying two extra
+ * round trips to fetch a source nobody compares would be waste.
+ */
+export const expectationFormulaPredicate =
+	(expected: readonly (readonly CellValue[])[]) =>
+	(row: number, column: number): boolean => {
+		const value = expected[row]?.[column]
+		return typeof value === 'object' && value !== null
+	}
 
 /** One concrete, precondition-checked sequential mutation step. */
 export type PlannedApplyStep = {
@@ -90,7 +110,8 @@ export const planSheetManifest = async (manifest: SheetManifest, adapter: ApplyP
 			const range = `A${operation.row}:${indexToColumnLetters(lastColumn)}${operation.row + operation.count - 1}`
 			await requireExpected(adapter, target, range, operation.expect, index)
 			const followingRange = `A${operation.row + operation.count}:${indexToColumnLetters(lastColumn)}${operation.row + operation.count * 2 - 1}`
-			const following = await adapter.readRaw(target, followingRange, operation.count, lastColumn + 1)
+			// A recorded state has no expectation to compare against, so every formula source is needed.
+			const following = await adapter.readRaw(target, followingRange, operation.count, lastColumn + 1, 'all')
 			steps.push({
 				operationIndex: index,
 				op: 'deleteRows',
@@ -195,8 +216,8 @@ const planInsertRows = async (
 	const row = anchorRow + 1
 	const width = operation.rows[0].length
 	const followingRange = `A${row}:${indexToColumnLetters(width - 1)}${row + operation.rows.length - 1}`
-	const beforeRaw = await adapter.readRaw(target, followingRange, operation.rows.length, width)
-	const before = rawToCellValues(beforeRaw)
+	const beforeRaw = await adapter.readRaw(target, followingRange, operation.rows.length, width, 'all')
+	const before = rawToCellValues(beforeRaw, followingRange)
 	return {
 		operationIndex,
 		op: 'insertRows',
@@ -221,7 +242,7 @@ const requireExpected = async (
 	expected: CellValue[][],
 	operationIndex: number,
 ): Promise<void> => {
-	const actual = await adapter.readRaw(target, range, expected.length, expected[0].length)
+	const actual = await adapter.readRaw(target, range, expected.length, expected[0].length, expectationFormulaPredicate(expected))
 	const mismatches = compareTypedMatrix(range, actual, expected)
 	if (mismatches.length > 0) throw preconditionError(operationIndex, mismatches)
 }
@@ -264,5 +285,3 @@ const sortA1Cells = (values: string[]): string[] =>
 		return a.row - b.row || a.column - b.column
 	})
 const nullMatrix = (rows: number, columns: number): CellValue[][] => Array.from({ length: rows }, () => Array<CellValue>(columns).fill(null))
-const rawToCellValues = (rows: RawCellValue[][]): CellValue[][] =>
-	rows.map((row) => row.map((cell) => (cell.formula ? { formula: cell.formula } : cell.value)))
