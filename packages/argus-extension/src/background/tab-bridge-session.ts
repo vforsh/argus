@@ -83,7 +83,15 @@ export class TabBridgeSession {
 		}
 		await this.awaitLatch(this.hostReady, 'did not become ready')
 		await this.awaitLatch(this.watcherInfoReceived, 'did not report watcher info')
+		this.assertOpen()
+		if (!this.bridgeClient.isConnected()) throw new Error(`Native host disconnected for tab ${this.tabId}`)
 		await this.cdpProxy.attachTab(this.tabId)
+		// The host can disappear while Chrome initializes the debugger. Never leave
+		// that newly acquired attachment alive without a consumer.
+		if (this.disposed || !this.bridgeClient.isConnected()) {
+			await this.cdpProxy.detachTab(this.tabId)
+			throw new Error(`Native host disconnected while attaching tab ${this.tabId}`)
+		}
 	}
 
 	async detach(): Promise<void> {

@@ -4,8 +4,9 @@
  * and answers popup messages (see `popup-protocol.ts` for the message shapes).
  */
 
+import { TabAttachments } from './tab-attachments.js'
 import { DebuggerManager } from './debugger-manager.js'
-import { TabBridgeSession, type TabBridgeSessionOptions } from './tab-bridge-session.js'
+import type { TabBridgeSession, TabBridgeSessionOptions } from './tab-bridge-session.js'
 import { ControlBridgeSession, type TabActionResult } from './control-bridge-session.js'
 import { type RememberedTargetSelection, TargetSelectionHistoryStore, matchRememberedIframeTarget } from './target-selection-history.js'
 import { TargetVisibilityHistoryStore, matchesHiddenTarget } from './target-visibility-history.js'
@@ -46,23 +47,16 @@ const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
 		recordEvent('error', 'bridge', 'Control native host disconnected')
 	},
 })
-/**
- * Everything the extension knows about one attached tab.
- *
- * This used to be three tabId-keyed maps plus DebuggerManager.attached, reconciled by a
- * sweep that ran on every popup message because the maps drifted. One record per tab
- * means attach, detach, and prune are single-map operations and a multi-step transition
- * cannot leave half of the state behind.
- */
-type TabAttachment = {
-	session: TabBridgeSession
-	/** Selected frame, or `null` for the page. Absent until a target is chosen. */
-	selectedFrameId?: string | null
-	/** A remembered iframe still waiting for Chrome to populate its frame metadata. */
-	pendingRememberedTarget?: RememberedTargetSelection
-}
-
-const attachments = new Map<number, TabAttachment>()
+const tabAttachments = new TabAttachments(debuggerManager, {
+	onWatcherInfo: (info, tabId) => recordEvent('info', 'bridge', `Watcher ready for tab ${tabId}: ${info.watcherId} (pid ${info.pid})`),
+	onTargetInfo: (info) => syncSelectedFrameFromWatcher(info.targetId),
+	onDisconnect: (tabId) => {
+		recordEvent('error', 'bridge', `Native host disconnected for tab ${tabId}`)
+		void syncActionBadge(debuggerManager)
+	},
+	onError: (error) => recordEvent('error', 'bridge', formatError(error)),
+})
+const attachments = tabAttachments.records
 
 /**
  * Live view over the attached tabs' sessions.
@@ -143,7 +137,7 @@ ensureControlBridgeSession()
 
 async function attachTabFromControl(tabId: number, options: TabBridgeSessionOptions = {}): Promise<TabActionResult> {
 	try {
-		const session = await attachBridgeSession(tabId, options)
+		const session = await tabAttachments.attach(tabId, options)
 		setSelectedFrame(tabId, null)
 		await prepareRememberedTargetSelection(tabId)
 		recordEvent('info', 'bridge', `Control attached tab ${tabId}`)
@@ -162,7 +156,7 @@ async function attachTabFromControl(tabId: number, options: TabBridgeSessionOpti
 
 async function detachTabFromControl(tabId: number): Promise<TabActionResult> {
 	try {
-		await detachTab(tabId)
+		await tabAttachments.detach(tabId)
 		recordEvent('info', 'bridge', `Control detached tab ${tabId}`)
 		void syncActionBadge(debuggerManager)
 
@@ -191,7 +185,7 @@ async function dispatchPopupAction(message: PopupActionMessage): Promise<PopupRe
 
 			case 'attach': {
 				const { tabId } = message
-				await attachBridgeSession(tabId)
+				await tabAttachments.attach(tabId)
 				setSelectedFrame(tabId, null)
 				await prepareRememberedTargetSelection(tabId)
 				recordEvent('info', 'popup', `Attached tab ${tabId}`)
@@ -200,7 +194,7 @@ async function dispatchPopupAction(message: PopupActionMessage): Promise<PopupRe
 
 			case 'detach': {
 				const { tabId } = message
-				await detachTab(tabId)
+				await tabAttachments.detach(tabId)
 				recordEvent('info', 'popup', `Detached tab ${tabId}`)
 				return { success: true }
 			}
@@ -263,48 +257,6 @@ async function dispatchPopupAction(message: PopupActionMessage): Promise<PopupRe
 	}
 }
 
-async function attachBridgeSession(tabId: number, options: TabBridgeSessionOptions = {}): Promise<TabBridgeSession> {
-	const existing = bridgeSessions.get(tabId)
-	if (existing) {
-		await connectBridgeSession(tabId, existing)
-		return existing
-	}
-
-	const session = new TabBridgeSession(
-		tabId,
-		debuggerManager,
-		{
-			onWatcherInfo: (info) => {
-				recordEvent('info', 'bridge', `Watcher ready for tab ${tabId}: ${info.watcherId} (pid ${info.pid})`)
-			},
-			onTargetInfo: (info) => {
-				syncSelectedFrameFromWatcher(info.targetId)
-			},
-			onDisconnect: () => {
-				recordEvent('error', 'bridge', `Native host disconnected for tab ${tabId}`)
-				void debuggerManager.detach(tabId).catch(() => {})
-				clearTabState(tabId)
-				void syncActionBadge(debuggerManager)
-			},
-		},
-		options,
-	)
-	attachments.set(tabId, { session })
-	await connectBridgeSession(tabId, session)
-	return session
-}
-
-async function detachTab(tabId: number): Promise<void> {
-	const session = bridgeSessions.get(tabId)
-	if (session) {
-		await session.detach()
-	} else {
-		await debuggerManager.detach(tabId)
-	}
-
-	clearTabState(tabId)
-}
-
 /**
  * Activating the tab is not enough when it lives in a background window, so explicitly focus the host window too.
  */
@@ -314,17 +266,8 @@ async function focusTab(tabId: number): Promise<void> {
 	await chrome.windows.update(tab.windowId, { focused: true })
 }
 
-async function connectBridgeSession(tabId: number, session: TabBridgeSession): Promise<void> {
-	try {
-		await session.connectAndAttach()
-	} catch (error) {
-		destroyBridgeSession(tabId)
-		throw error
-	}
-}
-
 function clearTabState(tabId: number): void {
-	destroyBridgeSession(tabId)
+	tabAttachments.forget(tabId)
 }
 
 /**
@@ -341,16 +284,6 @@ function pruneStaleBridgeSessions(): void {
 		clearTabState(tabId)
 		recordEvent('error', 'bridge', `Pruned stale watcher state for tab ${tabId}`)
 	}
-}
-
-function destroyBridgeSession(tabId: number): void {
-	const attachment = attachments.get(tabId)
-	if (!attachment) {
-		return
-	}
-
-	attachments.delete(tabId)
-	attachment.session.dispose()
 }
 
 function buildPopupStatusPayload(): PopupStatusPayload {

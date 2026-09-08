@@ -10,6 +10,8 @@
  * which the bridge serializes into a `frame_snapshot` message.
  */
 
+import { attachDebugger, detachDebugger } from './debugger-connection.js'
+import { TabOperationQueue } from './tab-operation-queue.js'
 import type { FrameSnapshotReason } from '../types/messages.js'
 import {
 	applyFrameEvent,
@@ -61,6 +63,7 @@ export type FrameSnapshotPayload = {
 }
 
 export class DebuggerManager {
+	private readonly operations = new TabOperationQueue()
 	private attached = new Map<number, AttachedTarget>()
 	private eventHandlers = new Set<CdpEventHandler>()
 	private detachHandlers = new Set<DebuggerDetachHandler>()
@@ -115,46 +118,52 @@ export class DebuggerManager {
 		}
 	}
 
-	async attach(tabId: number): Promise<AttachedTarget> {
+	attach(tabId: number): Promise<AttachedTarget> {
+		return this.operations.run(tabId, () => this.attachTarget(tabId))
+	}
+
+	private async attachTarget(tabId: number): Promise<AttachedTarget> {
 		if (this.attached.has(tabId)) {
 			return this.attached.get(tabId)!
 		}
 
 		const debuggee: chrome.debugger.Debuggee = { tabId }
-		await chrome.debugger.attach(debuggee, '1.3')
+		await attachDebugger(tabId)
+		try {
+			const tab = await chrome.tabs.get(tabId)
+			const target: AttachedTarget = {
+				tabId,
+				debuggeeId: debuggee,
+				url: tab.url ?? '',
+				title: tab.title ?? '',
+				faviconUrl: tab.favIconUrl,
+				attachedAt: Date.now(),
+				enabledDomains: new Set(),
+				childSessions: new Map(),
+				frames: new Map(),
+				topFrameId: null,
+			}
 
-		const tab = await chrome.tabs.get(tabId)
-		const target: AttachedTarget = {
-			tabId,
-			debuggeeId: debuggee,
-			url: tab.url ?? '',
-			title: tab.title ?? '',
-			faviconUrl: tab.favIconUrl,
-			attachedAt: Date.now(),
-			enabledDomains: new Set(),
-			childSessions: new Map(),
-			frames: new Map(),
-			topFrameId: null,
+			this.attached.set(tabId, target)
+			await this.configureAutoAttach(tabId)
+			await this.refreshFrameTree(tabId, null)
+			// The initial table travels inside tab_attached; prime the publish cache so the
+			// first post-attach resync only publishes when something actually changed.
+			this.lastPublishedFrames.set(tabId, serializeFrameTable(target))
+			return target
+		} catch (error) {
+			await this.releaseTarget(tabId)
+			throw error
 		}
-
-		this.attached.set(tabId, target)
-		await this.configureAutoAttach(tabId)
-		await this.refreshFrameTree(tabId, null)
-		// The initial table travels inside tab_attached; prime the publish cache so the
-		// first post-attach resync only publishes when something actually changed.
-		this.lastPublishedFrames.set(tabId, serializeFrameTable(target))
-		return target
 	}
 
-	async detach(tabId: number): Promise<void> {
-		const target = this.attached.get(tabId)
-		if (!target) return
+	detach(tabId: number): Promise<void> {
+		return this.operations.run(tabId, () => this.releaseTarget(tabId))
+	}
 
-		try {
-			await chrome.debugger.detach(target.debuggeeId)
-		} catch {
-			// Tab may already be closed
-		}
+	private async releaseTarget(tabId: number): Promise<void> {
+		await detachDebugger(tabId)
+		this.clearAllFrameTreeSync(tabId)
 		this.attached.delete(tabId)
 		this.lastPublishedFrames.delete(tabId)
 	}

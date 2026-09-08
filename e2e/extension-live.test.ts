@@ -75,6 +75,28 @@ const selectIframeByUrl = async (urlSubstring: string): Promise<void> => {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 liveTest(
+	'0: recovers a real Argus-owned debugger absent from extension bookkeeping',
+	async () => {
+		const tabId = await harness.evaluateInExtension<number>(`(async () => {
+			const tab = (await chrome.tabs.query({})).find(t => t.url.includes(${JSON.stringify(harness.pageUrlSubstring)}));
+			await chrome.debugger.attach({tabId: tab.id}, '1.3');
+			await chrome.debugger.sendCommand({tabId: tab.id}, 'Target.setAutoAttach', {
+				autoAttach: true, waitForDebuggerOnStart: false, flatten: true,
+				filter: [{type: 'iframe', exclude: false}]
+			});
+			return tab.id;
+		})()`)
+		const tabs = await harness.cliJson<{ tabs: Array<{ tabId: number; attached: boolean }> }>('ext', 'tabs', '--json')
+		expect(tabs.tabs.find((tab) => tab.tabId === tabId)?.attached).toBe(false)
+		const attached = await harness.cli('ext', 'attach', '--tab', String(tabId), '--as', WATCHER_ID, '--json')
+		expect(attached.code).toBe(0)
+		await waitForEval('location.href', (value) => typeof value === 'string' && value.includes(harness.pageUrlSubstring))
+		// Subsequent cases verify that existing same-origin and OOPIF frames were rediscovered.
+	},
+	STEP_TIMEOUT_MS,
+)
+
+liveTest(
 	'A: attaching by URL creates a tab watcher whose eval hits the top page',
 	async () => {
 		const use = await harness.cli('ext', 'use', '--url', harness.pageUrlSubstring, '--as', WATCHER_ID, '--json')

@@ -13,6 +13,26 @@ it('propagates Chrome attachment failures through popup/control, cleans only fai
 	const harness = installChromeMock()
 	const { bridgeSessions, debuggerManager } = await import('../src/background/service-worker.js')
 	try {
+		// Popup and CLI requests for one tab must share a single initialized native host.
+		const simultaneous = await Promise.all([
+			harness.popup({ action: 'attach', tabId: 4 }),
+			harness.control({ type: 'attach_tab_watcher', requestId: 4, tabId: 4 }),
+		])
+		expect(simultaneous[0]).toEqual({ success: true })
+		expect(simultaneous[1]).toMatchObject({ ok: true })
+		expect(harness.ports.filter((port) => port.sent.some((message) => message.type === 'init_tab_watcher'))).toHaveLength(1)
+		expect(harness.ports.flatMap((port) => port.sent).filter((message) => message.type === 'init_tab_watcher')).toHaveLength(1)
+		await harness.popup({ action: 'detach', tabId: 4 })
+
+		// A native host that exits during debugger initialization must leave no orphan.
+		harness.disconnectDuringSetup.add(4)
+		expect(await harness.popup({ action: 'attach', tabId: 4 })).toMatchObject({ success: false })
+		expect(debuggerManager.isAttached(4)).toBe(false)
+		expect(bridgeSessions.has(4)).toBe(false)
+		harness.disconnectDuringSetup.delete(4)
+		expect(await harness.popup({ action: 'attach', tabId: 4 })).toEqual({ success: true })
+		await harness.popup({ action: 'detach', tabId: 4 })
+
 		// An unrelated working session must survive both failure paths.
 		expect(await harness.popup({ action: 'attach', tabId: 3 })).toEqual({ success: true })
 		const unrelated = bridgeSessions.get(3)!
@@ -81,6 +101,7 @@ it('propagates Chrome attachment failures through popup/control, cleans only fai
 
 function installChromeMock() {
 	const conflicts = new Set<number>()
+	const disconnectDuringSetup = new Set<number>()
 	const ports: ReturnType<typeof createPort>[] = []
 	let onPopup: (message: PopupActionMessage, sender: unknown, respond: (response: PopupResponse) => void) => void = () => {}
 	const tab = (id: number) => ({ id, url: `https://example.test/${id}`, title: `Tab ${id}`, windowId: 1 })
@@ -108,16 +129,20 @@ function installChromeMock() {
 				if (conflicts.has(tabId)) throw new Error(`Another debugger is already attached to the tab with id: ${tabId}.`)
 			},
 			detach: async () => {},
-			sendCommand: async ({ tabId }: { tabId: number }, method: string) =>
-				method === 'Page.getFrameTree' ? { frameTree: { frame: { id: `root-${tabId}`, url: tab(tabId).url } } } : {},
+			sendCommand: async ({ tabId }: { tabId: number }, method: string) => {
+				if (conflicts.has(tabId)) throw new Error(`Debugger is not attached to the tab with id: ${tabId}.`)
+				if (method === 'Target.setAutoAttach' && disconnectDuringSetup.has(tabId)) ports.at(-1)!.drop()
+				return method === 'Page.getFrameTree' ? { frameTree: { frame: { id: `root-${tabId}`, url: tab(tabId).url } } } : {}
+			},
 		},
-		tabs: { get: async (id: number) => tab(id), query: async () => [tab(1), tab(2), tab(3)] },
+		tabs: { get: async (id: number) => tab(id), query: async () => [tab(1), tab(2), tab(3), tab(4)] },
 		action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
 		storage: { local: { get: (_key: string, callback: (data: unknown) => void) => callback({}) } },
 	}
 	globalThis.chrome = chromeMock as unknown as typeof chrome
 	return {
 		conflicts,
+		disconnectDuringSetup,
 		ports,
 		popup: (message: PopupActionMessage) =>
 			new Promise<PopupResponse>((resolve) => {
@@ -129,6 +154,7 @@ function installChromeMock() {
 
 function createPort(name: string) {
 	let receive: (message: AnyHostToExtension) => void = () => {}
+	let onDisconnect = () => {}
 	let response: ((message: AnyExtensionToHost) => void) | undefined
 	const port = {
 		name,
@@ -139,7 +165,15 @@ function createPort(name: string) {
 				receive = handler
 			},
 		},
-		onDisconnect: { addListener: () => {} },
+		onDisconnect: {
+			addListener: (handler: () => void) => {
+				onDisconnect = handler
+			},
+		},
+		drop: () => {
+			port.disconnected = true
+			onDisconnect()
+		},
 		disconnect: () => {
 			port.disconnected = true
 		},

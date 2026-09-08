@@ -44,6 +44,8 @@ export type ExtensionHarness = {
 	cli: (...args: string[]) => Promise<CommandResultWithExit>
 	/** Run the CLI and parse stdout as JSON, failing loudly with the full output when it isn't. */
 	cliJson: <T>(...args: string[]) => Promise<T>
+	/** Evaluate a diagnostic expression in the isolated extension service worker. */
+	evaluateInExtension: <T>(expression: string) => Promise<T>
 	close: () => Promise<void>
 }
 
@@ -110,7 +112,8 @@ export const startExtensionHarness = async (): Promise<ExtensionHarness> => {
 	const webSocketPort = await getFreePort()
 	const servers = startPlaygroundServers({ port: mainPort, crossOriginPort, webSocketPort })
 
-	const chrome = spawnChrome(chromeBin, userDataDir, servers.mainUrl)
+	const debuggingPort = await getFreePort()
+	const chrome = spawnChrome(chromeBin, userDataDir, servers.mainUrl, debuggingPort)
 
 	const cli = (...args: string[]): Promise<CommandResultWithExit> =>
 		runCommandWithExit(resolveNodeBin(), [BIN_PATH, ...args], { env: { ...process.env, ...isolationEnv } })
@@ -148,8 +151,39 @@ export const startExtensionHarness = async (): Promise<ExtensionHarness> => {
 		pageUrlSubstring: `127.0.0.1:${mainPort}`,
 		cli,
 		cliJson,
+		evaluateInExtension: <T>(expression: string) => evaluateInExtension<T>(debuggingPort, expression),
 		close,
 	}
+}
+
+/** Run one CDP evaluation without creating a debugger session on the test page. */
+async function evaluateInExtension<T>(debuggingPort: number, expression: string): Promise<T> {
+	const targets = (await fetch(`http://127.0.0.1:${debuggingPort}/json/list`).then((response) => response.json())) as Array<{
+		url: string
+		type: string
+		webSocketDebuggerUrl: string
+	}>
+	const worker = targets.find((target) => target.type === 'service_worker' && target.url.startsWith(`chrome-extension://${ARGUS_EXTENSION_ID}/`))
+	if (!worker) throw new Error('Argus extension worker not found')
+	return new Promise<T>((resolve, reject) => {
+		const socket = new WebSocket(worker.webSocketDebuggerUrl)
+		const finish = (error?: Error, value?: T) => {
+			clearTimeout(timer)
+			socket.close()
+			if (error) reject(error)
+			else resolve(value as T)
+		}
+		const timer = setTimeout(() => finish(new Error('Extension evaluation timed out')), 10_000)
+		socket.onopen = () =>
+			socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+		socket.onerror = () => finish(new Error('Extension debugger connection failed'))
+		socket.onmessage = (event) => {
+			const message = JSON.parse(String(event.data))
+			if (message.id !== 1) return
+			const error = message.error ?? message.result?.exceptionDetails
+			finish(error ? new Error(JSON.stringify(error)) : undefined, message.result?.result?.value)
+		}
+	})
 }
 
 const assertBuildArtifacts = (): void => {
@@ -178,10 +212,11 @@ const resolveNodeBin = (): string => {
 	return which
 }
 
-const spawnChrome = (chromeBin: string, userDataDir: string, startupUrl: string): ChildProcess => {
+const spawnChrome = (chromeBin: string, userDataDir: string, startupUrl: string, debuggingPort: number): ChildProcess => {
 	const headed = process.env.ARGUS_E2E_HEADED === '1'
 	const args = [
 		`--user-data-dir=${userDataDir}`,
+		`--remote-debugging-port=${debuggingPort}`,
 		`--load-extension=${EXTENSION_DIR}`,
 		`--disable-extensions-except=${EXTENSION_DIR}`,
 		'--no-first-run',

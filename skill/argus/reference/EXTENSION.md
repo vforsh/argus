@@ -34,6 +34,8 @@ argus logs extension
 argus eval extension "document.title"
 ```
 
+When Chrome retains an Argus-owned attachment after extension state is lost, attaching again verifies ownership with a CDP command and reconnects it to rebuild root and iframe sessions. Concurrent attach/detach requests are serialized per tab; failed initialization releases the acquired debugger. Other debuggers are never disconnected by recovery.
+
 Attachment failures surface Chrome's original error in both popup and CLI; no successful attachment is reported and the failed tab bridge is removed. A connected control bridge does not mean a tab is attached: `argus ext doctor --watcher <id>` flags detached, disconnected, or pending selected targets.
 
 ### Iframe Recovery

@@ -240,7 +240,7 @@ Keep these commands in the background in agent shells. See [START.md](./referenc
 
 **No extension-control watcher** — First time? Run `argus extension install`. Otherwise open/reload the extension, then run `argus ext doctor --json`.
 
-**Debugger attach rejected** — Popup and CLI return Chrome's original error; the failed session is cleaned up. Release the conflicting debugger and retry. `ext doctor --watcher <id>` checks actual target attachment/readiness separately from native bridge connectivity.
+**Debugger attach rejected** — Argus automatically reconnects stale debugger attachments that it still owns. If another debugger owns the tab, popup and CLI preserve Chrome's error; release that debugger and retry. `ext doctor --watcher <id>` checks actual target attachment/readiness separately from native bridge connectivity.
 
 **Multiple tabs matched** — Use `argus ext tabs --url <url> --json`, choose a `tabId`, then pass `--tab <tabId>`.
 
