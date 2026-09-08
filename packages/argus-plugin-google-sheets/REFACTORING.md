@@ -11,9 +11,10 @@ The typed mutation engine is implemented and tested. Any work below extends it; 
 - **Versioned manifest v1** — `setRange`, `setCells`, `clear`, `updateByKey`, `insertRowsAfter`, `deleteRows`, strict unknown-key rejection, JSON-path errors (`src/manifest.ts`).
 - **Planner with preflight** — sheet resolution, semantic row locators, sha256 state snapshot, per-step `before`/`after` rectangles (`src/applyPlanner.ts`).
 - **`sheets apply`** — `--dry-run`/`--yes` gate, page-scoped leases, immediate per-step precondition rechecks, execution journal, rollback-manifest generation (`src/applyCommands.ts`).
-- **Dual-MIME typed clipboard** — TSV fallback plus HTML with `data-sheets-value`/`data-sheets-formula`; all-null payloads rejected in favor of native clear; exact-arithmetic formulas for non-integer numbers to avoid locale paste parsing (`src/typedClipboard.ts`).
-- **Raw typed verification** — reads Google's compact-table copy MIME for raw type/value plus formula source; never verifies mutations against CSV (`src/rawCellValues.ts`).
-- **Native clears** — `clearTypedRange` dispatches native keys; empty writes never touch the clipboard (`src/typedMutationRuntime.ts`).
+- **Dual-MIME typed clipboard** — TSV fallback plus HTML inside Sheets' own `<google-sheets-html-origin>` envelope, which is the only form in which `data-sheets-value` is honoured; all-null payloads rejected in favor of native clear (`src/typedClipboard.ts`).
+- **Raw typed verification** — one rectangle copy decoded from Google's compact-table MIME (`src/compactTable.ts`), plus formula-bar sources only where an expectation is a formula; never verifies mutations against CSV (`src/rawCellValues.ts`).
+- **Native clears** — `clearTypedRange` selects the range and presses `Delete` once, then verifies with a raw rectangle read; empty writes never touch the clipboard (`src/typedMutationRuntime.ts`).
+- **Monotone locators** — export-to-physical row offsets never shrink, so a locate probes the predicted row instead of scanning from the header (`src/locatorModel.ts`, `src/locatorPageScripts.ts`).
 
 Kept as-is, explicitly: preconditions, dry-run, journal, rollback, leases, `updateByKey`/`insertRowsAfter`/`deleteRows`, bounded gid traversal. None of these are deleted or degraded by this plan.
 
@@ -21,7 +22,7 @@ Kept as-is, explicitly: preconditions, dry-run, journal, rollback, leases, `upda
 
 1. **Legacy `write`/`batch` still registered.** `src/mutationCommands.ts` (458 LOC), `src/batchInput.ts` (102), and `src/mutationPageScripts.ts` (194) keep the string/TSV path alive next to the typed engine: string-only inputs, plain-TSV sparse geometry, CSV-presentation verification. Two mutation paths, one of them unsafe — the unsafe one must go.
 2. **No lightweight typed write.** Changing one cell requires authoring a manifest file with `expect` rectangles. Agents need `sheets set` / `sheets clear` for scalar and dense-matrix cases without a manifest.
-3. **Verification is O(cells).** `readTypedMatrixFromClipboard` selects and copies every cell individually. A 5×10 verify costs 50 UI round trips; one rectangle selection copies the whole compact table at once.
+3. ~~**Verification is O(cells).**~~ Done in Phase B: one rectangle copy, three round trips regardless of size.
 4. **Newlines in text are silently munged.** Both the TSV and HTML serializers rewrite `\r?\n` to a space (`typedClipboard.ts`), so stored text differs from requested text without an error. Silent data mutation violates fail-closed.
 5. **No format-only copy.** Copying visual formatting between ranges is manual and coordinate-driven, which name-box re-scrolling makes unsafe.
 
@@ -38,7 +39,7 @@ GViz verification was considered and rejected: it adds an auth surface and wrapp
 Delete `src/mutationCommands.ts`, `src/batchInput.ts`, and `src/mutationPageScripts.ts` (~750 LOC). Untangle the two shared helpers first:
 
 - move `parseDurationMs` (imported by `commands.ts`) into `src/sheetCommandUtils.ts`;
-- move `buildVerifyClearExpression` (imported by `typedMutationRuntime.ts`) into `src/typedMutationPageScripts.ts`.
+- ~~move `buildVerifyClearExpression` (imported by `typedMutationRuntime.ts`) into `src/typedMutationPageScripts.ts`~~ — no longer needed: `clearTypedRange` verifies through the raw rectangle read, and `clearGridRange` now lives in `mutationCommands.ts` next to the legacy `clear` command that is its only caller.
 
 Register two thin frontends next to `apply` — option parsing and output formatting only, executing through the existing `setTypedRange`/`clearTypedRange`:
 
@@ -54,15 +55,17 @@ Result JSON reuses the `apply` step shape so humans and automation see one contr
 
 Exit: exactly one mutation path exists; `sheets write`/`sheets batch` are gone from registration, help, README, and skill docs.
 
-### Phase B — Batch verification via single rectangle copy
+### Phase B — Batch verification via single rectangle copy — **done**
 
-Extend `src/rawCellValues.ts` to select the whole target rectangle once, dispatch one copy, and parse every cell from the compact-table payload, replacing the per-cell loop.
+`readTypedMatrix` selects the rectangle once, dispatches one copy, and decodes every cell from the compact-table payload (`src/compactTable.ts`, fixtures in `test/fixtures/compact/`, re-recorded with `bun run capture-compact`). A 5×5 `setRange` — preflight, recheck, and verify — went from 30.7 s to ~3.6 s.
 
-- Characterize first: capture real compact-table payloads for multi-cell selections covering text, number, boolean, formula, and blank cells, including fully empty rows/columns; store sanitized fixtures under `test/fixtures/`.
-- Parse strictly against the captured schema; on any shape drift, fail closed with a clear error — no silent fallback to formatted text.
-- Formula source: confirm the multi-cell payload carries per-cell formulas. If it does not, keep per-cell reads only for formula-bearing cells and batch the rest.
+What the live capture changed about the plan:
 
-Exit: verifying an R×C rectangle costs O(1) UI round trips (plus at most one per formula cell if required), with identical mismatch reporting.
+- **Formulas in the payload are R1C1 and localized.** `=SUM(D:D)` arrives as `=СУММ(C[-2]:C[-2])`, `='Assets'!A1` as `=Assets!R[-4]C[-6]`. Converting back would need R1C1→A1 plus function-name de-localization, so we don't: the payload's per-cell has-formula flag is free, and the A1 source is read from the formula bar only for cells whose expectation is itself a formula (`FormulaSourceResolution`). `RawCellValue.formula = null` therefore means "no formula" _or_ "not read", and only `hasFormula` disambiguates.
+- **Our paste HTML was never honoured.** Without the `<google-sheets-html-origin>` wrapper Sheets ignores `data-sheets-value` and re-parses the visible text, so `"123"`, `"0123"` and `"TRUE"` were silently retyped. The typed engine only appeared correct because plain-text parsing happened to guess right for most inputs; the rectangle read surfaces it on every such write.
+- **The wrapper made the decimal trick unnecessary.** Inside the envelope `{"1":3,"3":1.5}` pastes as the number 1.5 directly, so `exactNumberFormula`, `materializeDecimalNumbers` and the platform-specific paste-values modifier are gone — four round trips and 350 ms per decimal cell. A tab inside text also survives the envelope, so no `&#9;` encoding is needed.
+- **A formula is the one value the envelope does _not_ take from an attribute.** Inside the wrapper `data-sheets-formula` is parsed as R1C1 (that is what a Sheets copy emits), so an A1 source there stores as `#ERROR!`. Formulas go in as plain cell text and are parsed as A1 in the document locale.
+- **Errors are a distinct state.** The old single-cell parser assumed structured type 3 was always boolean and threw on error cells. `CompactCell.error` now carries the label (taken from the TSV, whose codes are undocumented), and a formula expectation still matches an error cell — a formula that stores but does not evaluate verifies as written.
 
 ### Phase C — Newline fidelity (fail closed, then support)
 

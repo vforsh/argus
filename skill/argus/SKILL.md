@@ -266,9 +266,12 @@ With the Google Sheets plugin enabled, prefer targeted, coordinate-safe commands
 argus sheets resolve extension "Known sheet name" --json
 argus sheets schema extension --sheet "Known sheet name" --header-row 1 --json
 argus sheets query extension --sheet "Known sheet name" --header-row 1 --where 'id in [872,873]' --locate --json
+argus sheets read extension --sheet "Known sheet name" --range A1:E5 --typed --json
 argus sheets apply extension --file changes.json --dry-run
 argus sheets apply extension --file changes.json --yes --json
 ```
+
+Use `read --typed --range <rect>` when the cell's type matters — it reports numbers, text, booleans, errors, and formula sources from the raw copy payload instead of the locale-formatted CSV, so `1,5` is the number `1.5` and `"0123"` stays text. Formulas in manifests must use the document locale's argument separator (`;` in a Russian-locale document).
 
 Never treat whole-export row indexes as physical sheet rows: `exportRow` is only an export coordinate, while physical A1 requires exact locator verification. Prefer `resolve <name>` to `list --with-gid` on large documents. Mutations require page lease ownership, explicit old-value preconditions, mandatory typed readback, and explicit `--yes`; apply is sequential and non-atomic. Read [PLUGINS.md](./reference/PLUGINS.md) for query/diff/manifest details.
 
