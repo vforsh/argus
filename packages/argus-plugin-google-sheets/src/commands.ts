@@ -32,6 +32,7 @@ import {
 } from './pageScripts.js'
 import { evalInWatcher, resolveSheetTarget, selectRange, type Output, withSheetLease } from './sheetCommandUtils.js'
 import { readSheetCsv } from './sheetRead.js'
+import { runTypedRead } from './typedReadCommand.js'
 
 type CommonOptions = {
 	json?: boolean
@@ -56,6 +57,7 @@ type RemoveOptions = {
 type ReadOptions = CommonOptions & {
 	range?: string
 	format?: string
+	typed?: boolean
 }
 
 type FindOptions = CommonOptions & {
@@ -158,6 +160,7 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 		.option('--gid <gid>', 'Sheet gid (default: current tab gid)')
 		.option('--sheet <nameOrGidOrIndex>', 'Visible sheet name, 1-based index, or gid')
 		.option('--format <type>', 'Output format: table, tsv, csv, json (default: table)')
+		.option('--typed', 'Read raw typed cells (types, errors, formula sources) instead of CSV; requires --range')
 		.option('--json', 'Output JSON for automation')
 		.action(async (id: string | undefined, options: ReadOptions) => runRead(ctx, id, options))
 
@@ -169,8 +172,12 @@ export const registerSheetCommands = (ctx: ArgusPluginContextV1): void => {
 		.option('--gid <gid>', 'Sheet gid (default: current tab gid)')
 		.option('--sheet <nameOrGidOrIndex>', 'Visible sheet name, 1-based index, or gid')
 		.option('--format <type>', 'Output format: tsv, csv, json (default: tsv)')
+		.option('--typed', 'Read raw typed cells (types, errors, formula sources) instead of CSV; requires --range')
 		.option('--json', 'Output JSON for automation')
-		.action(async (id: string | undefined, options: ReadOptions) => runRead(ctx, id, { ...options, format: options.format ?? 'tsv' }))
+		.action(async (id: string | undefined, options: ReadOptions) =>
+			// `--typed` has no CSV to format, so it keeps the caller's `--format` rather than defaulting to tsv.
+			runRead(ctx, id, options.typed ? options : { ...options, format: options.format ?? 'tsv' }),
+		)
 
 	sheets
 		.command('find')
@@ -289,8 +296,9 @@ const runMove = (ctx: ArgusPluginContextV1, id: string | undefined, sheet: strin
 		formatHuman: (result, output) => output.writeHuman(`Moved ${formatSheetLabel(result.sheet)} to #${result.sheet.index}`),
 	})
 
-const runRead = (ctx: ArgusPluginContextV1, id: string | undefined, options: ReadOptions): Promise<void> =>
-	runSheetCommand(ctx, id, options, {
+const runRead = (ctx: ArgusPluginContextV1, id: string | undefined, options: ReadOptions): Promise<void> => {
+	if (options.typed) return runTypedRead(ctx, id, options)
+	return runSheetCommand(ctx, id, options, {
 		execute: async ({ output }) => {
 			const data = await readSheetCsv(ctx, id, options, output)
 			return data ? { data, rows: parseCsv(data.csv) } : null
@@ -304,6 +312,7 @@ const runRead = (ctx: ArgusPluginContextV1, id: string | undefined, options: Rea
 			return output.writeHuman(formatTable(rows))
 		},
 	})
+}
 
 /** Data-independent `find` flags, parsed once before the export round-trip. */
 type FindPlan = {
