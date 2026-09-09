@@ -33,6 +33,7 @@ export const chromeCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--auth-state <path>', description: 'Load a portable auth snapshot into a fresh temp Chrome profile' },
 					{ flags: '--dev-tools', description: 'Open DevTools for new tabs' },
 					{ flags: '--headless', description: 'Run Chrome in headless mode (no visible window)' },
+					{ flags: '--no-mute', description: 'Allow audio playback (Chrome is muted by default)' },
 					{ flags: '--config <path>', description: 'Path to Argus config file' },
 					jsonOption,
 				],
@@ -47,6 +48,7 @@ export const chromeCommands: readonly ArgusCommandDefinition[] = [
 					'argus chrome start --auth-state ./auth.json',
 					'argus chrome start --dev-tools',
 					'argus chrome start --headless',
+					'argus chrome start --no-mute',
 					'argus chrome start --json',
 				],
 				action: async (options, command) => {
@@ -66,10 +68,7 @@ export const chromeCommands: readonly ArgusCommandDefinition[] = [
 				name: 'ls',
 				alias: 'list',
 				description: 'List running Chrome instances with CDP enabled',
-				options: [
-					jsonOption,
-					{ flags: '--pages', description: 'List individual pages for each instance' },
-				],
+				options: [jsonOption, { flags: '--pages', description: 'List individual pages for each instance' }],
 				examples: ['argus chrome ls', 'argus chrome ls --pages', 'argus chrome ls --json --pages'],
 				action: async (options) => {
 					await runChromeList(options)

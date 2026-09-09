@@ -36,6 +36,8 @@ argus chrome start --headless
 argus chrome start --auth-state auth.json
 ```
 
+Chrome starts muted by default. Pass `--no-mute` to `argus start` or `argus chrome start` to allow audio playback.
+
 `--from-watcher` reads the URL from a registered watcher config. `--auth-state` hydrates cookies/storage into a fresh Chrome profile before opening the page.
 
 ## Watcher Start

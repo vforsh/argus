@@ -232,6 +232,8 @@ argus chrome start --url http://localhost:3000
 argus watcher start --id app --url localhost:3000 --chrome-port 9222
 ```
 
+Argus-launched Chrome is muted by default. Pass `--no-mute` to `argus start` or `argus chrome start` when audio playback is needed.
+
 Keep these commands in the background in agent shells. See [START.md](./reference/START.md) for profile modes, auth-state hydration, watcher target flags, config defaults, and programmatic watcher APIs.
 
 ---

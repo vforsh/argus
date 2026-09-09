@@ -15,6 +15,7 @@ import type { AuthStateSnapshot } from '@vforsh/argus-core'
 import { applyAuthStateSnapshotToChrome } from './chrome/authState.js'
 import { loadAuthStateSnapshot } from './auth.js'
 import { delay } from '@vforsh/argus-core'
+import { buildChromeLaunchArgs } from './chrome/launchArgs.js'
 
 export type ChromeStartOptions = {
 	url?: string
@@ -23,6 +24,7 @@ export type ChromeStartOptions = {
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
 	headless?: boolean
+	mute?: boolean
 	authState?: string
 }
 
@@ -39,6 +41,7 @@ export type LaunchChromeOptions = {
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
 	headless?: boolean
+	mute?: boolean
 	/**
 	 * Hydrate this saved auth state into the fresh profile before returning.
 	 *
@@ -73,7 +76,6 @@ type ChromeStartNotReadyResult = {
 }
 
 type ChromeStartReadyCheck = ChromeStartReadyResult | ChromeStartNotReadyResult
-
 
 const resolveChromeUserDataDir = (): string | null => {
 	if (process.env.ARGUS_CHROME_USER_DATA_DIR) {
@@ -289,21 +291,14 @@ export const launchChrome = async (options: LaunchChromeOptions): Promise<Launch
 		}
 	}
 
-	const args = [`--remote-debugging-port=${cdpPort}`]
-	if (userDataDir) {
-		args.push(`--user-data-dir=${userDataDir}`)
-		args.push('--no-first-run')
-		args.push('--no-default-browser-check')
-	}
-	if (options.devTools) {
-		args.push('--auto-open-devtools-for-tabs')
-	}
-	if (options.headless) {
-		args.push('--headless=new')
-	}
-	if (launchUrl) {
-		args.push(launchUrl)
-	}
+	const args = buildChromeLaunchArgs({
+		cdpPort,
+		userDataDir,
+		devTools: options.devTools,
+		headless: options.headless,
+		mute: options.mute,
+		launchUrl,
+	})
 
 	let chrome: ChildProcess
 	try {
@@ -445,6 +440,7 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 			profile: options.profile,
 			devTools: options.devTools,
 			headless: options.headless,
+			mute: options.mute,
 			authState: authStateSnapshot,
 		})
 	} catch (error) {

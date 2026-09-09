@@ -16,6 +16,7 @@ export type StartOptions = {
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
 	headless?: boolean
+	mute?: boolean
 	type?: string
 	origin?: string
 	target?: string
@@ -78,6 +79,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 			profile: options.profile,
 			devTools: options.devTools,
 			headless: options.headless,
+			mute: options.mute,
 			authState: authState.snapshot,
 		})
 	} catch (error) {
