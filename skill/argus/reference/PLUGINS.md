@@ -91,8 +91,8 @@ argus plugin add ./plugins/foo.js --path argus.config.json
 Use dynamic loading for local development:
 
 ```bash
-npm run build --workspace @vforsh/argus-plugin-google-sheets
-argus --plugin ./packages/argus-plugin-google-sheets/dist/index.js sheets read extension-3 --range A1:C5
+bun run --cwd ~/dev/argus-google-sheets-plugin build
+argus --plugin ~/dev/argus-google-sheets-plugin/dist/index.js sheets read extension-3 --range A1:C5
 argus --plugin gs sheets read extension-3 --range A1:C5
 ```
 
@@ -144,47 +144,12 @@ ctx.program
 
 ## Google Sheets Plugin
 
+`@vforsh/argus-plugin-google-sheets` (aliases `gsheets`, `gs`) ships as a separate package. Command reference, safety flow, and manifest schema live in its own repo (`~/dev/argus-google-sheets-plugin`): `skill/argus-sheets/SKILL.md` and the package README.
+
 ```bash
-argus --plugin ./packages/argus-plugin-google-sheets/dist/index.js plugin list
-argus sheets list extension-3
-argus sheets list extension-3 --with-gid
-argus sheets resolve extension-3 "Иконки Август" --json
-argus sheets info extension-3
-argus sheets switch extension-3 "Sheet 2"
-argus sheets open extension-3 2
-argus sheets add extension-3
-argus sheets rename extension-3 "Sheet 2" "Archive"
-argus sheets move extension-3 "Archive" 1
-argus sheets remove extension-3 "Sheet 3" --force
-argus sheets rows add extension-3 5 --count 2 --before --sheet "Sheet 2" --expect-cell 'A5=anchor'
-argus sheets rows remove extension-3 5 --count 2 --force
-argus sheets columns add extension-3 3 --after
-argus sheets columns remove extension-3 3 --force
-argus sheets read extension-3 --range A1:C5
-argus sheets read extension-3 --range A1:E5 --typed --json
-argus sheets export extension-3 --range A1:C5 --format tsv
-argus sheets find extension-3 "needle" --column ru --ignore-case
-argus sheets schema extension-3 --sheet "Sheet 2" --header-row 1 --json
-argus sheets query extension-3 --sheet "Sheet 2" --header-row 1 --where 'promoId in [872,873]' --select 'promoId,icon' --locate --json
-argus sheets diff extension-3 --sheet "Sheet 2" --against backup.csv --key promoId --columns icon
-argus sheets apply extension-3 --file changes.json --dry-run
-argus sheets apply extension-3 --file changes.json --yes --json
-argus sheets write extension-3 B12 --value "Новое значение"
+argus plugin add --global gsheets
+argus sheets --help
 ```
-
-`sheets`/`gs` works against an attached authenticated Google Sheets tab. Prefer `resolve <known-name>` over `list --with-gid` for huge documents; full traversal is guarded, internally deadline-bounded, reports progress on stderr, and restores the original tab. Multi-call UI operations hold a page-scoped lease so separate CLI processes cannot switch/select over each other.
-
-Whole-sheet GViz/CSV can collapse blank physical rows. `find` therefore returns only exact physical coordinates verified by bounded single-row reads. Query candidates always expose `exportRow`; `sheetRow`/A1 exist only after `--locate`. Read JSON keeps target sheet/gid/URL separate from browser current/restored URL.
-
-Because the export only ever drops rows, `physicalRow >= exportRow` and the gap never shrinks going down the sheet. Locators carry that offset forward and probe the row it predicts, so a locate costs about one authenticated read per candidate plus one per dropped row in between, not a scan from the header. Throttled reads (HTTP 429/5xx) retry three times before the locator fails closed; it never reports a coordinate it did not verify.
-
-`read --typed` answers from the raw Google Sheets copy payload instead of CSV: `cells[][]` carries `value`, `formatted`, `hasFormula`, `formula`, and `error`, and `values[][]` is the manifest-ready form. It requires `--range` (geometry needs a rectangle), refuses `--format csv|tsv`, and costs three round trips for the rectangle plus two per formula cell whose A1 source it reads from the formula bar.
-
-`schema` models a physical header row with normalized/duplicate/empty metadata. `query` supports equality, `in`, substring, regex, select/limit, exact-count/unique assertions, and optional exact location. `diff` validates unique keys in sheet/local CSV/TSV and reports additions/removals/changes; `--emit-plan` refuses unsafe partial plans.
-
-`apply` accepts a version-1 semantic manifest with `insertRowsAfter`, `updateByKey`, typed `setRange`, sparse `setCells`, and native `clear`. Require exactly one of `--dry-run` or `--yes`; there is no `--force` bypass. It preflights every operation before mutation, rechecks each old value, executes sequentially (never transactionally), performs mandatory typed/formula readback, and emits a journal plus rollback manifest. Each readback is one rectangle copy regardless of size, and `clear` is one `Delete` over the selection verified the same way. Formulas in a manifest must use the document locale's argument separator (`;` in a Russian-locale document), or they store as `#ERROR!`. See the package README for the manifest schema and migration notes.
-
-Legacy `write`/`batch` remain deprecated compatibility paths. Empty writes and disabled verification are rejected; mismatches exit 1 even without `--strict`.
 
 ## No Unload
 

@@ -470,26 +470,12 @@ TypeScript plugin authors should import from `@vforsh/argus-plugin-api`.
 
 ### Google Sheets plugin
 
-`@vforsh/argus-plugin-google-sheets` adds `argus sheets` / `argus gs` commands for the Google Sheets tab attached through Argus.
+`@vforsh/argus-plugin-google-sheets` adds `argus sheets` / `argus gs` commands for a Google Sheets tab attached through Argus. It ships as a separate package: [@vforsh/argus-plugin-google-sheets](https://www.npmjs.com/package/@vforsh/argus-plugin-google-sheets).
 
 ```bash
 argus plugin add --global gsheets
 argus plugin list
-argus sheets list extension-3
-argus sheets info extension-3
-argus sheets switch extension-3 "Sheet 2"
-argus sheets rename extension-3 "Sheet 2" "Archive"
-argus sheets move extension-3 "Archive" 1
-argus sheets add extension-3
-argus sheets remove extension-3 "Sheet 3" --force
-argus sheets rows add extension-3 5 --count 2 --before
-argus sheets rows remove extension-3 5 --count 2 --force
-argus sheets columns add extension-3 3 --after
-argus sheets columns remove extension-3 3 --force
-argus sheets read extension-3 --range A1:C5
-argus sheets export extension-3 --range A1:C5 --format tsv
-argus sheets find extension-3 "needle" --ignore-case
-argus sheets write extension-3 B12 --value "Новое значение"
+argus sheets --help
 ```
 
 ## Troubleshooting

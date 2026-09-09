@@ -4,7 +4,6 @@
 		{ "path": "./packages/argus-core" },
 		{ "path": "./packages/argus-watcher" },
 		{ "path": "./packages/argus-plugin-api" },
-		{ "path": "./packages/argus-plugin-google-sheets" },
 		{ "path": "./packages/argus-client" }
 	]
 }
