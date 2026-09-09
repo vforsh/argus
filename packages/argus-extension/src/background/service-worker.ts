@@ -31,7 +31,7 @@ import type {
 	PopupTarget,
 	PopupWatcherStatus,
 } from './popup-protocol.js'
-import type { ControlDiagnostics, TabInfo } from '../types/messages.js'
+import type { ControlDiagnostics, TabInfo, TabMuteResult } from '../types/messages.js'
 import { formatError } from '@vforsh/argus-core/error-message'
 
 const debuggerManager = new DebuggerManager()
@@ -41,6 +41,7 @@ const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
 	},
 	onAttachTabWatcher: attachTabFromControl,
 	onDetachTabWatcher: detachTabFromControl,
+	onSetTabMuted: setTabMutedFromControl,
 	getWatcherIdForTab,
 	getDiagnostics: buildControlDiagnostics,
 	onDisconnect: () => {
@@ -166,6 +167,21 @@ async function detachTabFromControl(tabId: number): Promise<TabActionResult> {
 		}
 
 		return { ok: true, tab }
+	} catch (error) {
+		return { ok: false, error: formatError(error) }
+	}
+}
+
+async function setTabMutedFromControl(tabId: number, muted: boolean): Promise<TabMuteResult> {
+	try {
+		await chrome.tabs.update(tabId, { muted })
+		const tab = await getTabInfo(tabId)
+		if (!tab) {
+			return { ok: false, error: `Tab ${tabId} is no longer available` }
+		}
+
+		recordEvent('info', 'bridge', `${muted ? 'Muted' : 'Unmuted'} tab ${tabId}`)
+		return { ok: true, tab, muted }
 	} catch (error) {
 		return { ok: false, error: formatError(error) }
 	}

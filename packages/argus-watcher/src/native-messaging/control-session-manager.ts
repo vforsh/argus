@@ -7,6 +7,8 @@ import type {
 	ListTabsResponseMessage,
 	TabActionResponseMessage,
 	TabInfo,
+	TabMuteResponseMessage,
+	TabMuteResult,
 } from './types.js'
 
 import { createPendingRequestTable, createRequestIdAllocator, type PendingRequestTable } from './pendingRequests.js'
@@ -22,6 +24,7 @@ export class ControlSessionManager {
 	private readonly nextRequestId = createRequestIdAllocator()
 	private readonly pendingTabsRequests = createPendingRequestTable<TabInfo[]>(CONTROL_REQUEST_DEFAULTS)
 	private readonly pendingTabActionRequests = createPendingRequestTable<TabActionResult>(CONTROL_REQUEST_DEFAULTS)
+	private readonly pendingTabMuteRequests = createPendingRequestTable<TabMuteResult>(CONTROL_REQUEST_DEFAULTS)
 	private readonly pendingStatusRequests = createPendingRequestTable<ControlDiagnostics>(CONTROL_REQUEST_DEFAULTS)
 
 	constructor(messaging: NativeMessagingHandler<ExtensionToControlHost, ControlHostToExtension>) {
@@ -48,6 +51,15 @@ export class ControlSessionManager {
 		}))
 	}
 
+	async setTabMuted(tabId: number, muted: boolean): Promise<TabMuteResult> {
+		return await this.sendRequest(this.pendingTabMuteRequests, 'Set tab mute request timed out', (requestId) => ({
+			type: 'set_tab_muted',
+			requestId,
+			tabId,
+			muted,
+		}))
+	}
+
 	async listTabs(filter?: { url?: string; title?: string }): Promise<TabInfo[]> {
 		return await this.sendRequest(this.pendingTabsRequests, 'List tabs request timed out', (requestId) => ({
 			type: 'list_tabs',
@@ -71,6 +83,9 @@ export class ControlSessionManager {
 			case 'tab_action_response':
 				this.handleTabActionResponse(message)
 				return
+			case 'tab_mute_response':
+				this.handleTabMuteResponse(message)
+				return
 			case 'control_status_response':
 				this.handleControlStatusResponse(message)
 				return
@@ -87,6 +102,14 @@ export class ControlSessionManager {
 				? { ok: true, tab: message.tab, watcherId: message.watcherId }
 				: { ok: false, error: message.error?.message ?? 'Tab action failed' }
 		this.pendingTabActionRequests.settle(message.requestId, result)
+	}
+
+	private handleTabMuteResponse(message: TabMuteResponseMessage): void {
+		const result: TabMuteResult =
+			message.ok && message.tab && message.muted !== undefined
+				? { ok: true, tab: message.tab, muted: message.muted }
+				: { ok: false, error: message.error?.message ?? 'Tab mute action failed' }
+		this.pendingTabMuteRequests.settle(message.requestId, result)
 	}
 
 	private handleControlStatusResponse(message: ControlStatusResponseMessage): void {

@@ -12,6 +12,7 @@ import { runExtensionUse } from '../../commands/extension/use.js'
 import { runExtensionDoctor } from '../../commands/extension/doctor.js'
 import { runExtensionTargets } from '../../commands/extension/targets.js'
 import { runExtensionSelect } from '../../commands/extension/select.js'
+import { runExtensionMute } from '../../commands/extension/mute.js'
 import { jsonOption } from './sharedOptions.js'
 
 const tabTargetOptions = [
@@ -245,6 +246,31 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 				},
 				action: async (id, options) => {
 					await runExtensionShow(id, options)
+				},
+			},
+			{
+				name: 'mute',
+				description: 'Mute an extension-controlled browser tab',
+				arguments: [{ flags: '[id]', description: 'Attached extension watcher id' }],
+				options: tabTargetOptions,
+				examples: ['argus ext mute app', 'argus ext mute --tab 123', 'argus ext mute --url localhost', 'argus ext mute --title Docs --json'],
+				action: async (id, options) => {
+					await runExtensionMute(id, options, true)
+				},
+			},
+			{
+				name: 'unmute',
+				description: 'Unmute an extension-controlled browser tab',
+				arguments: [{ flags: '[id]', description: 'Attached extension watcher id' }],
+				options: tabTargetOptions,
+				examples: [
+					'argus ext unmute app',
+					'argus ext unmute --tab 123',
+					'argus ext unmute --url localhost',
+					'argus ext unmute --title Docs --json',
+				],
+				action: async (id, options) => {
+					await runExtensionMute(id, options, false)
 				},
 			},
 		],

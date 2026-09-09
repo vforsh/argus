@@ -60,6 +60,16 @@ argus ext use --url "$APP_URL" --as "$WATCHER_ID" --json
 argus page url "$WATCHER_ID" --json
 ```
 
+Mute or unmute a tab by attached watcher id or without attaching it first via the usual tab selectors:
+
+```bash
+argus ext mute "$WATCHER_ID"
+argus ext mute --url "$APP_URL"
+argus ext unmute --tab <tabId>
+```
+
+The selected mute state persists like Chrome's tab mute control until another command or the user changes it.
+
 If multiple tabs match, do not guess. Run `argus ext tabs --url "$APP_URL" --json`, choose the intended `tabId`, then use:
 
 ```bash

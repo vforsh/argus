@@ -35,6 +35,17 @@ describe('ControlSessionManager', () => {
 		expect(await attached).toEqual({ ok: true, tab: tab(10, 'app'), watcherId: 'app' })
 	})
 
+	it('sets tab mute state and returns the applied value', async () => {
+		const messaging = createFakeMessaging()
+		const manager = new ControlSessionManager(messaging)
+
+		const muted = manager.setTabMuted(10, true)
+		expect(messaging.sent[0]).toEqual({ type: 'set_tab_muted', requestId: 1, tabId: 10, muted: true })
+
+		messaging.emit({ type: 'tab_mute_response', requestId: 1, ok: true, tab: tab(10), muted: true })
+		expect(await muted).toEqual({ ok: true, tab: tab(10), muted: true })
+	})
+
 	it('requests live diagnostics through the control bridge', async () => {
 		const messaging = createFakeMessaging()
 		const manager = new ControlSessionManager(messaging)

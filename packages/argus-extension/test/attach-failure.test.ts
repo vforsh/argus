@@ -22,6 +22,15 @@ it('propagates Chrome attachment failures through popup/control, cleans only fai
 		expect(simultaneous[1]).toMatchObject({ ok: true })
 		expect(harness.ports.filter((port) => port.sent.some((message) => message.type === 'init_tab_watcher'))).toHaveLength(1)
 		expect(harness.ports.flatMap((port) => port.sent).filter((message) => message.type === 'init_tab_watcher')).toHaveLength(1)
+
+		expect(await harness.control({ type: 'set_tab_muted', requestId: 5, tabId: 4, muted: true })).toMatchObject({
+			type: 'tab_mute_response',
+			requestId: 5,
+			ok: true,
+			muted: true,
+			tab: { tabId: 4, attached: true },
+		})
+		expect(harness.tabMuteUpdates).toEqual([{ tabId: 4, muted: true }])
 		await harness.popup({ action: 'detach', tabId: 4 })
 
 		// A native host that exits during debugger initialization must leave no orphan.
@@ -103,6 +112,7 @@ function installChromeMock() {
 	const conflicts = new Set<number>()
 	const disconnectDuringSetup = new Set<number>()
 	const ports: ReturnType<typeof createPort>[] = []
+	const tabMuteUpdates: Array<{ tabId: number; muted: boolean }> = []
 	let onPopup: (message: PopupActionMessage, sender: unknown, respond: (response: PopupResponse) => void) => void = () => {}
 	const tab = (id: number) => ({ id, url: `https://example.test/${id}`, title: `Tab ${id}`, windowId: 1 })
 	const chromeMock = {
@@ -135,7 +145,14 @@ function installChromeMock() {
 				return method === 'Page.getFrameTree' ? { frameTree: { frame: { id: `root-${tabId}`, url: tab(tabId).url } } } : {}
 			},
 		},
-		tabs: { get: async (id: number) => tab(id), query: async () => [tab(1), tab(2), tab(3), tab(4)] },
+		tabs: {
+			get: async (id: number) => tab(id),
+			query: async () => [tab(1), tab(2), tab(3), tab(4)],
+			update: async (tabId: number, properties: chrome.tabs.UpdateProperties) => {
+				if (properties.muted !== undefined) tabMuteUpdates.push({ tabId, muted: properties.muted })
+				return tab(tabId)
+			},
+		},
 		action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
 		storage: { local: { get: (_key: string, callback: (data: unknown) => void) => callback({}) } },
 	}
@@ -144,6 +161,7 @@ function installChromeMock() {
 		conflicts,
 		disconnectDuringSetup,
 		ports,
+		tabMuteUpdates,
 		popup: (message: PopupActionMessage) =>
 			new Promise<PopupResponse>((resolve) => {
 				onPopup(message, {}, resolve)
@@ -190,7 +208,8 @@ function createPort(name: string) {
 					protocolVersion: NATIVE_MESSAGING_PROTOCOL_VERSION,
 				})
 			}
-			if (message.type === 'tab_action_response' || message.type === 'control_status_response') response?.(message)
+			if (message.type === 'tab_action_response' || message.type === 'tab_mute_response' || message.type === 'control_status_response')
+				response?.(message)
 		},
 		request: (message: AnyHostToExtension) =>
 			new Promise<AnyExtensionToHost>((resolve) => {

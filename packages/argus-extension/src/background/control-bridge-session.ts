@@ -1,5 +1,5 @@
 import { checkHostProtocol } from './protocol-handshake.js'
-import type { ControlDiagnostics, ControlHostToExtension, ExtensionToControlHost, TabInfo } from '../types/messages.js'
+import type { ControlDiagnostics, ControlHostToExtension, ExtensionToControlHost, TabInfo, TabMuteResult } from '../types/messages.js'
 import { BridgeClient } from './bridge-client.js'
 import type { DebuggerManager } from './debugger-manager.js'
 import { CONTROL_HOST_NAME } from './native-hosts.js'
@@ -16,6 +16,7 @@ export type ControlBridgeSessionEvents = {
 	onWatcherInfo?: (info: ControlWatcherInfo) => void
 	onAttachTabWatcher?: (tabId: number, options: { watcherId?: string }) => Promise<TabActionResult>
 	onDetachTabWatcher?: (tabId: number) => Promise<TabActionResult>
+	onSetTabMuted?: (tabId: number, muted: boolean) => Promise<TabMuteResult>
 	getWatcherIdForTab?: (tabId: number) => string | null | undefined
 	getDiagnostics?: () => ControlDiagnostics
 	onDisconnect?: () => void
@@ -109,6 +110,10 @@ export class ControlBridgeSession {
 				await this.handleTabAction(message.requestId, () => this.events.onDetachTabWatcher?.(message.tabId))
 				return
 
+			case 'set_tab_muted':
+				await this.handleTabMute(message.requestId, () => this.events.onSetTabMuted?.(message.tabId, message.muted))
+				return
+
 			case 'list_tabs':
 				await this.handleListTabs(message.requestId, message.filter)
 				return
@@ -138,6 +143,20 @@ export class ControlBridgeSession {
 				ok: false,
 				error: { message: formatError(error) },
 			})
+		}
+	}
+
+	private async handleTabMute(requestId: number, action: () => Promise<TabMuteResult> | undefined): Promise<void> {
+		try {
+			const result = (await action()) ?? { ok: false, error: 'Extension tab mute action is not available' }
+			if (!result.ok) {
+				this.bridgeClient.send({ type: 'tab_mute_response', requestId, ok: false, error: { message: result.error } })
+				return
+			}
+
+			this.bridgeClient.send({ type: 'tab_mute_response', requestId, ok: true, tab: result.tab, muted: result.muted })
+		} catch (error) {
+			this.bridgeClient.send({ type: 'tab_mute_response', requestId, ok: false, error: { message: formatError(error) } })
 		}
 	}
 

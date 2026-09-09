@@ -5,7 +5,13 @@ import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
  * to work with either CDP WebSocket or Extension Native Messaging.
  */
 
-import type { AuthStateCookie, ExtensionDiagnosticsResponse, ExtensionTabActionResponse, LogEvent } from '@vforsh/argus-core'
+import type {
+	AuthStateCookie,
+	ExtensionDiagnosticsResponse,
+	ExtensionTabActionResponse,
+	ExtensionTabMuteResponse,
+	LogEvent,
+} from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 import type { CdpHealthProbe } from '../cdp/health.js'
 import type { NetFilterContext } from '../net/filtering.js'
@@ -128,6 +134,8 @@ export type CdpSourceHandle = {
 	attachTarget?: (targetId: string, options?: { watcherId?: string }) => Promise<ExtensionTabActionResponse>
 	/** Detach from a specific target by ID (extension mode only). */
 	detachTarget?: (targetId: string) => Promise<ExtensionTabActionResponse>
+	/** Set one browser tab's persistent mute state (extension-control only). */
+	setTabMuted?: (tabId: number, muted: boolean) => Promise<ExtensionTabMuteResponse>
 	/** Read live extension/control diagnostics (extension-control only). */
 	getExtensionDiagnostics?: () => Promise<ExtensionDiagnosticsResponse>
 }

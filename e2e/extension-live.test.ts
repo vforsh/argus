@@ -231,3 +231,28 @@ liveTest(
 	},
 	STEP_TIMEOUT_MS,
 )
+
+liveTest(
+	'H: mute and unmute change the real Chrome tab state',
+	async () => {
+		const tabId = await harness.evaluateInExtension<number>(`(async () => {
+			const tab = (await chrome.tabs.query({})).find(t => t.url.includes(${JSON.stringify(harness.pageUrlSubstring)}));
+			return tab.id;
+		})()`)
+
+		const mute = await harness.cliJson<{ ok: boolean; muted: boolean; tab: { tabId: number } }>('ext', 'mute', WATCHER_ID, '--json')
+		expect(mute).toMatchObject({ ok: true, muted: true, tab: { tabId } })
+		expect(await harness.evaluateInExtension<boolean>(`(async () => (await chrome.tabs.get(${tabId})).mutedInfo.muted)()`)).toBe(true)
+
+		const unmute = await harness.cliJson<{ ok: boolean; muted: boolean; tab: { tabId: number } }>(
+			'ext',
+			'unmute',
+			'--tab',
+			String(tabId),
+			'--json',
+		)
+		expect(unmute).toMatchObject({ ok: true, muted: false, tab: { tabId } })
+		expect(await harness.evaluateInExtension<boolean>(`(async () => (await chrome.tabs.get(${tabId})).mutedInfo.muted)()`)).toBe(false)
+	},
+	STEP_TIMEOUT_MS,
+)

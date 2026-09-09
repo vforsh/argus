@@ -55,6 +55,35 @@ test('CLI attach returns the original Chrome error without waiting for a nonexis
 	}
 })
 
+test('CLI mutes by watcher id and unmutes by tab selector', async () => {
+	const stub = await startExtensionStub()
+	try {
+		const tab = { tabId: 42, url: 'https://host.test', title: 'Host', attached: true, watcherId: 'test-tab' }
+		stub.setRoutes({
+			'GET /status': { payload: { ok: true, attached: false } },
+			'GET /tabs': { payload: { ok: true, tabs: [tab] } },
+			'POST /tabs/mute': { payload: { ok: true, tab, muted: true } },
+		})
+
+		const mute = await stub.cli('ext', 'mute', 'test-tab', '--json')
+		expect(mute.code).toBe(0)
+		expect(JSON.parse(mute.stdout)).toMatchObject({ ok: true, muted: true, tab: { tabId: 42 } })
+		expect(stub.calls.find((call) => call.path === '/tabs/mute')?.body).toEqual({ tabId: 42, muted: true })
+
+		stub.setRoutes({
+			'GET /status': { payload: { ok: true, attached: false } },
+			'GET /tabs': { payload: { ok: true, tabs: [tab] } },
+			'POST /tabs/mute': { payload: { ok: true, tab, muted: false } },
+		})
+		const unmute = await stub.cli('ext', 'unmute', '--url', 'host.test', '--json')
+		expect(unmute.code).toBe(0)
+		expect(JSON.parse(unmute.stdout)).toMatchObject({ ok: true, muted: false, tab: { tabId: 42 } })
+		expect(stub.calls.filter((call) => call.path === '/tabs/mute').at(-1)?.body).toEqual({ tabId: 42, muted: false })
+	} finally {
+		await stub.close()
+	}
+})
+
 async function startExtensionStub() {
 	const stub = await startStubWatcher({}, 'extension-control')
 	const registry = await stub.readRegistry()

@@ -16,7 +16,7 @@
  * Bump on any breaking change to the message shapes below. Peers exchange it in the
  * `host_info` handshake and refuse to proceed on a mismatch.
  */
-export const NATIVE_MESSAGING_PROTOCOL_VERSION = 2 as const
+export const NATIVE_MESSAGING_PROTOCOL_VERSION = 3 as const
 
 /** Type-level alias for the current native-messaging protocol version. */
 export type NativeMessagingProtocolVersion = typeof NATIVE_MESSAGING_PROTOCOL_VERSION
@@ -120,6 +120,18 @@ export type TabActionResponseMessage = {
  * serialize it; consumers reconstruct it on receipt.
  */
 export type TabActionResult = { ok: true; tab: TabInfo; watcherId?: string } | { ok: false; error: string }
+
+export type TabMuteResponseMessage = {
+	type: 'tab_mute_response'
+	requestId: number
+	ok: boolean
+	tab?: TabInfo
+	muted?: boolean
+	error?: { message: string }
+}
+
+/** Outcome of setting one Chrome tab's mute state. */
+export type TabMuteResult = { ok: true; tab: TabInfo; muted: boolean } | { ok: false; error: string }
 
 export type ControlStatusResponseMessage = {
 	type: 'control_status_response'
@@ -251,7 +263,7 @@ export type ExtensionToHost =
 	| TargetSelectedMessage
 	| FrameSnapshotMessage
 
-export type ExtensionToControlHost = ListTabsResponseMessage | TabActionResponseMessage | ControlStatusResponseMessage
+export type ExtensionToControlHost = ListTabsResponseMessage | TabActionResponseMessage | TabMuteResponseMessage | ControlStatusResponseMessage
 
 export type ExtensionToTabHost = ExtensionToHost | InitTabWatcherMessage
 
@@ -270,6 +282,13 @@ export type DetachTabWatcherMessage = {
 	type: 'detach_tab_watcher'
 	requestId: number
 	tabId: number
+}
+
+export type SetTabMutedMessage = {
+	type: 'set_tab_muted'
+	requestId: number
+	tabId: number
+	muted: boolean
 }
 
 export type DetachTabMessage = {
@@ -320,6 +339,7 @@ export type HostToExtension =
 export type ControlHostToExtension =
 	| AttachTabWatcherMessage
 	| DetachTabWatcherMessage
+	| SetTabMutedMessage
 	| ListTabsMessage
 	| ControlStatusMessage
 	| HostInfoMessage

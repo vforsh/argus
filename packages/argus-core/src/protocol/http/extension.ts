@@ -1,5 +1,5 @@
 import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
-import { compact, optionalInteger, optionalNonEmptyString, readFields, requireObject } from '../schemaFields.js'
+import { compact, optionalBoolean, optionalInteger, optionalNonEmptyString, readFields, requireObject } from '../schemaFields.js'
 
 import type { ExtensionControlBridgeStatus, ExtensionTabBridgeStatus, ExtensionRecentEvent } from '../native-messaging.js'
 import type { Ok } from './errors.js'
@@ -21,6 +21,12 @@ export type ExtensionTabsResponse = Ok<{
 export type ExtensionTabActionResponse = Ok<{
 	tab: ExtensionBrowserTab
 	watcherId?: string
+}>
+
+/** Result of setting one browser tab's persistent mute state. */
+export type ExtensionTabMuteResponse = Ok<{
+	tab: ExtensionBrowserTab
+	muted: boolean
 }>
 
 /**
@@ -70,6 +76,12 @@ export type ExtensionDetachRequest = {
 	tabId?: number
 }
 
+/** Request payload for POST /tabs/mute. */
+export type ExtensionTabMuteRequest = {
+	tabId: number
+	muted: boolean
+}
+
 /** Live diagnostics from the extension-control watcher and connected browser extension. */
 export type ExtensionDiagnosticsResponse = Ok<{
 	extension: {
@@ -115,4 +127,20 @@ export const extensionDetachRequestSchema = defineProtocolSchema<ExtensionDetach
 	}
 
 	return validProtocolPayload(compact({ targetId: fields.value.targetId, tabId: fields.value.tabId }))
+})
+
+/** Schema for POST /tabs/mute request payloads. */
+export const extensionTabMuteRequestSchema = defineProtocolSchema<ExtensionTabMuteRequest>((value) => {
+	const invalid = requireObject<ExtensionTabMuteRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, {
+		tabId: optionalInteger,
+		muted: optionalBoolean,
+	})
+	if (!fields.ok) return fields
+	if (fields.value.tabId == null) return invalidProtocolPayload('tabId is required')
+	if (fields.value.muted == null) return invalidProtocolPayload('muted is required')
+
+	return validProtocolPayload({ tabId: fields.value.tabId, muted: fields.value.muted })
 })

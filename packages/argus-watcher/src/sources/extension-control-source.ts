@@ -70,6 +70,13 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 			}
 			return { ok: true, tab: result.tab, watcherId: result.watcherId }
 		},
+		setTabMuted: async (tabId, muted) => {
+			const result = await controlSession.setTabMuted(tabId, muted)
+			if (!result.ok) {
+				throw new Error(result.error)
+			}
+			return result
+		},
 		getExtensionDiagnostics: async () => {
 			const diagnostics = await controlSession.getDiagnostics()
 			return {

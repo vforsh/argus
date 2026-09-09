@@ -72,6 +72,7 @@ export const WATCHER_ENDPOINTS = [
 	'navigate/history',
 	'shutdown',
 	'tabs',
+	'tabs/mute',
 	'extension/diagnostics',
 	'targets',
 	'attach',

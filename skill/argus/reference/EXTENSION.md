@@ -34,6 +34,16 @@ argus logs extension
 argus eval extension "document.title"
 ```
 
+Set a tab's persistent Chrome mute state by attached watcher id or by resolving an existing tab:
+
+```bash
+argus ext mute extension
+argus ext mute --url localhost
+argus ext unmute --tab 123
+```
+
+`--tab`, `--url`, and `--title` do not attach the tab. Ambiguous URL/title matches fail closed; use `argus ext tabs` to choose an exact tab id.
+
 When Chrome retains an Argus-owned attachment after extension state is lost, attaching again verifies ownership with a CDP command and reconnects it to rebuild root and iframe sessions. Concurrent attach/detach requests are serialized per tab; failed initialization releases the acquired debugger. Other debuggers are never disconnected by recovery.
 
 Attachment failures surface Chrome's original error in both popup and CLI; no successful attachment is reported and the failed tab bridge is removed. A connected control bridge does not mean a tab is attached: `argus ext doctor --watcher <id>` flags detached, disconnected, or pending selected targets.

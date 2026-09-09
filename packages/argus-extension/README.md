@@ -74,6 +74,10 @@ The keypair lives in `key.pem` (gitignored; back it up out-of-band). To regenera
   argus ext attach --url localhost
   argus ext detach --tab 123
 
+  # Change tab audio without changing attachment state
+  argus ext mute extension-2
+  argus ext unmute --tab 123
+
   # View logs from a specific attached extension tab watcher
   argus logs extension
   argus logs extension-2
