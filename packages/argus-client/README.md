@@ -145,12 +145,31 @@ Failures throw: `navigation_failed` (Chrome refused the URL), `navigation_timeou
 
 ```ts
 client.domClick(watcherId, { selector | ref | x, y, all?, button?, text?, wait?, waitNav?, navTimeoutMs? })
-client.visibility(watcherId, { action: 'show' | 'hide' })
+client.visibility(watcherId, { action: 'show' | 'hide', policy?, activate? })
+client.visibilityStatus(watcherId) // -> { attached, state, policy }
 client.reload(watcherId, { ignoreCache? })
 client.netClear(watcherId)
 ```
 
-`visibility` locks the page shown+focused so backgrounded windows do not throttle rAF/timers. The lock is sticky across detach/reattach.
+`visibility` locks the page shown+focused so backgrounded windows do not throttle rAF/timers. The lock and policy are sticky across detach/reattach. `foreground` may activate the tab/window when applying the lock; `background` keeps focus emulation enabled without activating Chrome, even when `activate: true` is supplied. Omit `policy` to preserve the current policy. `activate: false` suppresses a one-shot foreground activation, which is useful while restoring a saved state.
+
+`visibilityStatus` is read-only: it does not activate the tab, change focus emulation, or mutate the lock. It reports the desired state while the watcher is detached, before that state is re-applied on reattach. State lasts for the watcher process: explicit extension detach closes its native host, and the next attachment starts a new watcher with `default`/`foreground`. Reacquire background mode for that new watcher.
+
+Writes with `policy` or `activate: false` probe watcher support before mutation and reject older watchers with restart guidance. Legacy action-only calls retain foreground semantics on older watchers. Stop active recordings before entering background mode.
+
+Save and restore visibility state in a single-owner automation session:
+
+```ts
+const saved = await page.visibilityStatus()
+try {
+	await page.visibility({ action: 'show', policy: 'background' })
+	// run the automation
+} finally {
+	await page.visibility({ action: saved.state === 'shown' ? 'show' : 'hide', policy: saved.policy, activate: false })
+}
+```
+
+The status read and restore write are separate operations, so this snapshot pattern is not atomic and does not provide ownership against overlapping callers.
 
 `waitNav` waits for a top-frame navigation caused by the click and reports it as `navigation: { navigated, url, epoch }`. Clicking something that does not navigate is not an error — it resolves with `navigated: false` once `navTimeoutMs` (default 10000) elapses.
 

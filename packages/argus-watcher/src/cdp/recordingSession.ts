@@ -3,6 +3,8 @@ import type { CdpSessionHandle } from './connection.js'
 import type { Deferred } from '../deferred.js'
 import type { FfmpegProcess, FrameCodec } from './ffmpeg.js'
 import type { VisualCaptureClip, VisualCaptureViewport } from './visualCapture.js'
+import { assertCaptureAllowed, type GetVisibilityPolicy } from './capturePolicy.js'
+import { hasErrorCode } from '../errors.js'
 import { tryEvaluateInPage } from './pageState.js'
 import { delay } from '@vforsh/argus-core'
 
@@ -24,6 +26,10 @@ export type RecordingState = {
 	session: CdpSessionHandle
 	/** Selected target, where an `until` expression is evaluated. Same session for page targets. */
 	evalSession: CdpSessionHandle
+	/** Current visibility policy; checked before every screencast arm and re-arm. */
+	getVisibilityPolicy?: GetVisibilityPolicy
+	/** Called when navigation re-arming cannot continue safely. */
+	onRearmError?: (error: unknown) => void
 	removeFrameHandler: () => void
 	removeNavigationHandler: () => void
 	ffmpeg: FfmpegProcess | null
@@ -119,6 +125,7 @@ export const assertClipIsVisible = (clip: VisualCaptureClip, viewport: VisualCap
  * the last pre-navigation frame for the rest of the capture.
  */
 export const armScreencast = async (state: RecordingState): Promise<void> => {
+	assertCaptureAllowed(state.getVisibilityPolicy)
 	await state.session.sendAndWait('Page.startScreencast', {
 		format: state.frameCodec,
 		quality: state.frameCodec === 'jpeg' ? state.quality : undefined,
@@ -141,8 +148,13 @@ export const subscribeToScreencast = (state: RecordingState): void => {
 		}
 
 		state.navigations += 1
-		void armScreencast(state).catch(() => {
+		void armScreencast(state).catch((error) => {
 			// The renderer may still be swapping; the next navigation or stop reports the gap.
+			// A policy denial is different: continuing would leave stale frames, so let the recorder
+			// finalize the current file and expose the failure to its stop path.
+			if (hasErrorCode(error, 'not_available')) {
+				state.onRearmError?.(error)
+			}
 		})
 	})
 }

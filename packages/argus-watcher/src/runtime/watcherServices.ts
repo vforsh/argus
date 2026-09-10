@@ -111,11 +111,17 @@ export const createWatcherRuntimeServices = (
 				})
 			: null,
 		traceRecorder: createTraceRecorder({ session: sourceHandle.session, artifactsDir: artifactsBaseDir }),
-		screenshotter: createScreenshotter({ session: sourceHandle.session, pageSession, artifactsDir: artifactsBaseDir }),
+		screenshotter: createScreenshotter({
+			session: sourceHandle.session,
+			pageSession,
+			artifactsDir: artifactsBaseDir,
+			getVisibilityPolicy: () => setup.visibilityController.getPolicy(),
+		}),
 		recorder: createRecorder({
 			session: sourceHandle.session,
 			pageSession,
 			artifactsDir: artifactsBaseDir,
+			getVisibilityPolicy: () => setup.visibilityController.getPolicy(),
 			onRecordingStateChange: callbacks.onRecordingStateChange,
 		}),
 		runtimeEditor: createRuntimeEditor(sourceHandle.session),

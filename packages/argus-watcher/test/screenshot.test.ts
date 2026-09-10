@@ -6,6 +6,61 @@ import type { CdpSessionHandle, CdpTargetContext } from '../src/cdp/connection.j
 import { createScreenshotter } from '../src/cdp/screenshot.js'
 
 describe('screenshotter', () => {
+	it('rejects capture in background mode before planning or issuing CDP commands', async () => {
+		const calls: string[] = []
+		const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-screenshot-'))
+		const session = createSessionStub({
+			targetContext: { kind: 'page' },
+			sendAndWait: async (method) => {
+				calls.push(method)
+				throw new Error(`Unexpected CDP method in denied capture: ${method}`)
+			},
+		})
+
+		try {
+			const screenshotter = createScreenshotter({ session, artifactsDir, getVisibilityPolicy: () => 'background' })
+			const failure = await screenshotter.capture({ format: 'png' }).catch((error: unknown) => error)
+
+			expect((failure as { code?: string }).code).toBe('not_available')
+			expect((failure as Error).message).toContain('headless Chrome')
+			expect(calls).toEqual([])
+		} finally {
+			await fs.rm(artifactsDir, { recursive: true, force: true })
+		}
+	})
+
+	it('rechecks background policy after capture planning before Page.captureScreenshot', async () => {
+		const calls: string[] = []
+		const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-screenshot-'))
+		let policy: 'foreground' | 'background' = 'foreground'
+		const session = createSessionStub({
+			targetContext: { kind: 'page' },
+			sendAndWait: async (method) => {
+				calls.push(method)
+				if (method === 'Page.getLayoutMetrics') {
+					policy = 'background'
+					return { visualViewport: { clientWidth: 1280, clientHeight: 720, scale: 1 } }
+				}
+				if (method === 'Page.captureScreenshot') {
+					throw new Error('Page.captureScreenshot must be blocked by policy')
+				}
+				throw new Error(`Unexpected page CDP method: ${method}`)
+			},
+		})
+
+		try {
+			const screenshotter = createScreenshotter({ session, artifactsDir, getVisibilityPolicy: () => policy })
+			const failure = await screenshotter
+				.capture({ format: 'png', clip: { x: 0, y: 0, width: 100, height: 100 } })
+				.catch((error: unknown) => error)
+
+			expect((failure as { code?: string }).code).toBe('not_available')
+			expect(calls).toEqual(['Page.getLayoutMetrics'])
+		} finally {
+			await fs.rm(artifactsDir, { recursive: true, force: true })
+		}
+	})
+
 	it('captures only the iframe viewport through the top-level page session', async () => {
 		const calls: string[] = []
 		const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-screenshot-'))

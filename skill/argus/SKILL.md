@@ -84,6 +84,16 @@ argus reload "$WATCHER_ID"
 argus eval-until "$WATCHER_ID" "document.readyState === 'complete'" --total-timeout 30s
 ```
 
+For automation that must keep a covered page running without taking Chrome away from another macOS app, use the background visibility policy:
+
+```bash
+argus page visibility "$WATCHER_ID" --json
+argus page show "$WATCHER_ID" --policy background
+argus page hide "$WATCHER_ID"
+```
+
+`page visibility` is read-only and reports the desired state (`shown` or `default`), policy (`foreground` or `background`), and attachment state. The desired state and policy survive navigation and reconnects within the same running watcher. Explicit extension detach ends its native watcher; reacquire background mode after creating a new one. `foreground` may activate the tab/window; `background` keeps focus emulation enabled without activating Chrome. `--no-activate` suppresses a one-shot foreground activation, which is useful when restoring a saved shown state.
+
 ---
 
 ## Extension Iframe Flow
@@ -264,7 +274,11 @@ Keep these commands in the background in agent shells. See [START.md](./referenc
 
 **Wrong CDP target matched** — Use `--type iframe`, `--origin`, `--parent`, or `--target`. See [IFRAMES.md](./reference/IFRAMES.md).
 
-**Need to keep a page unthrottled** — Use `argus page show <id>` or `argus ext show <id>`. Hide later with `argus page hide <id>`.
+**Need to keep a page unthrottled** — Use `argus page show <id>` or `argus ext show <id>`. Use `argus page show <id> --policy background` when preserving the foreground app matters. Hide later with `argus page hide <id>`.
+
+Policy-aware writes reject older watchers before mutation; restart the watcher with the current Argus build when prompted. Stop active recordings before entering background mode.
+
+For cleanup, save `argus page visibility <id> --json` before changing the lock, then restore the saved state and policy with `--no-activate` (use `page show` for shown, `page hide` for default). This is a single-owner, non-atomic snapshot/restore pattern; it does not coordinate overlapping callers. Screenshot and recording requests under background policy return `not_available`, including on headless Chrome; use an isolated headless watcher with its default foreground policy as the fallback.
 
 **Navigation failed** — `navigation_failed` means Chrome refused the URL and names the reason (`net::ERR_NAME_NOT_RESOLVED`, `net::ERR_CONNECTION_REFUSED`); fix the URL or start the server. `navigation_timeout` means the requested phase did not arrive in time — the page may still be loading, so retry with `--wait domcontentloaded` or a longer `--timeout` rather than assuming the navigation failed. `no_history` means the page is already at the first/last session-history entry; check position with `argus page back <id> --json` output (`index`/`length`).
 

@@ -44,6 +44,8 @@ The first line is written before any request is read:
 {"id": 4, "cmd": "drag", "argv": ["--selector", "canvas", "--pos", "320,240", "--by", "80,-30"]}
 {"id": 5, "cmd": "screenshot", "args": {"out": "./shot.png"}}
 {"id": 6, "cmd": "dom tree", "args": {"selector": "body", "depth": 2}}
+{"id": 7, "cmd": "page visibility", "args": {}}
+{"id": 8, "cmd": "page show", "args": {"policy": "background"}}
 ```
 
 `args` keys are resolved against the command's own definition, so anything the CLI accepts is
@@ -58,6 +60,8 @@ reachable:
   `--expression`, the spelling the CLI already documents as equivalent to the positional.
 - **Repeatable options** take an array: `{"arg": ["level=10", "mode=fast"]}`.
 - **Switches** take a boolean: `{"all": true}`, `{"await": false}` (which sends `--no-await`).
+
+Visibility commands use the same registry: `page visibility` performs the read-only `GET /visibility`, while `page show` and `page hide` accept `policy` (`foreground` or `background`) and `activate: false` for the `--no-activate` cleanup form. Background policy preserves focus emulation without activating the browser tab or OS window.
 
 ### Response
 

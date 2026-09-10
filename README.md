@@ -250,6 +250,16 @@ argus dom scroll app --by 0,300
 argus dom wheel app --selector "input[type=number]" --by 0,-120
 ```
 
+### Keep a page running in the background
+
+```bash
+argus page visibility app --json
+argus page show app --policy background
+argus page hide app
+```
+
+`page visibility` reads the desired lock and policy without activating Chrome or changing state. The `foreground` policy may activate the tab/window when applying a shown lock; the `background` policy keeps focus emulation enabled without activation. Save the status before automation and restore the saved state and policy with `--no-activate`; this snapshot/restore flow is intended for one owner and is not atomic. Screenshot and recording requests under background policy return `not_available`, including on headless Chrome; use an isolated headless watcher with its default foreground policy as the fallback.
+
 ### Probe runtime state
 
 ```bash
@@ -365,6 +375,7 @@ Four packages:
 | `chrome start\|ls\|version\|status\|stop`              | Chrome lifecycle management              |
 | `watcher start\|stop\|status\|ls\|prune`               | Watcher lifecycle management             |
 | `page ls\|open\|activate\|close\|reload`               | Tab and target management                |
+| `page visibility\|show\|hide`                          | Read or set the page visibility policy   |
 | `logs` / `logs cursor` / `logs tail`                   | Fetch or stream console logs             |
 | `net` / `net tail`                                     | Fetch or stream network requests         |
 | `eval`                                                 | Evaluate JS expression                   |

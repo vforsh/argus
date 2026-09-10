@@ -28,6 +28,7 @@ export const createWatcherClient = (client: ArgusClient, watcherId: string): Wat
 	forward: bind(client.forward, watcherId),
 	url: bind(client.url, watcherId),
 	visibility: bind(client.visibility, watcherId),
+	visibilityStatus: bind(client.visibilityStatus, watcherId),
 	reload: bind(client.reload, watcherId),
 	traceStart: bind(client.traceStart, watcherId),
 	traceStop: bind(client.traceStop, watcherId),

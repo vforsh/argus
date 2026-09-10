@@ -173,6 +173,9 @@ export type VisibilityOptions = VisibilityRequest
  */
 export type VisibilityResult = ResponseData<VisibilityResponse>
 
+/** Read-only visibility status returned by `GET /visibility`. */
+export type VisibilityStatusResult = VisibilityResult
+
 /** Options for reloading the connected page. */
 export type ReloadOptions = ReloadRequest
 
@@ -320,8 +323,10 @@ export type ArgusClient = {
 	forward: (watcherId: string, options?: NavigateHistoryOptions) => Promise<NavigateHistoryResult>
 	/** Read the connected page's current URL and title. */
 	url: (watcherId: string) => Promise<PageUrlResult>
-	/** Lock the page shown+focused, or release the lock. */
+	/** Lock the page shown+focused, or release the lock. `policy` and `activate` are optional. */
 	visibility: (watcherId: string, options: VisibilityOptions) => Promise<VisibilityResult>
+	/** Read the desired visibility lock and policy without changing page or browser state. */
+	visibilityStatus: (watcherId: string) => Promise<VisibilityStatusResult>
 	/** Reload the connected page. Page-scoped even when the active target is an iframe. */
 	reload: (watcherId: string, options?: ReloadOptions) => Promise<void>
 	/** Start Chrome tracing and write to disk on the watcher. */

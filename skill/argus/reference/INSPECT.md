@@ -242,15 +242,27 @@ argus page emulation set app --device iphone-14
 argus page emulation set app --width 1600 --height 900
 argus page emulation clear app
 argus page emulation status app --json
+argus page visibility app --json
 argus page show app
+argus page show app --policy background
+argus page show app --policy foreground --no-activate
 argus ext show --url localhost
 argus page hide app
+argus page hide app --no-activate
 argus throttle set app 4
 argus throttle clear app
 argus throttle status app
 ```
 
-`page show` / `ext show` keeps a page shown and focused so timers and `requestAnimationFrame` do not throttle while debugging.
+`page visibility` is a read-only `GET /visibility` snapshot: `state` is the desired lock, `policy` is `foreground` or `background`, and `attached` says whether the watcher currently has a target. It does not activate Chrome or mutate state, and remains useful while detached.
+
+`page show` / `ext show` keeps a page shown and focused so timers and `requestAnimationFrame` do not throttle while debugging. On `page show`, `page show --policy foreground` may activate the tab/window; `page show --policy background` keeps focus emulation enabled without activation. Omit `--policy` to preserve the current policy. `--no-activate` suppresses one-shot activation during a foreground apply, including cleanup restoration.
+
+Visibility state belongs to a running watcher. CDP target detach/reattach preserves it; reloads preserve it on both transports. An explicit extension debugger/tab detach disposes the native host, so attaching again creates a new watcher with `default`/`foreground`; reacquire background mode before resuming automation. Watcher or browser restarts do not persist this state.
+
+Policy-aware writes first check `GET /visibility`; an older watcher that cannot report policy is rejected before mutation. Restart it with the current Argus build. Stop any active recording before entering background mode.
+
+For a single-owner automation session, save `argus page visibility app --json` before changing visibility, then restore `state` and `policy` with `page show` or `page hide` and `--no-activate`. Reading and writing are separate, so this snapshot/restore sequence is non-atomic and does not provide ownership for overlapping callers.
 
 ## Opening a Tab With a Watcher
 

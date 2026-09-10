@@ -4,9 +4,10 @@ import type {
 	NavigateResponse,
 	ReloadResponse,
 	StatusResponse,
+	VisibilityPolicy,
 	VisibilityResponse,
 } from '@vforsh/argus-core'
-import { DEFAULT_NAVIGATION_TIMEOUT_MS } from '@vforsh/argus-core'
+import { DEFAULT_NAVIGATION_TIMEOUT_MS, VISIBILITY_POLICIES, formatError } from '@vforsh/argus-core'
 import type {
 	DomClickOptions,
 	DomClickResult,
@@ -18,6 +19,7 @@ import type {
 	ReloadOptions,
 	VisibilityOptions,
 	VisibilityResult,
+	VisibilityStatusResult,
 } from '../../types.js'
 import type { ClientContext } from '../context.js'
 import { requestWatcher } from '../watcherRequest.js'
@@ -82,6 +84,9 @@ export const createPageMethods = (ctx: ClientContext) => ({
 		if (options?.action !== 'show' && options?.action !== 'hide') {
 			throw new Error("action must be 'show' or 'hide'")
 		}
+		if (options.policy != null || options.activate === false) {
+			await verifyVisibilityPolicy(ctx, watcherId)
+		}
 
 		const { data } = await requestWatcher<VisibilityResponse>(ctx, watcherId, {
 			path: '/visibility',
@@ -90,7 +95,26 @@ export const createPageMethods = (ctx: ClientContext) => ({
 			body: options,
 		})
 
-		return { attached: data.attached, state: data.state }
+		const policy = readVisibilityPolicy(data)
+		if (policy == null) {
+			// Older watchers predate the policy field; their action-only behavior was always foreground.
+			if (options.policy == null && options.activate == null) return { attached: data.attached, state: data.state, policy: 'foreground' }
+			throw unsupportedVisibilityError(watcherId)
+		}
+
+		return { attached: data.attached, state: data.state, policy }
+	},
+
+	visibilityStatus: async (watcherId: string): Promise<VisibilityStatusResult> => {
+		const { data } = await requestWatcher<VisibilityResponse>(ctx, watcherId, {
+			path: '/visibility',
+			timeoutMs: ctx.requestTimeoutMs,
+			method: 'GET',
+		})
+
+		const policy = readVisibilityPolicy(data)
+		if (policy == null) throw unsupportedVisibilityError(watcherId)
+		return { attached: data.attached, state: data.state, policy }
 	},
 
 	reload: async (watcherId: string, options: ReloadOptions = {}): Promise<void> => {
@@ -102,6 +126,33 @@ export const createPageMethods = (ctx: ClientContext) => ({
 		})
 	},
 })
+
+const verifyVisibilityPolicy = async (ctx: ClientContext, watcherId: string): Promise<void> => {
+	let data: VisibilityResponse
+	try {
+		;({ data } = await requestWatcher<VisibilityResponse>(ctx, watcherId, {
+			path: '/visibility',
+			timeoutMs: ctx.requestTimeoutMs,
+			method: 'GET',
+		}))
+	} catch (error) {
+		throw new Error(`Cannot verify visibility policy for watcher ${watcherId}: ${formatError(error)} Restart or update the watcher, then retry.`)
+	}
+
+	if (readVisibilityPolicy(data) == null) throw unsupportedVisibilityError(watcherId)
+}
+
+const readVisibilityPolicy = (data: unknown): VisibilityPolicy | undefined => {
+	if (data == null || typeof data !== 'object') return undefined
+	const { ok, attached, state, policy } = data as Partial<VisibilityResponse>
+	if (ok !== true || typeof attached !== 'boolean' || (state !== 'shown' && state !== 'default')) return undefined
+	return VISIBILITY_POLICIES.includes(policy as VisibilityPolicy) ? (policy as VisibilityPolicy) : undefined
+}
+
+const unsupportedVisibilityError = (watcherId: string): Error =>
+	new Error(
+		`Cannot verify visibility policy for watcher ${watcherId}: the watcher did not return a supported policy. Restart or update the watcher, then retry.`,
+	)
 
 /** Shared body for `back`/`forward`; the two differ only by direction. */
 const navigateHistory = async (

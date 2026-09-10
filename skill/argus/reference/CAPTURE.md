@@ -109,10 +109,12 @@ argus ext select app --iframe-url game-frame-host.example
 
 ## Troubleshooting
 
-Recording brings the page to the front before capturing. If it still fails with no frames, make the page visible and unthrottled:
+Stop an active recording with `argus record stop <id>` before switching to background policy. The watcher rejects that transition with `not_available` and leaves the previous visibility state unchanged.
+
+Capture uses the selected visibility policy. Background policy never activates Chrome. Screenshot and recording requests under background policy are rejected with `not_available`, including on headless Chrome, rather than silently taking focus. Use an isolated headless watcher with its default foreground policy when capture must be independent of the user's foreground app. For explicit foreground capture, enable the foreground policy (this may activate Chrome):
 
 ```bash
-argus page show app
+argus page show app --policy foreground
 argus record app --duration 3s --selector "canvas" --out canvas.mp4
 ```
 

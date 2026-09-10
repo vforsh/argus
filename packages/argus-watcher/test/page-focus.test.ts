@@ -27,6 +27,17 @@ describe('ensurePageInputFocus', () => {
 		expect(visibility.getDesired()).toBe('shown')
 	})
 
+	it('keyboard activation preserves a background policy without raising the tab', async () => {
+		const calls: string[] = []
+		const session = createSessionStub(calls, { focusAnswers: [false, true] })
+		const visibility = createVisibilityController()
+		await visibility.setLock(null, 'default', 'background')
+		expect(await ensurePageInputFocus(session, visibility)).toEqual({ activated: true })
+		expect(calls).toEqual(['Runtime.evaluate', 'Emulation.setFocusEmulationEnabled', 'Runtime.evaluate'])
+		expect(visibility.getDesired()).toBe('shown')
+		expect(visibility.getPolicy()).toBe('background')
+	})
+
 	it('fails with an actionable error when activation does not take', async () => {
 		const calls: string[] = []
 		const session = createSessionStub(calls, { focusAnswers: [false, false] })

@@ -3,6 +3,7 @@ import type { ScreenshotRequest, ScreenshotResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import { ensureArtifactsDir, ensureParentDir, resolveArtifactPath } from '../artifacts.js'
 import { createVisualCapturePlan, toPageClip, type VisualCaptureClip } from './visualCapture.js'
+import { assertCaptureAllowed, type GetVisibilityPolicy } from './capturePolicy.js'
 
 const SCREENSHOT_CDP_TIMEOUT_MS = 20_000
 const SCREENSHOT_CDP_MAX_ATTEMPTS = 2
@@ -16,8 +17,14 @@ export type Screenshotter = {
 	capture: (request: ScreenshotRequest) => Promise<ScreenshotResponse>
 }
 
-export const createScreenshotter = (options: { session: CdpSessionHandle; pageSession?: CdpSessionHandle; artifactsDir: string }): Screenshotter => {
+export const createScreenshotter = (options: {
+	session: CdpSessionHandle
+	pageSession?: CdpSessionHandle
+	artifactsDir: string
+	getVisibilityPolicy?: GetVisibilityPolicy
+}): Screenshotter => {
 	const capture = async (request: ScreenshotRequest): Promise<ScreenshotResponse> => {
+		assertCaptureAllowed(options.getVisibilityPolicy)
 		const format = request.format ?? 'png'
 		if (format !== 'png') {
 			throw new Error(`Unsupported screenshot format: ${format}`)
@@ -33,6 +40,7 @@ export const createScreenshotter = (options: { session: CdpSessionHandle; pageSe
 			format,
 			// `Page.captureScreenshot` clips in document coordinates, not viewport ones.
 			clip: capturePlan.clip && toPageClip(capturePlan.clip, capturePlan.pageOffset),
+			getVisibilityPolicy: options.getVisibilityPolicy,
 		})
 
 		await fs.writeFile(absolutePath, Buffer.from(result.data, 'base64'))
@@ -42,11 +50,18 @@ export const createScreenshotter = (options: { session: CdpSessionHandle; pageSe
 	return { capture }
 }
 
-const captureScreenshot = async (session: CdpSessionHandle, options: { format: 'png'; clip?: VisualCaptureClip }): Promise<CaptureResult> => {
+const captureScreenshot = async (
+	session: CdpSessionHandle,
+	options: { format: 'png'; clip?: VisualCaptureClip; getVisibilityPolicy?: GetVisibilityPolicy },
+): Promise<CaptureResult> => {
 	let lastError: unknown
 
 	for (let attempt = 1; attempt <= SCREENSHOT_CDP_MAX_ATTEMPTS; attempt += 1) {
 		try {
+			// Page.captureScreenshot can activate a headful target even without an explicit raise.
+			// Recheck after capture planning and before every retry because policy may change while
+			// the renderer is busy.
+			assertCaptureAllowed(options.getVisibilityPolicy)
 			// Hidden Electron targets can occasionally stall on the first screenshot request.
 			const payload = await session.sendAndWait(
 				'Page.captureScreenshot',

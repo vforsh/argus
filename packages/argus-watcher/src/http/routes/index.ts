@@ -50,6 +50,7 @@ import { route as getThrottle } from './getThrottle.js'
 import { route as postThrottle } from './postThrottle.js'
 import { route as getDialog } from './getDialog.js'
 import { route as postDialog } from './postDialog.js'
+import { route as getVisibility } from './getVisibility.js'
 import { route as postVisibility } from './postVisibility.js'
 import { storageRoutes } from './storage.js'
 import { route as postNavigate } from './postNavigate.js'
@@ -121,6 +122,7 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	postThrottle,
 	getDialog,
 	postDialog,
+	getVisibility,
 	postVisibility,
 	...storageRoutes,
 	postNavigate,

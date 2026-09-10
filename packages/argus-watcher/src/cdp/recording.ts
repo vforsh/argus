@@ -18,6 +18,7 @@ import { createDeferred } from '../deferred.js'
 import { formatFfmpegError, readFrameInfo, startFfmpeg, type FrameCodec } from './ffmpeg.js'
 import { createVisualCapturePlan } from './visualCapture.js'
 import { evaluateInPage } from './pageState.js'
+import { assertCaptureAllowed, type GetVisibilityPolicy } from './capturePolicy.js'
 import {
 	armScreencast,
 	assertClipIsVisible,
@@ -35,7 +36,7 @@ const DEFAULT_FRAME_QUALITY = 90
 /**
  * How long to wait for Chrome's first screencast frame.
  *
- * Generous because the recorder now brings the page to the front first: the common cause of a
+ * Generous because the recorder may bring the page to the front in foreground mode: the common cause of a
  * missing first frame is a backgrounded tab, and once that is handled the remaining causes
  * (a heavy first paint, a canvas warming up) deserve more than a couple of seconds.
  */
@@ -57,11 +58,13 @@ export const createRecorder = (options: {
 	session: CdpSessionHandle
 	pageSession?: CdpSessionHandle
 	artifactsDir: string
+	getVisibilityPolicy?: GetVisibilityPolicy
 	onRecordingStateChange?: (recording: boolean) => void
 }): Recorder => {
 	let active: RecordingState | null = null
 
 	const start = async (request: RecordStartRequest): Promise<RecordStartResponse> => {
+		assertCaptureAllowed(options.getVisibilityPolicy)
 		if (active && active.state !== 'stopped') {
 			throw new Error('Recording already active')
 		}
@@ -91,6 +94,8 @@ export const createRecorder = (options: {
 			outFile: absolutePath,
 			session: capturePlan.session,
 			evalSession: options.session,
+			getVisibilityPolicy: options.getVisibilityPolicy,
+			onRearmError: undefined,
 			removeFrameHandler: () => {},
 			removeNavigationHandler: () => {},
 			ffmpeg: null,
@@ -123,6 +128,15 @@ export const createRecorder = (options: {
 			sizeBytes: 0,
 			state: 'starting',
 		}
+		state.onRearmError = (error) => {
+			if (state.state === 'stopping' || state.state === 'stopped') {
+				return
+			}
+
+			state.partial = true
+			state.encodeError ??= error
+			void finalize(state, 'requested')
+		}
 		active = state
 
 		try {
@@ -145,7 +159,7 @@ export const createRecorder = (options: {
 		}
 	}
 
-	/** Bring the page forward, arm the screencast, size the encoder from the first real frame. */
+	/** Arm the screencast, size the encoder from the first real frame, and raise foreground captures. */
 	const beginCapture = async (state: RecordingState): Promise<void> => {
 		subscribeToScreencast(state)
 		state.firstFrameTimer = setTimeout(() => {
@@ -153,7 +167,11 @@ export const createRecorder = (options: {
 		}, FIRST_FRAME_TIMEOUT_MS)
 
 		// A backgrounded tab never paints, which is the single most common cause of an empty capture.
+		// Background policy has no reliable headless/transport capability signal, so it is rejected
+		// before this point and rechecked here to cover a policy change racing with start().
+		assertCaptureAllowed(options.getVisibilityPolicy)
 		await state.session.sendAndWait('Page.bringToFront', undefined, { timeoutMs: 2_000 }).catch(() => {})
+		assertCaptureAllowed(options.getVisibilityPolicy)
 		await armScreencast(state)
 
 		const firstFrame = await state.firstFrame
@@ -248,8 +266,9 @@ export const createRecorder = (options: {
 	const runFinalize = async (state: RecordingState, reason: RecordStopReason): Promise<void> => {
 		state.state = 'stopping'
 		state.stopReason = reason
-		// Only losing the page truncates a recording; every other reason is a bound being reached.
-		state.partial = reason === 'detached'
+		// Losing the page or a policy/transport failure truncates a recording; every other reason is
+		// a bound being reached.
+		state.partial ||= reason === 'detached'
 		state.capturedDurationMs = Math.max(0, Date.now() - state.startedAt)
 		clearRecordingTimers(state)
 		state.removeFrameHandler()

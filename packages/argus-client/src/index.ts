@@ -32,6 +32,7 @@ export type {
 	TraceStopResult,
 	VisibilityOptions,
 	VisibilityResult,
+	VisibilityStatusResult,
 	WatcherClient,
 } from './types.js'
 export { createArgusClient } from './client/createArgusClient.js'
@@ -40,3 +41,4 @@ export { pollEval } from './eval/pollEval.js'
 export type { EvalPollAttempt, EvalPollContext, EvalPollInput, EvalPollOutcome, EvalPollStopDecision } from './eval/pollEval.js'
 export type { LogEpoch } from '@vforsh/argus-core'
 export type { NetworkRequestDetail } from '@vforsh/argus-core'
+export type { VisibilityPolicy } from '@vforsh/argus-core'

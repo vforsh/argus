@@ -106,10 +106,10 @@ const buildDragPlan = (options: DomDragOptions, output: Output): WatcherRequestP
 	if (waitMs == null) return null
 
 	const durationMs = parseOptionalDuration(options.duration, output)
-	if (durationMs == null) return null
+	if (durationMs === null) return null
 
 	const steps = parseOptionalSteps(options.steps, output)
-	if (steps == null) return null
+	if (steps === null) return null
 
 	const body: Record<string, unknown> = {}
 	if (target) {

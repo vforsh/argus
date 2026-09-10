@@ -9,6 +9,7 @@ import type {
 } from '@vforsh/argus-core'
 import { recordRequestSchema, recordStartRequestSchema, recordStopRequestSchema } from '@vforsh/argus-core'
 import { defineJsonRoute, type WatcherRouteDefinition } from './defineRoute.js'
+import { handleCaptureError, respondCaptureUnavailable } from './visualCaptureRoute.js'
 
 export const recordRoutes: readonly WatcherRouteDefinition[] = [
 	defineJsonRoute<RecordRequest, RecordResponse>({
@@ -16,14 +17,26 @@ export const recordRoutes: readonly WatcherRouteDefinition[] = [
 		path: '/record',
 		bodySchema: recordRequestSchema,
 		endpoint: 'record',
-		handle: ({ ctx, body }) => ctx.recorder.capture(body),
+		handle: ({ ctx, res, body }) => {
+			if (respondCaptureUnavailable(res, ctx)) {
+				return
+			}
+			return ctx.recorder.capture(body)
+		},
+		handleError: handleCaptureError,
 	}),
 	defineJsonRoute<RecordStartRequest, RecordStartResponse>({
 		method: 'POST',
 		path: '/record/start',
 		bodySchema: recordStartRequestSchema,
 		endpoint: 'record/start',
-		handle: ({ ctx, body }) => ctx.recorder.start(body),
+		handle: ({ ctx, res, body }) => {
+			if (respondCaptureUnavailable(res, ctx)) {
+				return
+			}
+			return ctx.recorder.start(body)
+		},
+		handleError: handleCaptureError,
 	}),
 	defineJsonRoute<RecordStopRequest, RecordStopResponse>({
 		method: 'POST',

@@ -205,9 +205,11 @@ describe('page routes', () => {
 	})
 
 	test('visibility posts the action and returns the lock state', async () => {
-		const { page, stub } = await withStub({ 'POST /visibility': { payload: { ok: true, attached: true, state: 'shown' } } })
+		const { page, stub } = await withStub({
+			'POST /visibility': { payload: { ok: true, attached: true, state: 'shown', policy: 'foreground' } },
+		})
 
-		expect(await page.visibility({ action: 'show' })).toEqual({ attached: true, state: 'shown' })
+		expect(await page.visibility({ action: 'show' })).toEqual({ attached: true, state: 'shown', policy: 'foreground' })
 		expect(stub.calls[0]?.body).toEqual({ action: 'show' })
 	})
 

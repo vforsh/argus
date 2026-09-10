@@ -4,7 +4,7 @@ import { runPageReload } from '../../commands/page.js'
 import { runPageEmulationSet, runPageEmulationClear, runPageEmulationStatus } from '../../commands/pageEmulation.js'
 import { runPageBack, runPageForward, runPageGoto } from '../../commands/pageNavigate.js'
 import { runPageUrl } from '../../commands/pageUrl.js'
-import { runPageShow, runPageHide } from '../../commands/pageVisibility.js'
+import { runPageShow, runPageHide, runPageVisibilityStatus } from '../../commands/pageVisibility.js'
 import { listPresetNames } from '../../emulation/devices.js'
 import { collectParam } from '../validation.js'
 import { jsonOption } from './sharedOptions.js'
@@ -200,11 +200,15 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 				name: 'show',
 				description: 'Lock the attached page as shown+focused (unthrottles rAF/timers when window is covered)',
 				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
-				options: [jsonOption],
+				options: [
+					{ flags: '--policy <policy>', description: 'Visibility policy: foreground or background (omit to preserve current)' },
+					{ flags: '--no-activate', description: 'Do not activate the browser tab/window for this apply' },
+					jsonOption,
+				],
 				configure: (command) => {
 					command.addHelpText(
 						'after',
-						'\nExamples:\n  $ argus page show app\n  $ argus page show app --json\n\nForces focus emulation on the attached page so boot/preview flows keep\nmaking progress even if the Chrome window is backgrounded or covered.\nLock persists until `argus page hide <id>`; survives watcher reattach.\n',
+						'\nExamples:\n  $ argus page show app\n  $ argus page show app --policy background\n  $ argus page show app --policy foreground --no-activate\n  $ argus page show app --json\n\nForces focus emulation on the attached page so boot/preview flows keep\nmaking progress even if the Chrome window is backgrounded or covered.\n`background` keeps the page running without activating the tab or OS window.\nLock and policy persist until changed; both survive watcher reattach.\n',
 					)
 				},
 				action: async (id, options) => {
@@ -215,10 +219,24 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 				name: 'hide',
 				description: 'Release the visibility lock (restore default Chrome throttling behavior)',
 				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
-				options: [jsonOption],
-				examples: ['argus page hide app', 'argus page hide app --json'],
+				options: [
+					{ flags: '--policy <policy>', description: 'Visibility policy to retain: foreground or background' },
+					{ flags: '--no-activate', description: 'Do not activate the browser tab/window for this apply' },
+					jsonOption,
+				],
+				examples: ['argus page hide app', 'argus page hide app --policy background', 'argus page hide app --no-activate --json'],
 				action: async (id, options) => {
 					await runPageHide(id, options)
+				},
+			},
+			{
+				name: 'visibility',
+				description: 'Read the desired visibility lock and policy',
+				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
+				options: [jsonOption],
+				examples: ['argus page visibility app', 'argus page visibility app --json'],
+				action: async (id, options) => {
+					await runPageVisibilityStatus(id, options)
 				},
 			},
 			{
