@@ -144,12 +144,14 @@ ctx.program
 
 ## Google Sheets Plugin
 
-`@vforsh/argus-plugin-google-sheets` (aliases `gsheets`, `gs`) ships as a separate package. Command reference, safety flow, and manifest schema live in its own repo (`~/dev/argus-google-sheets-plugin`): `skill/argus-sheets/SKILL.md` and the package README.
+`@vforsh/argus-plugin-google-sheets` (aliases `gsheets`, `gs`) ships as a separate package. Implementation tests, command reference, safety flow, and manifest schema live in its own repo (`~/dev/argus-google-sheets-plugin`): `skill/argus-sheets/SKILL.md` and the package README.
 
 ```bash
 argus plugin add --global gsheets
 argus sheets --help
 ```
+
+Host plugin-loading tests use local fixture modules; they must not require separately distributed plugins to be installed.
 
 ## No Unload
 

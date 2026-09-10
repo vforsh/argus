@@ -20,12 +20,12 @@ const envFor = (tempDir: string): NodeJS.ProcessEnv => ({ ...process.env, ARGUS_
 test('plugin add creates config and avoids duplicates', async () => {
 	await withTempDir(async (tempDir) => {
 		const env = envFor(tempDir)
-		await runCommand('bun', [BIN_PATH, 'plugin', 'add', 'gsheets'], { cwd: tempDir, env })
-		await runCommand('bun', [BIN_PATH, 'plugin', 'add', 'gsheets'], { cwd: tempDir, env })
+		await runCommand('bun', [BIN_PATH, 'plugin', 'add', 'sample'], { cwd: tempDir, env })
+		await runCommand('bun', [BIN_PATH, 'plugin', 'add', 'sample'], { cwd: tempDir, env })
 
 		const configPath = path.join(tempDir, '.argus', 'config.json')
 		const parsed = JSON.parse(await fs.readFile(configPath, 'utf8')) as { plugins?: string[] }
-		expect(parsed.plugins).toEqual(['gsheets'])
+		expect(parsed.plugins).toEqual(['sample'])
 	})
 })
 
@@ -111,13 +111,13 @@ test('plugin add avoids duplicate resolved aliases', async () => {
 	await withTempDir(async (tempDir) => {
 		const env = envFor(tempDir)
 		const configPath = path.join(tempDir, 'argus.config.json')
-		await fs.writeFile(configPath, JSON.stringify({ plugins: ['@vforsh/argus-plugin-google-sheets'] }))
+		await fs.writeFile(configPath, JSON.stringify({ plugins: ['@example/argus-plugin-sample'] }))
 
-		await runCommand('bun', [BIN_PATH, 'plugin', 'add', 'gsheets'], { cwd: tempDir, env })
+		await runCommand('bun', [BIN_PATH, 'plugin', 'add', 'sample=@example/argus-plugin-sample'], { cwd: tempDir, env })
 
 		const parsed = JSON.parse(await fs.readFile(configPath, 'utf8')) as { plugins?: string[]; pluginAliases?: Record<string, string> }
-		expect(parsed.plugins).toEqual(['@vforsh/argus-plugin-google-sheets'])
-		expect(parsed.pluginAliases).toEqual({ gsheets: '@vforsh/argus-plugin-google-sheets' })
+		expect(parsed.plugins).toEqual(['@example/argus-plugin-sample'])
+		expect(parsed.pluginAliases).toEqual({ sample: '@example/argus-plugin-sample' })
 	})
 })
 
@@ -128,13 +128,13 @@ test('plugin remove matches package shorthand and preserves unrelated config', a
 		await fs.writeFile(
 			configPath,
 			JSON.stringify({
-				plugins: ['gsheets', './plugins/foo.js'],
-				pluginAliases: { foo: './plugins/foo.js' },
+				plugins: ['demo', './plugins/foo.js'],
+				pluginAliases: { demo: '@example/argus-plugin-sample', foo: './plugins/foo.js' },
 				chrome: { start: { url: 'http://localhost:3000' } },
 			}),
 		)
 
-		await runCommand('bun', [BIN_PATH, 'plugin', 'remove', 'google-sheets'], { cwd: tempDir, env })
+		await runCommand('bun', [BIN_PATH, 'plugin', 'remove', 'sample'], { cwd: tempDir, env })
 
 		const parsed = JSON.parse(await fs.readFile(configPath, 'utf8')) as {
 			plugins?: string[]
@@ -181,7 +181,7 @@ export default {
 	})
 })
 
-test('plugin list resolves built-in and configured aliases', async () => {
+test('plugin list resolves configured aliases using local fixtures', async () => {
 	await withTempDir(async (tempDir) => {
 		const pluginPath = path.join(tempDir, 'plugin.mjs')
 		const configPath = path.join(tempDir, 'argus.config.json')
@@ -196,9 +196,13 @@ export default {
 }
 `,
 		)
-		await fs.writeFile(configPath, JSON.stringify({ pluginAliases: { sample: './plugin.mjs' } }))
+		await fs.writeFile(
+			path.join(tempDir, 'alternate.mjs'),
+			"export default { apiVersion: 1, name: 'alternate', commands: ['alternate'], register() {} }",
+		)
+		await fs.writeFile(configPath, JSON.stringify({ pluginAliases: { sample: './plugin.mjs', alternate: './alternate.mjs' } }))
 
-		const { stdout } = await runCommand('bun', [BIN_PATH, '--plugin', 'sample', '--plugin', 'gs', 'plugin', 'list', '--json'], {
+		const { stdout } = await runCommand('bun', [BIN_PATH, '--plugin', 'sample', '--plugin', 'alternate', 'plugin', 'list', '--json'], {
 			cwd: tempDir,
 			env: envFor(tempDir),
 		})
@@ -210,10 +214,10 @@ export default {
 		expect(report.entries[0]).toMatchObject({ status: 'loaded', name: 'sample', spec: 'sample', resolvedSpec: './plugin.mjs', alias: 'sample' })
 		expect(report.entries[1]).toMatchObject({
 			status: 'loaded',
-			name: 'google-sheets',
-			spec: 'gs',
-			resolvedSpec: '@vforsh/argus-plugin-google-sheets',
-			alias: 'gs',
+			name: 'alternate',
+			spec: 'alternate',
+			resolvedSpec: './alternate.mjs',
+			alias: 'alternate',
 		})
 	})
 })
