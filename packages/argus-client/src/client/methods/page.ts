@@ -106,11 +106,7 @@ export const createPageMethods = (ctx: ClientContext) => ({
 	},
 
 	visibilityStatus: async (watcherId: string): Promise<VisibilityStatusResult> => {
-		const { data } = await requestWatcher<VisibilityResponse>(ctx, watcherId, {
-			path: '/visibility',
-			timeoutMs: ctx.requestTimeoutMs,
-			method: 'GET',
-		})
+		const { data } = await requestVisibilityStatus(ctx, watcherId)
 
 		const policy = readVisibilityPolicy(data)
 		if (policy == null) throw unsupportedVisibilityError(watcherId)
@@ -127,14 +123,17 @@ export const createPageMethods = (ctx: ClientContext) => ({
 	},
 })
 
+const requestVisibilityStatus = (ctx: ClientContext, watcherId: string) =>
+	requestWatcher<VisibilityResponse>(ctx, watcherId, {
+		path: '/visibility',
+		timeoutMs: ctx.requestTimeoutMs,
+		method: 'GET',
+	})
+
 const verifyVisibilityPolicy = async (ctx: ClientContext, watcherId: string): Promise<void> => {
 	let data: VisibilityResponse
 	try {
-		;({ data } = await requestWatcher<VisibilityResponse>(ctx, watcherId, {
-			path: '/visibility',
-			timeoutMs: ctx.requestTimeoutMs,
-			method: 'GET',
-		}))
+		;({ data } = await requestVisibilityStatus(ctx, watcherId))
 	} catch (error) {
 		throw new Error(`Cannot verify visibility policy for watcher ${watcherId}: ${formatError(error)} Restart or update the watcher, then retry.`)
 	}
