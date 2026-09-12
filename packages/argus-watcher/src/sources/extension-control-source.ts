@@ -77,8 +77,8 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 			}
 			return result
 		},
-		getExtensionDiagnostics: async () => {
-			const diagnostics = await controlSession.getDiagnostics()
+		getExtensionDiagnostics: async (correlationId) => {
+			const diagnostics = await controlSession.getDiagnostics(correlationId)
 			return {
 				ok: true,
 				extension: {
@@ -88,6 +88,7 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 				control: diagnostics.control,
 				tabWatchers: diagnostics.tabWatchers,
 				recentEvents: diagnostics.recentEvents,
+				journal: diagnostics.journal,
 			}
 		},
 	}

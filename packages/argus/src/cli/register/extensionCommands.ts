@@ -1,3 +1,4 @@
+import { runExtensionDiagnose, runExtensionRecover } from '../../commands/extension/diagnose.js'
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { runExtensionInstall } from '../../commands/extension/install.js'
 import { runExtensionSetup } from '../../commands/extension/setup.js'
@@ -65,6 +66,23 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 		alias: 'ext',
 		description: 'Browser extension management',
 		subcommands: [
+			...(['diagnose', 'recover'] as const).map((name) => ({
+				name,
+				description:
+					name === 'diagnose'
+						? 'Save a private incident bundle before reload (works offline)'
+						: 'Save evidence, attempt selected tab recovery and verify each layer',
+				options: [
+					{ flags: '--out <directory>', description: 'New local bundle directory (required; never overwritten)' },
+					{ flags: '--watcher <watcherId>', description: 'Inspect and verify this extension target' },
+					{ flags: '--platform', description: 'Opt in to bounded process CPU/RSS metadata (no argv or environment)' },
+					...(name === 'recover' ? [{ flags: '--tab <tabId>', description: 'Attempt supported attach for this Chrome tab' }] : []),
+					jsonOption,
+				],
+				action: async (options: Parameters<typeof runExtensionDiagnose>[0]) => {
+					await (name === 'diagnose' ? runExtensionDiagnose : runExtensionRecover)(options)
+				},
+			})),
 			{
 				name: 'install',
 				description: 'Set up the extension end-to-end: install hosts, open chrome://extensions, wait for connect',

@@ -1,3 +1,5 @@
+import { buildWorkerDiagnostics, buildWorkerPopupStatus } from './worker-diagnostics.js'
+import { startLifecycleJournal, recordLifecycle } from './lifecycle-journal.js'
 /**
  * Service Worker - Main entry point for the Argus CDP Bridge extension.
  * Owns one debugger manager plus one Native Messaging bridge session per attached tab,
@@ -6,7 +8,7 @@
 
 import { TabAttachments } from './tab-attachments.js'
 import { DebuggerManager } from './debugger-manager.js'
-import type { TabBridgeSession, TabBridgeSessionOptions } from './tab-bridge-session.js'
+import type { TabBridgeSessionOptions } from './tab-bridge-session.js'
 import { ControlBridgeSession, type TabActionResult } from './control-bridge-session.js'
 import { type RememberedTargetSelection, TargetSelectionHistoryStore, matchRememberedIframeTarget } from './target-selection-history.js'
 import { TargetVisibilityHistoryStore, matchesHiddenTarget } from './target-visibility-history.js'
@@ -26,16 +28,17 @@ import type {
 	PopupEvent,
 	PopupResponse,
 	PopupResponseFor,
-	PopupStatusPayload,
 	PopupTabWithTargets,
 	PopupTarget,
 	PopupWatcherStatus,
 } from './popup-protocol.js'
-import type { ControlDiagnostics, TabInfo, TabMuteResult } from '../types/messages.js'
+import type { TabInfo, TabMuteResult } from '../types/messages.js'
 import { formatError } from '@vforsh/argus-core/error-message'
 
+startLifecycleJournal()
+const initializedAt = Date.now()
 const debuggerManager = new DebuggerManager()
-const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
+const controlBridgeSession: ControlBridgeSession = new ControlBridgeSession(debuggerManager, {
 	onWatcherInfo: (info) => {
 		recordEvent('info', 'bridge', `Control watcher ready: ${info.watcherId} (pid ${info.pid})`)
 	},
@@ -43,7 +46,7 @@ const controlBridgeSession = new ControlBridgeSession(debuggerManager, {
 	onDetachTabWatcher: detachTabFromControl,
 	onSetTabMuted: setTabMutedFromControl,
 	getWatcherIdForTab,
-	getDiagnostics: buildControlDiagnostics,
+	getDiagnostics: () => buildWorkerDiagnostics(controlBridgeSession, bridgeSessions.entries(), debuggerManager, recentEvents),
 	onDisconnect: () => {
 		recordEvent('error', 'bridge', 'Control native host disconnected')
 	},
@@ -112,10 +115,12 @@ chrome.runtime.onMessage.addListener(
 )
 
 chrome.runtime.onStartup.addListener(() => {
+	recordLifecycle('worker.startup')
 	ensureControlBridgeSession()
 })
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
+	recordLifecycle('worker.installed', { reason: details.reason })
 	ensureControlBridgeSession()
 })
 
@@ -261,7 +266,7 @@ async function dispatchPopupAction(message: PopupActionMessage): Promise<PopupRe
 			case 'getStatus':
 				return {
 					success: true,
-					status: buildPopupStatusPayload(),
+					status: buildWorkerPopupStatus(debuggerManager, getWatcherStatuses(), bridgeSessions.values()),
 				}
 		}
 	} catch (err) {
@@ -299,54 +304,6 @@ function pruneStaleBridgeSessions(): void {
 
 		clearTabState(tabId)
 		recordEvent('error', 'bridge', `Pruned stale watcher state for tab ${tabId}`)
-	}
-}
-
-function buildPopupStatusPayload(): PopupStatusPayload {
-	return {
-		bridgeConnected: [...bridgeSessions.values()].some((session) => session.isConnected()),
-		attachedTabs: debuggerManager.listAttached().map((target) => ({
-			tabId: target.tabId,
-			url: target.url,
-			title: target.title,
-		})),
-		watchers: getWatcherStatuses(),
-	}
-}
-
-function buildControlDiagnostics(): ControlDiagnostics {
-	const controlInfo = controlBridgeSession.getWatcherInfo()
-	return {
-		extensionId: chrome.runtime.id ?? null,
-		extensionVersion: chrome.runtime.getManifest().version ?? null,
-		control: {
-			connected: controlBridgeSession.isConnected(),
-			watcherId: controlInfo?.watcherId ?? null,
-			watcherHost: controlInfo?.watcherHost ?? null,
-			watcherPort: controlInfo?.watcherPort ?? null,
-			pid: controlInfo?.pid ?? null,
-			lastMessageAt: controlBridgeSession.getLastMessageAt(),
-		},
-		tabWatchers: [...bridgeSessions.entries()].map(([tabId, session]) => buildTabBridgeStatus(tabId, session)),
-		recentEvents,
-	}
-}
-
-function buildTabBridgeStatus(tabId: number, session: TabBridgeSession): ControlDiagnostics['tabWatchers'][number] {
-	const watcher = session.getWatcherInfo()
-	const target = session.getTargetInfo()
-	return {
-		tabId,
-		connected: session.isConnected(),
-		watcherId: watcher?.watcherId ?? null,
-		watcherHost: watcher?.watcherHost ?? null,
-		watcherPort: watcher?.watcherPort ?? null,
-		pid: watcher?.pid ?? null,
-		targetId: target?.targetId ?? null,
-		targetTitle: target?.title ?? null,
-		targetUrl: target?.url ?? null,
-		targetReady: target?.targetReady ?? null,
-		lastMessageAt: session.getLastMessageAt(),
 	}
 }
 
@@ -529,6 +486,7 @@ function clearPendingRememberedTarget(tabId: number): void {
 	}
 }
 
+recordLifecycle('worker.initialized', { elapsedMs: Date.now() - initializedAt })
 console.log('[ServiceWorker] Argus CDP Bridge extension loaded')
 void syncActionBadge(debuggerManager)
 

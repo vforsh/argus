@@ -34,6 +34,8 @@ const CONTROL_WATCHER_ID = 'extension-control'
 const STARTUP_TIMEOUT_MS = 60_000
 
 export type ExtensionHarness = {
+	/** Existing CDP endpoint of this isolated browser, for explicit recovery tests. */
+	cdpAddress: string
 	/** URL the harness Chrome opened (playground index on the main server). */
 	pageUrl: string
 	/** Origin of the cross-origin iframe server. */
@@ -146,6 +148,7 @@ export const startExtensionHarness = async (): Promise<ExtensionHarness> => {
 	}
 
 	return {
+		cdpAddress: `127.0.0.1:${debuggingPort}`,
 		pageUrl: servers.mainUrl,
 		crossOriginUrl: servers.crossOriginUrl,
 		pageUrlSubstring: `127.0.0.1:${mainPort}`,

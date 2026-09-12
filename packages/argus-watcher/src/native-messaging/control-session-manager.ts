@@ -68,10 +68,11 @@ export class ControlSessionManager {
 		}))
 	}
 
-	async getDiagnostics(): Promise<ControlDiagnostics> {
+	async getDiagnostics(correlationId?: string): Promise<ControlDiagnostics> {
 		return await this.sendRequest(this.pendingStatusRequests, 'Control status request timed out', (requestId) => ({
 			type: 'control_status',
 			requestId,
+			correlationId,
 		}))
 	}
 

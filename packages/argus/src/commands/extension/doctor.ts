@@ -1,33 +1,50 @@
+import { diagnosticRequest, type DiagnosticTrace } from './diagnosticRequest.js'
 import { formatError } from '../../cli/parse.js'
-import type { ExtensionDiagnosticsResponse, StatusResponse, WatcherRecord, ExtensionTargetSummary, ApiResult } from '@vforsh/argus-core'
+import type {
+	ExtensionDiagnosticsResponse,
+	ExtensionTargetsResponse,
+	StatusResponse,
+	WatcherRecord,
+	ExtensionTargetSummary,
+	ApiResult,
+} from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { formatWatcherLine } from '../../output/format.js'
-import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
-import { resolveWatcher } from '../../watchers/resolveWatcher.js'
-import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
+import { loadRegistry } from '../../registry.js'
+import { inspectDoctorLayers } from './doctorLayers.js'
 import { getPlatform, inspectNativeHosts } from './nativeHost.js'
-import { fetchExtensionTargets, formatExtensionTargetLine } from './targetSelection.js'
+import { formatExtensionTargetLine } from './targetSelection.js'
 
 export type ExtensionDoctorOptions = {
 	watcher?: string
 	json?: boolean
 }
 
-export const runExtensionDoctor = async (options: ExtensionDoctorOptions): Promise<void> => {
-	const output = createOutput(options)
+/** Collect partial diagnostics without changing the registry or attempting repair. */
+export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {}) => {
 	const issues: string[] = []
 	const hostState = inspectNativeHostState()
 	issues.push(...hostState.issues)
 	const { configured, hosts } = hostState
 	const configuredExtensionId = hosts.find((host) => host.extensionId)?.extensionId ?? null
-	const control = await resolveExtensionWatcher({})
+	const layerEvidence = await inspectDoctorLayers()
+	issues.push(...layerEvidence.warnings)
+	for (const layer of layerEvidence.layers) {
+		if (layer.registryIdentityMatches === false) issues.push(`Registry entry ${layer.watcher.id} points at a different responding watcher.`)
+	}
+	const controlWatcher = layerEvidence.layers.find((layer) => layer.watcher.id === 'extension-control')?.watcher
+	const control = controlWatcher
+		? { ok: true as const, watcher: controlWatcher }
+		: { ok: false as const, error: 'No extension control watcher in registry; worker startup/registration is unknown.' }
 	let diagnostics: ExtensionDiagnosticsResponse | null = null
+	let controlRequest: DiagnosticTrace | null = null
 	let watcherDiagnostics: WatcherDiagnostics | null = null
 
 	if (!control.ok) {
 		issues.push(control.error)
 	} else {
 		const result = await fetchExtensionDiagnostics(control.watcher)
+		controlRequest = result.trace
 		if (result.ok) {
 			diagnostics = result.diagnostics
 		} else {
@@ -52,16 +69,31 @@ export const runExtensionDoctor = async (options: ExtensionDoctorOptions): Promi
 	}
 
 	const ok = issues.length === 0
+	return {
+		ok,
+		configured,
+		hosts,
+		controlWatcher: control.ok ? control.watcher : null,
+		diagnostics,
+		watcherDiagnostics,
+		issues,
+		controlRequest,
+		layers: layerEvidence.layers,
+		workerState:
+			'Registration, suspension and process state unavailable through extension API. Collect Chrome extension Errors and serviceworker-internals before reload; optional CDP requires a debugging-enabled browser.',
+	}
+}
+
+export const runExtensionDoctor = async (options: ExtensionDoctorOptions): Promise<void> => {
+	const output = createOutput(options)
+	const result = await collectExtensionDoctor(options)
+	const { ok, configured, hosts, diagnostics, watcherDiagnostics, issues } = result
+	const configuredExtensionId = hosts.find((host) => host.extensionId)?.extensionId ?? null
+	const control = result.controlWatcher
+		? { ok: true as const, watcher: result.controlWatcher }
+		: { ok: false as const, error: 'Control watcher unavailable' }
 	if (options.json) {
-		output.writeJson({
-			ok,
-			configured,
-			hosts,
-			controlWatcher: control.ok ? control.watcher : null,
-			diagnostics,
-			watcherDiagnostics,
-			issues,
-		})
+		output.writeJson(result)
 		if (!ok) {
 			process.exitCode = 1
 		}
@@ -83,9 +115,6 @@ export const runExtensionDoctor = async (options: ExtensionDoctorOptions): Promi
 		output.writeHuman(`Control watcher: ${formatWatcherLine(control.watcher)}`)
 	} else {
 		output.writeHuman(`Control watcher: ${control.error}`)
-		for (const watcher of control.candidates ?? []) {
-			output.writeHuman(`  ${formatWatcherLine(watcher)}`)
-		}
 	}
 
 	if (diagnostics) {
@@ -103,7 +132,7 @@ export const runExtensionDoctor = async (options: ExtensionDoctorOptions): Promi
 		output.writeHuman('')
 		output.writeHuman(`Watcher ${watcherDiagnostics.watcher.id}:`)
 		output.writeHuman(
-			`  Status: attached=${watcherDiagnostics.status?.attached ?? false} targetReady=${watcherDiagnostics.status?.targetReady ?? null}`,
+			`  Status: attached=${watcherDiagnostics.status?.attached ?? 'unknown'} targetReady=${watcherDiagnostics.status?.targetReady ?? null}`,
 		)
 		if (watcherDiagnostics.selectedTarget) {
 			output.writeHuman(`  Selected: ${formatExtensionTargetLine(watcherDiagnostics.selectedTarget)}`)
@@ -132,6 +161,7 @@ type WatcherDiagnostics = {
 	targets: ExtensionTargetSummary[]
 	selectedTarget: ExtensionTargetSummary | null
 	bridge: ExtensionDiagnosticsResponse['tabWatchers'][number] | null
+	requests: DiagnosticTrace[]
 }
 
 const inspectNativeHostState = (): { configured: boolean; hosts: ReturnType<typeof inspectNativeHosts>; issues: string[] } => {
@@ -148,29 +178,24 @@ const inspectNativeHostState = (): { configured: boolean; hosts: ReturnType<type
 	}
 }
 
-const fetchExtensionDiagnostics = async (
-	watcher: WatcherRecord,
-): Promise<{ ok: true; diagnostics: ExtensionDiagnosticsResponse } | { ok: false; error: string }> => {
-	try {
-		const response = await fetchWatcherJson<ApiResult<ExtensionDiagnosticsResponse>>(watcher, {
-			path: '/extension/diagnostics',
-			timeoutMs: 5_000,
-			returnErrorResponse: true,
-		})
-		if (response.ok) {
-			return { ok: true, diagnostics: response }
-		}
-		return { ok: false, error: response.error.message }
-	} catch (error) {
-		return { ok: false, error: `${watcher.id}: failed to read extension diagnostics (${formatError(error)})` }
+const fetchExtensionDiagnostics = async (watcher: WatcherRecord) => {
+	const result = await diagnosticRequest<ApiResult<ExtensionDiagnosticsResponse>>(watcher, '/extension/diagnostics', 6000)
+	if (!result.ok) return result
+	if (!result.response?.ok)
+		return { ok: false as const, error: result.response?.error?.message ?? 'Invalid diagnostics response', trace: result.trace }
+	if (!result.response.control || !result.response.extension || !Array.isArray(result.response.tabWatchers)) {
+		return { ok: false as const, error: 'Invalid diagnostics response; worker readiness unknown', trace: result.trace }
 	}
+	return { ok: true as const, diagnostics: result.response, trace: result.trace }
 }
 
 const inspectWatcher = async (
 	id: string,
 	diagnostics: ExtensionDiagnosticsResponse | null,
 ): Promise<{ ok: true; diagnostics: WatcherDiagnostics; issues: string[] } | { ok: false; error: string }> => {
-	const resolved = await resolveWatcher({ id })
+	const registry = await loadRegistry()
+	const watcher = registry.watchers[id]
+	const resolved = watcher ? { ok: true as const, watcher } : { ok: false as const, error: `Watcher not found: ${id}` }
 	if (!resolved.ok) {
 		return { ok: false, error: resolved.error }
 	}
@@ -178,14 +203,11 @@ const inspectWatcher = async (
 		return { ok: false, error: `Watcher ${resolved.watcher.id} is not extension-backed.` }
 	}
 
-	const [status, targets] = await Promise.all([fetchWatcherStatus(resolved.watcher), fetchExtensionTargets(resolved.watcher)])
-	if (!targets.ok) {
-		return { ok: false, error: targets.error }
-	}
-
-	const selectedTarget = targets.targets.find((target) => target.attached === true) ?? null
+	const [status, targets] = await Promise.all([fetchWatcherStatus(resolved.watcher), fetchWatcherTargets(resolved.watcher)])
+	const availableTargets = targets.ok ? targets.targets : []
+	const selectedTarget = availableTargets.find((target) => target.attached === true) ?? null
 	const bridge = diagnostics?.tabWatchers.find((watcher) => watcher.watcherId === resolved.watcher.id) ?? null
-	const issues: string[] = []
+	const issues: string[] = targets.ok ? [] : [targets.error]
 	if (!status.ok) {
 		issues.push(status.error)
 	}
@@ -209,18 +231,27 @@ const inspectWatcher = async (
 		diagnostics: {
 			watcher: resolved.watcher,
 			status: status.ok ? status.status : null,
-			targets: targets.targets,
+			targets: availableTargets,
 			selectedTarget,
 			bridge,
+			requests: [status.trace, targets.trace],
 		},
 		issues,
 	}
 }
 
-const fetchWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; status: StatusResponse } | { ok: false; error: string }> => {
-	try {
-		return { ok: true, status: await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 1_000 }) }
-	} catch (error) {
-		return { ok: false, error: `${watcher.id}: failed to read status (${formatError(error)})` }
-	}
+const fetchWatcherStatus = async (watcher: WatcherRecord) => {
+	const result = await diagnosticRequest<ApiResult<StatusResponse>>(watcher, '/status', 1000)
+	if (!result.ok) return result
+	if (!result.response?.ok) return { ok: false as const, error: result.response?.error?.message ?? 'Invalid status response', trace: result.trace }
+	return { ok: true as const, status: result.response, trace: result.trace }
+}
+
+const fetchWatcherTargets = async (watcher: WatcherRecord) => {
+	const result = await diagnosticRequest<ApiResult<ExtensionTargetsResponse>>(watcher, '/targets', 5000)
+	if (!result.ok) return result
+	if (!result.response?.ok) return { ok: false as const, error: result.response?.error?.message ?? 'Invalid targets response', trace: result.trace }
+	if (!Array.isArray(result.response.targets))
+		return { ok: false as const, error: 'Invalid targets response; target readiness unknown', trace: result.trace }
+	return { ok: true as const, targets: result.response.targets, trace: result.trace }
 }

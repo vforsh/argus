@@ -1,3 +1,4 @@
+import type { LifecycleEvent } from '../../diagnostics/events.js'
 import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
 import { compact, optionalBoolean, optionalInteger, optionalNonEmptyString, readFields, requireObject } from '../schemaFields.js'
 
@@ -91,6 +92,8 @@ export type ExtensionDiagnosticsResponse = Ok<{
 	control: ExtensionControlBridgeStatus
 	tabWatchers: ExtensionTabBridgeStatus[]
 	recentEvents: ExtensionRecentEvent[]
+	/** Persistent bounded worker evidence; absent on older peers. */
+	journal?: LifecycleEvent[]
 }>
 
 /** Read the targetId/tabId pair both extension action routes accept. */

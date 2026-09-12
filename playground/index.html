@@ -95,6 +95,14 @@
 	</head>
 	<body>
 		<h1>Argus Playground</h1>
+		<section>
+			<h2>Extension incident diagnostics</h2>
+			<p>Before reloading a broken extension: <code>argus ext diagnose --out ./argus-incident-1</code>.</p>
+			<p>
+				After attaching this page, use <code>argus ext recover --out ./argus-recovery-1 --watcher &lt;id&gt;</code> to check control, debugger
+				attachment and selected page/iframe execution separately.
+			</p>
+		</section>
 
 		<!-- ── Console ── -->
 		<section data-testid="console-section">

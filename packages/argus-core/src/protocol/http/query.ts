@@ -159,3 +159,6 @@ export const normalizeMatchPatterns = (match?: readonly string[]): { patterns: s
 
 	return { patterns }
 }
+
+/** Optional incident correlation for GET /extension/diagnostics; UUID only, never user content. */
+export type ExtensionDiagnosticsQuery = { correlationId?: string }

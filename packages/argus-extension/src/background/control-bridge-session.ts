@@ -1,3 +1,4 @@
+import { setLifecycleSink, recordLifecycleError, recordLifecycle } from './lifecycle-journal.js'
 import { checkHostProtocol } from './protocol-handshake.js'
 import type { ControlDiagnostics, ControlHostToExtension, ExtensionToControlHost, TabInfo, TabMuteResult } from '../types/messages.js'
 import { BridgeClient } from './bridge-client.js'
@@ -37,19 +38,24 @@ export class ControlBridgeSession {
 	private watcherInfo: ControlWatcherInfo | null = null
 	private lastMessageAt: number | null = null
 	private disposed = false
+	private readonly removeLifecycleSink: () => void
 
 	constructor(debuggerManager: DebuggerManager, events: ControlBridgeSessionEvents = {}) {
 		this.debuggerManager = debuggerManager
 		this.events = events
+		this.removeLifecycleSink = setLifecycleSink(() => {
+			if (this.isConnected()) this.handleControlStatus(0)
+		})
 		this.bridgeClient = new BridgeClient(CONTROL_HOST_NAME, { autoReconnect: true })
 
 		this.bridgeClient.onMessage((message) => {
-			void this.handleMessage(message)
+			void this.handleMessage(message).catch((error) => recordLifecycleError('control.request.failed', error))
 		})
 		this.bridgeClient.onDisconnect(() => {
 			if (this.disposed) {
 				return
 			}
+			this.watcherInfo = null
 			this.events.onDisconnect?.()
 		})
 	}
@@ -65,11 +71,12 @@ export class ControlBridgeSession {
 		}
 
 		this.disposed = true
+		this.removeLifecycleSink()
 		this.bridgeClient.disconnect()
 	}
 
 	isConnected(): boolean {
-		return this.bridgeClient.isConnected()
+		return this.bridgeClient.isConnected() && this.watcherInfo !== null
 	}
 
 	getWatcherInfo(): ControlWatcherInfo | null {
@@ -87,6 +94,7 @@ export class ControlBridgeSession {
 			case 'host_info': {
 				const mismatch = checkHostProtocol(message)
 				if (mismatch) {
+					recordLifecycle('bridge.handshake.rejected', { protocolVersion: message.protocolVersion ?? null })
 					console.error(`[ControlBridgeSession] ${mismatch}`)
 					this.bridgeClient.disconnect()
 					return
@@ -98,6 +106,7 @@ export class ControlBridgeSession {
 					watcherPort: message.watcherPort,
 					pid: message.pid,
 				}
+				recordLifecycle('bridge.handshake.ready', { pid: message.pid, protocolVersion: message.protocolVersion ?? null })
 				this.events.onWatcherInfo?.(this.watcherInfo)
 				return
 			}
@@ -119,7 +128,7 @@ export class ControlBridgeSession {
 				return
 
 			case 'control_status':
-				this.handleControlStatus(message.requestId)
+				this.handleControlStatus(message.requestId, message.correlationId)
 				return
 
 			case 'host_ready':
@@ -171,10 +180,11 @@ export class ControlBridgeSession {
 		})
 	}
 
-	private handleControlStatus(requestId: number): void {
+	private handleControlStatus(requestId: number, correlationId?: string): void {
 		this.bridgeClient.send({
 			type: 'control_status_response',
 			requestId,
+			correlationId,
 			diagnostics: this.events.getDiagnostics?.() ?? this.buildFallbackDiagnostics(),
 		})
 	}

@@ -260,7 +260,7 @@ Keep these commands in the background in agent shells. See [START.md](./referenc
 
 ## Troubleshooting
 
-**No extension-control watcher** — First time? Run `argus extension install`. Otherwise open/reload the extension, then run `argus ext doctor --json`.
+**Popup will not open / no control watcher** — Preserve evidence first: `argus ext diagnose --out ./argus-incident-1 --json` works without a responsive worker. Then `argus ext recover --out ./argus-recovery-1 --watcher <id>` verifies control, attachment and execution separately; add `--tab <tabId>` for an attach attempt. If the worker is unavailable, reload manually only after collection. First-time setup: `argus extension install`. See the [incident runbook](./reference/EXTENSION.md#popup-will-not-open--control-watcher-disappeared).
 
 **Debugger attach rejected** — Argus automatically reconnects stale debugger attachments that it still owns. If another debugger owns the tab, popup and CLI preserve Chrome's error; release that debugger and retry. `ext doctor --watcher <id>` checks actual target attachment/readiness separately from native bridge connectivity.
 

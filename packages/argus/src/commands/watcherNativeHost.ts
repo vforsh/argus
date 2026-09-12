@@ -1,3 +1,6 @@
+import packageJson from '../../package.json' with { type: 'json' }
+import { randomUUID } from 'node:crypto'
+import { appendLifecycleEvent, errorEvidence, NATIVE_MESSAGING_PROTOCOL_VERSION } from '@vforsh/argus-core'
 /**
  * Native Messaging host command for Chrome extension.
  *
@@ -16,6 +19,11 @@ export type NativeHostOptions = {
 }
 
 export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<void> => {
+	const session = randomUUID()
+	const startedAt = performance.now()
+	const record = (operation: string, detail: Record<string, string | number> = {}) =>
+		appendLifecycleEvent({ ts: Date.now(), session, operation, detail: { pid: process.pid, ...detail } })
+	record('cli.native.start', { cliVersion: packageJson.version, protocolVersion: NATIVE_MESSAGING_PROTOCOL_VERSION })
 	const role = options.role?.trim() || 'tab'
 	if (role !== 'tab' && role !== 'control') {
 		// Stdout is the native-messaging channel here, so every diagnostic goes to stderr directly:
@@ -37,11 +45,13 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 			pageIndicator: { enabled: role === 'tab' },
 		})
 	} catch (error) {
+		record('cli.native.failed', { ...errorEvidence(error), elapsedMs: Math.round(performance.now() - startedAt) })
 		// Write error to stderr (Native Messaging reads stdout only)
 		console.error(`Failed to start watcher: ${formatError(error)}`)
 		process.exit(1)
 	}
 
+	record('cli.native.ready', { elapsedMs: Math.round(performance.now() - startedAt) })
 	// Log to stderr for debugging (stdout is reserved for Native Messaging)
 	console.error(`[NativeHost] Watcher started: id=${handle.watcher.id} role=${role} port=${handle.watcher.port}`)
 
@@ -62,10 +72,12 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 	}
 
 	process.on('SIGINT', () => {
+		record('cli.native.sigint')
 		shutdown()
 	})
 
 	process.on('SIGTERM', () => {
+		record('cli.native.sigterm')
 		shutdown()
 	})
 

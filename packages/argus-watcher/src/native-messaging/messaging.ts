@@ -1,3 +1,4 @@
+import { recordNative, recordNativeMessage, startNativeJournal } from './lifecycle.js'
 /**
  * Native Messaging protocol handler for stdin/stdout communication.
  * Chrome Native Messaging uses length-prefixed 32-bit messages.
@@ -18,6 +19,7 @@ export type NativeMessagingHandler<Inbound = ExtensionToHost, Outbound = HostToE
  * Messages are length-prefixed with a 32-bit little-endian integer.
  */
 export const createNativeMessaging = <Inbound = ExtensionToHost, Outbound = HostToExtension>(): NativeMessagingHandler<Inbound, Outbound> => {
+	startNativeJournal()
 	let messageCallback: ((message: Inbound) => void) | null = null
 	let disconnectCallback: (() => void) | null = null
 	let buffer = Buffer.alloc(0)
@@ -39,10 +41,12 @@ export const createNativeMessaging = <Inbound = ExtensionToHost, Outbound = Host
 
 			try {
 				const message = JSON.parse(messageBytes.toString('utf8')) as Inbound
+				recordNativeMessage('native.received', message)
 				if (messageCallback) {
 					messageCallback(message)
 				}
 			} catch (err) {
+				recordNative('native.parse.failed')
 				console.error('[NativeMessaging] Failed to parse message:', err)
 			}
 		}
@@ -54,6 +58,8 @@ export const createNativeMessaging = <Inbound = ExtensionToHost, Outbound = Host
 	}
 
 	const onEnd = (): void => {
+		if (!running) return
+		recordNative('native.eof', { cause: 'unknown; channel closed by peer or browser' })
 		running = false
 		if (disconnectCallback) {
 			disconnectCallback()
@@ -81,6 +87,7 @@ export const createNativeMessaging = <Inbound = ExtensionToHost, Outbound = Host
 
 			process.stdout.write(lengthPrefix)
 			process.stdout.write(messageBytes)
+			recordNativeMessage('native.sent', message)
 		},
 
 		start: () => {

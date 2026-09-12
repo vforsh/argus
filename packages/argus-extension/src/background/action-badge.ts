@@ -1,3 +1,4 @@
+import { recordLifecycleError } from './lifecycle-journal.js'
 import type { DebuggerManager } from './debugger-manager.js'
 
 let badgeSyncChain: Promise<void> = Promise.resolve()
@@ -14,6 +15,7 @@ export function syncActionBadge(debuggerManager: DebuggerManager): Promise<void>
 			await applyBadgeState(attachedCount)
 		})
 		.catch((error) => {
+			recordLifecycleError('api.syncActionBadge.failed', error)
 			console.error('[ServiceWorker] Failed to sync action badge:', error)
 		})
 

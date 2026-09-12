@@ -1,3 +1,4 @@
+import { nativeHostDiagnosticsScript, quoteNativeShell } from './nativeHostDiagnostics.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
@@ -134,10 +135,10 @@ const writeWrapperScript = (
 	// Chrome spawns the host without a shell profile, so the wrapper must carry everything
 	// itself: an absolute node path, and any env the host needs baked in as export lines.
 	const exports = Object.entries(env ?? {})
-		.map(([key, value]) => `export ${key}="${value}"`)
+		.map(([key, value]) => `export ${key}=${quoteNativeShell(value)}`)
 		.join('\n')
 	const script = `#!/bin/bash
-${exports ? `${exports}\n` : ''}exec "${nodePath}" "${executablePath}" ${args}
+${exports ? `${exports}\n` : ''}${nativeHostDiagnosticsScript(hostName === CONTROL_HOST_NAME ? 'control' : 'tab', `${quoteNativeShell(nodePath)} ${quoteNativeShell(executablePath)} ${args}`)}
 `
 
 	fs.writeFileSync(wrapperPath, script, { mode: 0o755 })

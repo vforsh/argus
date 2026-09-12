@@ -1,3 +1,4 @@
+import type { LifecycleEvent } from '../diagnostics/events.js'
 /**
  * Native Messaging wire protocol shared by the Chrome extension and argus-watcher.
  *
@@ -136,6 +137,8 @@ export type TabMuteResult = { ok: true; tab: TabInfo; muted: boolean } | { ok: f
 export type ControlStatusResponseMessage = {
 	type: 'control_status_response'
 	requestId: number
+	/** Correlation supplied by a diagnostics caller; absent on older peers. */
+	correlationId?: string
 	diagnostics: ControlDiagnostics
 }
 
@@ -200,6 +203,8 @@ export type ExtensionControlBridgeStatus = {
 /** Runtime state for one tab-scoped extension watcher bridge. */
 export type ExtensionTabBridgeStatus = {
 	tabId: number
+	/** Actual Chrome debugger attachment, independent of native connectivity and frame readiness. */
+	debuggerAttached?: boolean
 	connected: boolean
 	watcherId: string | null
 	watcherHost: string | null
@@ -232,6 +237,8 @@ export type ControlDiagnostics = {
 	control: ExtensionControlBridgeStatus
 	tabWatchers: ExtensionTabBridgeStatus[]
 	recentEvents: ExtensionRecentEvent[]
+	/** Persistent bounded worker evidence; absent on older peers. */
+	journal?: LifecycleEvent[]
 }
 
 export type FrameSnapshot = {
@@ -317,6 +324,8 @@ export type ListTabsMessage = {
 export type ControlStatusMessage = {
 	type: 'control_status'
 	requestId: number
+	/** Optional incident UUID, echoed in the response for cross-layer tracing. */
+	correlationId?: string
 }
 
 export type CookieQueryMessage = {

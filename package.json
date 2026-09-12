@@ -24,7 +24,7 @@
 		"chrome:start": "bun packages/argus/src/bin.ts chrome start",
 		"test:unit": "bun test packages/*/test",
 		"test:e2e": "bun run build:packages && npm run build:extension && npm run test:unit && bun scripts/test-e2e.mjs",
-		"test:e2e:extension": "bun run build:packages && npm run build:extension && bun test e2e/extension-live.test.ts",
+		"test:e2e:extension": "bun run build:packages && npm run build:extension && bun test e2e/extension-live.test.ts e2e/extension-lifecycle.test.ts",
 		"test:playground": "bun run build:packages && bun test e2e/playground-*.test.ts",
 		"playground": "bun playground/start.ts",
 		"playground:serve": "bun playground/serve.ts",

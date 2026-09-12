@@ -137,7 +137,7 @@ export type CdpSourceHandle = {
 	/** Set one browser tab's persistent mute state (extension-control only). */
 	setTabMuted?: (tabId: number, muted: boolean) => Promise<ExtensionTabMuteResponse>
 	/** Read live extension/control diagnostics (extension-control only). */
-	getExtensionDiagnostics?: () => Promise<ExtensionDiagnosticsResponse>
+	getExtensionDiagnostics?: (correlationId?: string) => Promise<ExtensionDiagnosticsResponse>
 }
 
 /**

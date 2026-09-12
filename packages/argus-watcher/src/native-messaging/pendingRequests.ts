@@ -1,3 +1,4 @@
+import { recordNative } from './lifecycle.js'
 /**
  * Correlating a native-messaging request with its response.
  *
@@ -44,14 +45,29 @@ export const createPendingRequestTable = <T>(defaults: { timeoutMs: number; time
 		open: (requestId, options) =>
 			new Promise<T>((resolve, reject) => {
 				const timeoutMs = options?.timeoutMs ?? defaults.timeoutMs
+				const startedAt = Date.now()
+				const startedAtMono = performance.now()
+				recordNative('request.open', { requestId, deadline: startedAt + timeoutMs, timeoutMs })
 				const timeout = setTimeout(() => {
 					requests.delete(requestId)
-					reject(new Error(options?.timeoutMessage ?? defaults.timeoutMessage))
+					recordNative('request.timeout', {
+						requestId,
+						elapsedMs: Math.round(performance.now() - startedAtMono),
+						lastConfirmedPhase: 'native request opened; consult native.sent and worker journal for delivery',
+					})
+					reject(
+						new Error(
+							`${options?.timeoutMessage ?? defaults.timeoutMessage} (native request ${requestId}; deadline ${startedAt + timeoutMs}; elapsed ${Math.round(performance.now() - startedAtMono)}ms; response not received; inspect incident journal for last delivery phase)`,
+						),
+					)
 				}, timeoutMs)
 				requests.set(requestId, { resolve, reject, timeout })
 			}),
 		settle: (requestId, value) => {
-			take(requestId)?.resolve(value)
+			const pending = take(requestId)
+			if (!pending) return
+			recordNative('request.settled', { requestId })
+			pending.resolve(value)
 		},
 		fail: (requestId, error) => {
 			take(requestId)?.reject(error)

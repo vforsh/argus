@@ -21,6 +21,10 @@
 		"./native-messaging": {
 			"types": "./dist/protocol/native-messaging.d.ts",
 			"default": "./dist/protocol/native-messaging.js"
+		},
+		"./diagnostic-events": {
+			"types": "./dist/diagnostics/events.d.ts",
+			"default": "./dist/diagnostics/events.js"
 		}
 	},
 	"files": [

@@ -1,9 +1,11 @@
+import { recordLifecycle, recordLifecycleError } from './lifecycle-journal.js'
+import { messageEvidence, shouldJournalMessage } from '@vforsh/argus-core/diagnostic-events'
 /**
  * Native Messaging client for communicating with argus-watcher (extension mode).
  * Handles connection lifecycle, message serialization, and reconnection.
  */
 
-import type { ExtensionToHost, HostToExtension } from '../types/messages.js'
+import { NATIVE_MESSAGING_PROTOCOL_VERSION, type ExtensionToHost, type HostToExtension } from '../types/messages.js'
 
 export type MessageHandler<Inbound> = (message: Inbound) => void
 export type ConnectionHandler = () => void
@@ -13,6 +15,7 @@ export type BridgeClientOptions = {
 
 export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost> {
 	private port: chrome.runtime.Port | null = null
+	private readonly diagnosticChannel = crypto.randomUUID()
 	private hostName: string
 	private messageHandlers = new Set<MessageHandler<Inbound>>()
 	private disconnectHandler: ConnectionHandler | null = null
@@ -21,6 +24,7 @@ export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost>
 	private reconnectDelay = 1000
 	private autoReconnect: boolean
 	private reconnectEnabled = true
+	private reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 	constructor(hostName: string = 'com.vforsh.argus.bridge', options: BridgeClientOptions = {}) {
 		this.hostName = hostName
@@ -50,19 +54,28 @@ export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost>
 		}
 
 		this.reconnectEnabled = true
+		this.clearReconnectTimer()
+		recordLifecycle('bridge.connect.attempt', { host: this.hostName, channel: this.diagnosticChannel, attempt: this.reconnectAttempts })
 
 		try {
-			this.port = chrome.runtime.connectNative(this.hostName)
+			const port = chrome.runtime.connectNative(this.hostName)
+			this.port = port
 
-			this.port.onMessage.addListener((message: Inbound) => {
-				this.reconnectAttempts = 0 // Reset on successful message
+			port.onMessage.addListener((message: Inbound) => {
+				if (this.port !== port) return
+				const metadata = messageEvidence(message)
+				if (shouldJournalMessage(metadata))
+					recordLifecycle('bridge.received', { host: this.hostName, channel: this.diagnosticChannel, ...metadata })
+				if (metadata.type === 'host_info' && metadata.protocolVersion === NATIVE_MESSAGING_PROTOCOL_VERSION) this.reconnectAttempts = 0
 				for (const handler of this.messageHandlers) {
 					handler(message)
 				}
 			})
 
-			this.port.onDisconnect.addListener(() => {
+			port.onDisconnect.addListener(() => {
 				const error = chrome.runtime.lastError
+				if (this.port !== port) return
+				recordLifecycleError('bridge.disconnected', error?.message ?? 'unknown', { host: this.hostName, channel: this.diagnosticChannel })
 				console.log('[BridgeClient] Disconnected:', error?.message ?? 'unknown reason')
 
 				this.port = null
@@ -76,10 +89,10 @@ export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost>
 			})
 
 			console.log('[BridgeClient] Connected to', this.hostName)
-			this.reconnectAttempts = 0
 
 			return true
 		} catch (err) {
+			recordLifecycleError('bridge.connect.failed', err, { host: this.hostName, channel: this.diagnosticChannel })
 			console.error('[BridgeClient] Failed to connect:', err)
 			this.scheduleReconnect()
 			return false
@@ -91,9 +104,11 @@ export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost>
 	 */
 	disconnect(): void {
 		this.reconnectEnabled = false
+		this.clearReconnectTimer()
 		if (this.port) {
-			this.port.disconnect()
+			const port = this.port
 			this.port = null
+			port.disconnect()
 		}
 	}
 
@@ -108,8 +123,11 @@ export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost>
 
 		try {
 			this.port.postMessage(message)
+			const metadata = messageEvidence(message)
+			if (shouldJournalMessage(metadata)) recordLifecycle('bridge.sent', { host: this.hostName, channel: this.diagnosticChannel, ...metadata })
 			return true
 		} catch (err) {
+			recordLifecycleError('bridge.send.failed', err, { host: this.hostName, channel: this.diagnosticChannel })
 			console.error('[BridgeClient] Send failed:', err)
 			return false
 		}
@@ -122,15 +140,19 @@ export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost>
 		return this.port !== null
 	}
 
-	/**
-	 * Schedule a reconnection attempt with exponential backoff.
-	 */
+	private clearReconnectTimer(): void {
+		if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+		this.reconnectTimer = null
+	}
+
+	/** Schedule a reconnection attempt with exponential backoff. */
 	private scheduleReconnect(): void {
-		if (!this.autoReconnect || !this.reconnectEnabled) {
+		if (!this.autoReconnect || !this.reconnectEnabled || this.reconnectTimer) {
 			return
 		}
 
 		if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+			recordLifecycle('bridge.reconnect.exhausted', { host: this.hostName, channel: this.diagnosticChannel, attempt: this.reconnectAttempts })
 			console.log('[BridgeClient] Max reconnection attempts reached')
 			return
 		}
@@ -140,7 +162,21 @@ export class BridgeClient<Inbound = HostToExtension, Outbound = ExtensionToHost>
 
 		console.log(`[BridgeClient] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`)
 
-		setTimeout(() => {
+		const scheduledAt = performance.now()
+		recordLifecycle('bridge.reconnect.scheduled', {
+			host: this.hostName,
+			channel: this.diagnosticChannel,
+			delayMs: delay,
+			attempt: this.reconnectAttempts,
+		})
+		this.reconnectTimer = setTimeout(() => {
+			this.reconnectTimer = null
+			if (!this.reconnectEnabled) return
+			recordLifecycle('bridge.reconnect.fired', {
+				host: this.hostName,
+				channel: this.diagnosticChannel,
+				eventLoopDelayMs: Math.max(0, performance.now() - scheduledAt - delay),
+			})
 			this.connect()
 		}, delay)
 	}
