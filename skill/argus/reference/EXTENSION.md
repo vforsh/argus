@@ -73,7 +73,7 @@ argus ext select app --iframe-url game.example
 
 - One debugger per tab; tab must stay open.
 - Debugging bar is permanent (Chrome security).
-- Cross-origin iframes: use `ext select` (preferred) or the legacy postMessage helper ([IFRAMES.md](./IFRAMES.md)).
+- Cross-origin iframes: select them as targets with `ext select` ([IFRAMES.md](./IFRAMES.md)).
 
 ## Incident Runbook
 

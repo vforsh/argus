@@ -107,7 +107,7 @@ argus logs app --after "$c" --levels error,exception --json
 | ------------------ | -------------------------------------------------------------------------------------------------- | ---------------------------------------- |
 | Launch / lifecycle | `start`, `chrome *`, `watcher *`, `page open --attach`, `config init`, `doctor`, `list`            | [START.md](./reference/START.md)         |
 | Extension          | `extension install/doctor/tabs/use/attach/select/targets/detach/show/mute/diagnose/recover`        | [EXTENSION.md](./reference/EXTENSION.md) |
-| Iframes            | CDP target flags, `ext select`, legacy postMessage `--iframe`                                      | [IFRAMES.md](./reference/IFRAMES.md)     |
+| Iframes            | CDP target flags, `ext select`                                                                     | [IFRAMES.md](./reference/IFRAMES.md)     |
 | Logs               | `logs`, `logs cursor/epoch/tail`                                                                   | [LOGS.md](./reference/LOGS.md)           |
 | Eval               | `eval`/`js`, `eval-until`/`wait`, scenarios, `--arg`, polling                                      | [EVAL.md](./reference/EVAL.md)           |
 | DOM & discovery    | `dom tree/info/focus/add/add-script/remove/modify/set-file/scroll`, `snapshot`, `locate`           | [DOM.md](./reference/DOM.md)             |

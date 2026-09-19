@@ -177,8 +177,8 @@ plugin's `register` to find the new ones).
 
 ### 2.2 Hidden
 
-`hidden: true` → `parent.command(name, { hidden: true })`. Apply to `native-host` (moves under `ext`),
-`eval iframe-helper` (moves to `ext iframe-helper`), and the Phase 2.5 MOVED stubs.
+`hidden: true` → `parent.command(name, { hidden: true })`. Apply to `native-host` (moves under `ext`)
+and the Phase 2.5 MOVED stubs.
 
 ### 2.3 Moves and renames
 
@@ -216,8 +216,8 @@ the domain changes (leave `commands/domClick.ts` as is; move `commands/throttle.
 | `chrome ls                              | version                                                      | status                                                                                                                       | stop --id`                                                  | same, `--id` → `-w`                      | Infra                                                                                                                                                                    |
 | `config init`                           | `config init                                                 | show                                                                                                                         | path`                                                       | `show` prints merged config with sources |
 
-Deleted outright: `watcher` group, `locate` group, `throttle` group, `page emulation`, `eval iframe-helper` (→
-`ext iframe-helper`, hidden), `ext show` (→ `page show` works on extension watchers already).
+Deleted outright: `watcher` group, `locate` group, `throttle` group, `page emulation`, `ext show` (→ `page
+show` works on extension watchers already).
 
 ### 2.4 Descriptions
 
@@ -413,7 +413,7 @@ with no watcher prints the JSON envelope under `--json`.
 
 - `eval [expression]`: single shot, plus sampling (`--every <duration>` (was `--interval`), `--count`, `--out`,
   `--rotate`). Remove `--until` (that is `wait`). Keep `--file`, `--stdin`, `--arg/--args`, `--inject`,
-  `--iframe*`, `--timeout` (per evaluation).
+  `--timeout` (per evaluation).
 - `wait <expression>`: poll until truthy. `--timeout` = total budget (was `--total-timeout`), `--every` (was
   `--interval`), `--eval-timeout` (per attempt, was `--timeout`), `--count`, `--verbose`. Exit code 1 on budget
   exhaustion with `{ ok:false, error:{ code:'wait_timeout', lastValue } }` — new error code.

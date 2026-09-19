@@ -1,12 +1,11 @@
 # Iframes
 
-Three ways to reach code inside an iframe. Pick by mode.
+Two ways to reach code inside an iframe. Pick by mode.
 
-| Situation                       | Approach                                                                                  |
-| ------------------------------- | ----------------------------------------------------------------------------------------- |
-| CDP, any iframe                 | Attach the watcher to the iframe target (`--type iframe`, …)                              |
-| Extension, any iframe           | `ext use --iframe-url …` / `ext select` ([EXTENSION.md](./EXTENSION.md#iframe-selection)) |
-| Extension, cross-origin, legacy | postMessage helper + `eval --iframe <selector>`                                           |
+| Situation             | Approach                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| CDP, any iframe       | Attach the watcher to the iframe target (`--type iframe`, …)                              |
+| Extension, any iframe | `ext use --iframe-url …` / `ext select` ([EXTENSION.md](./EXTENSION.md#iframe-selection)) |
 
 ## CDP: attach to the iframe target
 
@@ -32,15 +31,3 @@ argus ext targets app --tree
 ```
 
 Selection is per watcher and survives reloads; a missing frame fails `extension_frame_not_ready` rather than running on the host. Network needs `--scope selected` to see iframe traffic.
-
-## Legacy: postMessage helper (`eval --iframe`)
-
-Only when the iframe cannot be selected as a target. Requires modifying the iframe's source.
-
-```bash
-argus eval iframe-helper --out src/argus-helper.js           # --iife, --no-log, --namespace myapp
-argus eval app "window.gameState" --iframe "iframe#game"
-argus eval app "heavy()" --iframe "iframe" --iframe-timeout 10s --iframe-namespace myapp
-```
-
-Include `<script src="argus-helper.js"></script>` in the iframe HTML. Wire format: parent sends `{ type: "argus:eval", id, code }`, iframe answers `{ type: "argus:eval-result", id, ok, result }`. The helper uses `eval()` — dev builds only. Results must be serializable; async code needs an explicit `await`. Scenario modules (`--file` with default export) do not combine with `--iframe`; select the iframe as the target instead.

@@ -143,7 +143,6 @@ argus page ls --id app
 - Chrome shows a debugging bar while attached; that cannot be hidden
 - Only one debugger can attach to a tab at a time
 - The target tab must stay open
-- Cross-origin iframe eval needs the iframe helper script
 
 ## Reuse Auth State
 
@@ -272,10 +271,11 @@ argus eval-until app "document.querySelector('[data-ready]')"
 ### Work with iframes
 
 ```bash
-argus eval app "document.location.href" --iframe "#payment-frame"
+argus ext select app --iframe-url payment.example      # extension mode
+argus watcher start --id frame --type iframe --url localhost:3007   # CDP mode
 ```
 
-Cross-origin iframe eval works via postMessage helpers.
+Once an iframe is the watcher's target, `eval`, `dom`, interaction, and `screenshot` all run inside it.
 
 ### Reverse-engineer runtime bundles
 
@@ -403,7 +403,6 @@ Four packages:
 - `--name <attr>`: shorthand for `--selector "[name=<attr>]"`
 - `--all`: allow multiple element matches
 - `--json`: machine-readable output
-- `--iframe <selector>`: evaluate inside an iframe
 
 ## Config
 

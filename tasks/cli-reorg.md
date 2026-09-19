@@ -75,7 +75,7 @@ Every two-positional command becomes parseable (`fill <selector> <value>`, `stor
 ## 2. Target tree
 
 Help groups via Commander 14 `helpGroup()`. Plugins render under their own **Plugins** heading instead of the
-unlabeled tail. Internal commands (`watcher native-host`, `eval iframe-helper`) become hidden.
+unlabeled tail. Internal commands (`watcher native-host`) become hidden.
 
 ```
 Session

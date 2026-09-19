@@ -82,7 +82,7 @@
 
 - **When to use**: Use the playground to smoke-test CLI commands after changes to `packages/argus/` or `packages/argus-watcher/`. The watcher ID is always `playground`, so commands look like `argus eval playground "..."`, `argus dom tree playground --selector "body"`, etc.
 
-- **Cross-origin iframe**: The page includes both a same-origin iframe (`#playground-iframe`, port 3333) and a cross-origin iframe (`#cross-origin-iframe`, port 3334). Both embed the Argus iframe helper script, so `--iframe` eval works on either. Use this to verify postMessage-based eval across origins.
+- **Cross-origin iframe**: The page includes both a same-origin iframe (`#playground-iframe`, port 3333) and a cross-origin iframe (`#cross-origin-iframe`, port 3334). Use them to verify iframe target selection and in-frame eval across origins (`argus ext select`, `--type iframe`).
 
 - **Extending**: When adding new Argus commands or capabilities, add matching controls/structure to `playground/index.html` so they can be tested interactively. Keep the HTML self-contained (inline scripts, no build step).
 
