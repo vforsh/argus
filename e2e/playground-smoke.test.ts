@@ -459,40 +459,9 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 		expect(stdout).toContain('/admin/api/showLogsByHost')
 	})
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// eval in iframes
-	// ─────────────────────────────────────────────────────────────────────────
-
-	test('eval in same-origin iframe', async () => {
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'eval', 'playground', 'window.iframeState', '--iframe', '#playground-iframe', '--json'],
-			{ env },
-		)
-		const response = JSON.parse(stdout) as EvalResponse
-		expect(response.ok).toBe(true)
-		const result = response.result as { loaded: boolean; title: string }
-		expect(result.loaded).toBe(true)
-		expect(result.title).toBe('Playground Iframe')
-	})
-
-	test('eval in cross-origin iframe', async () => {
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'eval', 'playground', 'window.iframeState', '--iframe', '#cross-origin-iframe', '--json'],
-			{ env },
-		)
-		const response = JSON.parse(stdout) as EvalResponse
-		expect(response.ok).toBe(true)
-		const result = response.result as { loaded: boolean; title: string }
-		expect(result.loaded).toBe(true)
-		expect(result.title).toBe('Playground Iframe')
-	})
-
 	test(
 		'dialog commands work against playground dialogs',
 		async () => {
-
 			const fetchDialogStatus = async (): Promise<DialogStatusResponse> => {
 				const { stdout } = await runCommand('bun', [BIN_PATH, 'dialog', 'status', 'playground', '--json'], { env })
 				return JSON.parse(stdout) as DialogStatusResponse

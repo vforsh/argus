@@ -5,7 +5,6 @@ import { parseDurationMs } from '@vforsh/argus-core'
 import { type EvalArgMap, type EvalArgSourceOptions, hasEvalArgs, resolveEvalArgs } from './evalArgs.js'
 import { bundleEvalEntry } from './evalBundle.js'
 import { fileUsesModuleSyntax } from './evalModuleSyntax.js'
-import { wrapForIframeEval } from './evalIframe.js'
 import { readTextInput, selectTextInput, type TextInputSelection } from './inputSource.js'
 
 // ---------------------------------------------------------------------------
@@ -22,12 +21,7 @@ type ExpressionSourceOptions = {
 	noBundle?: boolean
 }
 
-type EvalExpressionOptions = ExpressionSourceOptions &
-	EvalArgSourceOptions & {
-		iframe?: string
-		iframeNamespace?: string
-		iframeTimeout?: string
-	}
+type EvalExpressionOptions = ExpressionSourceOptions & EvalArgSourceOptions
 
 export type PreparedEvalExpression = {
 	expression: string
@@ -36,7 +30,7 @@ export type PreparedEvalExpression = {
 	scenario?: boolean
 }
 
-/** Resolve script input, eval args, and iframe wrapping into the payload sent to the watcher. */
+/** Resolve script input and eval args into the payload sent to the watcher. */
 export const prepareEvalExpression = async (
 	inline: string | undefined,
 	options: EvalExpressionOptions,
@@ -52,26 +46,9 @@ export const prepareEvalExpression = async (
 		return null
 	}
 
-	if (!options.iframe) {
-		return {
-			expression: resolved.expression,
-			args: hasEvalArgs(args) ? args : undefined,
-			scenario: resolved.scenario,
-		}
-	}
-
-	const iframeTimeoutMs = parseDurationFlagMs(options.iframeTimeout, '--iframe-timeout')
-	if (iframeTimeoutMs.error) {
-		output.writeWarn(iframeTimeoutMs.error)
-		return null
-	}
-
 	return {
-		expression: wrapForIframeEval(wrapExpressionWithArgs(resolved.expression, args), {
-			selector: options.iframe,
-			namespace: options.iframeNamespace ?? 'argus',
-			timeoutMs: iframeTimeoutMs.value ?? 5000,
-		}),
+		expression: resolved.expression,
+		args: hasEvalArgs(args) ? args : undefined,
 		scenario: resolved.scenario,
 	}
 }
@@ -104,7 +81,8 @@ const resolveExpressionSource = async (
 		return null
 	}
 
-	const source = selection.kind === 'file' ? await resolveFileExpression(selection.path, options, output) : await readInlineExpression(selection, output)
+	const source =
+		selection.kind === 'file' ? await resolveFileExpression(selection.path, options, output) : await readInlineExpression(selection, output)
 	if (!source) {
 		return null
 	}
@@ -120,10 +98,7 @@ const EXPRESSION_INPUT_NAMES = {
 	missing: 'Expression is required. Provide an inline expression, --file, or --stdin (or pass - as expression).',
 } as const
 
-const readInlineExpression = async (
-	selection: TextInputSelection,
-	output: Output,
-): Promise<ResolvedExpressionSource | null> => {
+const readInlineExpression = async (selection: TextInputSelection, output: Output): Promise<ResolvedExpressionSource | null> => {
 	const expression = await readTextInput(selection, EXPRESSION_INPUT_NAMES, output, 'Expression')
 	return expression == null ? null : { expression }
 }
@@ -276,7 +251,7 @@ export const wrapExpressionWithArgs = (source: string, args: EvalArgMap): string
 /**
  * Flags `eval` and `eval-until` both accept.
  *
- * The two commands share their entire expression/args/iframe/out surface; only `--until`
+ * The two commands share their entire expression/args/out surface; only `--until`
  * versus `--total-timeout` semantics differ. Declaring the shared half once means a new
  * shared flag is added in one place instead of four.
  */
@@ -300,12 +275,6 @@ export type EvalCommonOptions = {
 	stdin?: boolean
 	/** Read setup code from a file and run it before the expression. */
 	inject?: string
-	/** CSS selector for iframe to eval in via postMessage (extension mode). */
-	iframe?: string
-	/** Message type prefix for iframe eval (default: argus). */
-	iframeNamespace?: string
-	/** Timeout for iframe postMessage response (default: 5000; accepts duration syntax). */
-	iframeTimeout?: string
 	/** Repeated key=value arguments exposed to scripts as `args`. */
 	arg?: string[]
 	/** Load args from a JSON object file. */

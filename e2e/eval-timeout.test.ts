@@ -15,6 +15,6 @@ describe('eval timeout parsing', () => {
 
 	test('reports invalid timeout values with the flag name', () => {
 		expect(parseDurationFlagMs('', '--timeout').error).toContain('Invalid --timeout value')
-		expect(parseDurationFlagMs('soon', '--iframe-timeout').error).toContain('Invalid --iframe-timeout value')
+		expect(parseDurationFlagMs('soon', '--nav-timeout').error).toContain('Invalid --nav-timeout value')
 	})
 })

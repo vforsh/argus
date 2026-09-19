@@ -1,7 +1,6 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
 import { runEval } from '../../commands/eval.js'
 import { runEvalUntil } from '../../commands/evalUntil.js'
-import { runIframeHelper } from '../../commands/iframeHelper.js'
 import { jsonOption } from './sharedOptions.js'
 import { usageError } from '../validation.js'
 
@@ -18,7 +17,7 @@ const sharedEvalHeadOptions = (timeoutDescription: string): readonly ArgusComman
 	{ flags: '-q, --silent', description: 'Suppress success output; only emit output on error' },
 ]
 
-/** Trailing input/iframe/args options shared verbatim between `eval` and `eval-until`. */
+/** Trailing input/args options shared verbatim between `eval` and `eval-until`. */
 const sharedEvalTailOptions: readonly ArgusCommandOption[] = [
 	{ flags: '--expression <js>', description: 'Expression to evaluate (alternative to the positional expression)' },
 	{ flags: '-f, --file <path>', description: 'Read expression from a file' },
@@ -26,9 +25,6 @@ const sharedEvalTailOptions: readonly ArgusCommandOption[] = [
 	{ flags: '--no-bundle', description: 'Read --file as-is (skip bundling and auto-bundle)' },
 	{ flags: '--stdin', description: 'Read expression from stdin' },
 	{ flags: '--inject <path>', description: 'Read setup code from a file and run it before the expression' },
-	{ flags: '--iframe <selector>', description: 'Eval in iframe via postMessage (requires helper script)' },
-	{ flags: '--iframe-namespace <name>', description: 'Message type prefix for iframe eval (default: argus)' },
-	{ flags: '--iframe-timeout <duration>', description: 'Timeout for iframe postMessage response (default: 5000; accepts 5s, 1m)' },
 	{ flags: '--arg <key=value>', description: 'Argument exposed to eval scripts as args[key]', parser: collectValue, defaultValue: [] },
 	{ flags: '--args <path>', description: 'Load args from a JSON object file (overridden by --arg)' },
 ]
@@ -70,35 +66,12 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			'argus eval app "1+1" --silent',
 			'argus eval app "Date.now()" --interval 500 --count 10',
 			'argus eval app "document.title" --interval 250 --until \'result === "ready"\'',
-			'argus eval app "window.gameState" --iframe "iframe#game"',
-			'argus eval app "document.title" --iframe "iframe" --iframe-timeout 10000',
 		],
 		action: async (id, expression, options) => {
 			const resolved = resolveEvalExpression(expression, options)
 			if (resolved === REJECTED) return
 			await runEval(id, resolved, options)
 		},
-		subcommands: [
-			{
-				name: 'iframe-helper',
-				description: 'Output helper script for cross-origin iframe eval via postMessage',
-				options: [
-					{ flags: '--out <file>', description: 'Write script to file instead of stdout' },
-					{ flags: '--no-log', description: 'Omit console.log confirmation' },
-					{ flags: '--iife', description: 'Wrap in IIFE to avoid global scope' },
-					{ flags: '--namespace <name>', description: 'Message type prefix (default: argus)' },
-				],
-				examples: [
-					'argus eval iframe-helper > helper.js',
-					'argus eval iframe-helper --out src/argus.js',
-					'argus eval iframe-helper --iife --no-log',
-					'argus eval iframe-helper --namespace myapp',
-				],
-				action: async (options) => {
-					await runIframeHelper(options)
-				},
-			},
-		],
 	},
 	{
 		name: 'eval-until',
@@ -144,7 +117,7 @@ const REJECTED = Symbol('eval-expression-rejected')
 /**
  * Resolve the expression from either the positional argument or `--expression`.
  *
- * `eval` and `eval-until` share their whole expression/args/iframe/out surface, and both
+ * `eval` and `eval-until` share their whole expression/args/out surface, and both
  * used to re-map ~22 option properties into a new object where every key mapped to the
  * same name — a pure identity projection written twice, where missing a key meant a flag
  * parsed but never reached the command. The options object is passed through now, so
