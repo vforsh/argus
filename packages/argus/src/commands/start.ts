@@ -17,6 +17,7 @@ export type StartOptions = {
 	devTools?: boolean
 	headless?: boolean
 	mute?: boolean
+	userAgent?: string
 	type?: string
 	origin?: string
 	target?: string
@@ -35,6 +36,7 @@ type StartResult = {
 	watcherHost: string
 	watcherPort: number
 	watcherPid: number
+	userAgentOverride?: true
 }
 
 export const runStart = async (options: StartOptions): Promise<void> => {
@@ -80,6 +82,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 			devTools: options.devTools,
 			headless: options.headless,
 			mute: options.mute,
+			userAgent: options.userAgent,
 			authState: authState.snapshot,
 		})
 	} catch (error) {
@@ -141,6 +144,9 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		watcherHost: handle.watcher.host,
 		watcherPort: handle.watcher.port,
 		watcherPid: handle.watcher.pid,
+	}
+	if (options.userAgent !== undefined) {
+		result.userAgentOverride = true
 	}
 
 	if (options.json) {

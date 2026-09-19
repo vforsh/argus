@@ -3,7 +3,7 @@ import type { ArgusConfig, ChromeStartConfig, WatcherInjectConfig, WatcherStartC
 
 /** One-line shape reminder appended to every config validation error. */
 export const EXPECTED_SHAPE_HINT =
-	'Expected shape: { plugins?: string[], pluginAliases?: Record<string, string>, chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean, headless?: boolean } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full", inject?: { file: string, exposeArgus?: boolean } } } }.'
+	'Expected shape: { plugins?: string[], pluginAliases?: Record<string, string>, chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean, headless?: boolean, userAgent?: string } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full", inject?: { file: string, exposeArgus?: boolean } } } }.'
 
 type Validated<T> = { ok: true; value: T } | { ok: false; error: string }
 type ValidatedOptional<T> = { ok: true; value?: T } | { ok: false; error: string }
@@ -87,6 +87,13 @@ const validateChromeStartConfig = (value: unknown): Validated<ChromeStartConfig>
 	if (!headlessResult.ok) {
 		return headlessResult
 	}
+	const userAgentResult = validateOptionalString(value.userAgent, '"chrome.start.userAgent"')
+	if (!userAgentResult.ok) {
+		return userAgentResult
+	}
+	if (userAgentResult.value !== undefined && !userAgentResult.value.trim()) {
+		return { ok: false, error: '"chrome.start.userAgent" must be a non-empty string.' }
+	}
 
 	if (urlResult.value !== undefined && watcherIdResult.value !== undefined) {
 		return { ok: false, error: '"chrome.start.url" and "chrome.start.watcherId" are mutually exclusive.' }
@@ -101,6 +108,7 @@ const validateChromeStartConfig = (value: unknown): Validated<ChromeStartConfig>
 	assignDefined(config, 'profile', profileResult.value as ChromeStartConfig['profile'] | undefined)
 	assignDefined(config, 'devTools', devToolsResult.value)
 	assignDefined(config, 'headless', headlessResult.value)
+	assignDefined(config, 'userAgent', userAgentResult.value)
 
 	return { ok: true, value: config }
 }

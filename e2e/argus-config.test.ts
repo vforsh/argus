@@ -123,6 +123,24 @@ test('CLI overrides config when option source is cli', async () => {
 	}
 })
 
+test('config userAgent is merged and CLI can override it', async () => {
+	resetExitCode()
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-config-'))
+	try {
+		const configPath = path.join(tempDir, 'argus.config.json')
+		await fs.writeFile(configPath, JSON.stringify({ chrome: { start: { userAgent: 'regular-chrome' } } }))
+
+		const configResult = loadArgusConfig(configPath)
+		expect(configResult).toBeTruthy()
+		expect(mergeChromeStartOptionsWithConfig<{ userAgent?: string }>({}, createCommand({}), configResult!)?.userAgent).toBe('regular-chrome')
+		expect(mergeChromeStartOptionsWithConfig({ userAgent: 'Literal/1.0' }, createCommand({ userAgent: 'cli' }), configResult!)?.userAgent).toBe(
+			'Literal/1.0',
+		)
+	} finally {
+		await fs.rm(tempDir, { recursive: true, force: true })
+	}
+})
+
 test('config artifacts resolve relative to the config directory', async () => {
 	resetExitCode()
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-config-'))

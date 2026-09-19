@@ -54,10 +54,11 @@ Tab stuck in background or booting: `argus ext show app` then `argus reload app`
 ```bash
 argus start --id app --url localhost:3000            # Chrome + watcher, one process (background it)
 argus start --id app --url localhost:3000 --headless --profile temp
+argus start --id app --url https://example.com --headless --profile default-medium --user-agent regular-chrome
 argus start --id app --auth-from ext-watcher --url https://target.app/   # clone login into temp Chrome
 ```
 
-Split form: `argus chrome start --url …` then `argus watcher start --id app --url localhost:3000 --chrome-port 9222`. Chrome is muted by default (`--no-mute`). Default profile mode `default-lite` copies cookies/logins from the user's Chrome into a temp dir; `temp` is empty. Iframe/worker targets: `--type iframe --url … | --origin … | --target <id> | --parent <substr>`.
+Split form: `argus chrome start --url …` then `argus watcher start --id app --url localhost:3000 --chrome-port 9222`. In headless mode, `--user-agent regular-chrome` removes Chrome's headless UA marker before the first request; use `default-medium` when auth also needs Local Storage or IndexedDB. Chrome is muted by default (`--no-mute`). Default profile mode `default-lite` copies cookies/logins from the user's Chrome into a temp dir; `temp` is empty. Iframe/worker targets: `--type iframe --url … | --origin … | --target <id> | --parent <substr>`.
 
 ---
 

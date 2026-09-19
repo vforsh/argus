@@ -16,6 +16,7 @@ import { applyAuthStateSnapshotToChrome } from './chrome/authState.js'
 import { loadAuthStateSnapshot } from './auth.js'
 import { delay } from '@vforsh/argus-core'
 import { buildChromeLaunchArgs } from './chrome/launchArgs.js'
+import { resolveChromeUserAgent } from './chrome/userAgent.js'
 
 export type ChromeStartOptions = {
 	url?: string
@@ -25,6 +26,7 @@ export type ChromeStartOptions = {
 	devTools?: boolean
 	headless?: boolean
 	mute?: boolean
+	userAgent?: string
 	authState?: string
 }
 
@@ -34,6 +36,7 @@ type ChromeStartResult = {
 	cdpPort: number
 	userDataDir: string | null
 	startupUrl: string | null
+	userAgentOverride?: true
 }
 
 export type LaunchChromeOptions = {
@@ -42,6 +45,7 @@ export type LaunchChromeOptions = {
 	devTools?: boolean
 	headless?: boolean
 	mute?: boolean
+	userAgent?: string
 	/**
 	 * Hydrate this saved auth state into the fresh profile before returning.
 	 *
@@ -261,6 +265,7 @@ export const launchChrome = async (options: LaunchChromeOptions): Promise<Launch
 	if (!chromeBin) {
 		throw new Error('Chrome executable not found. Set ARGUS_CHROME_BIN environment variable.')
 	}
+	const userAgent = await resolveChromeUserAgent(chromeBin, options.userAgent)
 
 	let userDataDir: string | null = null
 	if (profile !== 'temp') {
@@ -297,6 +302,7 @@ export const launchChrome = async (options: LaunchChromeOptions): Promise<Launch
 		devTools: options.devTools,
 		headless: options.headless,
 		mute: options.mute,
+		userAgent: userAgent ?? undefined,
 		launchUrl,
 	})
 
@@ -441,6 +447,7 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 			devTools: options.devTools,
 			headless: options.headless,
 			mute: options.mute,
+			userAgent: options.userAgent,
 			authState: authStateSnapshot,
 		})
 	} catch (error) {
@@ -464,6 +471,9 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		userDataDir: result.userDataDir,
 		startupUrl,
 	}
+	if (options.userAgent !== undefined) {
+		info.userAgentOverride = true
+	}
 
 	if (options.json) {
 		output.writeJson(info)
@@ -474,6 +484,9 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 		output.writeHuman(`  userDataDir=${info.userDataDir}`)
 		if (info.startupUrl) {
 			output.writeHuman(`  url=${info.startupUrl}`)
+		}
+		if (info.userAgentOverride) {
+			output.writeHuman('  userAgent=overridden')
 		}
 	}
 

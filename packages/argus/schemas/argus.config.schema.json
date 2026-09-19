@@ -49,6 +49,15 @@
 						"devTools": {
 							"type": "boolean",
 							"description": "Auto-open DevTools for new tabs."
+						},
+						"headless": {
+							"type": "boolean",
+							"description": "Run Chrome in headless mode."
+						},
+						"userAgent": {
+							"type": "string",
+							"minLength": 1,
+							"description": "Startup user agent: regular-chrome or an exact literal value."
 						}
 					},
 					"allOf": [

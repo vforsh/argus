@@ -7,6 +7,7 @@ export type ChromeStartConfig = {
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
 	headless?: boolean
+	userAgent?: string
 }
 
 /** Script-injection settings for watcher start. `file` is resolved relative to the config dir. */

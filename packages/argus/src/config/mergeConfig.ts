@@ -18,6 +18,7 @@ export const mergeChromeStartOptionsWithConfig = <
 		profile?: ChromeStartConfig['profile']
 		devTools?: boolean
 		headless?: boolean
+		userAgent?: string
 	},
 >(
 	options: T,
@@ -35,6 +36,7 @@ export const mergeChromeStartOptionsWithConfig = <
 	merged.profile = mergeOption(command, 'profile', options.profile, chromeStart.profile)
 	merged.devTools = mergeOption(command, 'devTools', options.devTools, chromeStart.devTools)
 	merged.headless = mergeOption(command, 'headless', options.headless, chromeStart.headless)
+	merged.userAgent = mergeOption(command, 'userAgent', options.userAgent, chromeStart.userAgent)
 
 	if (merged.url && merged.fromWatcher) {
 		console.error('Cannot combine --url with --from-watcher. Use one or the other.')

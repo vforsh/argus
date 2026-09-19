@@ -4,6 +4,7 @@ export type ChromeLaunchArgsOptions = {
 	devTools?: boolean
 	headless?: boolean
 	mute?: boolean
+	userAgent?: string
 	launchUrl: string | null
 }
 
@@ -23,6 +24,9 @@ export const buildChromeLaunchArgs = (options: ChromeLaunchArgsOptions): string[
 	}
 	if (options.headless) {
 		args.push('--headless=new')
+	}
+	if (options.userAgent) {
+		args.push(`--user-agent=${options.userAgent}`)
 	}
 	if (options.launchUrl) {
 		args.push(options.launchUrl)

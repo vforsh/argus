@@ -9,6 +9,7 @@ CDP mode: Argus launches (or connects to) a Chrome with remote debugging and a w
 ```bash
 argus start --id app --url localhost:3000
 argus start --id app --url localhost:3000 --headless --profile temp
+argus start --id app --url https://example.com --headless --user-agent regular-chrome
 argus start --id app --url localhost:3000 --dev-tools --no-mute
 argus start --id app --url localhost:3000 --inject ./debug.js --no-page-indicator
 argus start --id app --auth-from ext-2                         # clone login from another watcher
@@ -17,7 +18,7 @@ argus start --id game --type iframe --url localhost:3007
 argus start --id app --url localhost:3000 --json
 ```
 
-Chrome flags: `--profile`, `--dev-tools`, `--headless`, `--no-mute`. Watcher flags: `--type`, `--origin`, `--target`, `--parent`, `--inject`, `--artifacts`, `--no-page-indicator`. `--auth-from` hydrates cookies + storage from a running watcher into a fresh temp profile before attaching; `--url` then overrides the final destination.
+Chrome flags: `--profile`, `--dev-tools`, `--headless`, `--user-agent`, `--no-mute`. `--user-agent regular-chrome` derives Chrome's own UA and removes only the headless marker before the first navigation; a literal value is passed through unchanged. Watcher flags: `--type`, `--origin`, `--target`, `--parent`, `--inject`, `--artifacts`, `--no-page-indicator`. `--auth-from` hydrates cookies + storage from a running watcher into a fresh temp profile before attaching; `--url` then overrides the final destination.
 
 ## `argus chrome`
 
@@ -25,6 +26,7 @@ Chrome flags: `--profile`, `--dev-tools`, `--headless`, `--no-mute`. Watcher fla
 argus chrome start --url http://localhost:3000
 argus chrome start --from-watcher app          # reuse a registered watcher's match URL
 argus chrome start --profile temp --headless
+argus chrome start --url https://example.com --headless --user-agent regular-chrome
 argus chrome start --auth-state ./auth.json    # hydrate exported state (forces temp profile)
 argus chrome ls --pages
 argus chrome status --cdp 127.0.0.1:9222
@@ -42,6 +44,15 @@ Profile modes (`--profile`, default `default-lite`):
 | `default-full`   | Full copy of the `Default` profile dir                                         |
 
 User data dir is auto-detected; override with `ARGUS_CHROME_USER_DATA_DIR`. Chrome binary: `ARGUS_CHROME_BIN` if auto-detection fails. Chrome starts muted unless `--no-mute`.
+
+Headless authenticated session when the site stores auth outside cookies:
+
+```bash
+argus start --id app --url https://example.com --headless \
+  --profile default-medium --user-agent regular-chrome
+```
+
+`default-medium` carries cookies plus Local Storage and IndexedDB into the isolated profile. The startup UA flag is applied before the first document request, so no preliminary `HeadlessChrome` navigation reaches the site.
 
 ## `argus watcher`
 
@@ -86,7 +97,7 @@ Auto-discovered from cwd: `.argus/config.json`, `.config/argus.json`, `argus.con
 
 ```json
 {
-	"chrome": { "start": { "url": "http://localhost:3000", "devTools": true } },
+	"chrome": { "start": { "url": "http://localhost:3000", "devTools": true, "userAgent": "regular-chrome" } },
 	"watcher": {
 		"start": {
 			"id": "app",
