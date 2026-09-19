@@ -1,92 +1,92 @@
-## Start And Watcher Lifecycle
+# Launch And Lifecycle (CDP)
 
-Use CDP startup when an isolated/debuggable Chrome is acceptable. Use extension-control instead when the task needs the user's normal browser profile, cookies, local storage, saved logins, or already-open tabs.
+CDP mode: Argus launches (or connects to) a Chrome with remote debugging and a watcher attaches to one target. Use extension-control instead when the task needs the user's real profile ([EXTENSION.md](./EXTENSION.md)).
 
-Long-running commands must run in the background in agent shells:
+`start`, `chrome start`, `watcher start`, and `page open --attach` stay in the foreground until Ctrl+C. Background them in agent shells.
 
-- `argus start`
-- `argus chrome start`
-- `argus watcher start`
-- `argus logs tail`
-- `argus net tail`
-
-## Start (Chrome + Watcher)
+## `argus start` (Chrome + watcher)
 
 ```bash
 argus start --id app --url localhost:3000
-argus start --id app --auth-from extension-2
-argus start --id app --auth-from extension-2 --url https://target.app/
-argus start --id app --url localhost:3000 --dev-tools
-argus start --id app --url localhost:3000 --profile temp
-argus start --id app --type page --headless
-argus start --id app --url localhost:3000 --inject ./debug.js
-argus start --id app --url localhost:3000 --no-page-indicator
+argus start --id app --url localhost:3000 --headless --profile temp
+argus start --id app --url localhost:3000 --dev-tools --no-mute
+argus start --id app --url localhost:3000 --inject ./debug.js --no-page-indicator
+argus start --id app --auth-from ext-2                         # clone login from another watcher
+argus start --id app --auth-from ext-2 --url https://target.app/
+argus start --id game --type iframe --url localhost:3007
 argus start --id app --url localhost:3000 --json
 ```
 
-`--url` opens in Chrome and matches the watcher target. `--auth-from` clones cookies and storage from another watcher into a fresh temp Chrome session before attach; add `--url` to override the final destination after hydration. `argus start` accepts Chrome options (`--profile`, `--dev-tools`, `--headless`) and watcher options (`--type`, `--origin`, `--target`, `--parent`, `--inject`, `--artifacts`, `--no-page-indicator`).
+Chrome flags: `--profile`, `--dev-tools`, `--headless`, `--no-mute`. Watcher flags: `--type`, `--origin`, `--target`, `--parent`, `--inject`, `--artifacts`, `--no-page-indicator`. `--auth-from` hydrates cookies + storage from a running watcher into a fresh temp profile before attaching; `--url` then overrides the final destination.
 
-## Chrome Start
+## `argus chrome`
 
 ```bash
 argus chrome start --url http://localhost:3000
-argus chrome start --from-watcher app
-argus chrome start --dev-tools
-argus chrome start --headless
-argus chrome start --auth-state auth.json
+argus chrome start --from-watcher app          # reuse a registered watcher's match URL
+argus chrome start --profile temp --headless
+argus chrome start --auth-state ./auth.json    # hydrate exported state (forces temp profile)
+argus chrome ls --pages
+argus chrome status --cdp 127.0.0.1:9222
+argus chrome version --id app
+argus chrome stop --id app
 ```
 
-Chrome starts muted by default. Pass `--no-mute` to `argus start` or `argus chrome start` to allow audio playback.
+Profile modes (`--profile`, default `default-lite`):
 
-`--from-watcher` reads the URL from a registered watcher config. `--auth-state` hydrates cookies/storage into a fresh Chrome profile before opening the page.
+| Mode             | Contents                                                                       |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `temp`           | Empty fresh profile                                                            |
+| `default-lite`   | Temp copy of the user's Cookies, Login Data, Preferences (extensions stripped) |
+| `default-medium` | `default-lite` + History, Local Storage, IndexedDB                             |
+| `default-full`   | Full copy of the `Default` profile dir                                         |
 
-## Watcher Start
+User data dir is auto-detected; override with `ARGUS_CHROME_USER_DATA_DIR`. Chrome binary: `ARGUS_CHROME_BIN` if auto-detection fails. Chrome starts muted unless `--no-mute`.
+
+## `argus watcher`
 
 ```bash
-argus watcher start --id app --url localhost:3000
 argus watcher start --id app --url localhost:3000 --chrome-port 9222
-argus watcher start --id app --type iframe --url localhost:3007
-argus watcher start --id app --type iframe --parent example.com
-argus watcher start --id app --origin https://localhost:3007
-argus watcher start --id app --target CC1135709D9AC3B9CC0446F8B58CC344
-argus watcher start --id app --url localhost:3000 --inject ./debug.js
-argus watcher start --id app --url localhost:3000 --no-page-indicator
-argus watcher start --id app --source extension
+argus watcher start --url localhost:3000                         # auto-generated id
+argus watcher start --id game --type iframe --url localhost:3007
+argus watcher start --id game --origin https://localhost:3007    # protocol+host+port, ignores query
+argus watcher start --id game --target CC1135709D9AC3B9CC0446F8B58CC344
+argus watcher start --id game --type iframe --parent yandex.ru
+argus watcher start --id app --source extension                  # extension-backed (normally via `ext use`)
+argus watcher status app
+argus watcher ls --by-cwd my-project
+argus watcher stop app
+argus watcher prune --dry-run                                    # drop unreachable registry entries
+argus watcher show app / hide app                                # alias of `page show/hide`
 ```
 
-`--url` matches a target URL substring. `--origin` matches protocol+host+port. `--target` connects to a specific Chrome target id. `--type` filters target type (`page`, `iframe`, `worker`). `--parent` filters by parent target URL. `--inject` runs a JS file on attach and navigation. `--no-page-indicator` hides the in-page overlay, useful before screenshots.
+Target matching: `--url` substring, `--origin` exact origin, `--target` exact Chrome target id, `--type page|iframe|worker`, `--parent` substring of the parent target URL. Combine `--type iframe --url …` when the host page carries the iframe URL in its query string ([IFRAMES.md](./IFRAMES.md)). Default artifacts dir: `$TMPDIR/argus`.
 
-## Targets / Pages
+## Open a tab and attach by target id
 
 ```bash
-argus page ls --id app
-argus page ls --type iframe --id app
-argus page ls --tree --id app
-argus page open --url http://example.com --id app
-argus page reload --id app
-argus page reload <targetId> --param foo=bar
-argus page activate <targetId>
-argus page close <targetId>
-argus reload app
-argus reload app --ignore-cache
+argus page open --url http://localhost:3000 --attach --as app    # CDP only; foreground like `start`
+argus page open --url http://example.com                         # just opens, prints target, exits
+```
+
+`--attach` matches the new tab by **target id**, so a second tab with the same URL cannot be picked.
+
+## Diagnostics
+
+```bash
+argus list                 # watchers + Chrome instances
+argus doctor --json        # environment checks
+argus watcher status app
+argus chrome status --id app
 ```
 
 ## Config Defaults
 
-Load defaults for `argus start`, `argus chrome start`, and `argus watcher start` from config files.
-
-Auto-discovery:
-
-- `.argus/config.json`
-- `.config/argus.json`
-- `argus.config.json`
-- `argus/config.json`
+Auto-discovered from cwd: `.argus/config.json`, `.config/argus.json`, `argus.config.json`, `argus/config.json`. `argus config init [--path …] [--force]` writes a starter. CLI flags override config; `--config <path>` picks a file explicitly.
 
 ```json
 {
-	"chrome": {
-		"start": { "url": "http://localhost:3000", "devTools": true }
-	},
+	"chrome": { "start": { "url": "http://localhost:3000", "devTools": true } },
 	"watcher": {
 		"start": {
 			"id": "app",
@@ -95,28 +95,28 @@ Auto-discovery:
 			"artifacts": "./artifacts",
 			"inject": { "file": "./scripts/debug.js" }
 		}
-	}
+	},
+	"plugins": ["gsheets"]
 }
 ```
 
-CLI flags override config. `argus config init` creates a starter config. Script injection runs custom JS on attach and page navigation; see [INJECT.md](./INJECT.md).
+Per-user config lives at `$ARGUS_HOME/config.json` (default `~/.argus/config.json`) and is used for global plugins ([PLUGINS.md](./PLUGINS.md)).
 
-## Programmatic Watcher (Node API)
+## Node API
 
-Use `@vforsh/argus-watcher` to create watchers from code.
+`@vforsh/argus-watcher` exports `startWatcher(options) → { watcher, events, close }`. Events: `cdpAttached`, `cdpDetached`, `httpRequested`. Full runnable example with env-driven options: [start-watcher.ts](../start-watcher.ts).
 
-```js
+```ts
 import { startWatcher } from '@vforsh/argus-watcher'
 
 const { watcher, events, close } = await startWatcher({
 	id: 'app',
 	match: { url: 'localhost:3000' },
 	chrome: { host: '127.0.0.1', port: 9222 },
+	inject: { script: 'window.DEBUG = true', exposeArgus: true },
 })
-
-events.on('cdpAttached', ({ target }) => {
-	console.log(`Attached to ${target?.title}`)
-})
-
+events.on('cdpAttached', ({ target }) => console.log('attached', target?.url))
 await close()
 ```
+
+Callers that skip the CLI (SDK, raw HTTP) must pass absolute `--out` paths; relative ones resolve under the watcher's temp artifacts dir.

@@ -1,111 +1,96 @@
-## Network Commands
+# Network
 
-Use this after a watcher is attached and you need request summaries, fresh capture windows, request/response bodies, WebSockets, SSE, HAR export, or network mocking.
+Request summaries buffered per watcher, with bodies fetched lazily, plus WebSocket/SSE listing, HAR export, and request mocking.
 
-For iframe-active extension watchers, choose scope deliberately:
-
-- `--scope selected` / `--frame selected` means traffic for the selected iframe target.
-- page/tab scope means traffic for the top page.
-- reload-driven `net watch`, `net export`, and `net inspect` reject selected-frame scope because reloading an iframe target is ambiguous.
-
-## Quick Read
+## Read
 
 ```bash
 argus net app --since 5m
-argus net app --grep api
-argus net app --json
-argus net tail app --grep api --json
-argus net summary app
-argus net clear app
+argus net app --grep api --json
+argus net app --after 42 --limit 100          # paginate by Argus request id
+argus net summary app                          # counts by host/type/status
+argus net tail app --grep api --json           # long-poll stream (NDJSON); --timeout <ms>
+argus net clear app                            # reset buffer
 ```
 
-`net clear` resets the watcher buffer so the next inspection starts clean.
+## Filters (all list/summary/watch/export/inspect commands)
 
-## Fresh Capture
+| Flag                               | Meaning                                                               |
+| ---------------------------------- | --------------------------------------------------------------------- |
+| `--grep <substr>`                  | Substring over redacted URLs                                          |
+| `--host <h>` / `--ignore-host <h>` | Include / exclude hosts (repeatable)                                  |
+| `--ignore-pattern <substr>`        | Exclude URLs containing substring (repeatable)                        |
+| `--method <m>`                     | HTTP method (repeatable)                                              |
+| `--status <s>`                     | Status or class: `404`, `4xx` (repeatable)                            |
+| `--resource-type <t>`              | CDP type: `Fetch`, `XHR`, `Document`, `Script`, `Image`, `WebSocket`… |
+| `--mime <prefix>`                  | MIME prefix, e.g. `application/json`                                  |
+| `--first-party` / `--third-party`  | Relative to the page origin                                           |
+| `--failed-only`                    | Network errors / aborted                                              |
+| `--slow-over <duration>`           | Duration threshold                                                    |
+| `--large-over <size>`              | Size threshold (`100kb`, `2mb`)                                       |
+| `--since <duration>`               | Time window                                                           |
+| `--scope <s>`                      | `selected` (iframe target), `page` (default), or `tab`                |
+| `--frame <f>`                      | Explicit frame id, or `selected` / `page`                             |
+
+Extension mode with an iframe selected: `net` still defaults to the **top page**; pass `--scope selected` to see the iframe's traffic. Reload-driven commands (`net watch/export/inspect --reload`) reject `--scope selected`.
+
+## Fresh Capture Window
 
 ```bash
-argus net watch app --reload --settle 3s
-argus net watch app --reload --settle-after "window.appReady" --settle 2s
-argus net watch app --reload --settle 3s --ignore-pattern /poll
-argus net watch app --reload --settle 3s --max-timeout 30s
+argus net watch app --reload --settle 3s                     # clear, reload, wait for quiet
+argus net watch app --reload --settle-after "window.appReady" --settle 2s --settle-after-interval 100ms
+argus net watch app --reload --ignore-cache --ignore-pattern /poll --max-timeout 30s
+argus net watch app --settle 2s --no-clear                   # keep buffer, wait for quiet only
 ```
 
-`net watch` tails matching requests until no new matches arrive for `--settle`. `--settle-after "<expr>"` polls the page first, then starts the quiet-window countdown only after the expression becomes truthy.
+`--settle` is the quiet window (no new matching requests); `--settle-after <expr>` delays the countdown until the expression is truthy; `--max-timeout` caps the whole wait.
 
-## Inspect One Endpoint
+## One Endpoint
 
 ```bash
-argus net inspect /api/init app --reload
+argus net inspect /api/init app --reload                    # newest URL match after a fresh capture
+argus net inspect /api/init app --reload --request --response --json
 argus net inspect /api/post app --settle-after "window.appReady" --settle 400ms
-argus net inspect /api/init app --reload --request --response
+argus net show 42 app                                       # headers (redacted), initiator, redirects, timing, cache/SW flags
+argus net show 90829.507 app                                # raw CDP requestId also accepted
+argus net body 42 app                                       # response body (lazy fetch)
+argus net body 42 app --request                             # request body
 ```
 
-`net inspect` captures a fresh window, picks the newest URL match, prints a compact request summary, and can include request/response bodies.
-
-## Filters
+## WebSockets / SSE
 
 ```bash
-argus net extension --scope selected --host game-frame-host.example --resource-type Fetch
-argus net extension --first-party --slow-over 500ms --status 4xx
-argus net extension --large-over 100kb --mime application/json
-argus net app --method POST --host api.example.com
-argus net app --failed-only
-argus net app --domain example.com
+argus net ws app --grep socket
+argus net ws show 1 app                                     # handshake headers + recent frame previews
+argus net sse app --mime text/event-stream                  # request-level only; CDP does not expose SSE payloads
 ```
 
-Common filters: host, domain, method, status/status class (`2xx`), resource type, MIME prefix, first-party/third-party, failed-only, slow-over, large-over, and scope/frame.
-
-## Show And Bodies
-
-```bash
-argus net show 42 app
-argus net show 90829.507 extension --json
-argus net body 42 app
-argus net body 42 app --request
-```
-
-`net show` drills into one buffered request by Argus id or raw CDP request id, including redacted headers, initiator, redirect chain, cache/service-worker flags, timing phases, and body availability. `net body` lazily fetches response body by default; add `--request` for request body.
-
-## Export / WebSockets / SSE
+## Export
 
 ```bash
 argus net export app --out boot.har
-argus net export app --reload --settle 3s --out boot.har
-argus net ws app
-argus net ws show 1 app
-argus net sse app
+argus net export app --reload --settle 3s --first-party --out boot.har --json
 ```
 
-`net export --format har` writes the current buffer or a fresh reload capture as HAR. `net ws show` prints WebSocket handshake headers plus bounded recent frame previews. `net sse` lists EventSource/text-event-stream requests at request level; CDP does not reliably expose SSE event payloads.
+## Mocks
 
-## Network Mocking
-
-Intercept live requests via CDP Fetch: block, fail with a real network error, stub responses, inject latency, or rewrite requests.
+CDP Fetch interception: block, fail, stub, delay, rewrite. Rules persist across reloads/reattach until removed; first match wins.
 
 ```bash
-argus net mock add app --url "*/analytics/*" --block
-argus net mock add app --url "*/api/save" --fail ConnectionRefused
-argus net mock add app --url "*/api/init" --fail TimedOut --times 1
+argus net mock add app --url "*/analytics/*" --block                            # BlockedByClient
+argus net mock add app --url "*/api/save" --fail ConnectionRefused --times 1    # TimedOut, ConnectionRefused, …
 argus net mock add app --url "*/api/config" --status 200 --body-file ./fixtures/config.json
-argus net mock add extension --scope selected --url "*/api/config" --status 200 --body-file ./fixtures/config.json
-argus net mock add app --url "*/api/config" --status 500 --body '{"error":"maintenance"}'
-echo '{"flags":{"newShop":true}}' | argus net mock add app --url "*/api/flags" --body -
-argus net mock add app --url "*/api/*" --delay 2s --method POST
-argus net mock add app --url "*/api/*" --set-header "x-debug: 1"
-argus net mock add app --url "cdn.prod.com" --rewrite-host localhost:3000
-argus net mock ls app
+argus net mock add app --url "*/api/config" --status 500 --body '{"error":"maintenance"}' --header "x-mock: 1"
+echo '{"flags":{"x":true}}' | argus net mock add app --url "*/api/flags" --body -
+argus net mock add app --url "*/api/*" --method POST --delay 2s                 # pass-through + latency
+argus net mock add app --url "*/api/*" --set-header "x-debug: 1"               # request header override
+argus net mock add app --url "cdn.prod.com" --rewrite-host localhost:3000      # host, or origin when value has ://
+argus net mock add app --scope selected --url "*/api/config" --status 200 --body-file ./c.json   # selected iframe
+argus net mock ls app                                                           # with hit counts
 argus net mock rm 2 app
 argus net mock clear app
 ```
 
-Rules persist across reloads and reattach until removed. First matching rule wins. `--url` is a case-insensitive wildcard pattern over the full request URL; `*` matches anything, and no `*` means substring match. Use `--times N` to limit any rule, including stubbed responses.
-
-Mock scope defaults to `page`, preserving the original top-level behavior. Use `--scope selected` or its `--frame selected` alias for the currently selected iframe; selected rules follow target changes and re-arm after reload/reattach. `--scope` and `--frame` are mutually exclusive.
-
-Exactly one primary action per rule:
-
-- `--block` aborts as `BlockedByClient`.
-- `--fail <reason>` aborts with a CDP network error such as `TimedOut` or `ConnectionRefused`.
-- `--status` with `--body`, `--body-file`, and optional headers stubs a response.
-
-Without a primary action, rules pass requests through with optional latency, request-header changes, or host/origin rewrites.
+- `--url` is a case-insensitive wildcard over the full URL; no `*` means substring. Narrow with `--method`, `--resource-type`.
+- Exactly one primary action: `--block`, `--fail <reason>`, or `--status`/`--body`/`--body-file` (+ `--header`). Without one, the rule passes the request through with optional `--delay`, `--set-header`, `--rewrite-host`.
+- `--times N` limits any rule. `--scope page` (default) vs `--scope selected` (`--frame` alias); selected rules follow target changes and re-arm after reload.

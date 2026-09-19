@@ -3,301 +3,148 @@ name: argus
 description: Guides use of the Argus CLI to debug and inspect web apps via Chrome CDP or the Argus Chrome extension, including authenticated browser sessions, iframe targets, logs, eval, DOM, network, and screenshots.
 ---
 
-## Argus CLI
+# Argus CLI
 
-Debug web apps through either:
-
-- **Extension-control**: normal user Chrome profile, cookies, login state, existing extensions. Best for authenticated portal apps and ordinary browser sessions.
-- **CDP Chrome**: Argus-launched/debuggable Chrome. Best for local apps, temp profiles, clean repros, headless runs, and raw Chrome target control.
-
-Install/run:
+Terminal control of a live Chromium page: logs, eval, DOM, interaction, network, screenshots, recordings. A **watcher** process attaches to one tab (or iframe) and serves a local HTTP API; every CLI command takes the watcher id as its first positional argument and supports `--json`.
 
 ```bash
-npm i -g @vforsh/argus
+npm i -g @vforsh/argus        # or: npx -y @vforsh/argus --help
 argus --help
-npx -y @vforsh/argus --help
-argus skill
+argus <cmd> --help            # every command has flags + examples
+argus skill                   # absolute path of this SKILL.md (reference/ sits next to it)
 ```
-
-`argus skill` prints the absolute path to the installed `SKILL.md`. Use it when an agent needs to locate the packaged Argus skill files.
-
-**Long-running commands:** `argus start`, `argus chrome start`, `argus watcher start`, and log tails do not exit on their own. Start them in the background when using an agent shell.
 
 ---
 
-## Pick The Mode
+## Pick A Mode
 
-Use **extension-control** when the task needs the user's normal Chrome profile, saved login, cookies, local storage, or already-open tabs.
+| Need                                                                             | Mode                   | Connect with                                 |
+| -------------------------------------------------------------------------------- | ---------------------- | -------------------------------------------- |
+| User's real Chrome: saved login, cookies, extensions, already-open tabs          | **Extension-control**  | `argus ext use --url <substr> --as <id>`     |
+| Isolated/temp profile, headless, custom CDP port, startup injection, clean repro | **CDP**                | `argus start --id <id> --url <url>`          |
+| App lives inside an iframe of a host page                                        | either + iframe select | `--iframe-url` (ext) / `--type iframe` (CDP) |
 
-Use **CDP Chrome** when the task needs an isolated browser, headless run, custom CDP port, script injection at startup, or raw `chrome://`/target-id control.
+Never use `argus start`, `--profile temp`, or headless for a flow that needs the user's login. Details: [EXTENSION.md](./reference/EXTENSION.md), [START.md](./reference/START.md), [IFRAMES.md](./reference/IFRAMES.md).
 
-Use **iframe target selection** when the app is embedded in a portal page and `eval`/DOM/click/screenshot must run inside the embedded app, not the host page.
-
-Read:
-
-- [START.md](./reference/START.md) for CDP startup, watcher lifecycle, config defaults, and Node API.
-- [EXTENSION.md](./reference/EXTENSION.md) for extension setup and runtime limitations.
-- [INSPECT.md](./reference/INSPECT.md) for command catalogs: logs, eval, capture, DOM, navigation, interaction, auth, storage, trace, pages, emulation.
-- [CAPTURE.md](./reference/CAPTURE.md) for screenshots, recordings (MP4/WebM/GIF, `--until`, `record status`), crop semantics, iframe capture, and recording troubleshooting.
-- [NET.md](./reference/NET.md) for network capture, filtering, inspection, bodies, WebSockets, SSE, HAR export, and mocks.
+**Long-running commands** (`start`, `chrome start`, `watcher start`, `page open --attach`, `logs tail`, `net tail`, `net sse`, `session`) never exit on their own. Run them in the background in agent shells.
 
 ---
 
-## Authenticated Browser Profile Flow
+## Connect: Extension-Control
 
-Use this for any app that needs the user's normal browser profile, cookies, local storage, extensions, or saved login state. Do **not** use `argus start`, `argus chrome start --profile temp`, headless Chrome, or a fresh CDP profile for this flow; those lose the real login/session context.
-
-First-time setup is one command: `argus extension install` (installs native hosts, opens chrome://extensions, waits for connect). The extension ID is pinned and the build ships with the CLI — see [EXTENSION.md](./reference/EXTENSION.md).
+One-time: `argus extension install` (installs native hosts, opens `chrome://extensions`, waits for connect).
 
 ```bash
-APP_URL="https://portal.example/app"
-WATCHER_ID="app"
-
-open -a "Google Chrome" "$APP_URL"
-argus ext doctor --json
-argus ext tabs --url "$APP_URL" --json
-argus ext use --url "$APP_URL" --as "$WATCHER_ID" --json
-argus page url "$WATCHER_ID" --json
+open -a "Google Chrome" "https://portal.example/app"
+argus ext doctor --json                              # bridge + extension healthy?
+argus ext tabs --url portal.example --json           # pick the tab; ambiguous matches fail closed
+argus ext use --url portal.example --as app --json   # attach (or reuse) → watcher id "app"
+argus ext use --tab <tabId> --as app                 # exact tab when several match
+argus page url app
 ```
 
-Mute or unmute a tab by attached watcher id or without attaching it first via the usual tab selectors:
+Embedded app: `argus ext use --url portal.example --as app --iframe-url game.example`; later switch with `argus ext select app --iframe-url … | --iframe-title … | --page`. Commands then run inside the selected iframe (eval, DOM, click, screenshot, `net --scope selected`). Reload stays tab-scoped; a selected iframe that is missing waits 3s then fails `extension_frame_not_ready` instead of silently using the host page.
 
-```bash
-argus ext mute "$WATCHER_ID"
-argus ext mute --url "$APP_URL"
-argus ext unmute --tab <tabId>
-```
-
-The selected mute state persists like Chrome's tab mute control until another command or the user changes it.
-
-If multiple tabs match, do not guess. Run `argus ext tabs --url "$APP_URL" --json`, choose the intended `tabId`, then use:
-
-```bash
-argus ext use --tab <tabId> --as "$WATCHER_ID" --json
-```
-
-If the tab is restored in the background or app boot looks stuck, make it visible and reload:
-
-```bash
-argus ext show "$WATCHER_ID"
-argus reload "$WATCHER_ID"
-argus eval-until "$WATCHER_ID" "document.readyState === 'complete'" --total-timeout 30s
-```
-
-For automation that must keep a covered page running without taking Chrome away from another macOS app, use the background visibility policy:
-
-```bash
-argus page visibility "$WATCHER_ID" --json
-argus page show "$WATCHER_ID" --policy background
-argus page hide "$WATCHER_ID"
-```
-
-`page visibility` is read-only and reports the desired state (`shown` or `default`), policy (`foreground` or `background`), and attachment state. The desired state and policy survive navigation and reconnects within the same running watcher. Explicit extension detach ends its native watcher; reacquire background mode after creating a new one. `foreground` may activate the tab/window; `background` keeps focus emulation enabled without activating Chrome. `--no-activate` suppresses a one-shot foreground activation, which is useful when restoring a saved shown state.
+Tab stuck in background or booting: `argus ext show app` then `argus reload app`.
 
 ---
 
-## Extension Iframe Flow
-
-Use this when the real app lives in an iframe inside a host page.
+## Connect: CDP
 
 ```bash
-APP_URL="https://portal.example/app"
-WATCHER_ID="app"
-
-open -a "Google Chrome" "$APP_URL"
-argus ext use --url "$APP_URL" --as "$WATCHER_ID" --iframe-url game-frame-host.example --json
-argus eval "$WATCHER_ID" "({ title: document.title, origin: location.origin })" --json
+argus start --id app --url localhost:3000            # Chrome + watcher, one process (background it)
+argus start --id app --url localhost:3000 --headless --profile temp
+argus start --id app --auth-from ext-watcher --url https://target.app/   # clone login into temp Chrome
 ```
 
-If iframe selection fails because the iframe is not present yet:
-
-```bash
-argus ext use --url "$APP_URL" --as "$WATCHER_ID" --json
-argus ext show "$WATCHER_ID"
-argus reload "$WATCHER_ID"
-argus eval-until "$WATCHER_ID" "document.querySelectorAll('iframe').length > 0" --total-timeout 30s
-argus ext targets "$WATCHER_ID" --tree
-argus ext select "$WATCHER_ID" --iframe-url game-frame-host.example --json
-```
-
-Useful selectors:
-
-```bash
-argus ext select "$WATCHER_ID" --iframe-url game-frame-host.example
-argus ext select "$WATCHER_ID" --iframe-title "Game Title"
-argus ext select "$WATCHER_ID" --iframe auto
-argus ext select "$WATCHER_ID" --page
-argus ext doctor --watcher "$WATCHER_ID"
-```
-
-`--iframe auto` is a convenience heuristic and should fail closed when multiple iframes look equally plausible. Prefer `--iframe-url` or `--iframe-title` when correctness matters.
-
-Reload remains tab-scoped. A selected iframe stays selected while detached: commands wait up to 3s for recovery, then fail with `extension_frame_not_ready` instead of running on the host. `ext targets --tree` shows the missing selection as `pending`; use `ext select <id> --page` explicitly to work on the host.
+Split form: `argus chrome start --url …` then `argus watcher start --id app --url localhost:3000 --chrome-port 9222`. Chrome is muted by default (`--no-mute`). Default profile mode `default-lite` copies cookies/logins from the user's Chrome into a temp dir; `temp` is empty. Iframe/worker targets: `--type iframe --url … | --origin … | --target <id> | --parent <substr>`.
 
 ---
 
-## Inspect Loop
-
-Once a watcher is attached, use quick bounded commands first:
+## Core Loop
 
 ```bash
+argus list                                           # watchers + Chrome instances
 argus logs app --since 10m --levels error,warning
-argus page url app --json
 argus screenshot app --out shot.png
-argus record app --duration 5s --selector "canvas" --out demo.mp4
-argus record app --until "window.gameOver === true" --max 30s --out run.gif
-argus dom tree app --selector body --depth 2
-argus snapshot app --interactive
+argus snapshot app --interactive                     # a11y tree with refs (e5, e12…)
+argus eval app "({ title: document.title, href: location.href })" --json
+argus wait app "document.readyState === 'complete'" --total-timeout 30s
 ```
 
-For deterministic multi-step suites, prefer a bundled TypeScript scenario with `export default async function scenario(ctx)`. The context can capture screenshots/checkpoints and open a log session directly; see [EVAL.md](./reference/EVAL.md).
-
-To navigate:
+**Race-free verification**: take a cursor, act, read only what followed.
 
 ```bash
-argus page url app
-argus goto app /checkout
-argus goto app localhost:3000
-argus goto app --param debug=1
-argus page back app
-argus page forward app
+c=$(argus logs cursor app)
+argus click app --selector "button.save"
+argus logs app --after "$c" --levels error,exception --json
 ```
 
-`goto` waits for `load` by default and returns a log epoch covering exactly the new page, so the next read is race-free:
+`goto`, `back`, `forward`, and `click/keydown --wait-nav` return an `epoch` for the same purpose: `argus logs app --since-epoch "$epoch"`.
 
-```bash
-EPOCH=$(argus goto app /checkout --json | jq -r .epoch)
-argus logs app --since-epoch "$EPOCH" --levels error,warning
-```
+**Navigate**: `argus goto app /checkout` (relative, `?tab=2`, `#top`, `localhost:3000` all resolve in the watcher), `argus page back app`, `argus reload app`. Bare `settings` is a host, write `/settings`.
 
-URLs resolve in the watcher against the page's current URL, so `/settings`, `?tab=2`, and `#top` all work; `localhost:3000` gets `http://`. `--wait domcontentloaded` returns before subresources finish, `--wait none` returns as soon as Chrome accepts the command, and `--timeout <duration>` bounds the wait (default 30s). `argus goto` is a top-level alias for `argus page goto`; `back`/`forward`/`url` live only under `page`.
+**Interact**: `click`, `drag`, `hover`, `fill`, `keydown`, `scroll-to`. Target with `--selector`, `--testid`, `--ref eN` (from `snapshot`/`locate`), or `--pos x,y`. `--all` allows multiple matches; `--text /regex/` filters by content; `--wait 5s` polls for the selector. `argus locate role app button --name Save --action click` finds and acts in one step.
 
-For interaction:
-
-```bash
-argus locate role app button --name "Submit"
-argus click app --selector "button.submit"
-argus click app --ref e5
-argus drag app --selector "canvas" --pos 320,240 --by 80,-30
-argus fill app --selector "#email" "user@example.com"
-argus fill app --selector "#email" --value "user@example.com"
-argus keydown app --key Enter
-argus keydown app --key G
-argus keydown app --code KeyG --print-event
-argus keydown app --code Backquote --shift
-argus scroll-to app --selector "#footer"
-argus click app --selector "a.next" --wait-nav
-argus keydown app --key Enter --selector "#search" --wait-nav
-```
-
-`--wait-nav` waits for a top-frame navigation the interaction caused and reports `navigation: { navigated, url, epoch }`. Clicking something that does not navigate is not an error — it answers `navigated: false` after `--nav-timeout` (default 10s).
-
-Chrome drops keyboard input aimed at an unfocused page, so `keydown` checks focus first. On a hidden page (headless, background tab, covered window) it activates the page — the same sticky state as `argus page show` — and reports `activated: true`; release it with `argus page hide <id>`. If activation does not take, it fails with `target_not_focused` instead of reporting a key the page never received.
-
-Artifact `--out` paths (`screenshot`, `record`, `trace`) are absolute or relative to **your** working directory, not the watcher's.
-
-For generated commands, `argus eval app --expression "document.title"` is equivalent to the positional expression form.
-
-For iframe-active extension watchers, commands run against the selected iframe target. Screenshots, recordings, selectors, and eval are resolved relative to that iframe.
-Network mocks default to the top-level page; pass `--scope selected` (or `--frame selected`) to intercept requests from the selected iframe.
-
-For deeper command lists, use [INSPECT.md](./reference/INSPECT.md). For screenshots/recording details, use [CAPTURE.md](./reference/CAPTURE.md). For eval flags, polling, file scripts, and args, use [EVAL.md](./reference/EVAL.md).
+**Multi-step suites**: write a bundled TypeScript scenario (`export default async function scenario(ctx)`) and run `argus eval app --file ./scenario.ts --arg level=3 --json`; `ctx` exposes screenshots, checkpoints, recordings, and log sessions. Many sequential commands from a harness: `argus session app` (JSONL over stdin, one process).
 
 ---
 
-## Session Transport (Many Commands, One Process)
+## Conventions
 
-Use this when a harness drives a page through many sequential steps. One-shot `argus` pays Node
-startup plus watcher discovery (~100-200ms) per command; `argus session` pays it once and then
-serves JSONL requests on stdin.
-
-```bash
-argus session app
-```
-
-```json
-{"id": 1, "cmd": "eval", "args": {"expression": "location.href"}}
-{"id": 2, "cmd": "click", "args": {"selector": "button.start"}}
-{"id": 3, "cmd": "quit"}
-```
-
-Responses are one JSON line each, correlated by `id`, carrying the same payload the matching
-`--json` command prints: `{"id": 1, "ok": true, "result": {…}, "durationMs": 8}`. Failures answer
-`ok: false` and the session stays alive. stdout is JSONL only; human output goes to stderr.
-
-Daemons (`start`, `chrome start`, `watcher start`), stream tails (`logs tail`, `net tail`,
-`net sse`), and anything reading `--stdin` are refused — run those as their own process.
-
-Read [SESSION.md](./reference/SESSION.md) for the full request/response schema, timeout and
-watcher-loss semantics, and a host sketch.
+- **Durations**: `500ms`, `5s`, `2m`, `1h`; bare numbers are milliseconds.
+- **`--out` paths** (`screenshot`, `record`, `trace`, `eval --out`) are absolute or relative to _your_ cwd. Response `outFile` is absolute.
+- **Selected iframe** (extension mode) is the target for eval/DOM/interaction/capture. Network defaults to the top page; add `--scope selected`.
+- **Keyboard needs focus**: `keydown` activates a hidden page (same sticky lock as `page show`) and reports `activated: true`; release with `argus page hide app`.
+- **Visibility lock**: `argus page show app` keeps timers/rAF unthrottled while covered. `--policy background` does it without stealing OS focus, but screenshots/recordings then return `not_available`.
+- **Extension mode limits**: one debugger per tab, orange "debugging" bar is permanent, tab must stay open.
 
 ---
 
-## CDP Quick Start
+## Command Map
 
-Use CDP for local apps and clean repros where a temp/debuggable browser is acceptable.
-
-```bash
-npm run dev
-argus start --id app --url localhost:3000
-argus page url app
-argus screenshot app --out shot.png
-argus record app --duration 3s --out demo.mp4
-```
-
-`argus start` launches Chrome and a watcher together. For more control:
-
-```bash
-argus chrome start --url http://localhost:3000
-argus watcher start --id app --url localhost:3000 --chrome-port 9222
-```
-
-Argus-launched Chrome is muted by default. Pass `--no-mute` to `argus start` or `argus chrome start` when audio playback is needed.
-
-Keep these commands in the background in agent shells. See [START.md](./reference/START.md) for profile modes, auth-state hydration, watcher target flags, config defaults, and programmatic watcher APIs.
+| Area               | Commands                                                                                           | Reference                                |
+| ------------------ | -------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Launch / lifecycle | `start`, `chrome *`, `watcher *`, `page open --attach`, `config init`, `doctor`, `list`            | [START.md](./reference/START.md)         |
+| Extension          | `extension install/doctor/tabs/use/attach/select/targets/detach/show/mute/diagnose/recover`        | [EXTENSION.md](./reference/EXTENSION.md) |
+| Iframes            | CDP target flags, `ext select`, legacy postMessage `--iframe`                                      | [IFRAMES.md](./reference/IFRAMES.md)     |
+| Logs               | `logs`, `logs cursor/epoch/tail`                                                                   | [LOGS.md](./reference/LOGS.md)           |
+| Eval               | `eval`/`js`, `eval-until`/`wait`, scenarios, `--arg`, polling                                      | [EVAL.md](./reference/EVAL.md)           |
+| DOM & discovery    | `dom tree/info/focus/add/add-script/remove/modify/set-file/scroll`, `snapshot`, `locate`           | [DOM.md](./reference/DOM.md)             |
+| Interaction        | `click`, `drag`, `hover`, `fill`, `keydown`, `scroll-to`, `--wait-nav`                             | [INTERACT.md](./reference/INTERACT.md)   |
+| Page               | `goto/back/forward/url/reload`, `page ls/activate/close`, visibility, emulation, throttle, dialogs | [PAGE.md](./reference/PAGE.md)           |
+| Capture            | `screenshot`, `record` (mp4/webm/gif, `--until`), `trace`                                          | [CAPTURE.md](./reference/CAPTURE.md)     |
+| Network            | `net`, `net watch/inspect/show/body/summary/export/ws/sse/mock`                                    | [NET.md](./reference/NET.md)             |
+| Auth & storage     | `auth cookies/export-cookies/export-state/load-state/clone`, `storage local/session`               | [STATE.md](./reference/STATE.md)         |
+| Runtime code       | `code ls/read/grep/deminify/edit/strings`                                                          | [CODE.md](./reference/CODE.md)           |
+| Startup injection  | `--inject`, config `inject`, `window.__ARGUS__`                                                    | [INJECT.md](./reference/INJECT.md)       |
+| Session transport  | `session` JSONL protocol                                                                           | [SESSION.md](./reference/SESSION.md)     |
+| Plugins            | `plugin list/add/remove`, `--plugin`, plugin contract                                              | [PLUGINS.md](./reference/PLUGINS.md)     |
 
 ---
 
-## Troubleshooting
+## Error → Next Command
 
-**Popup will not open / no control watcher** — Preserve evidence first: `argus ext diagnose --out ./argus-incident-1 --json` works without a responsive worker. Then `argus ext recover --out ./argus-recovery-1 --watcher <id>` verifies control, attachment and execution separately; add `--tab <tabId>` for an attach attempt. If the worker is unavailable, reload manually only after collection. First-time setup: `argus extension install`. See the [incident runbook](./reference/EXTENSION.md#popup-will-not-open--control-watcher-disappeared).
+Read the error code before retrying or raising a timeout.
 
-**Debugger attach rejected** — Argus automatically reconnects stale debugger attachments that it still owns. If another debugger owns the tab, popup and CLI preserve Chrome's error; release that debugger and retry. `ext doctor --watcher <id>` checks actual target attachment/readiness separately from native bridge connectivity.
-
-**Multiple tabs matched** — Use `argus ext tabs --url <url> --json`, choose a `tabId`, then pass `--tab <tabId>`.
-
-**Iframe not found** — `argus ext show <id>`, `argus reload <id>`, wait for iframes, then `argus ext targets <id> --tree`.
-
-**Eval runs on host page** — Select the iframe first: `argus ext select <id> --iframe-url <substring>`.
-
-**Watcher cannot attach in CDP mode** — Check the Chrome port: `argus chrome status --cdp 127.0.0.1:9222`.
-
-**Wrong CDP target matched** — Use `--type iframe`, `--origin`, `--parent`, or `--target`. See [IFRAMES.md](./reference/IFRAMES.md).
-
-**Need to keep a page unthrottled** — Use `argus page show <id>` or `argus ext show <id>`. Use `argus page show <id> --policy background` when preserving the foreground app matters. Hide later with `argus page hide <id>`.
-
-Policy-aware writes reject older watchers before mutation; restart the watcher with the current Argus build when prompted. Stop active recordings before entering background mode.
-
-For cleanup, save `argus page visibility <id> --json` before changing the lock, then restore the saved state and policy with `--no-activate` (use `page show` for shown, `page hide` for default). This is a single-owner, non-atomic snapshot/restore pattern; it does not coordinate overlapping callers. Screenshot and recording requests under background policy return `not_available`, including on headless Chrome; use an isolated headless watcher with its default foreground policy as the fallback.
-
-**Navigation failed** — `navigation_failed` means Chrome refused the URL and names the reason (`net::ERR_NAME_NOT_RESOLVED`, `net::ERR_CONNECTION_REFUSED`); fix the URL or start the server. `navigation_timeout` means the requested phase did not arrive in time — the page may still be loading, so retry with `--wait domcontentloaded` or a longer `--timeout` rather than assuming the navigation failed. `no_history` means the page is already at the first/last session-history entry; check position with `argus page back <id> --json` output (`index`/`length`).
-
-**Command timed out** — Read the layer the error names before raising `--timeout`; only `cdp_timeout` ("the expression itself exceeded its deadline") is fixed by a longer one. `chrome_unreachable` means restart the browser, `cdp_target_replaced` means retry (Argus is reattaching), `cdp_renderer_unresponsive` means the page's main thread is blocked — `argus reload <id>` — and `dialog_blocking` means dismiss the dialog. A timeout reported as "failed to reach watcher" is the watcher itself not answering: `argus watcher status <id>`, then `argus doctor`.
-
----
-
-## References
-
-- [START.md](./reference/START.md) — CDP startup, watcher lifecycle, config defaults, Node API.
-- [EXTENSION.md](./reference/EXTENSION.md) — Extension setup and extension-control details.
-- [INSPECT.md](./reference/INSPECT.md) — Logs, capture summary, DOM, navigation (`goto`/`back`/`forward`/`url`, `--wait-nav`), interaction, auth, storage, trace, emulation.
-- [CAPTURE.md](./reference/CAPTURE.md) — Screenshots, recordings (MP4/WebM/GIF, `--until`, `record status`), crop semantics, iframe capture, recording troubleshooting.
-- [NET.md](./reference/NET.md) — Network capture, filtering, inspection, export, and mocks.
-- [EVAL.md](./reference/EVAL.md) — Eval syntax, polling, files, args, iframe eval.
-- [RUNTIME_CODE.md](./reference/RUNTIME_CODE.md) — Runtime JS/CSS discovery and live CSS edits.
-- [IFRAMES.md](./reference/IFRAMES.md) — CDP iframe targeting and iframe concepts.
-- [EXTENSION_IFRAME_EVAL.md](./reference/EXTENSION_IFRAME_EVAL.md) — Cross-origin iframe helper mechanics.
-- [INJECT.md](./reference/INJECT.md) — Script injection on watcher attach/navigation.
-- [DIALOG.md](./reference/DIALOG.md) — Browser dialog status and handling.
-- [PLUGINS.md](./reference/PLUGINS.md) — CLI plugin loading, plugin contract, and host helpers.
-- [SESSION.md](./reference/SESSION.md) — Long-lived JSONL session transport for automation harnesses.
+| Code                            | Meaning                                         | Do                                                                                                                  |
+| ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Watcher not found               | id not in registry                              | `argus list`, `argus watcher prune`, reattach                                                                       |
+| "failed to reach watcher"       | process gone / hung                             | `argus watcher status <id>`, `argus doctor`                                                                         |
+| `chrome_unreachable`            | CDP endpoint down                               | `argus chrome status --cdp 127.0.0.1:9222`; restart Chrome                                                          |
+| `cdp_not_attached`              | watcher has no target yet                       | check `--url/--type` match; `argus page ls --tree`                                                                  |
+| `cdp_target_replaced`           | target swapped, reattaching                     | retry                                                                                                               |
+| `cdp_renderer_unresponsive`     | main thread blocked                             | `argus reload <id>`                                                                                                 |
+| `cdp_timeout`                   | expression exceeded its deadline                | the only case a longer `--timeout` fixes                                                                            |
+| `dialog_blocking`               | alert/confirm/prompt open                       | `argus dialog accept <id>` or `dialog dismiss <id>`                                                                 |
+| `extension_frame_not_ready`     | selected iframe missing/booting                 | wait, `argus ext targets <id> --tree`, or `ext select --page`                                                       |
+| `target_not_focused`            | page could not be activated for keyboard        | `argus page show <id>` then retry                                                                                   |
+| `multiple_matches`              | selector hit >1 element                         | narrow selector, add `--text`, or `--all` (`--nth` on `dom add`)                                                    |
+| `not_interactable`              | element hidden/covered/zero-size                | `scroll-to`, `dom info`, wait for state                                                                             |
+| `navigation_failed`             | Chrome refused URL (`net::ERR_*`)               | fix URL / start server                                                                                              |
+| `navigation_timeout`            | load phase late; page may still load            | `--wait domcontentloaded` or longer `--timeout`                                                                     |
+| `no_history`                    | at first/last history entry                     | check `index`/`length` in `page back --json`                                                                        |
+| `log_epoch_*`                   | cursor from another session / evicted           | take a fresh `logs cursor`                                                                                          |
+| `not_available`                 | capture under background policy, or old watcher | `page show --policy foreground`; restart watcher on current build                                                   |
+| Multiple tabs matched (ext)     | ambiguous `--url/--title`                       | `argus ext tabs --url … --json` → `--tab <tabId>`                                                                   |
+| Popup dead / no control watcher | extension worker gone                           | `argus ext diagnose --out ./inc-1` first, then `ext recover` ([runbook](./reference/EXTENSION.md#incident-runbook)) |
