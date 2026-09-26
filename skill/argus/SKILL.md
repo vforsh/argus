@@ -43,6 +43,8 @@ argus ext use --tab <tabId> --as app                 # exact tab when several ma
 argus page url app
 ```
 
+If Chrome and Codex @Browser both run Argus, use the control id from `argus list` consistently: `argus ext tabs --id extension-control-2 --json`, then `argus ext use --id extension-control-2 --tab <tabId> --as app`. `--id` also selects the control instance for `attach`, `detach`, `show`, `targets` (when resolving a tab), `mute`, and `unmute`. `ext doctor --watcher app` finds its owning control; `--id` selects one explicitly. A successful attach means the tab watcher completed bootstrap; `--no-wait` skips only the CLI's final status poll.
+
 Embedded app: `argus ext use --url portal.example --as app --iframe-url game.example`; later switch with `argus ext select app --iframe-url … | --iframe-title … | --page`. Commands then run inside the selected iframe (eval, DOM, click, screenshot, `net --scope selected`). Reload stays tab-scoped; a selected iframe that is missing waits 3s then fails `extension_frame_not_ready` instead of silently using the host page.
 
 Tab stuck in background or booting: `argus ext show app` then `argus reload app`.

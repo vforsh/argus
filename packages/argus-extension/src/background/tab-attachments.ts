@@ -50,7 +50,15 @@ export class TabAttachments {
 			await session.connectAndAttach()
 			return session
 		} catch (error) {
-			if (this.records.get(tabId)?.session === session) this.forget(tabId)
+			if (this.records.get(tabId)?.session === session) {
+				try {
+					await session.detach()
+				} catch (cleanupError) {
+					this.events.onError(cleanupError)
+				} finally {
+					this.forget(tabId)
+				}
+			}
 			throw error
 		}
 	}

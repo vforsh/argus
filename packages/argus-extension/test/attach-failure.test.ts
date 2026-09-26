@@ -208,6 +208,7 @@ function createPort(name: string) {
 					protocolVersion: NATIVE_MESSAGING_PROTOCOL_VERSION,
 				})
 			}
+			if (message.type === 'tab_attached') receive({ type: 'tab_initialization', tabId: message.tabId, ok: true })
 			if (message.type === 'tab_action_response' || message.type === 'tab_mute_response' || message.type === 'control_status_response')
 				response?.(message)
 		},

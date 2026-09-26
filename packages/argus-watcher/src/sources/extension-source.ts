@@ -325,9 +325,11 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			emitStatus(target, null)
 			await events.onAttach?.(session.handle, target)
 			reconcileTargetSelection(session)
+			messaging.send({ type: 'tab_initialization', tabId: session.tabId, ok: true })
 		} catch (error) {
 			const message = formatError(error)
 			console.error(`[ExtensionSource] Failed to bootstrap attached tab ${session.tabId}: ${message}`)
+			messaging.send({ type: 'tab_initialization', tabId: session.tabId, ok: false, error: message })
 
 			if (currentSession?.tabId === session.tabId) {
 				emitStatus(null, message)

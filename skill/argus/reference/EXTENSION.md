@@ -19,7 +19,7 @@ The extension id is pinned via a manifest `key`, and the prebuilt extension ship
 
 ## Model
 
-- **Control watcher** (`extension-control`): always-on transport the CLI talks to for tab listing and attach/detach. `ext tabs --id` selects a different transport watcher.
+- **Control watcher** (`extension-control`, `extension-control-2`, …): one per browser instance. Use `--id <controlWatcherId>` on tab commands to select the instance.
 - **Tab watcher**: created per attached tab, named by `--as <id>` or auto (`extension`, `extension-2`, …). All normal commands (`logs`, `eval`, `click`, …) take this id.
 - Chrome shows an orange "debugging" bar on attached tabs. It cannot be hidden.
 
@@ -38,6 +38,16 @@ argus ext mute app / unmute --tab 123          # persistent Chrome tab mute; sel
 ```
 
 Prefer `ext use`: idempotent, returns the watcher id, accepts iframe selection flags. `--tab/--url/--title` on `mute`, `unmute`, `detach`, and `targets` resolve the tab without attaching it.
+
+With two extension instances, run `argus list`, then use the same control id for discovery and action:
+
+```bash
+argus ext tabs --id extension-control-2 --url portal.example --json
+argus ext use --id extension-control-2 --tab <tabId> --as app --json
+argus ext doctor --watcher app --json          # finds the owning control instance
+```
+
+`--id` also works on `attach`, `detach`, `show`, `targets` (with a tab selector), `mute`, `unmute`, and `doctor`. Tab ids and URL matches are resolved only inside the selected browser. A successful `/attach` now waits for watcher bootstrap; initialization failures release the debugger and remove the tab session. CLI `--no-wait` skips its final status poll, so use the default when the next command needs the watcher immediately.
 
 ## Iframe Selection
 
@@ -67,6 +77,7 @@ argus ext select app --iframe-url game.example
 
 - Argus reconnects debugger attachments it still owns (after extension state loss) by verifying ownership with a CDP command. Other debuggers are never disconnected; Chrome's error is surfaced as-is. Release the other debugger and retry.
 - Attach/detach requests are serialized per tab; a failed init releases the debugger and removes the tab bridge.
+- CLI, watcher, and extension package versions advance independently. Their native-messaging protocol version is checked at handshake; a mismatch rejects the bridge before attachment.
 - Explicit detach disposes the tab watcher. Visibility lock/policy and iframe selection must be re-applied after a fresh attach.
 
 ## Limitations

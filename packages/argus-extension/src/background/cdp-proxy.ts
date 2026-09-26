@@ -107,6 +107,7 @@ export class CdpProxy {
 			case 'host_info':
 			case 'host_ready':
 			case 'target_info':
+			case 'tab_initialization':
 				break
 
 			default:

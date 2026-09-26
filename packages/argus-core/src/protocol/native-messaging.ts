@@ -17,7 +17,7 @@ import type { LifecycleEvent } from '../diagnostics/events.js'
  * Bump on any breaking change to the message shapes below. Peers exchange it in the
  * `host_info` handshake and refuse to proceed on a mismatch.
  */
-export const NATIVE_MESSAGING_PROTOCOL_VERSION = 3 as const
+export const NATIVE_MESSAGING_PROTOCOL_VERSION = 4 as const
 
 /** Type-level alias for the current native-messaging protocol version. */
 export type NativeMessagingProtocolVersion = typeof NATIVE_MESSAGING_PROTOCOL_VERSION
@@ -165,6 +165,14 @@ export type HostInfoMessage = {
 
 export type HostReadyMessage = {
 	type: 'host_ready'
+}
+
+/** Final tab bootstrap outcome. Control attach succeeds only after this arrives. */
+export type TabInitializationMessage = {
+	type: 'tab_initialization'
+	tabId: number
+	ok: boolean
+	error?: string
 }
 
 export type TargetInfoMessage = {
@@ -343,6 +351,7 @@ export type HostToExtension =
 	| FrameSnapshotRequestMessage
 	| HostInfoMessage
 	| HostReadyMessage
+	| TabInitializationMessage
 	| TargetInfoMessage
 
 export type ControlHostToExtension =

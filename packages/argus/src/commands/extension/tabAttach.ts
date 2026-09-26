@@ -1,6 +1,5 @@
 import { formatError } from '../../cli/parse.js'
 import type { ExtensionBrowserTab, ExtensionTabActionResponse, StatusResponse, WatcherRecord, ApiResult } from '@vforsh/argus-core'
-import { pruneRegistry } from '../../registry.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
 import { fetchExtensionTabs, resolveTab, type TabSelector } from './tabSelection.js'
@@ -23,7 +22,7 @@ export const attachTab = async (
 			path: '/attach',
 			method: 'POST',
 			body: { tabId: tab.tabId, watcherId: options.watcherId },
-			timeoutMs: 5_000,
+			timeoutMs: 18_000,
 			returnErrorResponse: true,
 		})
 		if (!response.ok) {
@@ -42,33 +41,30 @@ export const waitForTabWatcher = async (
 	watcherId?: string,
 ): Promise<WatcherResolutionResult> => {
 	const startedAt = Date.now()
-	let lastResult: WatcherResolutionResult = { ok: false, reason: 'No extension watcher matched the tab.', exitCode: 1 }
+	let lastReason = `Tab ${tab.tabId} has not reported an attached watcher through ${controlWatcher.id}.`
 
 	while (Date.now() - startedAt <= WATCHER_POLL_TIMEOUT_MS) {
 		const latestTab = await refreshTab(controlWatcher, selector, tab)
+		if (latestTab && !latestTab.attached) {
+			lastReason = `Tab ${tab.tabId} detached before its watcher became ready.`
+			break
+		}
 		const explicitWatcherId = latestTab?.watcherId ?? watcherId
 		if (explicitWatcherId) {
-			// Fresh extension attaches report their tab-scoped watcher id asynchronously through `ext tabs`.
 			const watcher = await resolveWatcherById(explicitWatcherId)
 			if (watcher) {
 				const status = await fetchStatus(watcher)
-				if (!status || !statusMatchesTabWatcher(status, latestTab ?? tab, latestTab?.watcherId === explicitWatcherId)) {
-					await delay(WATCHER_POLL_INTERVAL_MS)
-					continue
+				if (status && statusMatchesTabWatcher(status, latestTab ?? tab, latestTab?.watcherId === explicitWatcherId)) {
+					return { ok: true, watcher, status, tab: latestTab ?? tab }
 				}
-				return { ok: true, watcher, status, tab: latestTab ?? tab }
 			}
-		}
-
-		lastResult = await resolveTabWatcher(latestTab ?? tab)
-		if (lastResult.ok) {
-			return lastResult
+			lastReason = `Watcher ${explicitWatcherId} did not become debugger-attached for tab ${tab.tabId}.`
 		}
 
 		await delay(WATCHER_POLL_INTERVAL_MS)
 	}
 
-	return lastResult
+	return { ok: false, reason: lastReason, exitCode: 1 }
 }
 
 const refreshTab = async (
@@ -82,38 +78,12 @@ const refreshTab = async (
 	}
 
 	const tab = resolveTab(tabs.tabs, { kind: 'tab', tabId: fallback.tabId })
-	return tab.ok ? { ...tab.tab, attached: true } : null
+	return tab.ok ? tab.tab : null
 }
 
 const resolveWatcherById = async (id: string): Promise<WatcherRecord | null> => {
 	const resolved = await resolveWatcher({ id })
 	return resolved.ok && resolved.watcher.source === 'extension' ? resolved.watcher : null
-}
-
-const resolveTabWatcher = async (tab: ExtensionBrowserTab): Promise<WatcherResolutionResult> => {
-	const registry = await pruneRegistry()
-	const extensionWatchers = Object.values(registry.watchers).filter(
-		(watcher) => watcher.source === 'extension' && watcher.id !== 'extension-control',
-	)
-
-	const entries = await Promise.all(
-		extensionWatchers.map(async (watcher) => {
-			const status = await fetchStatus(watcher)
-			return status ? { watcher, status } : null
-		}),
-	)
-
-	const matches = entries.filter((entry): entry is { watcher: WatcherRecord; status: StatusResponse } =>
-		Boolean(entry?.status.attached && entry.status.target && targetMatchesTab(entry.status.target, tab)),
-	)
-
-	if (matches.length === 0) {
-		return { ok: false, reason: 'No attached extension watcher matched the tab.', exitCode: 1 }
-	}
-	if (matches.length > 1) {
-		return { ok: false, reason: 'Multiple attached extension watchers matched the tab. Use watcher id instead.', exitCode: 2, matches }
-	}
-	return { ok: true, watcher: matches[0].watcher, status: matches[0].status, tab }
 }
 
 const fetchStatus = async (watcher: WatcherRecord): Promise<StatusResponse | null> => {
@@ -124,8 +94,8 @@ const fetchStatus = async (watcher: WatcherRecord): Promise<StatusResponse | nul
 	}
 }
 
-const statusMatchesTabWatcher = (status: StatusResponse, tab: ExtensionBrowserTab, tabListConfirmsWatcher: boolean): boolean => {
-	if (!status.attached || !status.target) {
+const statusMatchesTabWatcher = (status: StatusResponse | null, tab: ExtensionBrowserTab, tabListConfirmsWatcher: boolean): boolean => {
+	if (!status?.attached || !status.target || status.targetReady === false) {
 		return false
 	}
 	// After target selection, /status may describe an iframe while the tab list
@@ -142,4 +112,3 @@ const targetMatchesTab = (target: NonNullable<StatusResponse['target']>, tab: Ex
 	}
 	return Boolean(target.title && target.title === tab.title && target.url === tab.url)
 }
-

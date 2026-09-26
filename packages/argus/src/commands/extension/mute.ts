@@ -14,6 +14,7 @@ import {
 } from './tabSelection.js'
 
 export type ExtensionMuteOptions = ExtensionTabSelectorOptions & {
+	id?: string
 	json?: boolean
 }
 
@@ -25,7 +26,7 @@ export const runExtensionMute = async (id: string | undefined, options: Extensio
 		return
 	}
 
-	const control = await resolveExtensionWatcher({})
+	const control = await resolveExtensionWatcher({ id: options.id })
 	if (!control.ok) {
 		emitResolveFailure(output, control)
 		return

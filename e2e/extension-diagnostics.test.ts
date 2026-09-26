@@ -93,6 +93,13 @@ async function startExtensionStub() {
 	const dir = path.dirname(stub.registryPath)
 	return {
 		...stub,
+		setRoutes: (routes: StubRoutes) =>
+			stub.setRoutes({
+				'GET /extension/diagnostics': {
+					payload: { ok: true, extension: { id: null, version: null }, control: { connected: true }, tabWatchers: [], recentEvents: [] },
+				},
+				...routes,
+			}),
 		cli: (...args: string[]) => runCommandWithExit('bun', [BIN_PATH, ...args], { cwd: dir, env: { ...process.env, ARGUS_HOME: dir } }),
 	}
 }

@@ -46,8 +46,10 @@ export class TabBridgeSession {
 	private lastMessageAt: number | null = null
 	private readonly hostReady = createLatch()
 	private readonly watcherInfoReceived = createLatch()
+	private readonly initialized = createLatch()
 	private disposed = false
 	private protocolMismatch: string | null = null
+	private initializationError: string | null = null
 
 	constructor(tabId: number, debuggerManager: DebuggerManager, events: TabBridgeSessionEvents = {}, options: TabBridgeSessionOptions = {}) {
 		this.tabId = tabId
@@ -92,6 +94,8 @@ export class TabBridgeSession {
 			await this.cdpProxy.detachTab(this.tabId)
 			throw new Error(`Native host disconnected while attaching tab ${this.tabId}`)
 		}
+		await this.awaitLatch(this.initialized, 'did not finish watcher initialization', 8_000)
+		this.assertOpen()
 	}
 
 	async detach(): Promise<void> {
@@ -187,10 +191,20 @@ export class TabBridgeSession {
 					targetReady: message.targetReady ?? null,
 				}
 				this.events.onTargetInfo?.(this.targetInfo)
+				return
+
+			case 'tab_initialization':
+				if (message.tabId !== this.tabId) return
+				this.initializationError = message.ok ? null : (message.error ?? `Watcher initialization failed for tab ${this.tabId}`)
+				this.initialized.signal()
+				return
 		}
 	}
 
 	private assertOpen(): void {
+		if (this.initializationError) {
+			throw new Error(this.initializationError)
+		}
 		if (this.protocolMismatch) {
 			throw new Error(this.protocolMismatch)
 		}

@@ -1,4 +1,4 @@
-import { readRegistry, type ApiResult, type StatusResponse, type WatcherRecord } from '@vforsh/argus-core'
+import { readRegistry, type ApiResult, type StatusResponse, type WatcherRecord, type ExtensionDiagnosticsResponse } from '@vforsh/argus-core'
 import { diagnosticRequest } from './diagnosticRequest.js'
 
 /** Observe local process existence without confusing a reused PID with host identity. */
@@ -22,6 +22,10 @@ export async function inspectDoctorLayers() {
 async function probeWatcher(watcher: WatcherRecord) {
 	const alive = ['127.0.0.1', 'localhost', '::1'].includes(watcher.host) ? processExists(watcher.pid) : null
 	const probe = await diagnosticRequest<ApiResult<StatusResponse>>(watcher, '/status', 1000)
+	const controlProbe =
+		probe.ok && probe.response?.ok
+			? await diagnosticRequest<ApiResult<ExtensionDiagnosticsResponse>>(watcher, '/extension/diagnostics', 1000)
+			: null
 	const status = probe.ok && probe.response?.ok ? probe.response : null
 	const identityMatches =
 		status && typeof status.pid === 'number' && typeof status.id === 'string' ? status.pid === watcher.pid && status.id === watcher.id : null
@@ -37,6 +41,9 @@ async function probeWatcher(watcher: WatcherRecord) {
 		transport: probe.ok ? 'responded' : 'unreachable-or-unresponsive',
 		staleRegistry: alive === false || identityMatches === false,
 		attachment: status?.attached ?? null,
+		// A broken control bridge may not answer diagnostics; keep its conventional id
+		// available for incident reporting rather than hiding the failed request.
+		controlTransport: (controlProbe?.ok === true && controlProbe.response?.ok === true) || /^extension-control(?:-\d+)?$/.test(watcher.id),
 		targetReady: status?.targetReady ?? null,
 		execution: 'not tested',
 	}

@@ -15,7 +15,7 @@ import { createPendingRequestTable, createRequestIdAllocator, type PendingReques
 import type { TabActionResult } from './types.js'
 export type { TabActionResult } from './types.js'
 
-/** Control-host requests are short round-trips to the extension; five seconds is generous. */
+/** Read-only control requests are short; attach has a longer bootstrap deadline. */
 const CONTROL_REQUEST_DEFAULTS = { timeoutMs: 5_000, timeoutMessage: 'Control request timed out' }
 
 export class ControlSessionManager {
@@ -23,7 +23,7 @@ export class ControlSessionManager {
 	// One id space across all three tables: the extension only sees `requestId` on the wire.
 	private readonly nextRequestId = createRequestIdAllocator()
 	private readonly pendingTabsRequests = createPendingRequestTable<TabInfo[]>(CONTROL_REQUEST_DEFAULTS)
-	private readonly pendingTabActionRequests = createPendingRequestTable<TabActionResult>(CONTROL_REQUEST_DEFAULTS)
+	private readonly pendingTabActionRequests = createPendingRequestTable<TabActionResult>({ ...CONTROL_REQUEST_DEFAULTS, timeoutMs: 16_000 })
 	private readonly pendingTabMuteRequests = createPendingRequestTable<TabMuteResult>(CONTROL_REQUEST_DEFAULTS)
 	private readonly pendingStatusRequests = createPendingRequestTable<ControlDiagnostics>(CONTROL_REQUEST_DEFAULTS)
 

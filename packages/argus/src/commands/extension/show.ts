@@ -17,6 +17,7 @@ import {
 } from './tabSelection.js'
 
 export type ExtensionShowOptions = {
+	id?: string
 	tab?: string | number
 	url?: string
 	title?: string
@@ -63,7 +64,7 @@ export const runExtensionShow = async (id: string | undefined, options: Extensio
 		return
 	}
 
-	const control = await resolveExtensionWatcher({})
+	const control = await resolveExtensionWatcher({ id: options.id })
 	if (!control.ok) {
 		writeFailure(output, options, control.error, control.exitCode)
 		return

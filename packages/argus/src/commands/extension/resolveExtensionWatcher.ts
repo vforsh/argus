@@ -1,4 +1,4 @@
-import type { StatusResponse, RegistryV1, WatcherRecord } from '@vforsh/argus-core'
+import type { StatusResponse, RegistryV1, WatcherRecord, ApiResult, ExtensionDiagnosticsResponse } from '@vforsh/argus-core'
 import { pruneRegistry } from '../../registry.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { CONTROL_WATCHER_ID } from './nativeHost.js'
@@ -13,8 +13,8 @@ export type ResolveExtensionWatcherResult =
 	| { ok: false; error: string; exitCode: 1 | 2; candidates?: WatcherRecord[] }
 
 /**
- * Resolve a watcher that is known to be backed by the Chrome extension transport.
- * When id is omitted, use the browser-level control watcher.
+ * Resolve a live extension control watcher. A tab watcher cannot list or attach
+ * tabs, even though both kinds share the same registry source.
  */
 export const resolveExtensionWatcher = async (input: ResolveExtensionWatcherInput): Promise<ResolveExtensionWatcherResult> => {
 	let registry: RegistryV1
@@ -34,6 +34,11 @@ export const resolveExtensionWatcher = async (input: ResolveExtensionWatcherInpu
 		if (watcher.source !== 'extension') {
 			return { ok: false, error: `Watcher ${watcher.id} is not extension-backed.`, exitCode: 2, candidates: getExtensionWatchers(allWatchers) }
 		}
+		const status = await checkWatcherStatus(watcher)
+		if (!status.ok) return { ok: false, error: `Control watcher ${watcher.id} is unavailable: ${status.error}`, exitCode: 2 }
+		if (!status.control) {
+			return { ok: false, error: `Watcher ${watcher.id} is an extension tab watcher, not a control watcher.`, exitCode: 2 }
+		}
 		return { ok: true, watcher, registry }
 	}
 
@@ -49,7 +54,7 @@ export const resolveExtensionWatcher = async (input: ResolveExtensionWatcherInpu
 	const controlWatcher = registry.watchers[CONTROL_WATCHER_ID]
 	if (controlWatcher?.source === 'extension') {
 		const status = await checkWatcherStatus(controlWatcher)
-		if (status.ok) {
+		if (status.ok && status.control) {
 			return { ok: true, watcher: controlWatcher, registry }
 		}
 	}
@@ -64,10 +69,18 @@ export const resolveExtensionWatcher = async (input: ResolveExtensionWatcherInpu
 
 const getExtensionWatchers = (watchers: WatcherRecord[]): WatcherRecord[] => watchers.filter((watcher) => watcher.source === 'extension')
 
-const checkWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; status: StatusResponse } | { ok: false; error: string }> => {
+const checkWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; control: boolean } | { ok: false; error: string }> => {
 	try {
 		const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 1_500 })
-		return { ok: true, status }
+		if ((status.id && status.id !== watcher.id) || (status.pid && status.pid !== watcher.pid)) {
+			return { ok: false, error: 'HTTP identity does not match the registry entry' }
+		}
+		const diagnostics = await fetchWatcherJson<ApiResult<ExtensionDiagnosticsResponse>>(watcher, {
+			path: '/extension/diagnostics',
+			timeoutMs: 1_500,
+			returnErrorResponse: true,
+		})
+		return { ok: true, control: diagnostics.ok }
 	} catch (error) {
 		return { ok: false, error: formatError(error) }
 	}

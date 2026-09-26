@@ -34,6 +34,8 @@ const CONTROL_WATCHER_ID = 'extension-control'
 const STARTUP_TIMEOUT_MS = 60_000
 
 export type ExtensionHarness = {
+	controlWatcherId: string
+	registryPath: string
 	/** Existing CDP endpoint of this isolated browser, for explicit recovery tests. */
 	cdpAddress: string
 	/** URL the harness Chrome opened (playground index on the main server). */
@@ -89,7 +91,7 @@ export const resolveTestChromeBin = (): string | null => {
 	return null
 }
 
-export const startExtensionHarness = async (): Promise<ExtensionHarness> => {
+export const startExtensionHarness = async (options: { registryPath?: string; controlWatcherId?: string } = {}): Promise<ExtensionHarness> => {
 	const chromeBin = resolveTestChromeBin()
 	if (!chromeBin) {
 		throw new Error('No Chromium/Chrome for Testing binary found. Set ARGUS_E2E_CHROME_BIN or install Playwright browsers.')
@@ -97,8 +99,9 @@ export const startExtensionHarness = async (): Promise<ExtensionHarness> => {
 	assertBuildArtifacts()
 
 	const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'argus-ext-e2e-'))
-	const argusHome = path.join(tempRoot, 'argus-home')
-	const registryPath = path.join(argusHome, 'registry.json')
+	const argusHome = options.registryPath ? path.dirname(options.registryPath) : path.join(tempRoot, 'argus-home')
+	const registryPath = options.registryPath ?? path.join(argusHome, 'registry.json')
+	const controlWatcherId = options.controlWatcherId ?? CONTROL_WATCHER_ID
 	const userDataDir = path.join(tempRoot, 'profile')
 	fs.mkdirSync(argusHome, { recursive: true })
 	fs.mkdirSync(userDataDir, { recursive: true })
@@ -141,13 +144,15 @@ export const startExtensionHarness = async (): Promise<ExtensionHarness> => {
 	}
 
 	try {
-		await waitForControlWatcher(registryPath, chrome)
+		await waitForControlWatcher(registryPath, chrome, controlWatcherId)
 	} catch (error) {
 		await close()
 		throw error
 	}
 
 	return {
+		controlWatcherId,
+		registryPath,
 		cdpAddress: `127.0.0.1:${debuggingPort}`,
 		pageUrl: servers.mainUrl,
 		crossOriginUrl: servers.crossOriginUrl,
@@ -238,7 +243,7 @@ const spawnChrome = (chromeBin: string, userDataDir: string, startupUrl: string,
  * entry doubles as a readiness signal for the whole chain: extension loaded, service worker
  * ran, native host spawned, watcher HTTP up.
  */
-const waitForControlWatcher = (registryPath: string, chrome: ChildProcess): Promise<void> => {
+const waitForControlWatcher = (registryPath: string, chrome: ChildProcess, controlWatcherId: string): Promise<void> => {
 	const deadline = Date.now() + STARTUP_TIMEOUT_MS
 	let chromeError: Error | null = null
 	let stderrTail = ''
@@ -257,7 +262,7 @@ const waitForControlWatcher = (registryPath: string, chrome: ChildProcess): Prom
 			if (fs.existsSync(registryPath)) {
 				try {
 					const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8')) as { watchers?: Record<string, unknown> }
-					if (registry.watchers?.[CONTROL_WATCHER_ID]) {
+					if (registry.watchers?.[controlWatcherId]) {
 						return
 					}
 				} catch {
@@ -266,7 +271,7 @@ const waitForControlWatcher = (registryPath: string, chrome: ChildProcess): Prom
 			}
 			await delay(250)
 		}
-		throw new Error(`extension-control watcher did not register within ${STARTUP_TIMEOUT_MS}ms.\nChrome stderr tail:\n${stderrTail}`)
+		throw new Error(`${controlWatcherId} watcher did not register within ${STARTUP_TIMEOUT_MS}ms.\nChrome stderr tail:\n${stderrTail}`)
 	})()
 }
 

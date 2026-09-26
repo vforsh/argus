@@ -12,6 +12,7 @@ import {
 } from './targetSelection.js'
 
 export type ExtensionUseOptions = {
+	id?: string
 	tab?: string | number
 	url?: string
 	title?: string

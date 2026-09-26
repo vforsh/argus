@@ -16,6 +16,7 @@ import { getPlatform, inspectNativeHosts } from './nativeHost.js'
 import { formatExtensionTargetLine } from './targetSelection.js'
 
 export type ExtensionDoctorOptions = {
+	id?: string
 	watcher?: string
 	json?: boolean
 }
@@ -32,10 +33,36 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 	for (const layer of layerEvidence.layers) {
 		if (layer.registryIdentityMatches === false) issues.push(`Registry entry ${layer.watcher.id} points at a different responding watcher.`)
 	}
-	const controlWatcher = layerEvidence.layers.find((layer) => layer.watcher.id === 'extension-control')?.watcher
+	const controlLayers: typeof layerEvidence.layers = []
+	const seenTransports = new Set<string>()
+	for (const layer of layerEvidence.layers) {
+		if (!layer.controlTransport) continue
+		const address = `${layer.watcher.host}:${layer.watcher.port}`
+		if (seenTransports.has(address)) continue
+		seenTransports.add(address)
+		controlLayers.push(layer)
+	}
+	const controlResults =
+		options.watcher && !options.id
+			? await Promise.all(
+					controlLayers.map(async (layer) => ({ watcher: layer.watcher, result: await fetchExtensionDiagnostics(layer.watcher) })),
+				)
+			: []
+	const owners = controlResults.filter(
+		(entry) => entry.result.ok && entry.result.diagnostics.tabWatchers.some((tab) => tab.watcherId === options.watcher),
+	)
+	if (owners.length > 1) issues.push(`Watcher ${options.watcher} is reported by multiple control watchers; specify --id.`)
+	let controlWatcher = controlLayers.find((layer) => layer.watcher.id === 'extension-control')?.watcher
+	if (options.id) controlWatcher = controlLayers.find((layer) => layer.watcher.id === options.id)?.watcher
+	else if (owners.length === 1) controlWatcher = owners[0].watcher
 	const control = controlWatcher
 		? { ok: true as const, watcher: controlWatcher }
-		: { ok: false as const, error: 'No extension control watcher in registry; worker startup/registration is unknown.' }
+		: {
+				ok: false as const,
+				error: options.id
+					? `Control watcher ${options.id} is unavailable or is not a control watcher.`
+					: 'No extension control watcher in registry; worker startup/registration is unknown.',
+			}
 	let diagnostics: ExtensionDiagnosticsResponse | null = null
 	let controlRequest: DiagnosticTrace | null = null
 	let watcherDiagnostics: WatcherDiagnostics | null = null
@@ -43,7 +70,8 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 	if (!control.ok) {
 		issues.push(control.error)
 	} else {
-		const result = await fetchExtensionDiagnostics(control.watcher)
+		const result =
+			controlResults.find((entry) => entry.watcher.id === control.watcher.id)?.result ?? (await fetchExtensionDiagnostics(control.watcher))
 		controlRequest = result.trace
 		if (result.ok) {
 			diagnostics = result.diagnostics

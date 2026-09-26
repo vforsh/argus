@@ -84,7 +84,7 @@ async function recoverExtension(options: DiagnoseOptions): Promise<void> {
 	let action = 'No attach requested; checking existing connection and execution recovery.'
 	const control = incident.doctor.controlWatcher
 	if (options.tab && control && incident.doctor.diagnostics?.control.connected) {
-		const attempt = await diagnosticRequest<ApiResult<ExtensionTabActionResponse>>(control, '/attach', 6000, {
+		const attempt = await diagnosticRequest<ApiResult<ExtensionTabActionResponse>>(control, '/attach', 18_000, {
 			method: 'POST',
 			body: { tabId: Number(options.tab), watcherId },
 		})

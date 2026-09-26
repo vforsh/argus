@@ -16,7 +16,10 @@ import { runExtensionSelect } from '../../commands/extension/select.js'
 import { runExtensionMute } from '../../commands/extension/mute.js'
 import { jsonOption } from './sharedOptions.js'
 
+const controlWatcherOption = { flags: '--id <controlWatcherId>', description: 'Extension control watcher (default: extension-control)' } as const
+
 const tabTargetOptions = [
+	controlWatcherOption,
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
@@ -24,6 +27,7 @@ const tabTargetOptions = [
 ] as const
 
 const attachTargetOptions = [
+	controlWatcherOption,
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
@@ -34,6 +38,7 @@ const attachTargetOptions = [
 ] as const
 
 const useTargetOptions = [
+	controlWatcherOption,
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
@@ -53,6 +58,7 @@ const iframeTargetOptions = [
 ] as const
 
 const showTargetOptions = [
+	controlWatcherOption,
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
@@ -139,8 +145,12 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 			{
 				name: 'doctor',
 				description: 'Diagnose native host and live extension-control state',
-				options: [{ flags: '--watcher <watcherId>', description: 'Include diagnostics for one extension-backed watcher' }, jsonOption],
-				examples: ['argus ext doctor', 'argus ext doctor --watcher vk-game', 'argus ext doctor --json'],
+				options: [
+					{ flags: '--id <controlWatcherId>', description: 'Extension control watcher (inferred from --watcher when possible)' },
+					{ flags: '--watcher <watcherId>', description: 'Include diagnostics for one extension-backed watcher' },
+					jsonOption,
+				],
+				examples: ['argus ext doctor', 'argus ext doctor --watcher vk-game', 'argus ext doctor --id extension-control-2 --json'],
 				action: async (options) => {
 					await runExtensionDoctor(options)
 				},
@@ -157,7 +167,7 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 				name: 'tabs',
 				description: 'List browser tabs visible to the extension transport',
 				options: [
-					{ flags: '--id <watcherId>', description: 'Extension-backed watcher id to use as the transport (default: extension-control)' },
+					controlWatcherOption,
 					{ flags: '--url <substring>', description: 'Filter tabs by URL substring' },
 					{ flags: '--title <substring>', description: 'Filter tabs by title substring' },
 					jsonOption,
@@ -166,7 +176,7 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 					'argus ext tabs',
 					'argus ext tabs --url localhost',
 					'argus ext tabs --title Docs --json',
-					'argus ext tabs --id extension-2',
+					'argus ext tabs --id extension-control-2',
 				],
 				action: async (options) => {
 					await runExtensionTabs(options)
@@ -206,6 +216,7 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 				description: 'List page and iframe targets for an extension tab watcher',
 				arguments: [{ flags: '[id]', description: 'Attached extension watcher id' }],
 				options: [
+					controlWatcherOption,
 					{ flags: '--tab <tabId>', description: 'Browser tab id' },
 					{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 					{ flags: '--title <substring>', description: 'Resolve tab by title substring' },

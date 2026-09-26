@@ -19,6 +19,7 @@ export type ExtensionAttachOptions = ExtensionTabActionOptions & { show?: boolea
 export type ExtensionDetachOptions = ExtensionTabActionOptions
 
 type ExtensionTabActionOptions = {
+	id?: string
 	tab?: string | number
 	url?: string
 	title?: string
@@ -46,7 +47,7 @@ export const runExtensionDetach = async (options: ExtensionDetachOptions): Promi
 
 const runExtensionTabAction = async (action: ExtensionTabAction, options: ExtensionTabActionOptions): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveExtensionWatcher({})
+	const resolved = await resolveExtensionWatcher({ id: options.id })
 	if (!resolved.ok) {
 		writeResolveFailure(output, options, resolved)
 		return
@@ -76,7 +77,7 @@ const runExtensionTabAction = async (action: ExtensionTabAction, options: Extens
 			path: action === 'attach' ? '/attach' : '/detach',
 			method: 'POST',
 			body: { tabId: tab.tab.tabId, watcherId: action === 'attach' ? options.as : undefined },
-			timeoutMs: 5_000,
+			timeoutMs: action === 'attach' ? 18_000 : 5_000,
 			returnErrorResponse: true,
 		})
 	} catch (error) {
