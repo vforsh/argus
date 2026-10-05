@@ -13,6 +13,7 @@
  * transport) use the same envelope and so draw from the same union.
  */
 export const ARGUS_ERROR_CODES = [
+	'ambiguous_control',
 	'argus_executable_not_found',
 	'body_not_available',
 	'cdp_not_attached',
@@ -48,6 +49,7 @@ export const ARGUS_ERROR_CODES = [
 	'not_interactable',
 	'nth_out_of_range',
 	'payload_too_large',
+	'registration_conflict',
 	'session_command_failed',
 	'session_command_rejected',
 	'session_invalid_request',
@@ -56,6 +58,7 @@ export const ARGUS_ERROR_CODES = [
 	'target_not_focused',
 	'unexpected_matches',
 	'unsupported_platform',
+	'watcher_id_taken',
 ] as const
 
 /** A machine-readable failure code carried by {@link ErrorDetail}. */

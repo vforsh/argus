@@ -45,7 +45,7 @@ export type NormalizedWatcherSetup = {
 	netMockController: ReturnType<typeof createNetMockController>
 }
 
-export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: string): NormalizedWatcherSetup => {
+export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: string, ownerId: string): NormalizedWatcherSetup => {
 	const sourceMode = options.source ?? 'cdp'
 	const extensionRole = options.extensionRole ?? 'tab'
 	const host = options.host ?? '127.0.0.1'
@@ -90,6 +90,8 @@ export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: s
 		chrome: sourceMode === 'cdp' ? chrome : undefined,
 		includeTimestamps,
 		source: sourceMode,
+		extensionRole: sourceMode === 'extension' ? extensionRole : undefined,
+		ownerId,
 	}
 
 	return {

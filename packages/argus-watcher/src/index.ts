@@ -1,6 +1,15 @@
-import type { WatcherMatch, WatcherChrome, WatcherRecord, LogEvent, PageConsoleLogging, WatcherSourceMode } from '@vforsh/argus-core'
+import type {
+	WatcherMatch,
+	WatcherChrome,
+	WatcherRecord,
+	LogEvent,
+	PageConsoleLogging,
+	WatcherSourceMode,
+	WatcherExtensionRole,
+} from '@vforsh/argus-core'
+import { randomUUID } from 'node:crypto'
 import Emittery from 'emittery'
-import { resolveUniqueWatcherId } from './registry/registry.js'
+import { releaseWatcherId, reserveWatcherId, type WatcherIdConflictPolicy } from './registry/registry.js'
 import { createWatcherHandle } from './startWatcherRuntime.js'
 import type { ArgusWatcherEventMap } from './events.js'
 import type { HttpRequestEvent } from './events.js'
@@ -55,12 +64,22 @@ export type NetOptions = {
 }
 
 /** Native Messaging role used by extension-backed watchers. */
-export type ExtensionWatcherRole = 'tab' | 'control'
+export type ExtensionWatcherRole = WatcherExtensionRole
+
+export type { WatcherIdConflictPolicy }
 
 /** Options to start a watcher server. */
 export type StartWatcherOptions = {
 	/** Unique watcher identifier (used for registry presence and removal on shutdown). */
 	id: string
+	/**
+	 * What to do when `id` is held by another live watcher.
+	 * - `error` (default): reject with a `watcher_id_taken` coded error. An explicit name means exactly that name.
+	 * - `suffix`: take the first free `<id>-2`, `<id>-3`, …; for auto-named watchers.
+	 *
+	 * Either way the id is reserved atomically, so concurrent starts never share one.
+	 */
+	idConflict?: WatcherIdConflictPolicy
 	/**
 	 * Source mode for CDP connection.
 	 * - `cdp` (default): Connect directly to Chrome via WebSocket.
@@ -167,8 +186,14 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		throw new Error('Watcher id is required')
 	}
 
-	const watcherId = await resolveUniqueWatcherId(options.id)
-	return createWatcherHandle(options, watcherId)
+	const ownerId = randomUUID()
+	const watcherId = await reserveWatcherId({ id: options.id, ownerId, onConflict: options.idConflict ?? 'error' })
+	try {
+		return await createWatcherHandle(options, watcherId, ownerId)
+	} catch (error) {
+		await releaseWatcherId(watcherId, ownerId).catch(() => {})
+		throw error
+	}
 }
 
 /** Log event shape emitted by watchers. */

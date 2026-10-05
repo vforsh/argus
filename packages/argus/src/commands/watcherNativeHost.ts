@@ -34,9 +34,12 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 
 	let handle: WatcherHandle
 	try {
-		const watcherId = role === 'tab' ? await resolveTabWatcherId(options.id?.trim()) : options.id?.trim() || 'extension'
+		// Controls are auto-named per browser (`extension-control`, `-2`, …). A tab watcher keeps an
+		// explicit `--as` name exactly; an unnamed one takes the next free suffix.
+		const watcherId = role === 'tab' ? await resolveTabWatcherId() : { id: options.id?.trim() || 'extension', explicit: false }
 		handle = await startWatcher({
-			id: watcherId,
+			id: watcherId.id,
+			idConflict: watcherId.explicit ? 'error' : 'suffix',
 			source: 'extension',
 			extensionRole: role,
 			host: '127.0.0.1',
@@ -89,7 +92,7 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 	await new Promise(() => {})
 }
 
-const resolveTabWatcherId = async (fallback: string | undefined): Promise<string> => {
+const resolveTabWatcherId = async (): Promise<{ id: string; explicit: boolean }> => {
 	const message = await new Promise<{ type?: string; watcherId?: string }>((resolve, reject) => {
 		let buffer = Buffer.alloc(0)
 		const timeout = setTimeout(() => {
@@ -138,5 +141,6 @@ const resolveTabWatcherId = async (fallback: string | undefined): Promise<string
 	if (message.type !== 'init_tab_watcher') {
 		throw new Error(`Expected init_tab_watcher, received ${message.type ?? 'unknown message'}`)
 	}
-	return message.watcherId?.trim() || fallback || 'extension'
+	const requested = message.watcherId?.trim()
+	return requested ? { id: requested, explicit: true } : { id: 'extension', explicit: false }
 }

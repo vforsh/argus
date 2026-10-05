@@ -22,7 +22,11 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				alias: 'attach',
 				description: 'Start an Argus watcher process',
 				options: [
-					{ flags: '--id <watcherId>', description: 'Watcher id to announce in the registry (auto-generated if omitted)' },
+					{
+						flags: '--id <watcherId>',
+						description:
+							'Watcher id to announce in the registry (auto-generated if omitted; fails with watcher_id_taken if a live watcher holds it)',
+					},
 					{ flags: '--source <mode>', description: 'Source mode: cdp (default) or extension' },
 					{ flags: '--url <url>', description: 'URL pattern to match for capturing logs (CDP mode only)' },
 					{ flags: '--type <type>', description: 'Filter by target type (e.g., page, iframe, worker) (CDP mode only)' },
@@ -91,10 +95,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				name: 'ls',
 				alias: 'list',
 				description: 'List registered watchers',
-				options: [
-					jsonOption,
-					{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
-				],
+				options: [jsonOption, { flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' }],
 				examples: ['argus watcher ls', 'argus watcher ls --json', 'argus watcher ls --by-cwd my-project'],
 				action: async (options) => {
 					await runList(options)
@@ -104,10 +105,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				name: 'reload',
 				description: 'Reload the page attached to a watcher',
 				arguments: [{ flags: '[id]', description: 'Watcher id to reload' }],
-				options: [
-					{ flags: '--ignore-cache', description: 'Bypass browser cache' },
-					jsonOption,
-				],
+				options: [{ flags: '--ignore-cache', description: 'Bypass browser cache' }, jsonOption],
 				examples: ['argus watcher reload app', 'argus watcher reload app --ignore-cache', 'argus watcher reload app --json'],
 				action: async (id, options) => {
 					await runReload(id, options)
@@ -161,7 +159,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				name: 'native-host',
 				description: '[internal] Start as Native Messaging host for Chrome extension',
 				options: [
-					{ flags: '--id <watcherId>', description: 'Watcher id (default: extension)' },
+					{ flags: '--id <watcherId>', description: 'Base watcher id (default: extension); suffixed -2, -3, … while taken' },
 					{ flags: '--role <role>', description: 'Native host role: tab or control (default: tab)' },
 					jsonOption,
 				],

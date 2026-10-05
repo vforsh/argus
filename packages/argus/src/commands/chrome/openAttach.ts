@@ -37,6 +37,7 @@ export const openAndAttachWatcher = async (
 	const started = await startManagedWatcher({
 		output,
 		watcherId,
+		idConflict: 'error',
 		source: 'cdp',
 		match: { targetId: target.id },
 		chrome: endpoint,

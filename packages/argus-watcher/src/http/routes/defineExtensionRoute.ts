@@ -2,6 +2,7 @@ import type http from 'node:http'
 import type { CdpSourceHandle } from '../../sources/types.js'
 import { formatError } from '@vforsh/argus-core'
 import { respondApiError } from '../httpUtils.js'
+import { getErrorCode } from '../../errors.js'
 import { defineJsonRoute, type JsonRouteHandlerInput, type WatcherRouteDefinition } from './defineRoute.js'
 
 /** The optional members of {@link CdpSourceHandle} that only an extension-backed source provides. */
@@ -55,7 +56,8 @@ export const defineExtensionRoute = <
 			return input.handle({ ...handlerInput, capability })
 		},
 		handleError: (res, error) => {
-			respondApiError(res, 400, 'extension_action_failed', formatError(error))
+			// Keep a code the source assigned (e.g. `watcher_id_taken`); everything else is a generic action failure.
+			respondApiError(res, 400, getErrorCode(error) ?? 'extension_action_failed', formatError(error))
 			return true
 		},
 	})

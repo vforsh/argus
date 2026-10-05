@@ -11,6 +11,12 @@ import type { Ok } from './errors.js'
 export type StatusResponse = Ok<{
 	id: string
 	pid: number
+	/**
+	 * Per-run owner token of the responding process (see `WatcherRecord.ownerId`).
+	 * Compare it with the registry record to prove the answering process is the record's owner;
+	 * `id` and `pid` alone can't tell two processes sharing one id apart. Absent on older watchers.
+	 */
+	ownerId?: string
 	attached: boolean
 	/** Whether the currently selected target is ready for frame-scoped commands. */
 	targetReady?: boolean | null

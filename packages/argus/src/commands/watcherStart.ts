@@ -111,6 +111,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 	const startedWatcher = await startManagedWatcher({
 		output,
 		watcherId,
+		idConflict: options.id?.trim() ? 'error' : 'suffix',
 		source: sourceMode,
 		match,
 		chrome: sourceMode === 'cdp' ? { host: chromeHost!, port: chromePort! } : undefined,

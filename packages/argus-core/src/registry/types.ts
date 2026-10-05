@@ -55,6 +55,13 @@ export type WatcherSourceMode = 'cdp' | 'extension'
  */
 export type PageConsoleLogging = 'none' | 'minimal' | 'full'
 
+/**
+ * Native Messaging role of an extension-backed watcher.
+ * - `control`: one per browser instance; lists tabs and brokers attach/detach.
+ * - `tab`: bound to exactly one browser tab.
+ */
+export type WatcherExtensionRole = 'control' | 'tab'
+
 /** Registry entry for a watcher instance. */
 export type WatcherRecord = {
 	/** Unique watcher identifier (also used as the key in the registry). */
@@ -79,6 +86,34 @@ export type WatcherRecord = {
 	includeTimestamps?: boolean
 	/** Source mode: 'cdp' (direct Chrome connection) or 'extension' (via Chrome extension). */
 	source?: WatcherSourceMode
+	/** Extension role, set when `source` is `extension`. Absent on records written by older hosts. */
+	extensionRole?: WatcherExtensionRole
+	/**
+	 * Random per-run token identifying the process that owns this record.
+	 *
+	 * Only the owner refreshes or removes its record, so two processes that ever race for one id
+	 * can't overwrite or delete each other's entry. Absent on records written by older hosts
+	 * (treated as legacy: they still overwrite blindly).
+	 */
+	ownerId?: string
+}
+
+/**
+ * Claim on a watcher id taken before the watcher's record can be published.
+ *
+ * A watcher needs its id before its HTTP port is known, so allocation writes a reservation in the
+ * same locked update that picks the id. Allocators treat a live reservation as taken; readers that
+ * resolve watchers never see it because reservations live outside `watchers`.
+ */
+export type WatcherReservation = {
+	/** Reserved watcher id. */
+	id: string
+	/** Process holding the reservation; a dead PID frees it. */
+	pid: number
+	/** Owner token of the reserving run; matches the record it later publishes. */
+	ownerId: string
+	/** Reservation time as milliseconds since Unix epoch; expires after the registry TTL. */
+	reservedAt: number
 }
 
 /** Registry schema v1. */
@@ -89,6 +124,8 @@ export type RegistryV1 = {
 	updatedAt: number
 	/** Watchers keyed by `WatcherRecord.id`. */
 	watchers: Record<string, WatcherRecord>
+	/** Ids reserved by watchers that are still starting, keyed by id. Optional for older registries. */
+	reservations?: Record<string, WatcherReservation>
 }
 
 /** Result of reading the registry file with warnings. */

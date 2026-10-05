@@ -25,7 +25,7 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 		name: 'start',
 		description: 'Launch Chrome and attach a watcher in one command',
 		options: [
-			{ flags: '--id <watcherId>', description: 'Watcher id', required: true },
+			{ flags: '--id <watcherId>', description: 'Watcher id (fails with watcher_id_taken if a live watcher holds it)', required: true },
 			{ flags: '--url <url>', description: 'URL to open in Chrome and match for the watcher' },
 			{
 				flags: '--auth-from <watcherId>',

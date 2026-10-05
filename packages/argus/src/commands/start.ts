@@ -107,6 +107,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 	const startedWatcher = await startManagedWatcher({
 		output,
 		watcherId,
+		idConflict: 'error',
 		source: 'cdp',
 		match,
 		chrome: { host: chrome.cdpHost, port: chrome.cdpPort },

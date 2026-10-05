@@ -4,6 +4,8 @@ CDP mode: Argus launches (or connects to) a Chrome with remote debugging and a w
 
 `start`, `chrome start`, `watcher start`, and `page open --attach` stay in the foreground until Ctrl+C. Background them in agent shells.
 
+Watcher ids are exact: `start --id`, `watcher start --id`, and `page open --attach --as` fail with `watcher_id_taken` while another live watcher holds the name (a predecessor that is still exiting gets ~2s to release it). Stop it with `argus watcher stop <id>` or pick another name.
+
 ## `argus start` (Chrome + watcher)
 
 ```bash
@@ -129,5 +131,7 @@ const { watcher, events, close } = await startWatcher({
 events.on('cdpAttached', ({ target }) => console.log('attached', target?.url))
 await close()
 ```
+
+`startWatcher` rejects with code `watcher_id_taken` when `id` is held by another live watcher; pass `idConflict: 'suffix'` to take the next free `<id>-2`, `<id>-3`, … instead. Allocation is atomic, so concurrent starts never share an id.
 
 Callers that skip the CLI (SDK, raw HTTP) must pass absolute `--out` paths; relative ones resolve under the watcher's temp artifacts dir.

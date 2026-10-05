@@ -1,6 +1,6 @@
 import type { DialogStatus, LogEvent } from '@vforsh/argus-core'
 import { startHttpServer } from './http/server.js'
-import { announceWatcher, removeWatcher, startRegistryHeartbeat } from './registry/registry.js'
+import { describeHolder, publishWatcher, releaseWatcherId, startRegistryHeartbeat } from './registry/registry.js'
 
 import { ElementRefRegistry } from './cdp/elementRefs.js'
 import { createSessionRendererProbe, diagnoseCdpHealth, type CdpHealthDiagnosis } from './cdp/health.js'
@@ -16,8 +16,8 @@ import { createWatcherRuntimeServices } from './runtime/watcherServices.js'
 /**
  * Build the watcher runtime and keep the public entrypoint focused on API shape and input validation.
  */
-export const createWatcherHandle = async (options: StartWatcherOptions, watcherId: string): Promise<WatcherHandle> => {
-	const setup = normalizeWatcherSetup(options, watcherId)
+export const createWatcherHandle = async (options: StartWatcherOptions, watcherId: string, ownerId: string): Promise<WatcherHandle> => {
+	const setup = normalizeWatcherSetup(options, watcherId, ownerId)
 	const {
 		sourceMode,
 		host,
@@ -257,11 +257,9 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		watcherPort: record.port,
 		watcherPid: process.pid,
 	})
-	await announceWatcher(record)
-
-	const heartbeat = startRegistryHeartbeat(() => record, options.heartbeatMs ?? 15_000)
+	let heartbeat: { stop: () => void } | null = null
 	shutdown.arm(async () => {
-		heartbeat.stop()
+		heartbeat?.stop()
 		indicator.stop()
 		if (cdpStatus.attached) {
 			logToPageConsole('detached (reason=watcher_stopped)')
@@ -271,9 +269,25 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		traceRecorder.onDetached('watcher_stopped')
 		recorder.onDetached('watcher_stopped')
 		await server.close()
-		await removeWatcher(record.id)
+		await releaseWatcherId(record.id, ownerId)
 		events.clearListeners()
 	})
+
+	try {
+		await publishWatcher(record)
+	} catch (error) {
+		await shutdown.close()
+		throw error
+	}
+
+	heartbeat = startRegistryHeartbeat(
+		() => record,
+		options.heartbeatMs ?? 15_000,
+		(holder) => {
+			// Stdout may be a native-messaging channel; diagnostics go to stderr.
+			console.error(`[ArgusWatcher] Registry entry ${record.id} is now held by another process (${describeHolder(holder)}); heartbeat stopped.`)
+		},
+	)
 
 	return {
 		watcher: record,

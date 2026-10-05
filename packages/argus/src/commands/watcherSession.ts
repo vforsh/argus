@@ -9,6 +9,8 @@ import { formatError } from '../cli/parse.js'
 export type StartManagedWatcherOptions = {
 	output: Output
 	watcherId: string
+	/** `error` for a name the user chose, `suffix` for a generated one. See `StartWatcherOptions.idConflict`. */
+	idConflict: 'error' | 'suffix'
 	source: WatcherSourceMode
 	match?: WatcherMatch
 	chrome?: { host: string; port: number }
@@ -41,6 +43,7 @@ export const startManagedWatcher = async (options: StartManagedWatcherOptions): 
 	try {
 		handle = await startWatcher({
 			id: options.watcherId,
+			idConflict: options.idConflict,
 			source: options.source,
 			match: options.match,
 			chrome: options.chrome,

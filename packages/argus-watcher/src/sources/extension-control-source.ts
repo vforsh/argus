@@ -1,4 +1,5 @@
-import { createNotAttachedError } from '../errors.js'
+import { codedError, createNotAttachedError } from '../errors.js'
+import { describeHolder, waitForWatcherIdRelease } from '../registry/registry.js'
 import { NATIVE_MESSAGING_PROTOCOL_VERSION } from '@vforsh/argus-core'
 import { createNativeMessaging } from '../native-messaging/messaging.js'
 import { ControlSessionManager } from '../native-messaging/control-session-manager.js'
@@ -57,7 +58,11 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 		listTargets: async () => [],
 		listTabs: async (filter) => await controlSession.listTabs(filter),
 		attachTarget: async (targetId, attachOptions) => {
-			const result = await controlSession.attachTabWatcher(parseControlTabTarget(targetId, 'attach'), attachOptions)
+			const tabId = parseControlTabTarget(targetId, 'attach')
+			if (attachOptions?.watcherId) {
+				await assertWatcherIdFreeForTab(attachOptions.watcherId, tabId)
+			}
+			const result = await controlSession.attachTabWatcher(tabId, attachOptions)
 			if (!result.ok) {
 				throw new Error(result.error)
 			}
@@ -91,6 +96,29 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 				journal: diagnostics.journal,
 			}
 		},
+	}
+
+	/**
+	 * Fail fast with `watcher_id_taken` when an explicit `--as` name belongs to another live watcher.
+	 * The tab host enforces the same rule when it registers, but its failure only reaches the
+	 * extension as a disconnected host. Re-attaching the tab that already owns the name is a reuse.
+	 */
+	async function assertWatcherIdFreeForTab(watcherId: string, tabId: number): Promise<void> {
+		if (!(await waitForWatcherIdRelease(watcherId, 0))) {
+			return
+		}
+		const tabs = await controlSession.listTabs()
+		if (tabs.some((tab) => tab.tabId === tabId && tab.watcherId === watcherId)) {
+			return
+		}
+		// A watcher that was just detached may still be shutting down.
+		const holder = await waitForWatcherIdRelease(watcherId)
+		if (holder) {
+			throw codedError(
+				'watcher_id_taken',
+				`Watcher id "${watcherId}" is already in use (${describeHolder(holder)}). Detach its tab or choose another --as name.`,
+			)
+		}
 	}
 
 	function sendHostInfo(): void {

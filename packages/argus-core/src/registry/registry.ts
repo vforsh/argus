@@ -103,7 +103,7 @@ export const removeWatcherEntry = (registry: RegistryV1, id: string, now = Date.
 	}
 }
 
-/** Remove watchers whose updatedAt exceeds TTL. */
+/** Remove watchers whose updatedAt exceeds TTL, and reservations older than TTL. */
 export const pruneStaleWatchers = (
 	registry: RegistryV1,
 	now = Date.now(),
@@ -120,7 +120,8 @@ export const pruneStaleWatchers = (
 		watchers[id] = watcher
 	}
 
-	if (removedIds.length === 0) {
+	const reservations = pruneStaleReservations(registry.reservations, now, ttlMs)
+	if (removedIds.length === 0 && reservations === registry.reservations) {
 		return { registry, removedIds }
 	}
 
@@ -129,9 +130,21 @@ export const pruneStaleWatchers = (
 			...registry,
 			updatedAt: now,
 			watchers,
+			reservations,
 		},
 		removedIds,
 	}
+}
+
+const pruneStaleReservations = (reservations: RegistryV1['reservations'], now: number, ttlMs: number): RegistryV1['reservations'] => {
+	if (!reservations) {
+		return reservations
+	}
+	const kept = Object.entries(reservations).filter(([, reservation]) => now - reservation.reservedAt <= ttlMs)
+	if (kept.length === Object.keys(reservations).length) {
+		return reservations
+	}
+	return kept.length > 0 ? Object.fromEntries(kept) : undefined
 }
 
 const atomicWrite = async (filePath: string, contents: string): Promise<void> => {
