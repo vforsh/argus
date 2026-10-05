@@ -19,8 +19,9 @@ The extension id is pinned via a manifest `key`, and the prebuilt extension ship
 
 ## Model
 
-- **Control watcher** (`extension-control`, `extension-control-2`, …): one per browser instance. Use `--id <controlWatcherId>` on tab commands to select the instance.
-- **Tab watcher**: created per attached tab, named by `--as <id>` or auto (`extension`, `extension-2`, …). All normal commands (`logs`, `eval`, `click`, …) take this id.
+- **Control watcher** (`extension-control`, `extension-control-2`, …): one per browser instance, auto-named in startup order. With one live control, commands use it; with several, commands without `--id <controlWatcherId>` fail with `ambiguous_control` (JSON lists `candidates`).
+- **Tab watcher**: created per attached tab, named by `--as <id>` or auto (`extension`, `extension-2`, …). An `--as` name held by another live watcher fails with `watcher_id_taken`; re-attaching the tab that already owns it reuses it. All normal commands (`logs`, `eval`, `click`, …) take this id.
+- **Registry ownership**: each run records a random `ownerId` (also in `/status`) and `extensionRole`. Only the owner refreshes or removes its entry, so concurrent browsers, overlapping reloads, and crashed hosts never overwrite or delete each other's records. `ext doctor` flags entries from older hosts (no `ownerId`); reload the extension or restart the browser to respawn them.
 - Chrome shows an orange "debugging" bar on attached tabs. It cannot be hidden.
 
 ## Attach / Resolve
@@ -39,7 +40,7 @@ argus ext mute app / unmute --tab 123          # persistent Chrome tab mute; sel
 
 Prefer `ext use`: idempotent, returns the watcher id, accepts iframe selection flags. `--tab/--url/--title` on `mute`, `unmute`, `detach`, and `targets` resolve the tab without attaching it.
 
-With two extension instances, run `argus list`, then use the same control id for discovery and action:
+With two extension instances, pick a control from the `ambiguous_control` candidates (or `argus list`), then use the same id for discovery and action:
 
 ```bash
 argus ext tabs --id extension-control-2 --url portal.example --json

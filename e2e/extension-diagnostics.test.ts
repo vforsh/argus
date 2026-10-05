@@ -87,8 +87,14 @@ test('CLI mutes by watcher id and unmutes by tab selector', async () => {
 async function startExtensionStub() {
 	const stub = await startStubWatcher({}, 'extension-control')
 	const registry = await stub.readRegistry()
-	registry.watchers['extension-control'].source = 'extension'
-	registry.watchers['test-tab'] = { ...registry.watchers['extension-control'], id: 'test-tab' }
+	// Both records point at the one stub server, so the role must come from the record (as current hosts write it).
+	registry.watchers['extension-control'] = {
+		...registry.watchers['extension-control'],
+		source: 'extension',
+		extensionRole: 'control',
+		ownerId: 'stub-control',
+	}
+	registry.watchers['test-tab'] = { ...registry.watchers['extension-control'], id: 'test-tab', extensionRole: 'tab', ownerId: 'stub-tab' }
 	await fs.writeFile(stub.registryPath, JSON.stringify(registry))
 	const dir = path.dirname(stub.registryPath)
 	return {

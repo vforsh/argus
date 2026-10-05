@@ -5,6 +5,7 @@ import { pruneRegistry } from '../../registry.js'
 import { resolveChromeBin } from '../../utils/chromeBin.js'
 import { ARGUS_EXTENSION_ID } from './extensionId.js'
 import { resolveExtensionDir } from './extensionPath.js'
+import { readExtensionRole } from './resolveExtensionWatcher.js'
 import { CONTROL_WATCHER_ID, findArgusExecutable, installNativeHosts, type InstalledNativeHost } from './nativeHost.js'
 import { emitFailure, getPlatformOrFail } from './failures.js'
 import { delay } from '@vforsh/argus-core'
@@ -82,7 +83,10 @@ export const runExtensionInstall = async (options: ExtensionInstallOptions): Pro
 
 const isControlConnected = async (): Promise<boolean> => {
 	const { registry } = await readRegistry()
-	return Boolean(registry.watchers[CONTROL_WATCHER_ID])
+	// Older hosts don't record a role; their control still registers under the conventional name.
+	return Object.values(registry.watchers).some(
+		(watcher) => readExtensionRole(watcher) === 'control' || (watcher.source === 'extension' && watcher.id === CONTROL_WATCHER_ID),
+	)
 }
 
 const openExtensionsPage = (): boolean => {
@@ -170,4 +174,3 @@ const parseTimeoutMs = (value: string | undefined): number => {
 	}
 	return seconds * 1000
 }
-

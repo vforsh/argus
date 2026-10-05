@@ -20,7 +20,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execSync, spawn, type ChildProcess } from 'node:child_process'
-import { delay } from '@vforsh/argus-core'
+import { delay, type RegistryV1 } from '@vforsh/argus-core'
 import { ARGUS_EXTENSION_ID, installNativeHostsTo } from '@vforsh/argus/internal'
 import { startPlaygroundServers } from '../../playground/harness.ts'
 import { getFreePort } from './ports.js'
@@ -30,7 +30,6 @@ const REPO_ROOT = path.resolve(import.meta.dirname!, '..', '..')
 const BIN_PATH = path.join(REPO_ROOT, 'packages', 'argus', 'dist', 'bin.js')
 const EXTENSION_DIR = path.join(REPO_ROOT, 'packages', 'argus-extension')
 
-const CONTROL_WATCHER_ID = 'extension-control'
 const STARTUP_TIMEOUT_MS = 60_000
 
 export type ExtensionHarness = {
@@ -91,7 +90,12 @@ export const resolveTestChromeBin = (): string | null => {
 	return null
 }
 
-export const startExtensionHarness = async (options: { registryPath?: string; controlWatcherId?: string } = {}): Promise<ExtensionHarness> => {
+/**
+ * Launch one isolated browser. Pass a shared `registryPath` to run several browsers against one
+ * registry; they may be started concurrently. Each harness discovers its own control watcher by the
+ * tab it opened, since concurrent controls register as `extension-control`/`-2` in either order.
+ */
+export const startExtensionHarness = async (options: { registryPath?: string } = {}): Promise<ExtensionHarness> => {
 	const chromeBin = resolveTestChromeBin()
 	if (!chromeBin) {
 		throw new Error('No Chromium/Chrome for Testing binary found. Set ARGUS_E2E_CHROME_BIN or install Playwright browsers.')
@@ -101,7 +105,6 @@ export const startExtensionHarness = async (options: { registryPath?: string; co
 	const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'argus-ext-e2e-'))
 	const argusHome = options.registryPath ? path.dirname(options.registryPath) : path.join(tempRoot, 'argus-home')
 	const registryPath = options.registryPath ?? path.join(argusHome, 'registry.json')
-	const controlWatcherId = options.controlWatcherId ?? CONTROL_WATCHER_ID
 	const userDataDir = path.join(tempRoot, 'profile')
 	fs.mkdirSync(argusHome, { recursive: true })
 	fs.mkdirSync(userDataDir, { recursive: true })
@@ -143,8 +146,9 @@ export const startExtensionHarness = async (options: { registryPath?: string; co
 		fs.rmSync(tempRoot, { recursive: true, force: true })
 	}
 
+	let controlWatcherId: string
 	try {
-		await waitForControlWatcher(registryPath, chrome, controlWatcherId)
+		controlWatcherId = await waitForControlWatcher(registryPath, chrome, `127.0.0.1:${mainPort}`)
 	} catch (error) {
 		await close()
 		throw error
@@ -241,9 +245,10 @@ const spawnChrome = (chromeBin: string, userDataDir: string, startupUrl: string,
 /**
  * The control host registers its watcher after its HTTP server is listening, so a registry
  * entry doubles as a readiness signal for the whole chain: extension loaded, service worker
- * ran, native host spawned, watcher HTTP up.
+ * ran, native host spawned, watcher HTTP up. The control whose tabs include this browser's
+ * startup page is this browser's.
  */
-const waitForControlWatcher = (registryPath: string, chrome: ChildProcess, controlWatcherId: string): Promise<void> => {
+const waitForControlWatcher = (registryPath: string, chrome: ChildProcess, pageUrlSubstring: string): Promise<string> => {
 	const deadline = Date.now() + STARTUP_TIMEOUT_MS
 	let chromeError: Error | null = null
 	let stderrTail = ''
@@ -259,20 +264,38 @@ const waitForControlWatcher = (registryPath: string, chrome: ChildProcess, contr
 			if (chromeError) {
 				throw chromeError
 			}
-			if (fs.existsSync(registryPath)) {
-				try {
-					const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8')) as { watchers?: Record<string, unknown> }
-					if (registry.watchers?.[controlWatcherId]) {
-						return
-					}
-				} catch {
-					// Registry mid-write; retry.
-				}
+			const own = await findControlOwningPage(registryPath, pageUrlSubstring)
+			if (own) {
+				return own
 			}
 			await delay(250)
 		}
-		throw new Error(`${controlWatcherId} watcher did not register within ${STARTUP_TIMEOUT_MS}ms.\nChrome stderr tail:\n${stderrTail}`)
+		throw new Error(`No control watcher for ${pageUrlSubstring} registered within ${STARTUP_TIMEOUT_MS}ms.\nChrome stderr tail:\n${stderrTail}`)
 	})()
+}
+
+const findControlOwningPage = async (registryPath: string, pageUrlSubstring: string): Promise<string | null> => {
+	let registry: RegistryV1
+	try {
+		registry = JSON.parse(fs.readFileSync(registryPath, 'utf8')) as RegistryV1
+	} catch {
+		// Registry missing or mid-write; retry.
+		return null
+	}
+	const controls = Object.values(registry.watchers).filter((watcher) => watcher.extensionRole === 'control')
+	for (const control of controls) {
+		try {
+			const response = (await fetch(`http://${control.host}:${control.port}/tabs`, { signal: AbortSignal.timeout(1_000) }).then((res) =>
+				res.json(),
+			)) as { ok: boolean; tabs?: Array<{ url: string }> }
+			if (response.tabs?.some((tab) => tab.url.includes(pageUrlSubstring))) {
+				return control.id
+			}
+		} catch {
+			// Control bridge not ready yet; retry.
+		}
+	}
+	return null
 }
 
 const waitForExit = (proc: ChildProcess, timeoutMs: number): Promise<void> =>

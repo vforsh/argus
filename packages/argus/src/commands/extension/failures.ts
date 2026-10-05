@@ -64,19 +64,39 @@ export const emitFailure = (output: Output, input: EmitFailureInput): void => {
 
 /**
  * Report a watcher-resolution failure, listing the candidates that made it ambiguous.
+ * JSON mode carries the candidates (id, pid, address, role, host version) beside the envelope.
  *
  * @param hint Trailing guidance for the human path, e.g. how to disambiguate.
  */
 export const emitResolveFailure = (
 	output: Output,
-	resolved: { error: string; exitCode: number; candidates?: readonly WatcherRecord[] },
+	resolved: {
+		error: string
+		exitCode: number
+		code?: ArgusErrorCode
+		candidates?: ReadonlyArray<WatcherRecord & { watcherVersion?: string | null }>
+	},
 	hint = 'Hint: pass --id <watcherId> to pick one extension watcher.',
 ): void => {
 	const candidates = resolved.candidates ?? []
 	emitFailure(output, {
 		error: resolved.error,
 		exitCode: resolved.exitCode,
+		code: resolved.code,
 		hints: candidates.length > 0 ? [...candidates.map((watcher) => formatWatcherLine(watcher)), hint] : [],
+		details:
+			candidates.length > 0
+				? {
+						candidates: candidates.map((watcher) => ({
+							id: watcher.id,
+							pid: watcher.pid,
+							host: watcher.host,
+							port: watcher.port,
+							extensionRole: watcher.extensionRole ?? null,
+							watcherVersion: watcher.watcherVersion ?? null,
+						})),
+					}
+				: undefined,
 	})
 }
 

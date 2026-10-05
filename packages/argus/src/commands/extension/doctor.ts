@@ -32,6 +32,11 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 	issues.push(...layerEvidence.warnings)
 	for (const layer of layerEvidence.layers) {
 		if (layer.registryIdentityMatches === false) issues.push(`Registry entry ${layer.watcher.id} points at a different responding watcher.`)
+		if (layer.legacyRegistration && layer.transport === 'responded') {
+			issues.push(
+				`Watcher ${layer.watcher.id} was registered by an older native host that can overwrite other watchers' entries. Reload the extension at chrome://extensions or restart the browser to respawn native hosts.`,
+			)
+		}
 	}
 	const controlLayers: typeof layerEvidence.layers = []
 	const seenTransports = new Set<string>()
@@ -52,16 +57,14 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 		(entry) => entry.result.ok && entry.result.diagnostics.tabWatchers.some((tab) => tab.watcherId === options.watcher),
 	)
 	if (owners.length > 1) issues.push(`Watcher ${options.watcher} is reported by multiple control watchers; specify --id.`)
-	let controlWatcher = controlLayers.find((layer) => layer.watcher.id === 'extension-control')?.watcher
-	if (options.id) controlWatcher = controlLayers.find((layer) => layer.watcher.id === options.id)?.watcher
-	else if (owners.length === 1) controlWatcher = owners[0].watcher
-	const control = controlWatcher
-		? { ok: true as const, watcher: controlWatcher }
+	const selection = selectControlWatcher(controlLayers, owners, options.id)
+	const control = selection.watcher
+		? { ok: true as const, watcher: selection.watcher }
 		: {
 				ok: false as const,
 				error: options.id
 					? `Control watcher ${options.id} is unavailable or is not a control watcher.`
-					: 'No extension control watcher in registry; worker startup/registration is unknown.',
+					: (selection.ambiguous?.message ?? 'No extension control watcher in registry; worker startup/registration is unknown.'),
 			}
 	let diagnostics: ExtensionDiagnosticsResponse | null = null
 	let controlRequest: DiagnosticTrace | null = null
@@ -99,6 +102,9 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 	const ok = issues.length === 0
 	return {
 		ok,
+		/** Set when doctor could not pick a control watcher on its own; `candidates` lists the choices. */
+		error: selection.ambiguous ? { message: selection.ambiguous.message, code: 'ambiguous_control' as const } : null,
+		candidates: selection.ambiguous?.candidates.map(({ id, pid, host, port }) => ({ id, pid, host, port })) ?? [],
 		configured,
 		hosts,
 		controlWatcher: control.ok ? control.watcher : null,
@@ -109,6 +115,34 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 		layers: layerEvidence.layers,
 		workerState:
 			'Registration, suspension and process state unavailable through extension API. Collect Chrome extension Errors and serviceworker-internals before reload; optional CDP requires a debugging-enabled browser.',
+	}
+}
+
+type DoctorLayer = Awaited<ReturnType<typeof inspectDoctorLayers>>['layers'][number]
+
+/**
+ * Pick the control to diagnose: `--id`, else the single control that owns `--watcher`, else the
+ * only live control. Several live controls with nothing to choose between them is ambiguous —
+ * defaulting to `extension-control` silently diagnosed whichever browser registered first.
+ */
+const selectControlWatcher = (
+	controlLayers: DoctorLayer[],
+	owners: Array<{ watcher: WatcherRecord }>,
+	id: string | undefined,
+): { watcher?: WatcherRecord; ambiguous?: { message: string; candidates: WatcherRecord[] } } => {
+	if (id) return { watcher: controlLayers.find((layer) => layer.watcher.id === id)?.watcher }
+	if (owners.length === 1) return { watcher: owners[0].watcher }
+
+	const live = controlLayers.filter((layer) => layer.transport === 'responded' && layer.registryIdentityMatches !== false)
+	if (live.length === 1) return { watcher: live[0].watcher }
+	if (live.length === 0) return {}
+
+	const candidates = live.map((layer) => layer.watcher)
+	return {
+		ambiguous: {
+			message: `Multiple extension control watchers are live (${candidates.map((watcher) => watcher.id).join(', ')}); one per browser. Pass --id <controlWatcherId> to pick one.`,
+			candidates,
+		},
 	}
 }
 

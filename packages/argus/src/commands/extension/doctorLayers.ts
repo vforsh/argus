@@ -1,5 +1,6 @@
 import { readRegistry, type ApiResult, type StatusResponse, type WatcherRecord, type ExtensionDiagnosticsResponse } from '@vforsh/argus-core'
 import { diagnosticRequest } from './diagnosticRequest.js'
+import { describeIdentityMismatch, readExtensionRole } from './resolveExtensionWatcher.js'
 
 /** Observe local process existence without confusing a reused PID with host identity. */
 export function processExists(pid: number): boolean | null {
@@ -22,13 +23,15 @@ export async function inspectDoctorLayers() {
 async function probeWatcher(watcher: WatcherRecord) {
 	const alive = ['127.0.0.1', 'localhost', '::1'].includes(watcher.host) ? processExists(watcher.pid) : null
 	const probe = await diagnosticRequest<ApiResult<StatusResponse>>(watcher, '/status', 1000)
+	const role = readExtensionRole(watcher)
+	// Older hosts don't record their role, so it is only learnable from the control-only route.
 	const controlProbe =
-		probe.ok && probe.response?.ok
+		role == null && probe.ok && probe.response?.ok
 			? await diagnosticRequest<ApiResult<ExtensionDiagnosticsResponse>>(watcher, '/extension/diagnostics', 1000)
 			: null
 	const status = probe.ok && probe.response?.ok ? probe.response : null
 	const identityMatches =
-		status && typeof status.pid === 'number' && typeof status.id === 'string' ? status.pid === watcher.pid && status.id === watcher.id : null
+		status && typeof status.pid === 'number' && typeof status.id === 'string' ? describeIdentityMismatch(watcher, status) === null : null
 	return {
 		watcher,
 		...probe.trace,
@@ -41,12 +44,25 @@ async function probeWatcher(watcher: WatcherRecord) {
 		transport: probe.ok ? 'responded' : 'unreachable-or-unresponsive',
 		staleRegistry: alive === false || identityMatches === false,
 		attachment: status?.attached ?? null,
-		// A broken control bridge may not answer diagnostics; keep its conventional id
-		// available for incident reporting rather than hiding the failed request.
-		controlTransport: (controlProbe?.ok === true && controlProbe.response?.ok === true) || /^extension-control(?:-\d+)?$/.test(watcher.id),
+		extensionRole: role,
+		// Records without `ownerId` come from older hosts that still overwrite and delete entries blindly.
+		legacyRegistration: watcher.ownerId == null,
+		controlTransport: isControlTransport(watcher, role, controlProbe),
 		targetReady: status?.targetReady ?? null,
 		execution: 'not tested',
 	}
+}
+
+function isControlTransport(
+	watcher: WatcherRecord,
+	role: WatcherRecord['extensionRole'] | null,
+	controlProbe: Awaited<ReturnType<typeof diagnosticRequest<ApiResult<ExtensionDiagnosticsResponse>>>> | null,
+): boolean {
+	if (role != null) return role === 'control'
+	if (controlProbe?.ok === true && controlProbe.response?.ok === true) return true
+	// Legacy fallback: a broken control bridge may not answer diagnostics; keep its conventional
+	// id available for incident reporting rather than hiding the failed request.
+	return /^extension-control(?:-\d+)?$/.test(watcher.id)
 }
 
 function describeProcessIdentity(identityMatches: boolean | null): string {

@@ -1,4 +1,4 @@
-import { emitFailure } from './failures.js'
+import { emitFailure, emitResolveFailure } from './failures.js'
 import { formatError } from '../../cli/parse.js'
 import type { ExtensionBrowserTab, VisibilityResponse, WatcherRecord, ApiResult } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
@@ -66,7 +66,7 @@ export const runExtensionShow = async (id: string | undefined, options: Extensio
 
 	const control = await resolveExtensionWatcher({ id: options.id })
 	if (!control.ok) {
-		writeFailure(output, options, control.error, control.exitCode)
+		emitResolveFailure(output, control)
 		return
 	}
 

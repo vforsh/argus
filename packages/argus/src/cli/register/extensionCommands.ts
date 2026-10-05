@@ -16,7 +16,10 @@ import { runExtensionSelect } from '../../commands/extension/select.js'
 import { runExtensionMute } from '../../commands/extension/mute.js'
 import { jsonOption } from './sharedOptions.js'
 
-const controlWatcherOption = { flags: '--id <controlWatcherId>', description: 'Extension control watcher (default: extension-control)' } as const
+const controlWatcherOption = {
+	flags: '--id <controlWatcherId>',
+	description: 'Extension control watcher (default: the only live one; required when several browsers run Argus)',
+} as const
 
 const tabTargetOptions = [
 	controlWatcherOption,
@@ -31,7 +34,10 @@ const attachTargetOptions = [
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
-	{ flags: '--as <watcherId>', description: 'Start the tab watcher with a stable id' },
+	{
+		flags: '--as <watcherId>',
+		description: 'Start the tab watcher with a stable id (fails with watcher_id_taken if another live watcher holds it)',
+	},
 	{ flags: '--no-wait', description: 'Return after the extension acknowledges the attach request' },
 	{ flags: '--show', description: 'After attaching, lock the tab shown+focused' },
 	jsonOption,
@@ -42,7 +48,10 @@ const useTargetOptions = [
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
-	{ flags: '--as <watcherId>', description: 'Start the tab watcher with a stable id when attaching' },
+	{
+		flags: '--as <watcherId>',
+		description: 'Start the tab watcher with a stable id when attaching (fails with watcher_id_taken if another live watcher holds it)',
+	},
 	{ flags: '--iframe <mode>', description: 'Select an iframe after attaching (currently: auto)' },
 	{ flags: '--iframe-url <substring>', description: 'Select iframe by URL substring after attaching' },
 	{ flags: '--iframe-title <substring>', description: 'Select iframe by title substring after attaching' },
@@ -62,7 +71,10 @@ const showTargetOptions = [
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
-	{ flags: '--as <watcherId>', description: 'Start the tab watcher with a stable id when attaching' },
+	{
+		flags: '--as <watcherId>',
+		description: 'Start the tab watcher with a stable id when attaching (fails with watcher_id_taken if another live watcher holds it)',
+	},
 	jsonOption,
 ] as const
 

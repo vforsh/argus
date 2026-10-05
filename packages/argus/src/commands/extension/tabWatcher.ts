@@ -1,7 +1,6 @@
-import { emitFailure } from './failures.js'
+import { emitFailure, emitResolveFailure } from './failures.js'
 import type { ExtensionBrowserTab, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
 import type { Output } from '../../output/io.js'
-import { formatWatcherLine } from '../../output/format.js'
 import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
 import {
 	fetchExtensionTabs,
@@ -102,18 +101,10 @@ const ensureTabAttached = async (controlWatcher: WatcherRecord, tab: ExtensionBr
 
 const writeResolveFailure = (
 	output: Output,
-	options: ExtensionTabWatcherOptions,
+	_options: ExtensionTabWatcherOptions,
 	resolved: Exclude<Awaited<ReturnType<typeof resolveExtensionWatcher>>, { ok: true }>,
 ): void => {
-	if (options.json) {
-		output.writeJson({ ok: false, error: resolved.error, candidates: resolved.candidates?.map((watcher) => watcher.id) ?? [] })
-	} else {
-		output.writeWarn(resolved.error)
-		for (const watcher of resolved.candidates ?? []) {
-			output.writeWarn(formatWatcherLine(watcher))
-		}
-	}
-	process.exitCode = resolved.exitCode
+	emitResolveFailure(output, resolved)
 }
 
 const writeTabFailure = (output: Output, _options: ExtensionTabWatcherOptions, result: TabActionFailure): void => {
