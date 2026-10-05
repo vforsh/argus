@@ -140,6 +140,9 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 				type: target.type ?? null,
 				parentId: target.parentId ?? null,
 			},
+			// Readiness is the source's to report (it emits status right before this callback);
+			// rebuilding the status here without it reset `/status.targetReady` to null on every navigation.
+			targetReady: cdpStatus.targetReady,
 			reason: null,
 		})
 		void netMockController.onTargetChanged()
