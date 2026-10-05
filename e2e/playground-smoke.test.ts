@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
+import { once } from 'node:events'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
@@ -54,8 +55,8 @@ describe('playground smoke tests', () => {
 		const servers = startPlaygroundServers({ port: mainPort, crossOriginPort })
 		mainServer = servers.mainServer
 		crossOriginServer = servers.crossOriginServer
-		await new Promise<void>((resolve) => mainServer.on('listening', resolve))
-		await new Promise<void>((resolve) => crossOriginServer.on('listening', resolve))
+		// The servers start listening synchronously inside startPlaygroundServers; one may already be up.
+		await Promise.all([mainServer, crossOriginServer].map((server) => (server.listening ? undefined : once(server, 'listening'))))
 
 		// 2. Launch browser
 		browser = await chromium.launch({
