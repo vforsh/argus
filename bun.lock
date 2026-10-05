@@ -19,7 +19,7 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.5.13",
+      "version": "0.5.14",
       "bin": {
         "argus": "dist/argus.js",
       },
@@ -42,11 +42,11 @@
     },
     "packages/argus-core": {
       "name": "@vforsh/argus-core",
-      "version": "0.5.8",
+      "version": "0.5.9",
     },
     "packages/argus-extension": {
       "name": "@vforsh/argus-extension",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "devDependencies": {
         "@types/chrome": "^0.0.287",
         "@vforsh/argus-core": "^0.5.7",
@@ -68,7 +68,7 @@
     },
     "packages/argus-watcher": {
       "name": "@vforsh/argus-watcher",
-      "version": "0.5.10",
+      "version": "0.5.11",
       "dependencies": {
         "@jridgewell/trace-mapping": "^0.3.31",
         "@vforsh/argus-core": "^0.5.8",
