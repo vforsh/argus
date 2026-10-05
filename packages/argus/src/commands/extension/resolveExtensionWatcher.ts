@@ -1,28 +1,36 @@
-import type { StatusResponse, RegistryV1, WatcherRecord, ApiResult, ExtensionDiagnosticsResponse, ArgusErrorCode } from '@vforsh/argus-core'
+import type { RegistryV1, WatcherRecord, ArgusErrorCode } from '@vforsh/argus-core'
 import { pruneRegistry } from '../../registry.js'
-import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { formatError } from '../../cli/parse.js'
+import { readBrowserLabels } from './browserLabels.js'
+import { getBrowserInstanceId, probeControl, probeControls, toCandidate, type ExtensionWatcherCandidate } from './liveControls.js'
 
-export type ResolveExtensionWatcherInput = {
+export type { ExtensionWatcherCandidate } from './liveControls.js'
+
+/** How a command picks the browser it acts on: a control watcher id, or a browser label / instance id. */
+export type ControlSelector = {
 	id?: string
+	browser?: string
 }
-
-/** A watcher offered as a choice in a resolution failure, with the host version it reported (when it answered). */
-export type ExtensionWatcherCandidate = WatcherRecord & { watcherVersion?: string | null }
 
 export type ResolveExtensionWatcherResult =
 	| { ok: true; watcher: WatcherRecord; registry: RegistryV1 }
 	| { ok: false; error: string; exitCode: 1 | 2; code?: ArgusErrorCode; candidates?: ExtensionWatcherCandidate[] }
 
+type ResolveFailure = Extract<ResolveExtensionWatcherResult, { ok: false }>
+
 /**
  * Resolve a live extension control watcher. A tab watcher cannot list or attach
  * tabs, even though both kinds share the same registry source.
  *
- * Without `--id`, every live control is a candidate: exactly one is used, several fail with
+ * Without a selector, every live control is a candidate: exactly one is used, several fail with
  * `ambiguous_control`. Picking the conventional `extension-control` name instead silently sent
  * commands to whichever browser happened to register first.
  */
-export const resolveExtensionWatcher = async (input: ResolveExtensionWatcherInput): Promise<ResolveExtensionWatcherResult> => {
+export const resolveExtensionWatcher = async (input: ControlSelector): Promise<ResolveExtensionWatcherResult> => {
+	if (input.id && input.browser) {
+		return { ok: false, error: 'Use either --id or --browser, not both.', exitCode: 2 }
+	}
+
 	let registry: RegistryV1
 	try {
 		registry = await pruneRegistry()
@@ -31,24 +39,12 @@ export const resolveExtensionWatcher = async (input: ResolveExtensionWatcherInpu
 	}
 
 	const allWatchers = Object.values(registry.watchers)
-
 	if (input.id) {
-		const watcher = registry.watchers[input.id]
-		if (!watcher) {
-			return { ok: false, error: `Watcher not found: ${input.id}`, exitCode: 2, candidates: allWatchers }
-		}
-		if (watcher.source !== 'extension') {
-			return { ok: false, error: `Watcher ${watcher.id} is not extension-backed.`, exitCode: 2, candidates: getExtensionWatchers(allWatchers) }
-		}
-		const status = await checkWatcherStatus(watcher)
-		if (!status.ok) return { ok: false, error: `Control watcher ${watcher.id} is unavailable: ${status.error}`, exitCode: 2 }
-		if (!status.control) {
-			return { ok: false, error: `Watcher ${watcher.id} is an extension tab watcher, not a control watcher.`, exitCode: 2 }
-		}
-		return { ok: true, watcher, registry }
+		const resolved = await resolveById(registry, input.id, allWatchers)
+		return resolved.ok ? { ...resolved, registry } : resolved
 	}
 
-	const extensionWatchers = getExtensionWatchers(allWatchers)
+	const extensionWatchers = allWatchers.filter((watcher) => watcher.source === 'extension')
 	if (extensionWatchers.length === 0) {
 		return {
 			ok: false,
@@ -57,83 +53,84 @@ export const resolveExtensionWatcher = async (input: ResolveExtensionWatcherInpu
 		}
 	}
 
-	const controls = await findLiveControlWatchers(extensionWatchers)
-	if (controls.length === 1) {
-		return { ok: true, watcher: controls[0], registry }
+	const resolved = input.browser ? await resolveByBrowser(extensionWatchers, input.browser) : await resolveOnlyControl(extensionWatchers)
+	return resolved.ok ? { ...resolved, registry } : resolved
+}
+
+const resolveById = async (
+	registry: RegistryV1,
+	id: string,
+	allWatchers: WatcherRecord[],
+): Promise<{ ok: true; watcher: WatcherRecord } | ResolveFailure> => {
+	const watcher = registry.watchers[id]
+	if (!watcher) {
+		return { ok: false, error: `Watcher not found: ${id}`, exitCode: 2, candidates: allWatchers }
 	}
-	if (controls.length > 1) {
+	if (watcher.source !== 'extension') {
+		return {
+			ok: false,
+			error: `Watcher ${watcher.id} is not extension-backed.`,
+			exitCode: 2,
+			candidates: allWatchers.filter((candidate) => candidate.source === 'extension'),
+		}
+	}
+	const outcome = await probeControl(watcher)
+	if (outcome.kind === 'unreachable') {
+		return { ok: false, error: `Control watcher ${watcher.id} is unavailable: ${outcome.error}`, exitCode: 2 }
+	}
+	if (outcome.kind === 'not_control') {
+		return { ok: false, error: `Watcher ${watcher.id} is an extension tab watcher, not a control watcher.`, exitCode: 2 }
+	}
+	return { ok: true, watcher }
+}
+
+const resolveOnlyControl = async (watchers: WatcherRecord[]): Promise<{ ok: true; watcher: WatcherRecord } | ResolveFailure> => {
+	const { live } = await probeControls(watchers)
+	if (live.length === 1) {
+		return { ok: true, watcher: live[0].watcher }
+	}
+	if (live.length > 1) {
 		return {
 			ok: false,
 			code: 'ambiguous_control',
-			error: `Multiple extension control watchers are live (${controls.map((watcher) => watcher.id).join(', ')}); one per browser. Pass --id <controlWatcherId> to pick one.`,
+			error: `Multiple extension control watchers are live (${live.map((control) => control.watcher.id).join(', ')}); one per browser. Pass --id <controlWatcherId> or --browser <label> to pick one.`,
 			exitCode: 2,
-			candidates: controls,
+			candidates: live.map((control) => toCandidate(control)),
 		}
 	}
-
 	return {
 		ok: false,
 		error: 'No live extension control watcher. Reload the extension after `argus extension setup`.',
 		exitCode: 2,
-		candidates: extensionWatchers,
+		candidates: watchers,
 	}
 }
 
-/**
- * A record's extension role as written by its host, or `null` for records from older hosts that
- * predate `extensionRole` (their role is only learnable by probing).
- */
-export const readExtensionRole = (watcher: WatcherRecord): WatcherRecord['extensionRole'] | null =>
-	watcher.source === 'extension' ? (watcher.extensionRole ?? null) : null
+/** `browser` matches an instance id exactly, or the label assigned to one. */
+const resolveByBrowser = async (watchers: WatcherRecord[], browser: string): Promise<{ ok: true; watcher: WatcherRecord } | ResolveFailure> => {
+	const [{ live }, labels] = await Promise.all([probeControls(watchers, { browser: true }), readBrowserLabels()])
+	const matches = live.filter((control) => {
+		const instanceId = getBrowserInstanceId(control)
+		return instanceId != null && (instanceId === browser || labels[instanceId]?.label === browser)
+	})
 
-const getExtensionWatchers = (watchers: WatcherRecord[]): WatcherRecord[] => watchers.filter((watcher) => watcher.source === 'extension')
-
-/** Probe every possible control in parallel; tab records are skipped by role, legacy records by probe. */
-const findLiveControlWatchers = async (watchers: WatcherRecord[]): Promise<ExtensionWatcherCandidate[]> => {
-	const probed = await Promise.all(
-		watchers
-			.filter((watcher) => readExtensionRole(watcher) !== 'tab')
-			.map(async (watcher) => ({ watcher, status: await checkWatcherStatus(watcher) })),
-	)
-	return probed.flatMap(({ watcher, status }) => (status.ok && status.control ? [{ ...watcher, watcherVersion: status.watcherVersion }] : []))
-}
-
-type WatcherStatusCheck = { ok: true; control: boolean; watcherVersion: string | null } | { ok: false; error: string }
-
-/**
- * Confirm the record's process answers, then learn its role: from the record when the host wrote
- * one, otherwise (older hosts) by probing the control-only diagnostics route.
- */
-const checkWatcherStatus = async (watcher: WatcherRecord): Promise<WatcherStatusCheck> => {
-	try {
-		const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 1_500 })
-		const identityError = describeIdentityMismatch(watcher, status)
-		if (identityError) {
-			return { ok: false, error: identityError }
+	if (matches.length === 1) {
+		return { ok: true, watcher: matches[0].watcher }
+	}
+	if (matches.length > 1) {
+		return {
+			ok: false,
+			code: 'ambiguous_browser',
+			error: `Browser "${browser}" matches ${matches.length} live browser instances (${matches.map((control) => control.watcher.id).join(', ')}). Relabel one with \`argus ext browsers label <instanceId> <label>\`, or pass an instance id.`,
+			exitCode: 2,
+			candidates: matches.map((control) => toCandidate(control, labels)),
 		}
-		const watcherVersion = status.watcherVersion ?? null
-		const role = readExtensionRole(watcher)
-		if (role) {
-			return { ok: true, control: role === 'control', watcherVersion }
-		}
-		const diagnostics = await fetchWatcherJson<ApiResult<ExtensionDiagnosticsResponse>>(watcher, {
-			path: '/extension/diagnostics',
-			timeoutMs: 1_500,
-			returnErrorResponse: true,
-		})
-		return { ok: true, control: diagnostics.ok, watcherVersion }
-	} catch (error) {
-		return { ok: false, error: formatError(error) }
 	}
-}
-
-/** `id` and `pid` can't tell two processes sharing one id apart; `ownerId` can, when both sides report it. */
-export const describeIdentityMismatch = (watcher: WatcherRecord, status: StatusResponse): string | null => {
-	if ((status.id && status.id !== watcher.id) || (status.pid && status.pid !== watcher.pid)) {
-		return 'HTTP identity does not match the registry entry'
+	return {
+		ok: false,
+		code: 'not_found',
+		error: `No live browser is labeled or identified as "${browser}". Run \`argus ext browsers\` to list instances.`,
+		exitCode: 2,
+		candidates: live.map((control) => toCandidate(control, labels)),
 	}
-	if (watcher.ownerId && status.ownerId && status.ownerId !== watcher.ownerId) {
-		return 'HTTP owner does not match the registry entry'
-	}
-	return null
 }

@@ -49,6 +49,11 @@ export type ExtensionHarness = {
 	cliJson: <T>(...args: string[]) => Promise<T>
 	/** Evaluate a diagnostic expression in the isolated extension service worker. */
 	evaluateInExtension: <T>(expression: string) => Promise<T>
+	/**
+	 * Quit Chrome and launch it again on the same profile (same extension storage), waiting for
+	 * the new control watcher. Updates `controlWatcherId`.
+	 */
+	restart: () => Promise<void>
 	close: () => Promise<void>
 }
 
@@ -121,7 +126,7 @@ export const startExtensionHarness = async (options: { registryPath?: string } =
 	const servers = startPlaygroundServers({ port: mainPort, crossOriginPort, webSocketPort })
 
 	const debuggingPort = await getFreePort()
-	const chrome = spawnChrome(chromeBin, userDataDir, servers.mainUrl, debuggingPort)
+	let chrome = spawnChrome(chromeBin, userDataDir, servers.mainUrl, debuggingPort)
 
 	const cli = (...args: string[]): Promise<CommandResultWithExit> =>
 		runCommandWithExit(resolveNodeBin(), [BIN_PATH, ...args], { env: { ...process.env, ...isolationEnv } })
@@ -137,35 +142,46 @@ export const startExtensionHarness = async (options: { registryPath?: string } =
 		}
 	}
 
-	const close = async (): Promise<void> => {
+	const stopChrome = async (): Promise<void> => {
 		chrome.kill('SIGKILL')
 		await waitForExit(chrome, 3_000)
-		// Native hosts exit when Chrome closes their stdio; give them a beat before wiping state.
+		// Native hosts exit when Chrome closes their stdio; give them a beat before touching state.
 		await delay(500)
+	}
+
+	const close = async (): Promise<void> => {
+		await stopChrome()
 		await servers.close()
 		fs.rmSync(tempRoot, { recursive: true, force: true })
 	}
 
+	const pageUrlSubstring = `127.0.0.1:${mainPort}`
 	let controlWatcherId: string
 	try {
-		controlWatcherId = await waitForControlWatcher(registryPath, chrome, `127.0.0.1:${mainPort}`)
+		controlWatcherId = await waitForControlWatcher(registryPath, chrome, pageUrlSubstring)
 	} catch (error) {
 		await close()
 		throw error
 	}
 
-	return {
+	const harness: ExtensionHarness = {
 		controlWatcherId,
 		registryPath,
 		cdpAddress: `127.0.0.1:${debuggingPort}`,
 		pageUrl: servers.mainUrl,
 		crossOriginUrl: servers.crossOriginUrl,
-		pageUrlSubstring: `127.0.0.1:${mainPort}`,
+		pageUrlSubstring,
 		cli,
 		cliJson,
 		evaluateInExtension: <T>(expression: string) => evaluateInExtension<T>(debuggingPort, expression),
+		restart: async () => {
+			await stopChrome()
+			chrome = spawnChrome(chromeBin, userDataDir, servers.mainUrl, debuggingPort)
+			harness.controlWatcherId = await waitForControlWatcher(registryPath, chrome, pageUrlSubstring)
+		},
 		close,
 	}
+	return harness
 }
 
 /** Run one CDP evaluation without creating a debugger session on the test page. */

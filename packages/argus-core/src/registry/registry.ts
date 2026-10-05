@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { withRegistryLock } from './lock.js'
+import { atomicWriteFile, isMissingFileError } from './jsonFile.js'
 import { getRegistryPath } from './paths.js'
 import type { RegistryReadResult, RegistryV1, WatcherRecord } from './types.js'
 
@@ -52,7 +53,7 @@ export const readRegistry = async (registryPath = getRegistryPath()): Promise<Re
 export const writeRegistry = async (registry: RegistryV1, registryPath = getRegistryPath()): Promise<void> => {
 	const dir = path.dirname(registryPath)
 	await fs.mkdir(dir, { recursive: true })
-	await atomicWrite(registryPath, JSON.stringify(registry, null, 2))
+	await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2))
 }
 
 /**
@@ -145,39 +146,6 @@ const pruneStaleReservations = (reservations: RegistryV1['reservations'], now: n
 		return reservations
 	}
 	return kept.length > 0 ? Object.fromEntries(kept) : undefined
-}
-
-const atomicWrite = async (filePath: string, contents: string): Promise<void> => {
-	const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`
-	await fs.writeFile(tmpPath, contents, 'utf8')
-
-	try {
-		await fs.rename(tmpPath, filePath)
-	} catch (error) {
-		if (!isReplaceError(error)) {
-			throw error
-		}
-		await fs.rm(filePath, { force: true })
-		await fs.rename(tmpPath, filePath)
-	}
-}
-
-const isReplaceError = (error: unknown): error is NodeJS.ErrnoException => {
-	if (!error || typeof error !== 'object' || !('code' in error)) {
-		return false
-	}
-
-	const err = error as NodeJS.ErrnoException
-	return err.code === 'EEXIST' || err.code === 'EPERM'
-}
-
-const isMissingFileError = (error: unknown): error is NodeJS.ErrnoException => {
-	if (!error || typeof error !== 'object' || !('code' in error)) {
-		return false
-	}
-
-	const err = error as NodeJS.ErrnoException
-	return err.code === 'ENOENT'
 }
 
 const isRegistryV1 = (value: unknown): value is RegistryV1 => {

@@ -77,6 +77,7 @@ export const WATCHER_ENDPOINTS = [
 	'targets',
 	'attach',
 	'detach',
+	'bind',
 ] as const
 
 /** An endpoint the watcher serves. */

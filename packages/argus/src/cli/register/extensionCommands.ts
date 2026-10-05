@@ -14,6 +14,8 @@ import { runExtensionDoctor } from '../../commands/extension/doctor.js'
 import { runExtensionTargets } from '../../commands/extension/targets.js'
 import { runExtensionSelect } from '../../commands/extension/select.js'
 import { runExtensionMute } from '../../commands/extension/mute.js'
+import { runExtensionBind, runExtensionBindPrepare } from '../../commands/extension/bind.js'
+import { runExtensionBrowserLabel, runExtensionBrowsers } from '../../commands/extension/browsers.js'
 import { jsonOption } from './sharedOptions.js'
 
 const controlWatcherOption = {
@@ -21,8 +23,16 @@ const controlWatcherOption = {
 	description: 'Extension control watcher (default: the only live one; required when several browsers run Argus)',
 } as const
 
+const browserOption = {
+	flags: '--browser <labelOrInstanceId>',
+	description: 'Pick the browser by label or instance id instead of --id (see `argus ext browsers`)',
+} as const
+
+/** `--id` or `--browser`: which browser a control command acts on. */
+const controlSelectorOptions = [controlWatcherOption, browserOption] as const
+
 const tabTargetOptions = [
-	controlWatcherOption,
+	...controlSelectorOptions,
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
@@ -30,7 +40,7 @@ const tabTargetOptions = [
 ] as const
 
 const attachTargetOptions = [
-	controlWatcherOption,
+	...controlSelectorOptions,
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
@@ -44,7 +54,7 @@ const attachTargetOptions = [
 ] as const
 
 const useTargetOptions = [
-	controlWatcherOption,
+	...controlSelectorOptions,
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
@@ -67,7 +77,7 @@ const iframeTargetOptions = [
 ] as const
 
 const showTargetOptions = [
-	controlWatcherOption,
+	...controlSelectorOptions,
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
 	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
@@ -159,6 +169,7 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 				description: 'Diagnose native host and live extension-control state',
 				options: [
 					{ flags: '--id <controlWatcherId>', description: 'Extension control watcher (inferred from --watcher when possible)' },
+					browserOption,
 					{ flags: '--watcher <watcherId>', description: 'Include diagnostics for one extension-backed watcher' },
 					jsonOption,
 				],
@@ -179,7 +190,7 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 				name: 'tabs',
 				description: 'List browser tabs visible to the extension transport',
 				options: [
-					controlWatcherOption,
+					...controlSelectorOptions,
 					{ flags: '--url <substring>', description: 'Filter tabs by URL substring' },
 					{ flags: '--title <substring>', description: 'Filter tabs by title substring' },
 					jsonOption,
@@ -192,6 +203,64 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 				],
 				action: async (options) => {
 					await runExtensionTabs(options)
+				},
+			},
+			{
+				name: 'bind',
+				description: "Bind exactly the tab that opened a ticket's bindUrl: attach (or reuse), open the destination, wait ready",
+				arguments: [{ flags: '<ticket>', description: 'Ticket from `argus ext bind prepare`' }],
+				options: [
+					{
+						flags: '--as <watcherId>',
+						description: 'Tab watcher id (fails with watcher_id_taken if another live watcher holds it)',
+					},
+					{ flags: '--label <label>', description: 'Label the bound browser instance (e.g. codex) for later --browser selection' },
+					{
+						flags: '--visibility <policy>',
+						description: 'Hold the tab shown: foreground (may raise its window) or background (never activates it)',
+					},
+					jsonOption,
+				],
+				examples: [
+					'argus ext bind prepare --to https://web.max.ru/ --json',
+					'argus ext bind argus-bind-… --as max --label codex --visibility background --json',
+				],
+				subcommands: [
+					{
+						name: 'prepare',
+						description: 'Create a one-time ticket (~60s) and the waiting-page URL to open in the tab to bind',
+						options: [{ flags: '--to <url>', description: 'Destination URL the bound tab is navigated to', required: true }, jsonOption],
+						examples: ['argus ext bind prepare --to https://web.max.ru/ --json'],
+						action: async (options) => {
+							await runExtensionBindPrepare(options)
+						},
+					},
+				],
+				action: async (ticket, options) => {
+					await runExtensionBind(ticket, options)
+				},
+			},
+			{
+				name: 'browsers',
+				description: 'List browser instances running the extension (instance id, label, control, versions)',
+				options: [jsonOption],
+				examples: ['argus ext browsers', 'argus ext browsers --json', 'argus ext browsers label <instanceId> codex'],
+				subcommands: [
+					{
+						name: 'label',
+						description: 'Label a live browser instance for --browser selection',
+						arguments: [
+							{ flags: '<instanceId>', description: 'Instance id from `argus ext browsers`' },
+							{ flags: '<label>', description: 'Label, e.g. codex or chrome' },
+						],
+						options: [jsonOption],
+						action: async (instanceId, label, options) => {
+							await runExtensionBrowserLabel(instanceId, label, options)
+						},
+					},
+				],
+				action: async (options) => {
+					await runExtensionBrowsers(options)
 				},
 			},
 			{
@@ -228,7 +297,7 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 				description: 'List page and iframe targets for an extension tab watcher',
 				arguments: [{ flags: '[id]', description: 'Attached extension watcher id' }],
 				options: [
-					controlWatcherOption,
+					...controlSelectorOptions,
 					{ flags: '--tab <tabId>', description: 'Browser tab id' },
 					{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
 					{ flags: '--title <substring>', description: 'Resolve tab by title substring' },

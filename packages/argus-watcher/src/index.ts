@@ -9,6 +9,7 @@ import type {
 } from '@vforsh/argus-core'
 import { randomUUID } from 'node:crypto'
 import Emittery from 'emittery'
+import packageJson from '../package.json' with { type: 'json' }
 import { releaseWatcherId, reserveWatcherId, type WatcherIdConflictPolicy } from './registry/registry.js'
 import { createWatcherHandle } from './startWatcherRuntime.js'
 import type { ArgusWatcherEventMap } from './events.js'
@@ -195,6 +196,12 @@ export const startWatcher = async (options: StartWatcherOptions): Promise<Watche
 		throw error
 	}
 }
+
+/**
+ * Version of this watcher package. A running watcher reports its own as `/status.watcherVersion`;
+ * comparing the two reveals hosts spawned by an older install (version skew).
+ */
+export const WATCHER_VERSION: string = packageJson.version
 
 /** Log event shape emitted by watchers. */
 export type { LogEvent }

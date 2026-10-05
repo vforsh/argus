@@ -12,11 +12,15 @@ import { createOutput } from '../../output/io.js'
 import { formatWatcherLine } from '../../output/format.js'
 import { loadRegistry } from '../../registry.js'
 import { inspectDoctorLayers } from './doctorLayers.js'
+import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
+import { detectHostVersionSkew, formatHostVersionSkew } from '../../watchers/versionSkew.js'
 import { getPlatform, inspectNativeHosts } from './nativeHost.js'
 import { formatExtensionTargetLine } from './targetSelection.js'
 
 export type ExtensionDoctorOptions = {
 	id?: string
+	/** Browser label or instance id; resolved to its control watcher id. */
+	browser?: string
 	watcher?: string
 	json?: boolean
 }
@@ -24,12 +28,16 @@ export type ExtensionDoctorOptions = {
 /** Collect partial diagnostics without changing the registry or attempting repair. */
 export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {}) => {
 	const issues: string[] = []
+	const requested = await resolveRequestedControl(options)
+	const controlId = requested.ok ? requested.id : undefined
 	const hostState = inspectNativeHostState()
 	issues.push(...hostState.issues)
 	const { configured, hosts } = hostState
 	const configuredExtensionId = hosts.find((host) => host.extensionId)?.extensionId ?? null
 	const layerEvidence = await inspectDoctorLayers()
 	issues.push(...layerEvidence.warnings)
+	const versionSkew = layerEvidence.layers.flatMap((layer) => detectHostVersionSkew(layer.watcher, layer.nativeHostVersion) ?? [])
+	issues.push(...versionSkew.map(formatHostVersionSkew))
 	for (const layer of layerEvidence.layers) {
 		if (layer.registryIdentityMatches === false) issues.push(`Registry entry ${layer.watcher.id} points at a different responding watcher.`)
 		if (layer.legacyRegistration && layer.transport === 'responded') {
@@ -48,7 +56,7 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 		controlLayers.push(layer)
 	}
 	const controlResults =
-		options.watcher && !options.id
+		options.watcher && requested.ok && !controlId
 			? await Promise.all(
 					controlLayers.map(async (layer) => ({ watcher: layer.watcher, result: await fetchExtensionDiagnostics(layer.watcher) })),
 				)
@@ -57,15 +65,10 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 		(entry) => entry.result.ok && entry.result.diagnostics.tabWatchers.some((tab) => tab.watcherId === options.watcher),
 	)
 	if (owners.length > 1) issues.push(`Watcher ${options.watcher} is reported by multiple control watchers; specify --id.`)
-	const selection = selectControlWatcher(controlLayers, owners, options.id)
+	const selection = requested.ok ? selectControlWatcher(controlLayers, owners, controlId) : {}
 	const control = selection.watcher
 		? { ok: true as const, watcher: selection.watcher }
-		: {
-				ok: false as const,
-				error: options.id
-					? `Control watcher ${options.id} is unavailable or is not a control watcher.`
-					: (selection.ambiguous?.message ?? 'No extension control watcher in registry; worker startup/registration is unknown.'),
-			}
+		: { ok: false as const, error: describeMissingControl(requested, selection) }
 	let diagnostics: ExtensionDiagnosticsResponse | null = null
 	let controlRequest: DiagnosticTrace | null = null
 	let watcherDiagnostics: WatcherDiagnostics | null = null
@@ -105,6 +108,8 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 		/** Set when doctor could not pick a control watcher on its own; `candidates` lists the choices. */
 		error: selection.ambiguous ? { message: selection.ambiguous.message, code: 'ambiguous_control' as const } : null,
 		candidates: selection.ambiguous?.candidates.map(({ id, pid, host, port }) => ({ id, pid, host, port })) ?? [],
+		/** Hosts running a different watcher build than this CLI (respawn them to upgrade). */
+		versionSkew,
 		configured,
 		hosts,
 		controlWatcher: control.ok ? control.watcher : null,
@@ -116,6 +121,25 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 		workerState:
 			'Registration, suspension and process state unavailable through extension API. Collect Chrome extension Errors and serviceworker-internals before reload; optional CDP requires a debugging-enabled browser.',
 	}
+}
+
+/**
+ * The control `--id` or `--browser` asks for (`id` undefined: none requested). A `--browser` that
+ * resolves to no single browser is an error, never a fallback to another browser.
+ */
+const resolveRequestedControl = async (options: ExtensionDoctorOptions): Promise<{ ok: true; id?: string } | { ok: false; error: string }> => {
+	if (!options.browser) return { ok: true, id: options.id }
+	const resolved = await resolveExtensionWatcher(options)
+	return resolved.ok ? { ok: true, id: resolved.watcher.id } : { ok: false, error: resolved.error }
+}
+
+const describeMissingControl = (
+	requested: Awaited<ReturnType<typeof resolveRequestedControl>>,
+	selection: ReturnType<typeof selectControlWatcher>,
+): string => {
+	if (!requested.ok) return requested.error
+	if (requested.id) return `Control watcher ${requested.id} is unavailable or is not a control watcher.`
+	return selection.ambiguous?.message ?? 'No extension control watcher in registry; worker startup/registration is unknown.'
 }
 
 type DoctorLayer = Awaited<ReturnType<typeof inspectDoctorLayers>>['layers'][number]

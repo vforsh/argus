@@ -88,6 +88,8 @@ export type ExtensionDiagnosticsResponse = Ok<{
 	extension: {
 		id: string | null
 		version: string | null
+		/** Persistent per-profile browser instance id (see `ControlDiagnostics.browserInstanceId`). Absent on older peers. */
+		instanceId?: string | null
 	}
 	control: ExtensionControlBridgeStatus
 	tabWatchers: ExtensionTabBridgeStatus[]

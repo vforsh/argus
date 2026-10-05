@@ -1,6 +1,7 @@
 import type { WatcherRouteDefinition } from './defineRoute.js'
 
 import { route as getStatus } from './getStatus.js'
+import { route as getBindPage } from './getBindPage.js'
 import { route as getLogs } from './getLogs.js'
 import { route as getLogCursor } from './getLogCursor.js'
 import { route as getLogEpoch } from './getLogEpoch.js'
@@ -70,6 +71,7 @@ import { route as postExtensionTabMute } from './postExtensionTabMute.js'
  */
 export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	getStatus,
+	getBindPage,
 	getLogCursor,
 	getLogEpoch,
 	getLogs,

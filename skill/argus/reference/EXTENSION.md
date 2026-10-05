@@ -48,7 +48,40 @@ argus ext use --id extension-control-2 --tab <tabId> --as app --json
 argus ext doctor --watcher app --json          # finds the owning control instance
 ```
 
-`--id` also works on `attach`, `detach`, `show`, `targets` (with a tab selector), `mute`, `unmute`, and `doctor`. Tab ids and URL matches are resolved only inside the selected browser. A successful `/attach` now waits for watcher bootstrap; initialization failures release the debugger and remove the tab session. CLI `--no-wait` skips its final status poll, so use the default when the next command needs the watcher immediately.
+`--id` (or `--browser <label|instanceId>`) also works on `attach`, `detach`, `show`, `targets` (with a tab selector), `mute`, `unmute`, and `doctor`. Tab ids and URL matches are resolved only inside the selected browser. A successful `/attach` now waits for watcher bootstrap; initialization failures release the debugger and remove the tab session. CLI `--no-wait` skips its final status poll, so use the default when the next command needs the watcher immediately.
+
+## Bind an Agent-Opened Tab
+
+An agent's browser API (Codex @Browser, CUA) hands out tab handles Argus can't see, and the destination URL can't distinguish its tab from same-URL tabs elsewhere. Bind by one-time ticket instead:
+
+```bash
+argus ext bind prepare --to https://web.max.ru/ --json    # { ticket, bindUrl, destination, expiresAt }
+# agent opens bindUrl (a waiting page on a local watcher, http://127.0.0.1:<port>/bind?ticket=…) in its tab
+argus ext bind <ticket> --as max --label codex --visibility background --json
+```
+
+- Searches every live control; exactly one tab whose URL carries the ticket is bound. Several → `ambiguous_tab` (never the first); none → `not_found` with `searched` and `unreachable` controls (unreachable means unknown, not absent).
+- Tickets: ~60s, single-use, stored in `$ARGUS_HOME/bind-tickets.json`. Spent only on success; a failed bind can be retried with the same ticket. `bind_ticket_used` / `bind_ticket_expired` otherwise.
+- Idempotent: a tab already attached reuses its watcher (`reused: true`); nothing unrelated is detached. A different `--as` than the tab's watcher fails.
+- `--visibility foreground|background` applies a shown lock in the same call; result `visibility` reports it (`default` when none).
+- `--label` records the bound browser instance under that label (the bind proves which browser the agent drives).
+- Closing the tab releases its watcher. Keep the agent's tab handle (and hand it off) when the tab must outlive the turn.
+
+## Browser Instances
+
+Each browser profile running the extension has a persistent random `instanceId` (extension storage; survives browser restarts and extension reloads, not reinstall).
+
+```bash
+argus ext browsers --json                         # instanceId, label, controlId, state, extension/host versions, tabCount
+argus ext browsers label <instanceId> chrome      # manual label (live instance only)
+argus ext tabs --browser codex                    # any control command: --browser <label|instanceId> instead of --id
+```
+
+Labels come only from `ext browsers label` or `ext bind --label`; a matching URL or extension id never implies one. A label on several live instances fails with `ambiguous_browser`.
+
+## Version Skew
+
+Chrome keeps native hosts running until it respawns them, so after upgrading Argus they may still run the old build. `ext doctor` (`versionSkew` in JSON) and `argus list` compare each host's watcher version with the CLI's and say what to do: reload the extension at `chrome://extensions` or restart the browser. Doctor also flags hosts registered without `ownerId` (pre-ownership builds).
 
 ## Iframe Selection
 
@@ -76,7 +109,7 @@ argus ext select app --iframe-url game.example
 
 ## Attachment Behavior
 
-- Argus reconnects debugger attachments it still owns (after extension state loss) by verifying ownership with a CDP command. Other debuggers are never disconnected; Chrome's error is surfaced as-is. Release the other debugger and retry.
+- Argus reconnects debugger attachments it still owns (after extension state loss) by verifying ownership with a CDP command. Other debuggers are never disconnected; when Chrome refuses because one holds the tab, attach fails with `tab_owned_by_other_debugger`. Close DevTools / the other debugger and retry.
 - Attach/detach requests are serialized per tab; a failed init releases the debugger and removes the tab bridge.
 - CLI, watcher, and extension package versions advance independently. Their native-messaging protocol version is checked at handshake; a mismatch rejects the bridge before attachment.
 - Explicit detach disposes the tab watcher. Visibility lock/policy and iframe selection must be re-applied after a fresh attach.

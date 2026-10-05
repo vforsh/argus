@@ -8,6 +8,8 @@ import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
 
 export type ExtensionTabsOptions = {
 	id?: string
+	/** Browser label or instance id; alternative to `id`. */
+	browser?: string
 	url?: string
 	title?: string
 	json?: boolean
@@ -15,7 +17,7 @@ export type ExtensionTabsOptions = {
 
 export const runExtensionTabs = async (options: ExtensionTabsOptions): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveExtensionWatcher({ id: options.id })
+	const resolved = await resolveExtensionWatcher(options)
 	if (!resolved.ok) {
 		emitResolveFailure(output, resolved)
 		return

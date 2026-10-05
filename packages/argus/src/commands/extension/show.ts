@@ -18,6 +18,8 @@ import {
 
 export type ExtensionShowOptions = {
 	id?: string
+	/** Browser label or instance id; alternative to `id`. */
+	browser?: string
 	tab?: string | number
 	url?: string
 	title?: string
@@ -64,7 +66,7 @@ export const runExtensionShow = async (id: string | undefined, options: Extensio
 		return
 	}
 
-	const control = await resolveExtensionWatcher({ id: options.id })
+	const control = await resolveExtensionWatcher(options)
 	if (!control.ok) {
 		emitResolveFailure(output, control)
 		return

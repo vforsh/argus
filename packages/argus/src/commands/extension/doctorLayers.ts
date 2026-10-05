@@ -1,6 +1,6 @@
 import { readRegistry, type ApiResult, type StatusResponse, type WatcherRecord, type ExtensionDiagnosticsResponse } from '@vforsh/argus-core'
 import { diagnosticRequest } from './diagnosticRequest.js'
-import { describeIdentityMismatch, readExtensionRole } from './resolveExtensionWatcher.js'
+import { describeIdentityMismatch, readExtensionRole } from './liveControls.js'
 
 /** Observe local process existence without confusing a reused PID with host identity. */
 export function processExists(pid: number): boolean | null {

@@ -4,18 +4,20 @@ import type { ControlBridgeSession } from './control-bridge-session.js'
 import type { TabBridgeSession } from './tab-bridge-session.js'
 import type { DebuggerManager } from './debugger-manager.js'
 import { lifecycleSnapshot } from './lifecycle-journal.js'
+import { getBrowserInstanceId } from './browser-instance.js'
 
 /** Build independent control, debugger and selected-target evidence without issuing page commands. */
-export function buildWorkerDiagnostics(
+export async function buildWorkerDiagnostics(
 	controlBridgeSession: ControlBridgeSession,
 	sessions: Iterable<readonly [number, TabBridgeSession]>,
 	debuggerManager: DebuggerManager,
 	recentEvents: ControlDiagnostics['recentEvents'],
-): ControlDiagnostics {
+): Promise<ControlDiagnostics> {
 	const controlInfo = controlBridgeSession.getWatcherInfo()
 	return {
 		extensionId: chrome.runtime.id ?? null,
 		extensionVersion: chrome.runtime.getManifest().version ?? null,
+		browserInstanceId: await getBrowserInstanceId(),
 		control: {
 			connected: controlBridgeSession.isConnected(),
 			watcherId: controlInfo?.watcherId ?? null,

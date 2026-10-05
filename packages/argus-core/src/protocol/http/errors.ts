@@ -13,8 +13,12 @@
  * transport) use the same envelope and so draw from the same union.
  */
 export const ARGUS_ERROR_CODES = [
+	'ambiguous_browser',
 	'ambiguous_control',
+	'ambiguous_tab',
 	'argus_executable_not_found',
+	'bind_ticket_expired',
+	'bind_ticket_used',
 	'body_not_available',
 	'cdp_not_attached',
 	'cdp_renderer_unresponsive',
@@ -55,6 +59,7 @@ export const ARGUS_ERROR_CODES = [
 	'session_invalid_request',
 	'session_request_timeout',
 	'session_unknown_command',
+	'tab_owned_by_other_debugger',
 	'target_not_focused',
 	'unexpected_matches',
 	'unsupported_platform',

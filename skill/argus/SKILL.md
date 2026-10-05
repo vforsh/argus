@@ -43,7 +43,19 @@ argus ext use --tab <tabId> --as app                 # exact tab when several ma
 argus page url app
 ```
 
-If Chrome and Codex @Browser both run Argus, control commands without `--id` fail with `ambiguous_control` and list the candidates; pick one and use it consistently: `argus ext tabs --id extension-control-2 --json`, then `argus ext use --id extension-control-2 --tab <tabId> --as app`. `--id` also selects the control instance for `attach`, `detach`, `show`, `targets` (when resolving a tab), `mute`, and `unmute`. `ext doctor --watcher app` finds its owning control; `--id` selects one explicitly. Explicit names are exact: `--as`, `start --id`, and `watcher start --id` fail with `watcher_id_taken` while another live watcher holds the name (no silent `app-2`). A successful attach means the tab watcher completed bootstrap; `--no-wait` skips only the CLI's final status poll.
+If Chrome and Codex @Browser both run Argus, control commands without `--id`/`--browser` fail with `ambiguous_control` and list the candidates; pick one and use it consistently (`--browser <label>` works once labeled): `argus ext tabs --id extension-control-2 --json`, then `argus ext use --id extension-control-2 --tab <tabId> --as app`. `--id` also selects the control instance for `attach`, `detach`, `show`, `targets` (when resolving a tab), `mute`, and `unmute`. `ext doctor --watcher app` finds its owning control; `--id` selects one explicitly. Explicit names are exact: `--as`, `start --id`, and `watcher start --id` fail with `watcher_id_taken` while another live watcher holds the name (no silent `app-2`). A successful attach means the tab watcher completed bootstrap; `--no-wait` skips only the CLI's final status poll.
+
+**Agent-opened tab (Codex @Browser, CUA): bind by ticket, never by URL.** Same-URL tabs in other chats or browsers make URL matching unsafe.
+
+```bash
+argus ext bind prepare --to https://web.max.ru/ --json   # → { ticket, bindUrl, expiresAt } (~60s)
+# open bindUrl in the agent's tab (keep the browser handle), then:
+argus ext bind <ticket> --as max --label codex --visibility background --json
+# → { watcherId, tabId, url, control, browser: { instanceId, label }, attached, reused, targetReady, visibility }
+argus ext tabs --browser codex --json                    # later: select that browser by label
+```
+
+`bind` searches every live browser, attaches (or reuses the tab's watcher: `reused: true`), navigates to the destination, and waits for the debugger target. `targetReady` is debugger readiness, not app health. Failures: `bind_ticket_expired`, `bind_ticket_used`, `ambiguous_tab` (ticket open in several tabs), `not_found` (lists searched and unreachable controls). Closing the tab releases its watcher. `argus ext browsers` lists instances (persistent `instanceId`, label, control, versions); `ext browsers label <instanceId> <label>` labels one manually.
 
 Embedded app: `argus ext use --url portal.example --as app --iframe-url game.example`; later switch with `argus ext select app --iframe-url … | --iframe-title … | --page`. Commands then run inside the selected iframe (eval, DOM, click, screenshot, `net --scope selected`). Reload stays tab-scoped; a selected iframe that is missing waits 3s then fails `extension_frame_not_ready` instead of silently using the host page.
 
@@ -149,5 +161,11 @@ Read the error code before retrying or raising a timeout.
 | `no_history`                    | at first/last history entry                     | check `index`/`length` in `page back --json`                                                                        |
 | `log_epoch_*`                   | cursor from another session / evicted           | take a fresh `logs cursor`                                                                                          |
 | `not_available`                 | capture under background policy, or old watcher | `page show --policy foreground`; restart watcher on current build                                                   |
+| `watcher_id_taken`              | name held by another live watcher               | `argus watcher stop <id>` or pick another `--id`/`--as`                                                             |
+| `ambiguous_control`             | several browsers run Argus                      | pick from `candidates`: `--id <controlId>` or `--browser <label>`                                                   |
+| `ambiguous_browser`             | label on several live instances                 | `argus ext browsers`, relabel one or pass an `instanceId`                                                           |
+| `ambiguous_tab`                 | bind ticket open in several tabs                | close extras, or `ext bind prepare` again and open it once                                                          |
+| `bind_ticket_expired` / `_used` | ticket older than ~60s / already bound          | `argus ext bind prepare --to <url>` again                                                                           |
+| `tab_owned_by_other_debugger`   | DevTools/other debugger holds the tab           | close it, retry the attach                                                                                          |
 | Multiple tabs matched (ext)     | ambiguous `--url/--title`                       | `argus ext tabs --url … --json` → `--tab <tabId>`                                                                   |
 | Popup dead / no control watcher | extension worker gone                           | `argus ext diagnose --out ./inc-1` first, then `ext recover` ([runbook](./reference/EXTENSION.md#incident-runbook)) |

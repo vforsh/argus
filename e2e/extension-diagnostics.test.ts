@@ -36,6 +36,22 @@ test('watcher doctor distinguishes bridge connectivity from attachment and targe
 	}
 })
 
+test('doctor flags a host running another watcher build and names the next action', async () => {
+	const stub = await startExtensionStub()
+	try {
+		stub.setRoutes({ 'GET /status': { payload: { ok: true, id: 'extension-control', attached: false, watcherVersion: '0.0.1' } } })
+		const result = await stub.cli('ext', 'doctor', '--id', 'extension-control', '--json')
+		const report = JSON.parse(result.stdout) as { versionSkew: Array<{ watcherId: string; hostVersion: string }>; issues: string[] }
+		expect(report.versionSkew.map((skew) => [skew.watcherId, skew.hostVersion])).toEqual([
+			['extension-control', '0.0.1'],
+			['test-tab', '0.0.1'],
+		])
+		expect(report.issues.some((issue) => issue.includes('runs watcher 0.0.1') && issue.includes('chrome://extensions'))).toBe(true)
+	} finally {
+		await stub.close()
+	}
+})
+
 test('CLI attach returns the original Chrome error without waiting for a nonexistent tab watcher', async () => {
 	const stub = await startExtensionStub()
 	try {

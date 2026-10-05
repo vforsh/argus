@@ -20,6 +20,8 @@ export type ExtensionDetachOptions = ExtensionTabActionOptions
 
 type ExtensionTabActionOptions = {
 	id?: string
+	/** Browser label or instance id; alternative to `id`. */
+	browser?: string
 	tab?: string | number
 	url?: string
 	title?: string
@@ -47,7 +49,7 @@ export const runExtensionDetach = async (options: ExtensionDetachOptions): Promi
 
 const runExtensionTabAction = async (action: ExtensionTabAction, options: ExtensionTabActionOptions): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveExtensionWatcher({ id: options.id })
+	const resolved = await resolveExtensionWatcher(options)
 	if (!resolved.ok) {
 		writeResolveFailure(output, options, resolved)
 		return

@@ -19,7 +19,7 @@ export type ControlBridgeSessionEvents = {
 	onDetachTabWatcher?: (tabId: number) => Promise<TabActionResult>
 	onSetTabMuted?: (tabId: number, muted: boolean) => Promise<TabMuteResult>
 	getWatcherIdForTab?: (tabId: number) => string | null | undefined
-	getDiagnostics?: () => ControlDiagnostics
+	getDiagnostics?: () => Promise<ControlDiagnostics>
 	onDisconnect?: () => void
 }
 
@@ -44,7 +44,7 @@ export class ControlBridgeSession {
 		this.debuggerManager = debuggerManager
 		this.events = events
 		this.removeLifecycleSink = setLifecycleSink(() => {
-			if (this.isConnected()) this.handleControlStatus(0)
+			if (this.isConnected()) void this.handleControlStatus(0)
 		})
 		this.bridgeClient = new BridgeClient(CONTROL_HOST_NAME, { autoReconnect: true })
 
@@ -128,7 +128,7 @@ export class ControlBridgeSession {
 				return
 
 			case 'control_status':
-				this.handleControlStatus(message.requestId, message.correlationId)
+				await this.handleControlStatus(message.requestId, message.correlationId)
 				return
 
 			case 'host_ready':
@@ -180,12 +180,13 @@ export class ControlBridgeSession {
 		})
 	}
 
-	private handleControlStatus(requestId: number, correlationId?: string): void {
+	private async handleControlStatus(requestId: number, correlationId?: string): Promise<void> {
+		const diagnostics = (await this.events.getDiagnostics?.()) ?? this.buildFallbackDiagnostics()
 		this.bridgeClient.send({
 			type: 'control_status_response',
 			requestId,
 			correlationId,
-			diagnostics: this.events.getDiagnostics?.() ?? this.buildFallbackDiagnostics(),
+			diagnostics,
 		})
 	}
 

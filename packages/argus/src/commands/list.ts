@@ -5,6 +5,7 @@ import { formatWatcherLine } from '../output/format.js'
 import { createOutput } from '../output/io.js'
 import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/requestWatcher.js'
 import { discoverChromeInstances, formatChromeInstanceLine } from './chrome.js'
+import { detectHostVersionSkew, formatHostVersionSkew } from '../watchers/versionSkew.js'
 
 /** Options for the list command. */
 export type ListOptions = {
@@ -69,7 +70,11 @@ const listWatchers = async (
 			try {
 				const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 2_000 })
 				const mismatch = describeProtocolMismatch(status.protocolVersion, status.watcherVersion)
-				return mismatch ? { watcher, status, warning: `${watcher.id}: ${mismatch}` } : { watcher, status }
+				if (mismatch) {
+					return { watcher, status, warning: `${watcher.id}: ${mismatch}` }
+				}
+				const skew = detectHostVersionSkew(watcher, status.watcherVersion)
+				return skew ? { watcher, status, warning: formatHostVersionSkew(skew) } : { watcher, status }
 			} catch (error) {
 				return { watcher, warning: formatWatcherTransportError(watcher, error) }
 			}

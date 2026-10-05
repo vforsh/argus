@@ -14,6 +14,8 @@ import { attachTab, waitForTabWatcher } from './tabAttach.js'
 
 export type ExtensionTabWatcherOptions = {
 	id?: string
+	/** Browser label or instance id; alternative to `id`. */
+	browser?: string
 	tab?: string | number
 	url?: string
 	title?: string
@@ -36,7 +38,7 @@ export const resolveOrAttachExtensionTabWatcher = async (
 	output: Output,
 	config: { missingSelectorReason: string },
 ): Promise<ExtensionTabWatcherResult | null> => {
-	const resolved = await resolveExtensionWatcher({ id: options.id })
+	const resolved = await resolveExtensionWatcher(options)
 	if (!resolved.ok) {
 		writeResolveFailure(output, options, resolved)
 		return null

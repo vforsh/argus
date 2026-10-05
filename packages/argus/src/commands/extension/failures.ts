@@ -1,8 +1,9 @@
-import type { ArgusErrorCode, ErrorResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { ArgusErrorCode, ErrorResponse } from '@vforsh/argus-core'
 import type { Output } from '../../output/io.js'
 import { formatError } from '../../cli/parse.js'
 import { formatWatcherLine } from '../../output/format.js'
 import { getPlatform, type Platform } from './nativeHost.js'
+import type { ExtensionWatcherCandidate } from './liveControls.js'
 
 /**
  * Failure reporting for the `argus extension` command family.
@@ -74,7 +75,7 @@ export const emitResolveFailure = (
 		error: string
 		exitCode: number
 		code?: ArgusErrorCode
-		candidates?: ReadonlyArray<WatcherRecord & { watcherVersion?: string | null }>
+		candidates?: readonly ExtensionWatcherCandidate[]
 	},
 	hint = 'Hint: pass --id <watcherId> to pick one extension watcher.',
 ): void => {
@@ -94,6 +95,8 @@ export const emitResolveFailure = (
 							port: watcher.port,
 							extensionRole: watcher.extensionRole ?? null,
 							watcherVersion: watcher.watcherVersion ?? null,
+							browserInstanceId: watcher.browserInstanceId ?? null,
+							browserLabel: watcher.browserLabel ?? null,
 						})),
 					}
 				: undefined,

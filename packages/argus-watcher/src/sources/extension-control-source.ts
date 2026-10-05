@@ -64,7 +64,7 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 			}
 			const result = await controlSession.attachTabWatcher(tabId, attachOptions)
 			if (!result.ok) {
-				throw new Error(result.error)
+				throw toAttachError(result.error)
 			}
 			return { ok: true, tab: result.tab, watcherId: result.watcherId }
 		},
@@ -89,6 +89,7 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 				extension: {
 					id: diagnostics.extensionId,
 					version: diagnostics.extensionVersion,
+					instanceId: diagnostics.browserInstanceId ?? null,
 				},
 				control: diagnostics.control,
 				tabWatchers: diagnostics.tabWatchers,
@@ -132,6 +133,17 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 		})
 	}
 }
+
+/**
+ * When DevTools or another debugger client holds the tab, Chrome rejects the attach with
+ * "Another debugger is already attached to the tab with id: N." Give it a code so callers can tell
+ * it from a missing tab. (Chrome for Testing allows several extension clients per tab, so the e2e
+ * suite can't provoke it; the pattern follows the message Chrome reports.)
+ */
+const toAttachError = (message: string): Error =>
+	/another debugger is already attached/i.test(message)
+		? codedError('tab_owned_by_other_debugger', `${message} Close DevTools (or the other debugger) on that tab, then retry.`)
+		: new Error(message)
 
 const createDetachedSession = (message: string): CdpSessionHandle => ({
 	isAttached: () => false,

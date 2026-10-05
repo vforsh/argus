@@ -242,6 +242,12 @@ export type ExtensionRecentEvent = {
 export type ControlDiagnostics = {
 	extensionId: string | null
 	extensionVersion: string | null
+	/**
+	 * Random id the extension keeps per browser profile (`chrome.storage.local`), so it survives
+	 * browser and extension restarts. Distinguishes browsers that share one extension id. Absent on
+	 * older peers (additive; no protocol bump).
+	 */
+	browserInstanceId?: string | null
 	control: ExtensionControlBridgeStatus
 	tabWatchers: ExtensionTabBridgeStatus[]
 	recentEvents: ExtensionRecentEvent[]

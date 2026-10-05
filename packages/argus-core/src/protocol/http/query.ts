@@ -162,3 +162,6 @@ export const normalizeMatchPatterns = (match?: readonly string[]): { patterns: s
 
 /** Optional incident correlation for GET /extension/diagnostics; UUID only, never user content. */
 export type ExtensionDiagnosticsQuery = { correlationId?: string }
+
+/** Query parameters for GET /bind, the static waiting page a bind ticket's tab opens. */
+export type BindPageQuery = { ticket: string }

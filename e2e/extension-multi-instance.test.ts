@@ -43,6 +43,13 @@ liveTest(
 				expect(afterHeartbeat.watchers[id].updatedAt).toBeGreaterThan(before.watchers[id].updatedAt)
 			}
 
+			// Each browser profile reports its own persistent instance id.
+			const browsers = await first.cliJson<{ browsers: Array<{ instanceId: string | null; controlId: string }> }>('ext', 'browsers', '--json')
+			expect(browsers.browsers.map((row) => row.controlId).sort()).toEqual(['extension-control', 'extension-control-2'])
+			const instanceIds = browsers.browsers.map((row) => row.instanceId)
+			expect(instanceIds.every(Boolean)).toBe(true)
+			expect(new Set(instanceIds).size).toBe(2)
+
 			// Without --id, two live controls are ambiguous rather than silently picking one browser.
 			const ambiguousTabs = await first.cli('ext', 'tabs', '--json')
 			expect(ambiguousTabs.code).toBe(2)
