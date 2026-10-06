@@ -19,7 +19,7 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.5.15",
+      "version": "0.5.16",
       "bin": {
         "argus": "dist/argus.js",
       },
@@ -27,7 +27,7 @@
         "@vforsh/argus-client": "^0.5.3",
         "@vforsh/argus-core": "^0.5.8",
         "@vforsh/argus-plugin-api": "^0.5.0",
-        "@vforsh/argus-watcher": "^0.5.12",
+        "@vforsh/argus-watcher": "^0.5.13",
         "commander": "14.0.2",
         "esbuild": "0.25.12",
         "prettier": "3.7.4",
@@ -68,7 +68,7 @@
     },
     "packages/argus-watcher": {
       "name": "@vforsh/argus-watcher",
-      "version": "0.5.12",
+      "version": "0.5.13",
       "dependencies": {
         "@jridgewell/trace-mapping": "^0.3.31",
         "@vforsh/argus-core": "^0.5.8",
