@@ -116,7 +116,7 @@ export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: s
 		record,
 		fileLogger,
 		sessionHandle: createCdpSessionHandle(),
-		emulationController: createEmulationController(),
+		emulationController: createEmulationController(options.emulation),
 		throttleController: createThrottleController(),
 		visibilityController: createVisibilityController(),
 		netMockController: createNetMockController(),

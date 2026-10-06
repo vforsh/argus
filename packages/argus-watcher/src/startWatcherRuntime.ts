@@ -274,6 +274,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		await server.close()
 		await releaseWatcherId(record.id, ownerId)
 		events.clearListeners()
+		await options.onClose?.()
 	})
 
 	try {

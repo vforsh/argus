@@ -2,13 +2,10 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { delay } from '@vforsh/argus-core'
-import { sendCdpCommand } from '../../cdp/sendCdpCommand.js'
 import { formatError } from '../../cli/parse.js'
-import { fetchJson } from '../../httpClient.js'
-import { getCdpPort } from '../../utils/ports.js'
 import { buildChromeLaunchArgs } from './launchArgs.js'
-import type { ChromeVersionResponse } from './shared.js'
+import { waitForLaunchedChrome } from './readiness.js'
+import { createChromeCleanup } from './lifecycle.js'
 
 const REGULAR_CHROME_USER_AGENT = 'regular-chrome'
 
@@ -33,9 +30,9 @@ export const toRegularChromeUserAgent = (userAgent: string): string => userAgent
 
 const probeHeadlessChromeUserAgent = async (chromeBin: string): Promise<string> => {
 	const userDataDir = mkdtempSync(path.join(tmpdir(), 'argus-chrome-ua-'))
-	const cdpPort = await getCdpPort()
-	const args = buildChromeLaunchArgs({ cdpPort, userDataDir, headless: true, launchUrl: null })
+	const args = buildChromeLaunchArgs({ cdpPort: 0, userDataDir, headless: true, launchUrl: null })
 	let chrome: ChildProcess | null = null
+	let browserWebSocketUrl: string | undefined
 
 	try {
 		chrome = spawn(chromeBin, args, { stdio: 'ignore', detached: false })
@@ -43,7 +40,8 @@ const probeHeadlessChromeUserAgent = async (chromeBin: string): Promise<string> 
 			throw new Error('Failed to start Chrome user-agent probe: no PID returned.')
 		}
 
-		const version = await waitForChromeVersion(cdpPort, chrome)
+		const { version } = await waitForLaunchedChrome(chrome, { host: '127.0.0.1', port: 0 }, userDataDir)
+		browserWebSocketUrl = version.webSocketDebuggerUrl
 		if (!version['User-Agent']) {
 			throw new Error('Chrome user-agent probe returned no User-Agent.')
 		}
@@ -51,49 +49,8 @@ const probeHeadlessChromeUserAgent = async (chromeBin: string): Promise<string> 
 	} catch (error) {
 		throw new Error(`Failed to derive regular Chrome user agent: ${formatError(error)}`)
 	} finally {
-		await closeProbe(chrome, cdpPort)
-		rmSync(userDataDir, { recursive: true, force: true })
-	}
-}
-
-const waitForChromeVersion = async (port: number, chrome: ChildProcess): Promise<ChromeVersionResponse> => {
-	const deadline = Date.now() + 5_000
-	let lastError = 'Timed out waiting for Chrome.'
-
-	while (Date.now() < deadline) {
-		if (chrome.exitCode !== null) {
-			throw new Error('Chrome exited before the user-agent probe became reachable.')
-		}
-		try {
-			return await fetchJson<ChromeVersionResponse>(`http://127.0.0.1:${port}/json/version`, { timeoutMs: 500 })
-		} catch (error) {
-			lastError = formatError(error)
-		}
-		await delay(150)
-	}
-
-	throw new Error(lastError)
-}
-
-const closeProbe = async (chrome: ChildProcess | null, port: number): Promise<void> => {
-	if (!chrome || chrome.exitCode !== null) {
-		return
-	}
-
-	try {
-		const version = await fetchJson<ChromeVersionResponse>(`http://127.0.0.1:${port}/json/version`, { timeoutMs: 500 })
-		await sendCdpCommand(version.webSocketDebuggerUrl, { id: 1, method: 'Browser.close' }, 1_000)
-	} catch {
-		chrome.kill()
-	}
-
-	if (chrome.exitCode === null) {
-		await Promise.race([
-			new Promise<void>((resolve) => chrome.once('exit', () => resolve())),
-			new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
-		])
-	}
-	if (chrome.exitCode === null) {
-		chrome.kill()
+		const cleanupDir = () => rmSync(userDataDir, { recursive: true, force: true })
+		if (chrome?.pid) await createChromeCleanup(chrome, browserWebSocketUrl, cleanupDir).closeGracefully()
+		else cleanupDir()
 	}
 }

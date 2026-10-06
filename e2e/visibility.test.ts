@@ -189,7 +189,7 @@ describe('visibility over the CDP watcher', () => {
 		expect(foreground).toMatchObject({ ok: true, attached: true, state: 'shown', policy: 'foreground' })
 		await cliJson<VisibilityStatus>('page', 'hide', WATCHER_ID, '--no-activate')
 		await assertBackground('restore')
-	})
+	}, 30_000)
 
 	test('keeps the desired background policy readable while detached and reapplies it after reattach', async () => {
 		const shown = await cliJson<VisibilityStatus>('page', 'show', WATCHER_ID, '--policy', 'background')
@@ -220,5 +220,5 @@ describe('visibility over the CDP watcher', () => {
 
 		await assertBackground('reattach')
 		await cliJson<VisibilityStatus>('page', 'hide', WATCHER_ID, '--policy', 'foreground', '--no-activate')
-	})
+	}, 30_000)
 })

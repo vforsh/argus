@@ -5,13 +5,15 @@ import { formatError } from '../cli/parse.js'
 export type CdpEndpointOptions = {
 	cdp?: string
 	id?: string
+	/** Local Chrome CDP port; mutually exclusive with cdp and id. */
+	port?: string
 }
 
 export type CdpEndpointResult = { ok: true; host: string; port: number } | { ok: false; error: string; exitCode: 1 | 2 }
 
 const parsePort = (value: string): number | null => {
-	const parsed = Number.parseInt(value, 10)
-	if (!Number.isFinite(parsed) || parsed < 1 || parsed > 65535) {
+	const parsed = Number(value)
+	if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
 		return null
 	}
 	return parsed
@@ -39,6 +41,12 @@ const parseCdpOption = (value: string): { host: string; port: number } | { error
 }
 
 export const resolveCdpEndpoint = async (options: CdpEndpointOptions): Promise<CdpEndpointResult> => {
+	if (options.port !== undefined) {
+		if (options.cdp || options.id) return { ok: false, error: 'Cannot combine --port with --cdp or --id.', exitCode: 2 }
+		const port = parsePort(options.port)
+		if (port === null) return { ok: false, error: 'Invalid --port: expected an integer 1-65535.', exitCode: 2 }
+		return { ok: true, host: '127.0.0.1', port }
+	}
 	if (options.cdp && options.id) {
 		return { ok: false, error: 'Cannot combine --cdp with --id.', exitCode: 2 }
 	}

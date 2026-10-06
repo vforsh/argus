@@ -1,18 +1,23 @@
 import { createAuthStateOriginUrl, type AuthStateSnapshot } from '@vforsh/argus-core'
 import type { PageConsoleLogging } from '@vforsh/argus-core'
+import type { WatcherHandle } from '@vforsh/argus-watcher'
 import { requestAuthStateSnapshot } from './auth.js'
 import { launchChrome, type LaunchChromeResult } from './chromeStart.js'
 import { createOutput } from '../output/io.js'
 import { formatError } from '../cli/parse.js'
 import type { WatcherInjectConfig } from '../config/types.js'
-import { buildWatcherMatch, normalizeHttpUrl, registerTerminationHandlers, waitForever } from './startShared.js'
+import { buildWatcherMatch, normalizeHttpUrl, registerTerminationHandlers } from './startShared.js'
 import { startManagedWatcher } from './watcherSession.js'
+import { resolveStartViewport, type StartViewportOptions } from './startViewport.js'
+import { waitForStartReady } from './startReadiness.js'
+import { announceDetachedStart, startDetached } from './startDetached.js'
 
-export type StartOptions = {
+export type StartOptions = StartViewportOptions & {
 	id: string
 	url?: string
 	authFrom?: string
 	json?: boolean
+	detach?: boolean
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
 	headless?: boolean
@@ -28,7 +33,8 @@ export type StartOptions = {
 	pageConsoleLogging?: PageConsoleLogging
 }
 
-type StartResult = {
+/** Coordinates returned only after the launched browser and watcher are ready. */
+export type StartResult = {
 	id: string
 	chromePid: number
 	cdpHost: string
@@ -36,10 +42,23 @@ type StartResult = {
 	watcherHost: string
 	watcherPort: number
 	watcherPid: number
+	/** Isolated profile directory, removed when this session closes. */
+	userDataDir: string | null
 	userAgentOverride?: true
+	/** Persistent stderr log for a detached launcher. */
+	launcherLog?: string
 }
 
+/** Start a managed browser session, releasing a detached startup channel on every failure path. */
 export const runStart = async (options: StartOptions): Promise<void> => {
+	try {
+		await runStartSession(options)
+	} finally {
+		if (options.detach && process.connected) process.disconnect?.()
+	}
+}
+
+const runStartSession = async (options: StartOptions): Promise<void> => {
 	const output = createOutput(options)
 
 	if (!options.id || options.id.trim() === '') {
@@ -49,6 +68,35 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 	}
 
 	const watcherId = options.id.trim()
+	let viewport: ReturnType<typeof resolveStartViewport>
+	try {
+		viewport = resolveStartViewport(options)
+	} catch (error) {
+		output.writeWarn(formatError(error))
+		process.exitCode = 2
+		return
+	}
+
+	if (options.detach && !process.send) {
+		try {
+			writeStartResult(await startDetached(), options)
+		} catch (error) {
+			output.writeWarn(formatError(error))
+			process.exitCode = 1
+		}
+		return
+	}
+
+	let parentDisconnected = false
+	let readyAnnounced = false
+	let stop: (() => Promise<void>) | undefined
+	if (options.detach) {
+		process.once('disconnect', () => {
+			if (readyAnnounced) return
+			parentDisconnected = true
+			void stop?.()
+		})
+	}
 	if (options.authFrom && options.profile && options.profile !== 'temp') {
 		output.writeWarn('Cannot combine --auth-from with a copied Chrome profile. Use --profile temp or omit --profile.')
 		process.exitCode = 2
@@ -59,6 +107,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 	if (!authState) {
 		return
 	}
+	if (parentDisconnected) return
 
 	// At least one targeting option is required for the watcher
 	const matchInput = resolveWatcherMatchInput(options, authState.startupUrl)
@@ -68,7 +117,6 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		process.exitCode = 2
 		return
 	}
-
 	// --- Launch Chrome ---
 	if (!options.json) {
 		output.writeHuman('Launching Chrome...')
@@ -77,6 +125,7 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 	let chrome: LaunchChromeResult
 	try {
 		chrome = await launchChrome({
+			autoPort: true,
 			url: authState.startupUrl,
 			profile: options.profile,
 			devTools: options.devTools,
@@ -90,6 +139,25 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		process.exitCode = 1
 		return
 	}
+	if (parentDisconnected) {
+		await chrome.closeGracefully()
+		return
+	}
+
+	let handle: WatcherHandle | undefined
+	let resolveClosed!: () => void
+	const closed = new Promise<void>((resolve) => {
+		resolveClosed = resolve
+	})
+	const shutdown = async () => {
+		if (handle) await handle.close()
+		else await chrome.closeGracefully()
+	}
+	stop = shutdown
+	registerTerminationHandlers(shutdown)
+	chrome.chrome.on('exit', () => {
+		void handle?.close()
+	})
 
 	authState.startupUrl = chrome.startupUrl
 
@@ -115,26 +183,32 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		artifacts: options.artifacts,
 		pageConsoleLogging: options.pageConsoleLogging,
 		inject: options.inject,
+		emulation: viewport ? { viewport } : undefined,
+		onClose: async () => {
+			await chrome.closeGracefully()
+			if (process.stdin.isTTY) process.stdin.setRawMode(false)
+			process.stdin.pause()
+			resolveClosed()
+		},
 	})
 	if (!startedWatcher) {
-		chrome.cleanup()
+		await chrome.closeGracefully()
 		return
 	}
-	const { handle } = startedWatcher
-
-	// --- Cleanup on exit ---
-	const shutdown = async () => {
-		try {
-			await handle.close()
-		} catch {}
-		await chrome.closeGracefully()
+	handle = startedWatcher.handle
+	if (parentDisconnected || chrome.chrome.exitCode !== null || chrome.chrome.signalCode !== null) {
+		await handle.close()
+		process.exitCode = 1
+		return
 	}
-
-	registerTerminationHandlers(shutdown)
-
-	chrome.chrome.on('exit', () => {
-		void handle.close().then(() => process.exit(0))
-	})
+	try {
+		await waitForStartReady(handle, viewport !== undefined)
+	} catch (error) {
+		output.writeWarn(formatError(error))
+		process.exitCode = 1
+		await handle.close()
+		return
+	}
 
 	// --- Output ---
 	const result: StartResult = {
@@ -145,25 +219,27 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		watcherHost: handle.watcher.host,
 		watcherPort: handle.watcher.port,
 		watcherPid: handle.watcher.pid,
+		userDataDir: chrome.userDataDir,
 	}
 	if (options.userAgent !== undefined) {
 		result.userAgentOverride = true
 	}
 
-	if (options.json) {
-		output.writeJson(result)
+	if (options.detach) {
+		try {
+			readyAnnounced = true
+			await announceDetachedStart(result)
+		} catch (error) {
+			output.writeWarn(formatError(error))
+			process.exitCode = 1
+			await handle.close()
+			return
+		}
 	} else {
-		output.writeHuman(`Watcher attached (id=${result.id}, port=${result.watcherPort})`)
-		output.writeHuman('')
-		output.writeHuman(`Ready! Watcher "${result.id}" attached to Chrome.`)
-		output.writeHuman(`  argus logs ${result.id}`)
-		output.writeHuman(`  argus eval ${result.id} "document.title"`)
-		output.writeHuman(`  argus screenshot ${result.id}`)
-		output.writeHuman('')
-		output.writeHuman('Press Q or Ctrl+C to stop.')
+		writeStartResult(result, options)
 	}
 
-	// --- Keyboard shortcut: X to stop ---
+	// --- Keyboard shortcut: Q to stop ---
 	if (process.stdin.isTTY) {
 		process.stdin.setRawMode(true)
 		process.stdin.resume()
@@ -181,7 +257,26 @@ export const runStart = async (options: StartOptions): Promise<void> => {
 		})
 	}
 
-	await waitForever()
+	await closed
+}
+
+const writeStartResult = (result: StartResult, options: StartOptions): void => {
+	const output = createOutput(options)
+	if (options.json) {
+		output.writeJson(result)
+		return
+	}
+	output.writeHuman(`Watcher attached (id=${result.id}, port=${result.watcherPort})`)
+	output.writeHuman(`Chrome pid=${result.chromePid}, cdp=${result.cdpHost}:${result.cdpPort}, watcher pid=${result.watcherPid}`)
+	if (options.detach) {
+		output.writeHuman(`Running in background. Stop with: argus watcher stop ${result.id}`)
+		output.writeHuman(`Launcher log: ${result.launcherLog}`)
+		return
+	}
+	output.writeHuman(`  argus logs ${result.id}`)
+	output.writeHuman(`  argus eval ${result.id} "document.title"`)
+	output.writeHuman(`  argus screenshot ${result.id}`)
+	output.writeHuman('Press Q or Ctrl+C to stop.')
 }
 
 const resolveStartAuthState = async (

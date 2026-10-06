@@ -68,6 +68,15 @@ argus start --id app --url http://localhost:3000
 
 This command is long-running. It keeps Chrome and the watcher alive until you stop it.
 
+For agent scripts, return after the watcher attaches:
+
+```bash
+argus start --id app --url http://localhost:3000 --headless --profile temp --detach --json
+argus watcher stop app --json
+```
+
+`start --detach` reports the Chrome/watcher PIDs, CDP and HTTP ports, temp profile path, and launcher log. Stopping a watcher created by `start` closes its Chrome and removes the temp profile; stopping a standalone watcher leaves its browser running. Headless `start` uses a 1280×900 viewport at DPR 1; customize with `--width 900 --height 1250 --dpr 2`.
+
 In another terminal:
 
 ```bash

@@ -10,6 +10,7 @@ import { usageError } from '../validation.js'
 
 const cdpTargetOptions = [
 	{ flags: '--cdp <host:port>', description: 'CDP host:port' },
+	{ flags: '--port <port>', description: 'Local Chrome CDP port (alternative to --cdp or --id)' },
 	{ flags: '--id <watcherId>', description: 'Use chrome config from a registered watcher' },
 	jsonOption,
 ] as const

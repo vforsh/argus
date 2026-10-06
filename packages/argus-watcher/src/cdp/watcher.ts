@@ -7,7 +7,7 @@ import { fetchPageIntl, type PageIntlInfo, toConsoleEvent, toExceptionEvent } fr
 import { tryEvaluateInPage } from './pageState.js'
 import { findTarget, type CdpTarget } from './watcherTargets.js'
 import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
-import { delay } from '@vforsh/argus-core'
+import { setTimeout as delay } from 'node:timers/promises'
 
 /** Current CDP attachment status. */
 export type CdpStatus = {
@@ -55,6 +55,7 @@ export type CdpWatcherHandle = {
 /** Start CDP polling + websocket subscriptions for console/exception events. */
 export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle => {
 	let stopped = false
+	const shutdownController = new AbortController()
 	let socket: WebSocket | null = null
 	let currentTarget: CdpTarget | null = null
 	/** Top frame of the attached page, so iframe navigation events cannot be mistaken for the page's. */
@@ -64,9 +65,11 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 
 	const stop = async (): Promise<void> => {
 		stopped = true
+		shutdownController.abort()
 		if (socket) {
 			socket.close()
 		}
+		await running
 	}
 
 	const reconnect = (): void => {
@@ -76,7 +79,7 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		socket?.close()
 	}
 
-	void runLoop()
+	const running = runLoop()
 
 	session.onEvent('Runtime.consoleAPICalled', (params) => {
 		if (!currentTarget) {
@@ -174,22 +177,28 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 				await connectOnce()
 				backoffMs = 1_000
 			} catch (error) {
+				socket?.close()
+				if (stopped) return
 				const reason = `connect_failed: ${formatError(error)}`
 				options.onLog(createSystemLog(`CDP connection failed: ${formatError(error)}`))
 				options.onStatus({ attached: false, target: null, reason })
 				options.onDetach?.(reason)
-				await delay(backoffMs)
+				// Closing an unattached watcher must cancel its backoff too; an idle retry timer kept
+				// failed `start` processes alive after the browser and registry had already been cleaned up.
+				await delay(backoffMs, undefined, { signal: shutdownController.signal }).catch(() => {})
 				backoffMs = Math.min(backoffMs * 2, 10_000)
 			}
 		}
 	}
 
 	async function connectOnce(): Promise<void> {
-		const target = await findTarget(options.chrome, options.match)
+		const target = await findTarget(options.chrome, options.match, shutdownController.signal)
+		if (stopped) return
 		socket = new WebSocket(target.webSocketDebuggerUrl)
 		await new Promise<void>((resolve, reject) => {
 			socket?.addEventListener('open', () => resolve())
 			socket?.addEventListener('error', () => reject(new Error('WebSocket error')))
+			socket?.addEventListener('close', () => reject(new Error('WebSocket closed before attachment')))
 		})
 
 		if (!socket) {
@@ -225,6 +234,7 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		const frameTree = await session.sendAndWait('Page.getFrameTree').catch(() => null)
 		topFrameId = frameTree?.frameTree?.frame.id ?? null
 		await options.onAttach?.(session, target)
+		if (stopped || ws.readyState !== WebSocket.OPEN) return
 
 		// Only signal attached after we've enabled the necessary domains
 		options.onStatus({

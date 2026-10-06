@@ -21,8 +21,9 @@ export type CdpTarget = {
 	parentId: string | null
 }
 
-export const findTarget = async (chrome: WatcherChrome, match?: WatcherMatch): Promise<CdpTarget> => {
-	const targets = await fetchCdpTargets(chrome)
+/** Select one matching target; an optional signal cancels startup when its watcher stops. */
+export const findTarget = async (chrome: WatcherChrome, match?: WatcherMatch, signal?: AbortSignal): Promise<CdpTarget> => {
+	const targets = await fetchCdpTargets(chrome, TARGET_LIST_TIMEOUT_MS, signal)
 	if (targets.length === 0) {
 		throw new Error('No CDP targets available')
 	}
@@ -107,10 +108,12 @@ const TARGET_LIST_TIMEOUT_MS = 5_000
  *
  * @param chrome DevTools endpoint to query.
  * @param timeoutMs Abort budget for the request. Health probes pass a shorter one.
+ * @param signal Optional watcher-lifecycle cancellation, combined with the request's timeout.
  * @throws {Error} When the endpoint is unreachable, times out, or answers with a non-2xx status.
  */
-export const fetchCdpTargets = async (chrome: WatcherChrome, timeoutMs = TARGET_LIST_TIMEOUT_MS): Promise<CdpTarget[]> => {
-	const response = await fetch(`http://${chrome.host}:${chrome.port}/json`, { signal: AbortSignal.timeout(timeoutMs) })
+export const fetchCdpTargets = async (chrome: WatcherChrome, timeoutMs = TARGET_LIST_TIMEOUT_MS, signal?: AbortSignal): Promise<CdpTarget[]> => {
+	const timeout = AbortSignal.timeout(timeoutMs)
+	const response = await fetch(`http://${chrome.host}:${chrome.port}/json`, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout })
 	if (!response.ok) {
 		throw new Error(`Failed to fetch CDP targets (status ${response.status})`)
 	}

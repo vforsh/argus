@@ -2,7 +2,7 @@
 
 CDP mode: Argus launches (or connects to) a Chrome with remote debugging and a watcher attaches to one target. Use extension-control instead when the task needs the user's real profile ([EXTENSION.md](./EXTENSION.md)).
 
-`start`, `chrome start`, `watcher start`, and `page open --attach` stay in the foreground until Ctrl+C. Background them in agent shells.
+`start --detach` returns after attachment. `start` without that flag, `chrome start`, `watcher start`, and `page open --attach` stay in the foreground until Ctrl+C; background those in agent shells.
 
 Watcher ids are exact: `start --id`, `watcher start --id`, and `page open --attach --as` fail with `watcher_id_taken` while another live watcher holds the name (a predecessor that is still exiting gets ~2s to release it). Stop it with `argus watcher stop <id>` or pick another name.
 
@@ -10,7 +10,8 @@ Watcher ids are exact: `start --id`, `watcher start --id`, and `page open --atta
 
 ```bash
 argus start --id app --url localhost:3000
-argus start --id app --url localhost:3000 --headless --profile temp
+argus start --id app --url localhost:3000 --headless --profile temp --detach --json
+argus start --id game --url localhost:3000 --headless --profile temp --detach --width 900 --height 1250 --dpr 2 --json
 argus start --id app --url https://example.com --headless --user-agent regular-chrome
 argus start --id app --url localhost:3000 --dev-tools --no-mute
 argus start --id app --url localhost:3000 --inject ./debug.js --no-page-indicator
@@ -20,7 +21,15 @@ argus start --id game --type iframe --url localhost:3007
 argus start --id app --url localhost:3000 --json
 ```
 
+`--detach` returns after a real CDP attachment; Chrome and the watcher continue in a separate process with independent stdio. `--json` returns `id`, `chromePid`, `cdpHost`, `cdpPort`, `watcherHost`, `watcherPort`, `watcherPid`, `userDataDir`, and `launcherLog`. Without `--detach`, the command stays in the foreground. A watcher that cannot attach within 15s fails startup and closes Chrome.
+
+`start` lets Chrome allocate its CDP port atomically and verifies the browser endpoint against the isolated profile. Concurrent starts get separate endpoints; use the returned `cdpPort` or `chrome --id <watcherId>` rather than assuming 9222.
+
+Headless `start` defaults to 1280×900 CSS pixels at DPR 1. `--width`, `--height`, and `--dpr` override the viewport before readiness is announced and persist across reattachment; omitted metrics keep the defaults. Width/height must be positive integers; DPR must be a finite positive number. Headed `start` keeps Chrome's viewport unless an override is supplied.
+
 Chrome flags: `--profile`, `--dev-tools`, `--headless`, `--user-agent`, `--no-mute`. `--user-agent regular-chrome` derives Chrome's own UA and removes only the headless marker before the first navigation; a literal value is passed through unchanged. Watcher flags: `--type`, `--origin`, `--target`, `--parent`, `--inject`, `--artifacts`, `--no-page-indicator`. `--auth-from` hydrates cookies + storage from a running watcher into a fresh temp profile before attaching; `--url` then overrides the final destination.
+
+`watcher stop <id> --json` closes the watcher **and the Chrome launched by `start`**, removing its temp profile. Direct `POST /shutdown`, Ctrl+C, and Chrome exit use the same cleanup. A standalone `watcher start` never closes the browser it attached to. Detached launcher diagnostics live in `$ARGUS_HOME/logs/start-*/launcher.log`.
 
 ## `argus chrome`
 
@@ -34,6 +43,7 @@ argus chrome ls --pages
 argus chrome status --cdp 127.0.0.1:9222
 argus chrome version --id app
 argus chrome stop --id app
+argus chrome stop --port 9222 --json             # one local CDP endpoint
 ```
 
 Profile modes (`--profile`, default `default-lite`):
@@ -69,6 +79,8 @@ argus watcher start --id app --source extension                  # extension-bac
 argus watcher status app
 argus watcher ls --by-cwd my-project
 argus watcher stop app
+argus watcher stop app --json
+argus watcher stop --port 54321 --json            # registered watcher HTTP port, not CDP
 argus watcher prune --dry-run                                    # drop unreachable registry entries
 argus watcher show app / hide app                                # alias of `page show/hide`
 ```
@@ -117,7 +129,7 @@ Per-user config lives at `$ARGUS_HOME/config.json` (default `~/.argus/config.jso
 
 ## Node API
 
-`@vforsh/argus-watcher` exports `startWatcher(options) → { watcher, events, close }`. Events: `cdpAttached`, `cdpDetached`, `httpRequested`. Full runnable example with env-driven options: [start-watcher.ts](../start-watcher.ts).
+`@vforsh/argus-watcher` exports `startWatcher(options) → { watcher, events, close }`. Events: `cdpAttached`, `cdpDetached`, `httpRequested`. Optional `emulation` is applied before the first attachment is reported; optional `onClose` releases caller-owned resources after teardown, once for both `close()` and `POST /shutdown`. Full runnable example with env-driven options: [start-watcher.ts](../start-watcher.ts).
 
 ```ts
 import { startWatcher } from '@vforsh/argus-watcher'

@@ -6,6 +6,7 @@ import type {
 	PageConsoleLogging,
 	WatcherSourceMode,
 	WatcherExtensionRole,
+	EmulationState,
 } from '@vforsh/argus-core'
 import { randomUUID } from 'node:crypto'
 import Emittery from 'emittery'
@@ -101,6 +102,10 @@ export type StartWatcherOptions = {
 	bufferSize?: number
 	/** How often (in ms) to refresh the watcher record in the registry. Defaults to `15_000`. */
 	heartbeatMs?: number
+	/** Initial emulation state, applied before the first attach is reported and restored on reattach. */
+	emulation?: EmulationState
+	/** Release caller-owned resources after watcher teardown, once for both close() and POST /shutdown. */
+	onClose?: () => Promise<void> | void
 	/**
 	 * Artifacts storage configuration for logs, traces, and screenshots.
 	 * All artifacts are stored under `artifacts.base` (default: `$TMPDIR/argus`).

@@ -26,7 +26,9 @@ argus skill                   # absolute path of this SKILL.md (reference/ sits 
 
 Never use `argus start`, `--profile temp`, or headless for a flow that needs the user's login. Details: [EXTENSION.md](./reference/EXTENSION.md), [START.md](./reference/START.md), [IFRAMES.md](./reference/IFRAMES.md).
 
-**Long-running commands** (`start`, `chrome start`, `watcher start`, `page open --attach`, `logs tail`, `net tail`, `net sse`, `session`) never exit on their own. Run them in the background in agent shells.
+**Agent startup**: `start --detach` returns after CDP attachment with the watcher id, Chrome/watcher PIDs, CDP coordinates, and launcher log (`--json` for automation). Stop with `watcher stop <id> --json`; this also closes the Chrome owned by `start` and removes its temp profile. A standalone `watcher start` owns only its watcher.
+
+**Long-running commands** (`start` without `--detach`, `chrome start`, `watcher start`, `page open --attach`, `logs tail`, `net tail`, `net sse`, `session`) stay alive. Run them in the background in agent shells.
 
 ---
 
@@ -69,12 +71,15 @@ Tab stuck in background or booting: `argus ext show app` then `argus reload app`
 
 ```bash
 argus start --id app --url localhost:3000            # Chrome + watcher, one process (background it)
-argus start --id app --url localhost:3000 --headless --profile temp
+argus start --id app --url localhost:3000 --headless --profile temp --detach --json
+argus start --id game --url localhost:3000 --headless --profile temp --detach --width 900 --height 1250 --dpr 2 --json
 argus start --id app --url https://example.com --headless --profile default-medium --user-agent regular-chrome
 argus start --id app --auth-from ext-watcher --url https://target.app/   # clone login into temp Chrome
 ```
 
 Split form: `argus chrome start --url …` then `argus watcher start --id app --url localhost:3000 --chrome-port 9222`. In headless mode, `--user-agent regular-chrome` removes Chrome's headless UA marker before the first request; use `default-medium` when auth also needs Local Storage or IndexedDB. Chrome is muted by default (`--no-mute`). Default profile mode `default-lite` copies cookies/logins from the user's Chrome into a temp dir; `temp` is empty. Iframe/worker targets: `--type iframe --url … | --origin … | --target <id> | --parent <substr>`.
+
+Headless `start` defaults to a 1280×900 CSS viewport at DPR 1. Override with `--width`, `--height`, `--dpr`; omitted metrics keep those defaults. Startup fails and cleans up if the watcher cannot attach within 15s. `chrome stop --id <id>` or `--port <cdpPort>` closes one browser; `watcher stop --port <watcherPort>` selects one registered watcher by its HTTP port.
 
 ---
 

@@ -2,21 +2,19 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
-import { sendCdpCommand } from '../cdp/sendCdpCommand.js'
-import { fetchJson } from '../httpClient.js'
 import { pruneRegistry } from '../registry.js'
 import { createOutput } from '../output/io.js'
 import { formatError } from '../cli/parse.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
 import { getCdpPort } from '../utils/ports.js'
-import type { ChromeVersionResponse } from './chrome.js'
 import { normalizeHttpUrl, registerTerminationHandlers, waitForever } from './startShared.js'
 import type { AuthStateSnapshot } from '@vforsh/argus-core'
 import { applyAuthStateSnapshotToChrome } from './chrome/authState.js'
 import { loadAuthStateSnapshot } from './auth.js'
-import { delay } from '@vforsh/argus-core'
 import { buildChromeLaunchArgs } from './chrome/launchArgs.js'
 import { resolveChromeUserAgent } from './chrome/userAgent.js'
+import { createChromeCleanup } from './chrome/lifecycle.js'
+import { waitForLaunchedChrome } from './chrome/readiness.js'
 
 export type ChromeStartOptions = {
 	url?: string
@@ -40,6 +38,8 @@ type ChromeStartResult = {
 }
 
 export type LaunchChromeOptions = {
+	/** Let Chrome allocate its CDP port atomically. Use for concurrent managed sessions; default prefers 9222. */
+	autoPort?: boolean
 	url?: string | null
 	profile?: 'temp' | 'default-full' | 'default-medium' | 'default-lite'
 	devTools?: boolean
@@ -68,18 +68,6 @@ export type LaunchChromeResult = {
 	/** Send Browser.close via CDP, wait for exit, then remove temp profile. Falls back to kill. */
 	closeGracefully: () => Promise<void>
 }
-
-type ChromeStartReadyResult = {
-	ready: true
-	version: string
-}
-
-type ChromeStartNotReadyResult = {
-	ready: false
-	error: string
-}
-
-type ChromeStartReadyCheck = ChromeStartReadyResult | ChromeStartNotReadyResult
 
 const resolveChromeUserDataDir = (): string | null => {
 	if (process.env.ARGUS_CHROME_USER_DATA_DIR) {
@@ -199,40 +187,6 @@ const copyDefaultProfileMedium = (sourceDir: string): string => {
 	return destRoot
 }
 
-const waitForCdpReady = async (host: string, port: number, chrome: ChildProcess): Promise<ChromeStartReadyCheck> => {
-	const deadline = Date.now() + 5_000
-	const url = `http://${host}:${port}/json/version`
-	let lastError: string | null = null
-
-	while (Date.now() < deadline) {
-		if (chrome.exitCode !== null) {
-			return { ready: false, error: 'Chrome exited before CDP became reachable.' }
-		}
-
-		try {
-			const response = await fetchJson<ChromeVersionResponse>(url, { timeoutMs: 500 })
-			if (response.Browser) {
-				return { ready: true, version: response.Browser }
-			}
-			lastError = 'Chrome responded without Browser version.'
-		} catch (error) {
-			lastError = formatError(error)
-		}
-
-		await delay(150)
-	}
-
-	return { ready: false, error: lastError ?? 'Timed out waiting for CDP.' }
-}
-
-const sendBrowserClose = async (wsUrl: string, timeoutMs = 3_000): Promise<void> => {
-	try {
-		await sendCdpCommand(wsUrl, { id: 1, method: 'Browser.close' }, timeoutMs)
-	} catch {
-		// Closing is best-effort here. The caller already falls back to kill.
-	}
-}
-
 const normalizeProfile = (profile?: string): ChromeStartOptions['profile'] | null => {
 	if (!profile) {
 		return 'default-lite'
@@ -282,7 +236,7 @@ export const launchChrome = async (options: LaunchChromeOptions): Promise<Launch
 		}
 	}
 
-	const cdpPort = await getCdpPort()
+	let cdpPort = options.autoPort ? 0 : await getCdpPort()
 	const cdpHost = '127.0.0.1'
 	if (!userDataDir) {
 		userDataDir = mkdtempSync(path.join(tmpdir(), 'argus-chrome-'))
@@ -322,57 +276,16 @@ export const launchChrome = async (options: LaunchChromeOptions): Promise<Launch
 		throw new Error('Failed to start Chrome: no PID returned.')
 	}
 
-	const ready = await waitForCdpReady(cdpHost, cdpPort, chrome)
-	if (!ready.ready) {
-		cleanupDir()
-		try {
-			chrome.kill()
-		} catch {}
-		throw new Error(`Chrome started but CDP is unavailable at ${cdpHost}:${cdpPort}. Reason: ${ready.error}`)
+	let browserWebSocketUrl: string
+	try {
+		const ready = await waitForLaunchedChrome(chrome, { host: cdpHost, port: cdpPort }, userDataDir)
+		cdpPort = ready.port
+		browserWebSocketUrl = ready.version.webSocketDebuggerUrl
+	} catch (error) {
+		await createChromeCleanup(chrome, undefined, cleanupDir).closeGracefully()
+		throw new Error(`Chrome started but CDP is unavailable. Reason: ${formatError(error)}`)
 	}
-
-	const cleanup = () => {
-		try {
-			chrome.kill()
-		} catch {}
-		cleanupDir()
-	}
-
-	const closeGracefully = async () => {
-		if (chrome.exitCode !== null) {
-			cleanupDir()
-			return
-		}
-
-		try {
-			const versionUrl = `http://${cdpHost}:${cdpPort}/json/version`
-			const response = await fetchJson<ChromeVersionResponse>(versionUrl, { timeoutMs: 2_000 })
-			if (response.webSocketDebuggerUrl) {
-				await sendBrowserClose(response.webSocketDebuggerUrl)
-			}
-		} catch {
-			// CDP unreachable — fall through to kill
-		}
-
-		// Wait for Chrome to exit on its own, then fall back to kill
-		if (chrome.exitCode === null) {
-			const exited = await Promise.race([
-				new Promise<boolean>((resolve) => chrome.once('exit', () => resolve(true))),
-				new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3_000)),
-			])
-			if (!exited) {
-				try {
-					chrome.kill()
-				} catch {}
-			}
-		}
-
-		cleanupDir()
-	}
-
-	// The temp profile dir is created here, so its removal belongs here too. Callers used to reach
-	// into `result.userDataDir` and re-implement this, each in their own exit handler.
-	chrome.on('exit', cleanupDir)
+	const { cleanup, closeGracefully } = createChromeCleanup(chrome, browserWebSocketUrl, cleanupDir)
 
 	const resolvedStartupUrl = options.authState
 		? (await hydrateAuthState(options.authState, { cdpHost, cdpPort, startupUrl, closeGracefully })).startupUrl

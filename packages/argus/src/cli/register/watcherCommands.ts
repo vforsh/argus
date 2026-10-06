@@ -72,9 +72,13 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				name: 'stop',
 				alias: 'kill',
 				aliases: ['detach'],
-				description: 'Stop a watcher',
+				description: 'Stop a watcher and any Chrome launched by argus start',
 				arguments: [{ flags: '[id]', description: 'Watcher id to stop' }],
-				options: [{ flags: '--id <watcherId>', description: 'Watcher id to stop' }],
+				options: [
+					{ flags: '--id <watcherId>', description: 'Watcher id to stop' },
+					{ flags: '--port <port>', description: 'Select a registered watcher by its HTTP port' },
+					jsonOption,
+				],
 				examples: ['argus watcher stop app', 'argus watcher stop --id app', 'argus watcher kill app', 'argus watcher detach app'],
 				action: async (id, options) => {
 					await runWatcherStop(id ?? options.id, options)

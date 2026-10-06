@@ -26,6 +26,8 @@ export type StickyState<TState> = {
 export type StickyResult<TState> = StickyState<TState> & { attached: boolean }
 
 export type StickyControllerOptions<TState> = {
+	/** Desired state to apply on the first attach. Defaults to no override. */
+	initialState?: TState
 	/** Label used in the re-apply warning. */
 	label: string
 	/** Push the desired state onto a session. */
@@ -53,7 +55,7 @@ export type StickyController<TState> = {
 
 /** Build a {@link StickyController}. */
 export const createStickyController = <TState>(options: StickyControllerOptions<TState>): StickyController<TState> => {
-	let desired: TState | null = null
+	let desired: TState | null = options.initialState ?? null
 	let applied = false
 	let lastError: ErrorDetail | null = null
 

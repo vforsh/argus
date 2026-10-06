@@ -1,5 +1,5 @@
 import type { ShutdownResponse } from '@vforsh/argus-core'
-import { removeWatcherAndPersist } from '../registry.js'
+import { pruneRegistry, removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatError } from '../cli/parse.js'
 import { formatWatcherLine } from '../output/format.js'
@@ -8,11 +8,31 @@ import { resolveWatcher } from '../watchers/resolveWatcher.js'
 import { delay } from '@vforsh/argus-core'
 
 /** Options for the watcher stop command. */
-export type WatcherStopOptions = Record<string, never>
+export type WatcherStopOptions = { json?: boolean; port?: string }
 
 /** Execute the watcher stop command. */
-export const runWatcherStop = async (id: string | undefined, _options: WatcherStopOptions): Promise<void> => {
-	const output = createOutput({ json: false })
+export const runWatcherStop = async (id: string | undefined, options: WatcherStopOptions): Promise<void> => {
+	const output = createOutput(options)
+	const writeStopped = (watcherId: string) => {
+		if (options.json) output.writeJson({ ok: true, id: watcherId, stopped: true })
+		else output.writeHuman(`stopped ${watcherId}`)
+	}
+	if (options.port !== undefined) {
+		const port = Number(options.port)
+		if (!Number.isInteger(port) || port < 1 || port > 65535) {
+			output.writeWarn('Invalid --port: expected a watcher HTTP port (integer 1-65535).')
+			process.exitCode = 2
+			return
+		}
+		const registry = await pruneRegistry()
+		const matches = Object.values(registry.watchers).filter((watcher) => watcher.port === port && (!id || watcher.id === id))
+		if (matches.length !== 1) {
+			output.writeWarn(`Expected one registered watcher on port ${port}${id ? ` with id ${id}` : ''}; found ${matches.length}. Use --id.`)
+			process.exitCode = 2
+			return
+		}
+		id = matches[0].id
+	}
 	const resolved = await resolveWatcher({ id })
 	if (!resolved.ok) {
 		output.writeWarn(resolved.error)
@@ -32,7 +52,7 @@ export const runWatcherStop = async (id: string | undefined, _options: WatcherSt
 	try {
 		const response = await fetchJson<ShutdownResponse>(shutdownUrl, { method: 'POST', timeoutMs: 2_000 })
 		if (response.ok) {
-			output.writeHuman(`stopped ${watcher.id}`)
+			writeStopped(watcher.id)
 			return
 		}
 	} catch (error) {
@@ -51,7 +71,7 @@ export const runWatcherStop = async (id: string | undefined, _options: WatcherSt
 	} catch (error) {
 		if (isNoSuchProcessError(error)) {
 			await removeWatcherAndPersist(watcher.id)
-			output.writeHuman(`stopped ${watcher.id}`)
+			writeStopped(watcher.id)
 			return
 		}
 		output.writeWarn(`warn: failed to stop watcher ${watcher.id}; registry entry preserved (${formatError(error)})`)
@@ -62,7 +82,7 @@ export const runWatcherStop = async (id: string | undefined, _options: WatcherSt
 	const waitResult = await waitForProcessExit(pid, 2_000, 100)
 	if (waitResult.state === 'dead') {
 		await removeWatcherAndPersist(watcher.id)
-		output.writeHuman(`stopped ${watcher.id}`)
+		writeStopped(watcher.id)
 		return
 	}
 
@@ -99,7 +119,6 @@ const checkProcessState = (pid: number): { state: 'alive' | 'dead' | 'error'; er
 		return { state: 'error', error: formatError(error) }
 	}
 }
-
 
 const isNoSuchProcessError = (error: unknown): boolean => {
 	return isErrnoError(error) && error.code === 'ESRCH'

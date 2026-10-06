@@ -17,12 +17,15 @@ export type EmulationController = {
  * Unlike the other sticky controllers this carries a baseline: the pre-override user-agent
  * has to be sampled from a fresh session before anything is applied, so clearing can
  * restore it.
+ * @param initialState Desired state to apply before reporting the first attachment; omitted leaves metrics unchanged.
+ * @returns Controller sharing the same desired state across initial attach and later reattachments.
  */
-export const createEmulationController = (): EmulationController => {
+export const createEmulationController = (initialState?: EmulationState): EmulationController => {
 	let baselineUserAgent: string | null = null
 	const getBaseline = () => ({ userAgent: baselineUserAgent })
 
 	const sticky = createStickyController<EmulationState>({
+		initialState,
 		label: 'Emulation',
 		apply: (session, state) => applyEmulation(session, state, getBaseline()),
 		clear: (session) => clearEmulation(session, getBaseline()),
