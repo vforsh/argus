@@ -146,6 +146,58 @@ liveTest(
 )
 
 liveTest(
+	'retries a bind after navigation and a label write failure, preserving watcher identity and attach error codes',
+	async () => {
+		const destination = `${harness.pageUrl}?bind-retry=1`
+		const prepared = await prepare(destination)
+		const tabId = await openTab(prepared.bindUrl)
+		await waitForTabUrl(tabId, prepared.ticket)
+		const labelsPath = path.join(path.dirname(harness.registryPath), 'browsers.json')
+		const originalLabels = fs.existsSync(labelsPath) ? fs.readFileSync(labelsPath, 'utf8') : null
+		if (originalLabels != null) fs.unlinkSync(labelsPath)
+		fs.mkdirSync(labelsPath)
+		try {
+			const failed = await bindJson<Failure>(prepared.ticket, '--as', 'retry-bound', '--label', 'codex')
+			expect(failed.code).not.toBe(0)
+			expect(failed.json.error.message).toContain('EISDIR')
+			await waitForTabUrl(tabId, 'bind-retry=1')
+		} finally {
+			fs.rmdirSync(labelsPath)
+			if (originalLabels != null) fs.writeFileSync(labelsPath, originalLabels)
+		}
+		const retried = await bindJson<BindResult>(prepared.ticket, '--as', 'retry-bound', '--label', 'codex')
+		expect(retried.code).toBe(0)
+		expect(retried.json).toMatchObject({ watcherId: 'retry-bound', tabId, url: prepared.destination, reused: false, targetReady: true })
+		expect((await bindJson<Failure>(prepared.ticket)).json.error.code).toBe('bind_ticket_used')
+
+		const conflictTicket = await prepare(destination)
+		const conflictTab = await openTab(conflictTicket.bindUrl)
+		await waitForTabUrl(conflictTab, conflictTicket.ticket)
+		try {
+			const conflict = await bindJson<Failure>(conflictTicket.ticket, '--as', 'retry-bound')
+			expect(conflict.json.error.code).toBe('watcher_id_taken')
+			const direct = await harness.cli(
+				'ext',
+				'attach',
+				'--id',
+				harness.controlWatcherId,
+				'--tab',
+				String(conflictTab),
+				'--as',
+				'retry-bound',
+				'--json',
+			)
+			expect(JSON.parse(direct.stdout)).toMatchObject({ ok: false, error: { code: 'watcher_id_taken' } })
+			expect(await harness.evaluateInExtension<string>(`chrome.tabs.get(${conflictTab}).then(tab => tab.url)`)).toContain(conflictTicket.ticket)
+		} finally {
+			await closeTab(conflictTab)
+			await closeTab(tabId)
+		}
+	},
+	60_000,
+)
+
+liveTest(
 	'browser instance id and label survive a browser restart',
 	async () => {
 		const before = await harness.cliJson<BrowsersList>('ext', 'browsers', '--json')

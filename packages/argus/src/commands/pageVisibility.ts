@@ -1,15 +1,10 @@
-import {
-	VISIBILITY_POLICIES,
-	visibilityRequestSchema,
-	type ApiResult,
-	type ErrorResponse,
-	type VisibilityPolicy,
-	type VisibilityRequest,
-	type VisibilityResponse,
-} from '@vforsh/argus-core'
+import { visibilityRequestSchema, type VisibilityPolicy, type VisibilityRequest, type VisibilityResponse } from '@vforsh/argus-core'
 import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
 import { createOutput } from '../output/io.js'
-import { requestWatcherJson, writeErrorResponse, writeRequestError } from '../watchers/requestWatcher.js'
+import type { Output } from '../output/io.js'
+import { resolveWatcherOrExit, writeErrorResponse } from '../watchers/requestWatcher.js'
+import { formatError } from '../cli/parse.js'
+import { requestVisibility } from './visibility.js'
 
 /** Shared flags for `argus page show` / `argus page hide`. */
 export type PageVisibilityOptions = {
@@ -37,15 +32,7 @@ const visibilityRunner = defineWatcherCommand<PageVisibilityOptions, VisibilityR
 		timeoutMs: 5_000,
 	}),
 	schema: visibilityRequestSchema,
-	formatHuman: (data, { output, watcher, args: [action] }) => {
-		if (!data.attached) {
-			// Desired state is remembered in the watcher; it will apply on reattach.
-			const suffix = action === 'show' ? ' (will apply on reattach)' : ''
-			output.writeHuman(`page ${action} queued for ${watcher.id}${suffix}`)
-			return
-		}
-		output.writeHuman(`${data.state === 'shown' ? 'shown' : 'hidden'} ${watcher.id}`)
-	},
+	formatHuman: (data, { output, watcher, args: [action] }) => renderVisibility(data, watcher.id, action, output),
 })
 
 /** Policy-aware writes must verify that the watcher supports GET /visibility before mutating it. */
@@ -56,45 +43,36 @@ const visibilityAction = async (id: string | undefined, action: PageVisibilityAc
 	}
 
 	const output = createOutput({ ...options, json: options.json === true })
-	const result = await requestWatcherJson<ApiResult<VisibilityResponse>>({
-		id,
-		path: '/visibility',
-		method: 'GET',
-		timeoutMs: 5_000,
-		returnErrorResponse: true,
-	})
-	if (!result.ok) {
-		writeRequestError(result, output)
-		return
+	const resolved = await resolveWatcherOrExit({ id }, output)
+	if (!resolved) return
+	try {
+		const data = await requestVisibility(resolved.watcher, {
+			action,
+			policy: options.policy,
+			...(options.activate === false ? { activate: false } : {}),
+		})
+		if (!data.ok) {
+			writeErrorResponse(data, output)
+			return
+		}
+		if (output.json) {
+			output.writeJson(data)
+			return
+		}
+		renderVisibility(data, resolved.watcher.id, action, output)
+	} catch (error) {
+		writeErrorResponse({ ok: false, error: { message: formatError(error) } }, output)
 	}
-
-	if (!isVisibilityStatusResponse(result.data)) {
-		writeErrorResponse(unsupportedVisibilityResponse(result.watcher.id), output)
-		return
-	}
-
-	// Use the resolved watcher id for both calls so an omitted id or a registry alias cannot drift
-	// between the compatibility check and the mutation.
-	await visibilityRunner(result.watcher.id, action, options)
 }
 
-const isVisibilityStatusResponse = (value: unknown): value is VisibilityResponse => {
-	if (value == null || typeof value !== 'object' || (value as { ok?: unknown }).ok !== true) return false
-	const response = value as { attached?: unknown; state?: unknown; policy?: unknown }
-	return (
-		typeof response.attached === 'boolean' &&
-		(response.state === 'shown' || response.state === 'default') &&
-		VISIBILITY_POLICIES.includes(response.policy as VisibilityPolicy)
-	)
+const renderVisibility = (data: VisibilityResponse, watcherId: string, action: PageVisibilityAction, output: Output): void => {
+	if (!data.attached) {
+		const suffix = action === 'show' ? ' (will apply on reattach)' : ''
+		output.writeHuman(`page ${action} queued for ${watcherId}${suffix}`)
+		return
+	}
+	output.writeHuman(`${data.state === 'shown' ? 'shown' : 'hidden'} ${watcherId}`)
 }
-
-const unsupportedVisibilityResponse = (watcherId: string): ErrorResponse => ({
-	ok: false,
-	error: {
-		code: 'not_available',
-		message: `Watcher ${watcherId} does not support visibility policy checks. Restart or update the watcher, then retry.`,
-	},
-})
 
 /** `argus page visibility <id>` — read the desired lock and policy without mutating state. */
 export const runPageVisibilityStatus = defineWatcherCommand<PageVisibilityStatusOptions, VisibilityResponse>({

@@ -61,9 +61,12 @@ argus ext bind <ticket> --as max --label codex --visibility background --json
 ```
 
 - Searches every live control; exactly one tab whose URL carries the ticket is bound. Several → `ambiguous_tab` (never the first); none → `not_found` with `searched` and `unreachable` controls (unreachable means unknown, not absent).
-- Tickets: ~60s, single-use, stored in `$ARGUS_HOME/bind-tickets.json`. Spent only on success; a failed bind can be retried with the same ticket. `bind_ticket_used` / `bind_ticket_expired` otherwise.
+- Tickets: ~60s, single-use, stored in `$ARGUS_HOME/bind-tickets.json`. Spent only on success; a failed bind can be retried with the same ticket before expiry, including after navigation removes the URL locator. An exclusive claim rejects concurrent attempts with `bind_ticket_used`; a crashed CLI's claim can be reclaimed after its PID exits. TTL is never extended by retries.
+- Before navigation, bind persists the exact control run, browser instance, tab, watcher run, and progress. Retry verifies those identities and skips a completed navigation. A lost navigation response may require repeating navigation on that same watcher. Closing/replacing the tab or restarting/replacing either watcher requires a new ticket; bind never follows a reused watcher name (`registration_conflict` for identity mismatches).
+- `prepare` probes live controls for the actual HTTP bind page and chooses a supported host; `ownerId` and version strings do not prove support. No capable host → `not_available` with upgrade/reload guidance.
 - Idempotent: a tab already attached reuses its watcher (`reused: true`); nothing unrelated is detached. A different `--as` than the tab's watcher fails.
-- `--visibility foreground|background` applies a shown lock in the same call; result `visibility` reports it (`default` when none).
+- `--visibility foreground|background` applies a shown lock in the same call; result `visibility` reports it (`default` when none). Like `page show --policy`, it validates GET `/visibility` before a policy mutation; unsupported hosts fail with `not_available` without POST/foreground fallback.
+- Attach errors preserve the canonical `{ ok: false, error: { message, code? } }` envelope, including `watcher_id_taken` and `tab_owned_by_other_debugger` across bind/use/show/attach flows.
 - `--label` records the bound browser instance under that label (the bind proves which browser the agent drives).
 - Closing the tab releases its watcher. Keep the agent's tab handle (and hand it off) when the tab must outlive the turn.
 

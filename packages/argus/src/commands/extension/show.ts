@@ -5,7 +5,7 @@ import { createOutput } from '../../output/io.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
 import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
-import { attachTab, waitForTabWatcher, type WatcherResolutionResult } from './tabAttach.js'
+import { attachResolvedExtensionTabWatcher } from './tabWatcher.js'
 import {
 	fetchExtensionTabs,
 	formatExtensionTabLine,
@@ -32,7 +32,6 @@ type ExtensionShowConfig = {
 }
 
 type TabResolutionFailure = Exclude<TabResolutionResult, { ok: true }>
-type WatcherResolutionFailure = Exclude<WatcherResolutionResult, { ok: true }>
 
 export const runExtensionShow = async (id: string | undefined, options: ExtensionShowOptions, config: ExtensionShowConfig = {}): Promise<void> => {
 	const output = createOutput(options)
@@ -84,36 +83,9 @@ export const runExtensionShow = async (id: string | undefined, options: Extensio
 		return
 	}
 
-	const tab = tabResult.tab
-	if (options.as && tab.attached && tab.watcherId && tab.watcherId !== options.as) {
-		writeFailure(output, options, `Tab ${tab.tabId} is already attached as ${tab.watcherId}. Detach it before re-attaching as ${options.as}.`, 2)
-		return
-	}
-
-	let attachedTab = tab
-	let attachedWatcherId = tab.watcherId
-	if (!tab.attached) {
-		const attached = await attachTab(control.watcher, tab, { watcherId: options.as })
-		if (!attached.ok) {
-			writeFailure(output, options, attached.error, 1)
-			return
-		}
-		attachedTab = attached.tab
-		attachedWatcherId = attached.watcherId
-	}
-
-	const watcherResult = await waitForTabWatcher(
-		control.watcher,
-		selector.selector,
-		{ ...attachedTab, attached: true },
-		attachedWatcherId ?? options.as,
-	)
-	if (!watcherResult.ok) {
-		writeWatcherFailure(output, options, watcherResult)
-		return
-	}
-
-	await showWatcher(watcherResult.watcher, watcherResult.tab, output, options)
+	const bound = await attachResolvedExtensionTabWatcher(control.watcher, tabResult.tab, options, output)
+	if (!bound) return
+	await showWatcher(bound.watcher, bound.tab, output, options)
 }
 
 export const showWatcher = async (
@@ -160,15 +132,6 @@ export const showWatcher = async (
 
 const writeTabFailure = (output: ReturnType<typeof createOutput>, options: ExtensionShowOptions, result: TabResolutionFailure): void => {
 	writeFailure(output, options, result.reason, result.exitCode, { matches: result.matches ?? [] })
-}
-
-const writeWatcherFailure = (output: ReturnType<typeof createOutput>, options: ExtensionShowOptions, result: WatcherResolutionFailure): void => {
-	writeFailure(output, options, result.reason, result.exitCode, {
-		matches: result.matches?.map((entry) => ({
-			watcherId: entry.watcher.id,
-			target: entry.status.target,
-		})),
-	})
 }
 
 const writeFailure = (

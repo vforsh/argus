@@ -57,6 +57,8 @@ argus ext tabs --browser codex --json                    # later: select that br
 
 `bind` searches every live browser, attaches (or reuses the tab's watcher: `reused: true`), navigates to the destination, and waits for the debugger target. `targetReady` is debugger readiness, not app health. Failures: `bind_ticket_expired`, `bind_ticket_used`, `ambiguous_tab` (ticket open in several tabs), `not_found` (lists searched and unreachable controls). Closing the tab releases its watcher. `argus ext browsers` lists instances (persistent `instanceId`, label, control, versions); `ext browsers label <instanceId> <label>` labels one manually.
 
+Failed binds can resume with the same ticket before expiry, even after navigation removed its URL locator. Retry keeps the selected browser/tab/watcher run and skips completed navigation; an owner/endpoint replacement fails with `registration_conflict`. Concurrent attempts return `bind_ticket_used`. `prepare` probes the real bind page; old hosts without it return `not_available`. Background visibility requires policy support and never falls back to foreground activation. Attach failures retain codes such as `watcher_id_taken` and `tab_owned_by_other_debugger`.
+
 Embedded app: `argus ext use --url portal.example --as app --iframe-url game.example`; later switch with `argus ext select app --iframe-url … | --iframe-title … | --page`. Commands then run inside the selected iframe (eval, DOM, click, screenshot, `net --scope selected`). Reload stays tab-scoped; a selected iframe that is missing waits 3s then fails `extension_frame_not_ready` instead of silently using the host page.
 
 Tab stuck in background or booting: `argus ext show app` then `argus reload app`.

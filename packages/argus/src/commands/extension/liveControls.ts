@@ -71,7 +71,7 @@ export const probeControl = async (watcher: WatcherRecord, options: { browser?: 
 		return { kind: 'live', control: { watcher, watcherVersion, diagnostics: null } }
 	}
 
-	const diagnostics = await fetchDiagnostics(watcher)
+	const diagnostics = await fetchControlDiagnostics(watcher)
 	if (role == null && !diagnostics) {
 		// An older host's tab watcher answers /status but not the control-only diagnostics route.
 		return { kind: 'not_control' }
@@ -80,7 +80,7 @@ export const probeControl = async (watcher: WatcherRecord, options: { browser?: 
 }
 
 /** Diagnostics, or `null` when the route fails: the control answered, but its extension bridge may be down. */
-const fetchDiagnostics = async (watcher: WatcherRecord): Promise<ExtensionDiagnosticsResponse | null> => {
+export const fetchControlDiagnostics = async (watcher: WatcherRecord): Promise<ExtensionDiagnosticsResponse | null> => {
 	try {
 		const response = await fetchWatcherJson<ApiResult<ExtensionDiagnosticsResponse>>(watcher, {
 			path: '/extension/diagnostics',

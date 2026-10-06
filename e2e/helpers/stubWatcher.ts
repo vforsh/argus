@@ -13,7 +13,7 @@ export type StubCall = {
 }
 
 /** Canned reply for a stub route. A non-2xx `status` exercises the watcher-error path. */
-export type StubReply = { status?: number; payload: unknown }
+export type StubReply = { status?: number; delayMs?: number } & ({ payload: unknown } | { text: string; contentType: string })
 
 /** Route table keyed by `"<METHOD> <path>"`, e.g. `"POST /eval"`. */
 export type StubRoutes = Record<string, StubReply | ((call: StubCall) => StubReply)>
@@ -67,8 +67,12 @@ export const startStubWatcher = async (routes: StubRoutes, watcherId = 'stub'): 
 			}
 
 			const reply = typeof route === 'function' ? route(call) : route
-			res.writeHead(reply.status ?? 200, { 'content-type': 'application/json' })
-			res.end(JSON.stringify(reply.payload))
+			const send = () => {
+				res.writeHead(reply.status ?? 200, { 'content-type': 'payload' in reply ? 'application/json' : reply.contentType })
+				res.end('payload' in reply ? JSON.stringify(reply.payload) : reply.text)
+			}
+			if (reply.delayMs) setTimeout(send, reply.delayMs)
+			else send()
 		})
 	})
 

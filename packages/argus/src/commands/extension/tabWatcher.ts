@@ -31,7 +31,6 @@ export type ExtensionTabWatcherResult = {
 }
 
 type TabActionFailure = Exclude<TabResolutionResult, { ok: true }> | Exclude<SelectorResult, { ok: true }>
-type ActiveTabResult = { ok: true; tab: ExtensionBrowserTab; watcherId?: string } | { ok: false; error: string }
 
 export const resolveOrAttachExtensionTabWatcher = async (
 	options: ExtensionTabWatcherOptions,
@@ -40,13 +39,13 @@ export const resolveOrAttachExtensionTabWatcher = async (
 ): Promise<ExtensionTabWatcherResult | null> => {
 	const resolved = await resolveExtensionWatcher(options)
 	if (!resolved.ok) {
-		writeResolveFailure(output, options, resolved)
+		emitResolveFailure(output, resolved)
 		return null
 	}
 
 	const selector = parseTabSelector(options, config.missingSelectorReason)
 	if (!selector.ok) {
-		writeTabFailure(output, options, selector)
+		writeTabFailure(output, selector)
 		return null
 	}
 
@@ -58,58 +57,53 @@ export const resolveOrAttachExtensionTabWatcher = async (
 
 	const tabResult = resolveTab(tabs.tabs, selector.selector)
 	if (!tabResult.ok) {
-		writeTabFailure(output, options, tabResult)
+		writeTabFailure(output, tabResult)
 		return null
 	}
 
-	const tab = tabResult.tab
+	return attachResolvedExtensionTabWatcher(resolved.watcher, tabResult.tab, options, output)
+}
+
+/** Attach/reuse an already resolved control and tab without re-resolving their names or selectors. */
+export const attachResolvedExtensionTabWatcher = async (
+	controlWatcher: WatcherRecord,
+	tab: ExtensionBrowserTab,
+	options: Pick<ExtensionTabWatcherOptions, 'as' | 'json'>,
+	output: Output,
+): Promise<ExtensionTabWatcherResult | null> => {
 	if (options.as && tab.attached && tab.watcherId && tab.watcherId !== options.as) {
 		writeFailure(output, options, `Tab ${tab.tabId} is already attached as ${tab.watcherId}. Detach it before re-attaching as ${options.as}.`, 2)
 		return null
 	}
 
-	const activeTab = await ensureTabAttached(resolved.watcher, tab, options.as)
+	const activeTab = tab.attached
+		? { ok: true as const, tab, watcherId: tab.watcherId }
+		: await attachTab(controlWatcher, tab, { watcherId: options.as })
 	if (!activeTab.ok) {
-		writeFailure(output, options, activeTab.error, 1)
+		emitFailure(output, { error: activeTab })
 		return null
 	}
 
 	const watcher = await waitForTabWatcher(
-		resolved.watcher,
+		controlWatcher,
 		{ kind: 'tab', tabId: activeTab.tab.tabId },
 		{ ...activeTab.tab, attached: true },
 		activeTab.watcherId ?? options.as,
 	)
 	if (!watcher.ok) {
-		writeFailure(output, options, watcher.reason, watcher.exitCode)
+		emitFailure(output, { error: watcher.error ?? watcher.reason, exitCode: watcher.exitCode })
 		return null
 	}
 
 	return {
-		controlWatcher: resolved.watcher,
+		controlWatcher,
 		watcher: watcher.watcher,
 		tab: watcher.tab,
 		status: watcher.status,
 	}
 }
 
-const ensureTabAttached = async (controlWatcher: WatcherRecord, tab: ExtensionBrowserTab, watcherId?: string): Promise<ActiveTabResult> => {
-	if (tab.attached) {
-		return { ok: true, tab, watcherId: tab.watcherId }
-	}
-
-	return attachTab(controlWatcher, tab, { watcherId })
-}
-
-const writeResolveFailure = (
-	output: Output,
-	_options: ExtensionTabWatcherOptions,
-	resolved: Exclude<Awaited<ReturnType<typeof resolveExtensionWatcher>>, { ok: true }>,
-): void => {
-	emitResolveFailure(output, resolved)
-}
-
-const writeTabFailure = (output: Output, _options: ExtensionTabWatcherOptions, result: TabActionFailure): void => {
+const writeTabFailure = (output: Output, result: TabActionFailure): void => {
 	const matches = 'matches' in result ? (result.matches ?? []) : []
 	emitFailure(output, {
 		error: result.reason,

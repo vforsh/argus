@@ -1,23 +1,26 @@
-import type {
-	ApiResult,
-	ExtensionBrowserTab,
-	NavigateResponse,
-	StatusResponse,
-	VisibilityPolicy,
-	VisibilityResponse,
-	WatcherRecord,
-} from '@vforsh/argus-core'
+import type { ApiResult, NavigateResponse, VisibilityPolicy, ErrorResponse, WatcherRecord } from '@vforsh/argus-core'
 import { DEFAULT_NAVIGATION_TIMEOUT_MS, delay, isBindTicket } from '@vforsh/argus-core'
 import { formatError } from '../../cli/parse.js'
 import { createOutput, type Output } from '../../output/io.js'
 import { pruneRegistry } from '../../registry.js'
 import { buildWatcherUrl, fetchWatcherJson } from '../../watchers/requestWatcher.js'
-import { claimBindTicket, createBindTicket, releaseBindTicket, type BindTicket } from './bindTickets.js'
+import {
+	checkpointBindTicket,
+	claimBindTicket,
+	completeBindTicket,
+	createBindTicket,
+	releaseBindTicket,
+	type BindCheckpoint,
+	type BindTicket,
+} from './bindTickets.js'
+import { findBindPageServer } from './bindPageServer.js'
+import { findTicketTab, verifyBindCheckpoint, verifyBindControl } from './bindTarget.js'
 import { readBrowserLabels, setBrowserLabel } from './browserLabels.js'
 import { emitFailure } from './failures.js'
-import { getBrowserInstanceId, probeControls, type LiveControl, type UnreachableControl } from './liveControls.js'
-import { fetchExtensionTabs } from './tabSelection.js'
-import { resolveOrAttachExtensionTabWatcher } from './tabWatcher.js'
+import { getBrowserInstanceId, probeControls } from './liveControls.js'
+import { attachResolvedExtensionTabWatcher } from './tabWatcher.js'
+import { readPinnedWatcherStatus } from './watcherIdentity.js'
+import { requestVisibility } from '../visibility.js'
 
 /**
  * `argus ext bind prepare` / `argus ext bind <ticket>`: bind exactly the tab an agent opened,
@@ -38,16 +41,15 @@ export const runExtensionBindPrepare = async (options: ExtensionBindPrepareOptio
 		return
 	}
 
-	// Any live control can serve the static page: plain HTTP on 127.0.0.1, reachable from every local
-	// browser. Hosts that predate registry ownership (no `ownerId`) also predate the /bind route.
 	const { live } = await probeControls(Object.values((await pruneRegistry()).watchers))
-	const server = live.find((control) => control.watcher.ownerId != null)?.watcher
+	const server = await findBindPageServer(live)
 	if (!server) {
 		emitFailure(output, {
 			error:
 				live.length > 0
-					? 'Live extension controls run an older native host without the bind page. Reload the extension at chrome://extensions or restart the browser.'
+					? 'No live extension control serves a supported bind page. Update the native host, then reload the extension at chrome://extensions or restart the browser.'
 					: 'No live extension control watcher to serve the bind page. Reload the extension after `argus extension setup`.',
+			code: 'not_available',
 			exitCode: 2,
 		})
 		return
@@ -97,7 +99,7 @@ export type ExtensionBindResult = {
 	control: { id: string; pid: number }
 	browser: { instanceId: string | null; label: string | null }
 	attached: true
-	/** True when the tab already had a watcher; binding reused it instead of attaching another. */
+	/** True when the first attempt found an existing watcher; retained when that binding resumes. */
 	reused: boolean
 	targetReady: boolean | null
 	/** `foreground`/`background` while a shown lock is held, else `default`. */
@@ -132,13 +134,15 @@ export const runExtensionBind = async (ticket: string, options: ExtensionBindOpt
 		return
 	}
 
-	const result = await bindClaimedTicket(claim.ticket, { ...options, visibility }, output).catch((error: unknown) => {
+	let result: ExtensionBindResult | null = null
+	try {
+		result = await bindClaimedTicket(claim.ticket, claim.claimId, { ...options, visibility }, output)
+		if (!result) return
+	} catch (error) {
 		emitFailure(output, { error: `Bind failed: ${formatError(error)}` })
-		return null
-	})
-	if (!result) {
-		await releaseBindTicket(ticket)
 		return
+	} finally {
+		if (!result) await releaseBindTicket(ticket, claim.claimId)
 	}
 
 	if (options.json) {
@@ -155,7 +159,67 @@ const isVisibilityChoice = (value: string): value is VisibilityPolicy => (VISIBI
 type BindInput = Omit<ExtensionBindOptions, 'visibility'> & { visibility?: VisibilityPolicy }
 
 /** @returns The result, or `null` after reporting a failure. */
-const bindClaimedTicket = async (ticket: BindTicket, options: BindInput, output: Output): Promise<ExtensionBindResult | null> => {
+const bindClaimedTicket = async (ticket: BindTicket, claimId: string, options: BindInput, output: Output): Promise<ExtensionBindResult | null> => {
+	const binding = ticket.checkpoint ?? (await attachTicketTab(ticket, options, output))
+	if (!binding) return null
+	if (options.as && options.as !== binding.watcher.id) {
+		emitFailure(output, {
+			error: `This ticket is already bound to ${binding.watcher.id}; retry with that id.`,
+			code: 'invalid_request',
+			exitCode: 2,
+		})
+		return null
+	}
+	const identityError = await verifyBindCheckpoint(binding, ticket.checkpoint ? undefined : ticket.ticket)
+	if (identityError) {
+		emitFailure(output, { error: identityError })
+		return null
+	}
+	// Write-ahead checkpoint: even a lost navigation response or a crashed CLI can resume this tab.
+	await checkpointBindTicket(ticket.ticket, claimId, binding)
+	if (binding.navigatedUrl == null) {
+		const navigated = await navigateTo(binding.watcher, ticket.destination)
+		if (!navigated.ok) {
+			emitFailure(output, { error: navigated })
+			return null
+		}
+		binding.navigatedUrl = navigated.url
+		await checkpointBindTicket(ticket.ticket, claimId, binding)
+	}
+	const visibilityIdentityError = await verifyBindCheckpoint(binding)
+	if (visibilityIdentityError) {
+		emitFailure(output, { error: visibilityIdentityError })
+		return null
+	}
+	const visibility = await requestVisibility(binding.watcher, options.visibility ? { action: 'show', policy: options.visibility } : undefined)
+	if (!visibility.ok) {
+		emitFailure(output, { error: visibility })
+		return null
+	}
+	const instanceId = binding.browserInstanceId
+	if (options.label && !instanceId) {
+		emitFailure(output, { error: `${binding.control.id}'s extension reports no browser instance id, so --label can't be recorded.`, exitCode: 2 })
+		return null
+	}
+	if (options.label && instanceId) await setBrowserLabel(instanceId, options.label, 'bind')
+	const label = instanceId ? ((await readBrowserLabels())[instanceId]?.label ?? null) : null
+	const result: ExtensionBindResult = {
+		ok: true,
+		watcherId: binding.watcher.id,
+		tabId: binding.tab.tabId,
+		url: binding.navigatedUrl,
+		control: { id: binding.control.id, pid: binding.control.pid },
+		browser: { instanceId, label },
+		attached: true,
+		reused: binding.reused,
+		targetReady: await waitForTargetReady(binding.watcher),
+		visibility: visibility.state === 'shown' ? visibility.policy : 'default',
+	}
+	await completeBindTicket(ticket.ticket, claimId)
+	return result
+}
+
+const attachTicketTab = async (ticket: BindTicket, options: BindInput, output: Output): Promise<BindCheckpoint | null> => {
 	const located = await findTicketTab(ticket.ticket, output)
 	if (!located) {
 		return null
@@ -171,98 +235,29 @@ const bindClaimedTicket = async (ticket: BindTicket, options: BindInput, output:
 	}
 
 	const reused = tab.attached && tab.watcherId != null
-	const bound = await resolveOrAttachExtensionTabWatcher({ id: control.watcher.id, tab: tab.tabId, as: options.as, json: options.json }, output, {
-		missingSelectorReason: 'unreachable: the tab id is always given',
-	})
+	const identity = await verifyBindControl(control.watcher, instanceId)
+	if (!identity.ok) {
+		emitFailure(output, { error: identity })
+		return null
+	}
+	const bound = await attachResolvedExtensionTabWatcher(control.watcher, tab, options, output)
 	if (!bound) {
 		return null
 	}
 
-	const navigated = await navigateTo(bound.watcher, ticket.destination)
-	if (!navigated.ok) {
-		emitFailure(output, { error: `${bound.watcher.id}: failed to open ${ticket.destination} (${navigated.error})` })
-		return null
-	}
-	const visibility = await applyVisibility(bound.watcher, options.visibility)
-	if (!visibility.ok) {
-		emitFailure(output, { error: `${bound.watcher.id}: failed to set visibility (${visibility.error})` })
-		return null
-	}
-
-	if (options.label && instanceId) {
-		await setBrowserLabel(instanceId, options.label, 'bind')
-	}
-	const label = instanceId ? ((await readBrowserLabels())[instanceId]?.label ?? null) : null
 	return {
-		ok: true,
-		watcherId: bound.watcher.id,
-		tabId: tab.tabId,
-		url: navigated.url,
-		control: { id: control.watcher.id, pid: control.watcher.pid },
-		browser: { instanceId, label },
-		attached: true,
+		control: control.watcher,
+		browserInstanceId: instanceId,
+		tab: bound.tab,
+		watcher: bound.watcher,
 		reused,
-		targetReady: await waitForTargetReady(bound.watcher),
-		visibility: visibility.value,
 	}
 }
 
-/**
- * Ask every live control for the tab carrying the ticket. Exactly one match binds; none or several
- * fail. An unreachable control means its browser's tabs are unknown, not that the tab is missing,
- * so the error names them separately.
- */
-const findTicketTab = async (ticket: string, output: Output): Promise<{ control: LiveControl; tab: ExtensionBrowserTab } | null> => {
-	const probe = await probeControls(Object.values((await pruneRegistry()).watchers), { browser: true })
-	const searched = await Promise.all(
-		probe.live.map(async (control) => ({ control, tabs: await fetchExtensionTabs(control.watcher, { kind: 'query', url: ticket }) })),
-	)
-
-	const unreachable: UnreachableControl[] = [...probe.unreachable]
-	const matches: Array<{ control: LiveControl; tab: ExtensionBrowserTab }> = []
-	for (const { control, tabs } of searched) {
-		if (!tabs.ok) {
-			unreachable.push({ watcher: control.watcher, error: tabs.error })
-			continue
-		}
-		matches.push(...tabs.tabs.map((tab) => ({ control, tab })))
-	}
-
-	if (matches.length === 1) {
-		return matches[0]
-	}
-
-	const answered = searched.filter(({ tabs }) => tabs.ok).map(({ control }) => control.watcher.id)
-	const details = {
-		searched: answered,
-		unreachable: unreachable.map(({ watcher, error }) => ({ id: watcher.id, error })),
-		matches: matches.map(({ control, tab }) => ({ controlId: control.watcher.id, tabId: tab.tabId, url: tab.url })),
-	}
-	if (matches.length > 1) {
-		emitFailure(output, {
-			error: `${matches.length} tabs carry ticket ${ticket}; refusing to pick one. Close the extra tabs, or prepare a new ticket and open it once.`,
-			code: 'ambiguous_tab',
-			exitCode: 2,
-			hints: details.matches.map((match) => `  ${match.controlId} tab ${match.tabId}: ${match.url}`),
-			details,
-		})
-		return null
-	}
-
-	const unknown = unreachable.length > 0 ? ` Unreachable, so their tabs are unknown: ${unreachable.map(describeUnreachable).join('; ')}.` : ''
-	emitFailure(output, {
-		error: `No tab's URL contains ticket ${ticket}. Searched: ${answered.length > 0 ? answered.join(', ') : 'no live controls'}.${unknown} Open the bindUrl first.`,
-		code: 'not_found',
-		exitCode: 2,
-		details,
-	})
-	return null
-}
-
-const describeUnreachable = ({ watcher, error }: UnreachableControl): string => `${watcher.id} (${error})`
-
-const navigateTo = async (watcher: WatcherRecord, url: string): Promise<{ ok: true; url: string } | { ok: false; error: string }> => {
+const navigateTo = async (watcher: WatcherRecord, url: string): Promise<ApiResult<NavigateResponse>> => {
 	try {
+		const identity = await readPinnedWatcherStatus(watcher)
+		if (!identity.ok) return identity
 		const response = await fetchWatcherJson<ApiResult<NavigateResponse>>(watcher, {
 			path: '/navigate',
 			method: 'POST',
@@ -270,30 +265,9 @@ const navigateTo = async (watcher: WatcherRecord, url: string): Promise<{ ok: tr
 			timeoutMs: DEFAULT_NAVIGATION_TIMEOUT_MS + 5_000,
 			returnErrorResponse: true,
 		})
-		return response.ok ? { ok: true, url: response.url } : { ok: false, error: response.error.message }
+		return response
 	} catch (error) {
-		return { ok: false, error: formatError(error) }
-	}
-}
-
-/** Apply `--visibility` (a shown lock with that policy), or just report the current state. */
-const applyVisibility = async (
-	watcher: WatcherRecord,
-	policy: VisibilityPolicy | undefined,
-): Promise<{ ok: true; value: ExtensionBindResult['visibility'] } | { ok: false; error: string }> => {
-	try {
-		const response = await fetchWatcherJson<ApiResult<VisibilityResponse>>(watcher, {
-			path: '/visibility',
-			...(policy ? { method: 'POST' as const, body: { action: 'show', policy } } : {}),
-			timeoutMs: 5_000,
-			returnErrorResponse: true,
-		})
-		if (!response.ok) {
-			return { ok: false, error: response.error.message }
-		}
-		return { ok: true, value: response.state === 'shown' ? response.policy : 'default' }
-	} catch (error) {
-		return { ok: false, error: formatError(error) }
+		return { ok: false, error: { message: `${watcher.id}: failed to open ${url} (${formatError(error)})` } } satisfies ErrorResponse
 	}
 }
 
@@ -307,14 +281,14 @@ const waitForTargetReady = async (watcher: WatcherRecord): Promise<boolean | nul
 	const deadline = Date.now() + TARGET_READY_TIMEOUT_MS
 	let last: boolean | null = null
 	while (Date.now() < deadline) {
-		try {
-			const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 1_500 })
+		const status = await readPinnedWatcherStatus(watcher)
+		if (status.ok) {
 			last = status.targetReady ?? null
 			if (last === true) {
 				return last
 			}
-		} catch {
-			// Transient while the tab navigates; retry until the deadline.
+		} else if (status.error.code === 'registration_conflict') {
+			return null
 		}
 		await delay(200)
 	}
