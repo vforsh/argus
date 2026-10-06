@@ -260,9 +260,9 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		watcherPort: record.port,
 		watcherPid: process.pid,
 	})
-	let heartbeat: { stop: () => void } | null = null
+	let heartbeat: { stop: () => Promise<void> } | null = null
 	shutdown.arm(async () => {
-		heartbeat?.stop()
+		await heartbeat?.stop()
 		indicator.stop()
 		if (cdpStatus.attached) {
 			logToPageConsole('detached (reason=watcher_stopped)')

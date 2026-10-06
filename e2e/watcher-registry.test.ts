@@ -13,6 +13,7 @@ import path from 'node:path'
 import type { ChildProcess } from 'node:child_process'
 import { delay, type RegistryV1 } from '@vforsh/argus-core'
 import { runCommandWithExit, spawnAndWait, stopProcess } from './helpers/process.js'
+import { startWatcher } from '../packages/argus-watcher/src/index.js'
 
 const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
 const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
@@ -121,4 +122,42 @@ test('an explicit id frees up once its previous owner exits', async () => {
 
 	const status = await runCommandWithExit('node', [BIN_PATH, 'watcher', 'status', 'reuse', '--json'], { env })
 	expect((JSON.parse(status.stdout) as { pid: number }).pid).toBe(second.proc.pid!)
+})
+
+test('close drains a heartbeat blocked on the registry lock while the owning PID stays alive', async () => {
+	const previousHome = process.env.ARGUS_HOME
+	const previousRegistry = process.env.ARGUS_REGISTRY_PATH
+	process.env.ARGUS_HOME = tempDir
+	process.env.ARGUS_REGISTRY_PATH = registryPath
+	const handle = await startWatcher({
+		id: 'close-race',
+		chrome: { host: '127.0.0.1', port: 1 },
+		heartbeatMs: 50,
+		pageIndicator: { enabled: false },
+	})
+	try {
+		await fs.writeFile(`${registryPath}.lock`, '')
+		const before = handle.watcher.updatedAt
+		const deadline = Date.now() + 2_000
+		while (handle.watcher.updatedAt === before && Date.now() < deadline) await delay(10)
+		expect(handle.watcher.updatedAt).toBeGreaterThan(before)
+		let closed = false
+		const closing = handle.close().then(() => {
+			closed = true
+		})
+		await delay(100)
+		expect(closed).toBe(false)
+		await fs.unlink(`${registryPath}.lock`)
+		await closing
+		expect((await readRegistryFile()).watchers[handle.watcher.id]).toBeUndefined()
+		await delay(250)
+		expect((await readRegistryFile()).watchers[handle.watcher.id]).toBeUndefined()
+	} finally {
+		await fs.rm(`${registryPath}.lock`, { force: true })
+		await handle.close()
+		if (previousHome == null) delete process.env.ARGUS_HOME
+		else process.env.ARGUS_HOME = previousHome
+		if (previousRegistry == null) delete process.env.ARGUS_REGISTRY_PATH
+		else process.env.ARGUS_REGISTRY_PATH = previousRegistry
+	}
 })

@@ -141,32 +141,44 @@ export const releaseWatcherId = async (id: string, ownerId: string): Promise<voi
 
 /**
  * Refresh the registry entry until stopped. Never overwrites another owner: when one holds the
- * id, the heartbeat stops and reports it through `onConflict`.
+ * id, the heartbeat stops and reports it through `onConflict`. Writes never overlap; `stop`
+ * drains the in-flight write before shutdown can release the id.
  */
 export const startRegistryHeartbeat = (
 	getWatcher: () => WatcherRecord,
 	intervalMs: number,
 	onConflict: (holder: WatcherIdHolder) => void,
-): { stop: () => void } => {
+): { stop: () => Promise<void> } => {
+	let stopped = false
+	let pending: Promise<void> | null = null
 	const timer = setInterval(() => {
+		if (stopped || pending) return
 		const watcher = getWatcher()
 		watcher.updatedAt = Date.now()
-		writeOwnedWatcher(watcher)
+		pending = writeOwnedWatcher({ ...watcher })
 			.then((holder) => {
 				if (!holder) {
 					return
 				}
 				clearInterval(timer)
+				stopped = true
 				onConflict(holder)
 			})
 			.catch((error: unknown) => {
 				// Lock contention or a transient FS error; the next tick retries.
 				console.error(`[ArgusWatcher] Registry heartbeat failed for ${watcher.id}:`, error)
 			})
+			.finally(() => {
+				pending = null
+			})
 	}, intervalMs)
 
 	return {
-		stop: () => clearInterval(timer),
+		stop: async () => {
+			stopped = true
+			clearInterval(timer)
+			await pending
+		},
 	}
 }
 
