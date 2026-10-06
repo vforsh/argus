@@ -100,7 +100,13 @@ const formatResultPayload = (response: EvalResponse, json: boolean): string => {
 		return `Exception: ${response.exception.text}${details}\n`
 	}
 
-	return `${previewStringify(response.result)}\n`
+	return `${formatEvalValue(response.result)}\n`
+}
+
+/** Format a serialized eval value without truncating nested objects, arrays, or strings. */
+export const formatEvalValue = (value: unknown): string => {
+	if (typeof value === 'string') return value
+	return JSON.stringify(value) ?? String(value)
 }
 
 const writeResultFile = async (filePath: string, payload: string): Promise<void> => {

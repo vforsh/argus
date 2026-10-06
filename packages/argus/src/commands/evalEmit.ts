@@ -1,7 +1,7 @@
 import type { EvalResponse } from '@vforsh/argus-core'
 import { previewStringify } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
-import { createEvalResultFileSink, type EvalResultFileOptions } from './evalResultOutput.js'
+import { createEvalResultFileSink, formatEvalValue, type EvalResultFileOptions } from './evalResultOutput.js'
 
 /**
  * Where an eval result goes: stdout/stderr, and optionally the `--out` file.
@@ -83,7 +83,7 @@ export const writeEvalSuccess = (response: EvalResponse, options: EvalEmitOption
 		return
 	}
 
-	output.writeHuman(previewStringify(response.result))
+	output.writeHuman(formatEvalValue(response.result))
 }
 
 /** Write an eval error to stdout/stderr only. */

@@ -19,6 +19,7 @@ const sharedEvalHeadOptions = (timeoutDescription: string): readonly ArgusComman
 
 /** Trailing input/args options shared verbatim between `eval` and `eval-until`. */
 const sharedEvalTailOptions: readonly ArgusCommandOption[] = [
+	{ flags: '--body', description: 'Evaluate an async function body (local variables, await, and return)' },
 	{ flags: '--expression <js>', description: 'Expression to evaluate (alternative to the positional expression)' },
 	{ flags: '-f, --file <path>', description: 'Read expression from a file' },
 	{ flags: '--bundle', description: 'Bundle --file and its resolved imports into one script before eval' },

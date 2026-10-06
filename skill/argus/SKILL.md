@@ -108,6 +108,8 @@ argus logs app --after "$c" --levels error,exception --json
 
 **Interact**: `click`, `drag`, `hover`, `fill`, `keydown`, `scroll-to`. Target with `--selector`, `--testid`, `--ref eN` (from `snapshot`/`locate`), or `--pos x,y`. `--all` allows multiple matches; `--text /regex/` filters by content; `--wait 5s` polls for the selector. `argus locate role app button --name Save --action click` finds and acts in one step.
 
+**Eval scripts**: `eval --file ./script.js --body` supports local declarations, `await`, and an explicit `return`; also works with inline/stdin input. Default eval keeps REPL completion values and top-level await. Successful output preserves full nested values; `--no-return-by-value` requests a preview. Canvas key handlers need a focusable canvas and `keydown --selector canvas`.
+
 **Multi-step suites**: write a bundled TypeScript scenario (`export default async function scenario(ctx)`) and run `argus eval app --file ./scenario.ts --arg level=3 --json`; `ctx` exposes screenshots, checkpoints, recordings, and log sessions. Many sequential commands from a harness: `argus session app` (JSONL over stdin, one process).
 
 ---

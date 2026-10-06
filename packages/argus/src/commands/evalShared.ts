@@ -12,6 +12,8 @@ import { readTextInput, selectTextInput, type TextInputSelection } from './input
 // ---------------------------------------------------------------------------
 
 type ExpressionSourceOptions = {
+	/** Treat input as an async function body, allowing return and isolating local declarations. */
+	body?: boolean
 	file?: string
 	stdin?: boolean
 	inject?: string
@@ -88,7 +90,8 @@ const resolveExpressionSource = async (
 	}
 
 	const injected = await prependInjectSource(source.expression, options.inject, output)
-	return injected == null ? null : { expression: injected, scenario: source.scenario }
+	if (injected == null) return null
+	return { expression: options.body ? `(async () => {\n${injected}\n})()` : injected, scenario: source.scenario }
 }
 
 const EXPRESSION_INPUT_NAMES = {
@@ -121,6 +124,10 @@ const resolveFileExpression = async (
 
 	if (!bundleDecision.shouldBundle) {
 		return { expression: fileContent }
+	}
+	if (options.body) {
+		output.writeWarn('--body cannot be combined with a bundled file. Return from the scenario default export instead.')
+		return null
 	}
 
 	const bundled = await bundleEvalEntry(filePath)
@@ -256,6 +263,8 @@ export const wrapExpressionWithArgs = (source: string, args: EvalArgMap): string
  * shared flag is added in one place instead of four.
  */
 export type EvalCommonOptions = {
+	/** Evaluate an async function body with local declarations and an explicit return value. */
+	body?: boolean
 	json?: boolean
 	await?: boolean
 	timeout?: string

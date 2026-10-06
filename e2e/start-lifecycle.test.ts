@@ -129,6 +129,28 @@ describe('combined Chrome + watcher lifecycle', () => {
 		expect(await evaluate(owner.id, 'document.title')).toBe('headless lifecycle')
 	}, 20_000)
 
+	test('repeated declarations, async script bodies, complete output, and explicit canvas input work', async () => {
+		const id = 'detached-node'
+		for (let i = 0; i < 2; i++) {
+			expect(await evaluate(id, 'const repeatable = 42; repeatable')).toBe(42)
+			expect(await evaluate(id, 'let repeatableLet = await Promise.resolve(43); repeatableLet')).toBe(43)
+		}
+		const nested = { a: { b: { c: { d: [1, 2, 3] } } } }
+		const file = path.join(tempDir, 'body.js')
+		await fs.writeFile(file, `const value = await Promise.resolve(${JSON.stringify(nested)}); return { ...value, input: args.input };`)
+		for (let i = 0; i < 2; i++) {
+			const { stdout } = await runCommand('bun', [BIN_PATH, 'eval', id, '--file', file, '--body', '--arg', 'input=ok'], { env })
+			expect(JSON.parse(stdout)).toEqual({ ...nested, input: 'ok' })
+		}
+		const { stdout: stdinOut } = await runCommand('bun', [BIN_PATH, 'eval', id, '--stdin', '--body', '--json'], {
+			env,
+			input: 'return await Promise.resolve(99);',
+		})
+		expect(JSON.parse(stdinOut).result).toBe(99)
+		await runCommand('bun', [BIN_PATH, 'keydown', id, '--code', 'KeyG', '--selector', 'canvas', '--json'], { env })
+		expect(await evaluate(id, 'canvasKeys')).toEqual(['KeyG'])
+	}, 20_000)
+
 	test('duplicate ids and invalid metrics fail without replacing the live session', async () => {
 		const duplicate = await runCommandWithExit(
 			'bun',

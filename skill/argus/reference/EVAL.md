@@ -8,6 +8,7 @@ argus eval app "await fetch('/ping').then(r => r.status)"          # top-level a
 argus eval app "document.title" --json
 argus eval app --expression "document.title"                       # same as positional
 argus eval app --file ./script.js
+argus eval app --file ./script.js --body            # async function body: await + return, local declarations
 argus eval app --file ./script.js --arg level=10 --arg mode=fast
 argus eval app --file ./script.js --args ./args.json               # JSON object → args; --arg overrides
 argus eval app "window.store.getState()" --inject ./debug-hooks.js # setup code runs first
@@ -17,20 +18,23 @@ argus eval app "document.title" --json --out ./result.json
 
 ## Behavior Flags
 
-| Flag                         | Effect                                                                                  |
-| ---------------------------- | --------------------------------------------------------------------------------------- |
-| `--timeout <duration>`       | Per-eval deadline enforced in the watcher (default 10s)                                 |
-| `--no-await`                 | Do not await returned promises                                                          |
-| `--no-return-by-value`       | Return a preview instead of a serialized value                                          |
-| `--no-fail-on-exception`     | Exit 0 even when the expression throws                                                  |
-| `--retry <n>`                | Retry failed evaluations                                                                |
-| `-q, --silent`               | Print only on error                                                                     |
-| `--inject <file>`            | Run this file before the expression                                                     |
-| `--bundle` / `--no-bundle`   | Force / skip bundling of `--file` (auto when the file has `import`/`export`)            |
-| `--arg k=v`, `--args <json>` | Frozen string `args` object visible to the script                                       |
-| `-o, --out <path>`           | Write result to file (polling appends NDJSON; `--rotate` writes one file per iteration) |
+| Flag                         | Effect                                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `--timeout <duration>`       | Per-eval deadline enforced in the watcher (default 10s)                                  |
+| `--no-await`                 | Do not await returned promises                                                           |
+| `--no-return-by-value`       | Return a preview instead of a serialized value                                           |
+| `--body`                     | Treat input as an async function body; use an explicit `return`, declarations stay local |
+| `--no-fail-on-exception`     | Exit 0 even when the expression throws                                                   |
+| `--retry <n>`                | Retry failed evaluations                                                                 |
+| `-q, --silent`               | Print only on error                                                                      |
+| `--inject <file>`            | Run this file before the expression                                                      |
+| `--bundle` / `--no-bundle`   | Force / skip bundling of `--file` (auto when the file has `import`/`export`)             |
+| `--arg k=v`, `--args <json>` | Frozen string `args` object visible to the script                                        |
+| `-o, --out <path>`           | Write result to file (polling appends NDJSON; `--rotate` writes one file per iteration)  |
 
 Timeouts name their layer. Only `cdp_timeout` (the expression itself was too slow) is fixed by a longer `--timeout`; `chrome_unreachable`, `cdp_target_replaced`, `cdp_renderer_unresponsive`, and `dialog_blocking` need their own recovery ([SKILL.md](../SKILL.md#error--next-command)).
+
+Default eval uses Chrome's REPL semantics: statement-list completion values, top-level `await`, and repeated REPL `const`/`let` declarations work. Declarations share the page's global scope; bindings created by the page itself follow normal JavaScript redeclaration rules. Use `--body` for isolated locals and scripts containing `return`, or wrap the input in an async IIFE. `--body` works with inline/file/stdin input and `--arg`; bundled scenarios return from their default export instead. Successful output preserves the full serialized value, including nested objects, arrays, and long strings; `--no-return-by-value` explicitly requests a preview.
 
 ## Args
 

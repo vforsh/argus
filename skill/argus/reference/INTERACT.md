@@ -45,6 +45,7 @@ Targets `input`, `textarea`, and `contenteditable`; fires `input`/`change` like 
 ```bash
 argus keydown app --key Enter
 argus keydown app --key a --selector "#input"        # focus first
+argus keydown app --code KeyG --selector "canvas"   # canvas-owned key handler; canvas must be focusable
 argus keydown app --code KeyG --print-event          # show resolved key/code/keyCode
 argus keydown app --code Backquote --shift           # dispatches key "~", code Backquote
 argus keydown app --key a --shift --ctrl             # or --modifiers shift,ctrl,alt,meta (--cmd = --meta)
@@ -53,6 +54,7 @@ argus keydown app --key a --shift --ctrl             # or --modifiers shift,ctrl
 - `--key` is `KeyboardEvent.key`, `--code` is `KeyboardEvent.code`; case-insensitive. Codes: `KeyA–Z`, `Digit0–9`, `F1–12`, `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `Space`, arrows, `Home/End/PageUp/PageDown/Insert`, US punctuation row (`Backquote`, `Minus`, `Equal`, `BracketLeft/Right`, `Backslash`, `Semicolon`, `Quote`, `Comma`, `Period`, `Slash`).
 - One `keyDown` + one `keyUp`, matching what real presses produce: printable keys (and `Enter`) carry text and fire `keypress`/`input`; non-printing keys go as `rawKeyDown`. `--key Enter` submits a focused form.
 - **Focus rule**: Chrome drops keys aimed at an unfocused page but still acks CDP. `keydown` therefore activates a hidden page first (same sticky lock as `page show`) and reports `activated: true`; release with `argus page hide app`. If activation fails it errors `target_not_focused` instead of lying.
+- **Element focus**: Without a selector, keys go to the current active element and bubble to its document/window. Use `--selector canvas` for handlers attached to a focusable canvas (`tabindex="0"`). `focused: false` means no element-focus operation was requested; `activated` reports page activation separately.
 
 ## Wait For Navigation
 
