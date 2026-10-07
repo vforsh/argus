@@ -13,4 +13,3 @@ build-packages = "bun run build:packages"
 
 [pre-merge]
 typecheck = "bun run typecheck"
-lint = "bun run lint:fix"

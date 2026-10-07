@@ -10,13 +10,13 @@
 
 - **Locality (order by call sequence)**: Declare functions/methods close to their callsites. Order them in call sequence (caller before callee) so readers can follow top-to-bottom. Keep helpers next to the primary method that uses them unless they’re widely reused.
 
-- **Plans (implementation/refactor)**: When the user asks for an implementation or refactor plan, always end the plan with a short “final checklist”. It must explicitly say to run `npm run typecheck` and `npm run lint` after implementation, and to fix any errors found (use `npm run lint:fix` when appropriate). Keep this checklist to 1–2 short sentences.
+- **Plans (implementation/refactor)**: When the user asks for an implementation or refactor plan, always end the plan with a short “final checklist”. It must explicitly say to run `npm run typecheck` and relevant integration/end-to-end checks after implementation, and to fix any errors found. Keep this checklist to 1–2 short sentences.
 
 - **Typechecking**: Use `npm run typecheck` for the full one-shot pass (CLI app + shared packages + extension + every test suite). Use `npm run typecheck:app`, `npm run typecheck:packages`, `npm run typecheck:extension`, or `npm run typecheck:tests` only for focused checks. `typecheck:tests` covers `e2e/`, `packages/*/test`, and `playground/` (the suites import its harness). Don't use `typecheck-dev` for "quick checks" (watch mode).
 
 - **Runtime & deps**: Bun is the runtime and package manager (`bun install`, `bun run`). Prefer Bun/Node built-ins over new deps. Add deps to the specific package that needs them, not root. Keep `argus-core` dependency-free.
 
-- **Code formatting**: Prettier runs on pre-commit via lint-staged. Config: tabs, no semicolons, single quotes, 150-char line width. Write in repo style; the hook handles edge cases. Linter: `npm run lint` (oxlint). Use `npm run lint:fix` for auto-fixable issues.
+- **Code style**: Use tabs, no semicolons, single quotes, and ~150-char lines. Follow the surrounding code; no automated formatter or source linter runs on commit.
 
 - **Skill docs**: `skill/argus/SKILL.md` is the AI-facing cheat sheet for the CLI. When adding or changing a command, update SKILL.md to match. Keep examples minimal and behavior-focused. Advanced topics go in `skill/argus/reference/`.
 
@@ -86,6 +86,8 @@
 
 - **Extending**: When adding new Argus commands or capabilities, add matching controls/structure to `playground/index.html` so they can be tested interactively. Keep the HTML self-contained (inline scripts, no build step).
 
+- **Sourcemap fixtures**: Don't reformat `playground/sourcemapped-app.js`, `playground/inline-mapped-app.js`, `playground/maps/`, or `playground/src/`. The committed source maps encode exact line/column positions in these files.
+
 ---
 
 ## Repo Tour (edit compass)
@@ -111,7 +113,7 @@
 
 ## Tests / Gate (exact commands)
 
-- **Quick**: `npm run lint` + `npm run typecheck`.
+- **Quick**: `npm run typecheck`.
 - **Focused**: `npm run test:playground` (browser) or `npm run test:unit` (`packages/*/test`, no browser, ~4s).
 - **Extension mode**: `npm run test:e2e:extension` — real Chromium, unpacked extension, real native hosts, all in a temp profile. Run it for any change to `packages/argus-extension` or the extension source in `argus-watcher`. Needs a Chrome for Testing/Chromium binary (branded Chrome 137+ ignores `--load-extension`); auto-found in the Playwright cache, else set `ARGUS_E2E_CHROME_BIN`. **It skips itself when no such binary exists** — a green run that printed a skip warning proves nothing. `ARGUS_E2E_HEADED=1` to watch it.
 - **Full**: `npm run test:e2e` — builds packages + extension, runs `test:unit`, then every `e2e/*.test.ts`.
