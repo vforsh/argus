@@ -20,3 +20,4 @@ cat patched.css | argus code edit inline-css://1 --id app
 - `code edit` live-patches **stylesheets** (`CSS.setStyleSheetText`). Editing JS is not supported on Chrome 145+ (V8 dropped `Debugger.setScriptSource`); use `argus eval` for runtime JS changes.
 - `code strings` favors signal over completeness; `--all` includes low-signal literals. Kinds: `url,key,identifier,message,other`.
 - `code grep` skips stale stylesheet handles with a stderr warning and still returns the rest. `deminify` falls back to the original source if formatting fails.
+- `deminify` loads runtime Prettier and only the JS or CSS parsers it needs. `grep --pretty` adds context without loading the formatter.

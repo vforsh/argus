@@ -1,9 +1,6 @@
 import { findTextPatternMatch, type CodeResourceType, type TextPattern } from '@vforsh/argus-core'
 import type { CodeGrepMatch } from '@vforsh/argus-core'
-import prettier from 'prettier/standalone'
-import babelPlugin from 'prettier/plugins/babel'
-import estreePlugin from 'prettier/plugins/estree'
-import postcssPlugin from 'prettier/plugins/postcss'
+import type { Plugin } from 'prettier'
 import type { PrettyCodeLine, PrettyCodeMatch, RuntimeSourceFormatResult } from './types.js'
 import { formatError } from '../cli/parse.js'
 
@@ -11,8 +8,12 @@ const PRETTY_CONTEXT_BEFORE = 1
 const PRETTY_CONTEXT_AFTER = 1
 const MAX_PRETTY_LINE_WIDTH = 160
 
-const PRETTIER_PLUGINS = [babelPlugin, estreePlugin, postcssPlugin]
+// Cache in-flight imports too; grep's snippet helpers must stay formatter-free.
+let prettierPromise: Promise<typeof import('prettier/standalone')> | undefined
+let scriptPluginsPromise: Promise<Plugin[]> | undefined
+let stylesheetPluginsPromise: Promise<Plugin[]> | undefined
 
+/** Format runtime JS/CSS with lazy, resource-specific parsers; return the original source on failure. */
 export const formatRuntimeSource = async (source: string, type: CodeResourceType): Promise<RuntimeSourceFormatResult> => {
 	const parser = getPrettierParser(type)
 	if (!parser) {
@@ -20,9 +21,10 @@ export const formatRuntimeSource = async (source: string, type: CodeResourceType
 	}
 
 	try {
+		const [prettier, plugins] = await Promise.all([prettierPromise ??= import('prettier/standalone'), loadPrettierPlugins(parser)])
 		const formatted = await prettier.format(source, {
 			parser,
-			plugins: PRETTIER_PLUGINS,
+			plugins,
 		})
 		return {
 			source: formatted,
@@ -35,6 +37,15 @@ export const formatRuntimeSource = async (source: string, type: CodeResourceType
 			error: formatError(error),
 		}
 	}
+}
+
+const loadPrettierPlugins = (parser: 'babel' | 'css'): Promise<Plugin[]> => {
+	if (parser === 'css') {
+		return stylesheetPluginsPromise ??= import('prettier/plugins/postcss').then((plugin) => [plugin.default])
+	}
+
+	return scriptPluginsPromise ??= Promise.all([import('prettier/plugins/babel'), import('prettier/plugins/estree')])
+		.then(([babel, estree]) => [babel.default, estree.default])
 }
 
 export const buildPrettyCodeMatches = (matches: CodeGrepMatch[], sourceByUrl: Map<string, string>, pattern: TextPattern): PrettyCodeMatch[] =>
