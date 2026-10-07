@@ -32,6 +32,8 @@ Argus lives in the gap between “open DevTools and click around” and “write
 
 ### Run from this repo
 
+Bun manages dependencies; builds and typechecks use the native TypeScript 7 compiler through `tsc`.
+
 ```bash
 bun install
 npm run build:packages

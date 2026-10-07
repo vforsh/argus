@@ -45,7 +45,7 @@
 		"oxlint": "1.38.0",
 		"playwright": "^1.57.0",
 		"prettier": "3.7.4",
-		"typescript": "5.9.3"
+		"typescript": "7.0.2"
 	},
 	"packageManager": "bun",
 	"version": "0.1.3"
