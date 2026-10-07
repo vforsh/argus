@@ -9,6 +9,7 @@ import type { ProtocolSchema } from '@vforsh/argus-core'
 import { formatProtocolValidationIssues } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
 import { createOutput } from '../output/io.js'
+import { setExitCode } from '../output/exitCode.js'
 import {
 	requestWatcherAction,
 	requestWatcherJson,
@@ -149,7 +150,7 @@ const SCHEMA_REJECTED = Symbol('schema-rejected')
 
 /**
  * Validate `plan.body` against an optional schema. On failure, write a warning,
- * set `process.exitCode = 2`, and return {@link SCHEMA_REJECTED} so the caller
+ * report exit code 2, and return {@link SCHEMA_REJECTED} so the caller
  * can early-exit. On success (or when no schema is provided), return the body
  * to send.
  */
@@ -164,6 +165,6 @@ const validateBody = <TBody>(
 	if (parsed.ok) return parsed.value
 
 	output.writeWarn(formatProtocolValidationIssues(parsed.issues))
-	process.exitCode = 2
+	setExitCode(2)
 	return SCHEMA_REJECTED
 }

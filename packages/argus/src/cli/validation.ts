@@ -1,4 +1,5 @@
 import { createOutput } from '../output/io.js'
+import { setExitCode } from '../output/exitCode.js'
 
 /**
  * Report a bad flag combination and set the usage exit code.
@@ -11,7 +12,7 @@ import { createOutput } from '../output/io.js'
  */
 export const usageError = (options: { json?: boolean }, message: string): false => {
 	createOutput(options).writeWarn(message)
-	process.exitCode = 2
+	setExitCode(2)
 	return false
 }
 

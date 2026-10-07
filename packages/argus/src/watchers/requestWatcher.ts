@@ -13,6 +13,7 @@ import {
 	shouldEvictWatcherOnFailure,
 } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
+import { setExitCode } from '../output/exitCode.js'
 import { fetchJson } from '../httpClient.js'
 import { formatWatcherLine } from '../output/format.js'
 import { invalidateWatcher, resolveWatcher } from './resolveWatcher.js'
@@ -90,7 +91,7 @@ export async function requestWatcherJson<T>(input: WatcherRequestInput): Promise
 // Resolve-only helper (for streaming / loop commands)
 // ---------------------------------------------------------------------------
 
-/** Resolve a watcher or write error + candidates to output and set exitCode. Returns the watcher or `null`. */
+/** Resolve a watcher or write error + candidates to output and report the exit code. Returns the watcher or `null`. */
 export async function resolveWatcherOrExit(input: { id?: string }, output: Output): Promise<{ watcher: WatcherRecord } | null> {
 	const resolved = await resolveWatcher(input)
 	if (!resolved.ok) {
@@ -104,7 +105,7 @@ export async function resolveWatcherOrExit(input: { id?: string }, output: Outpu
 // Error output
 // ---------------------------------------------------------------------------
 
-/** Write a request error (including any watcher candidates) to output and set process.exitCode. */
+/** Write a request error (including any watcher candidates) to output and report its exit code. */
 export function writeRequestError(result: WatcherRequestError, output: Output): void {
 	output.writeWarn(result.message)
 	if (result.candidates && result.candidates.length > 0) {
@@ -113,7 +114,7 @@ export function writeRequestError(result: WatcherRequestError, output: Output): 
 		}
 		output.writeWarn('Hint: run `argus list` to see all watchers.')
 	}
-	process.exitCode = result.exitCode
+	setExitCode(result.exitCode)
 }
 
 /** Write an ErrorResponse using JSON/stdout vs human/stderr conventions. */
@@ -123,7 +124,7 @@ export function writeErrorResponse(response: ErrorResponse, output: Output): voi
 	} else {
 		output.writeWarn(`Error: ${response.error.message}`)
 	}
-	process.exitCode = 1
+	setExitCode(1)
 }
 
 /**
@@ -164,5 +165,5 @@ function writeResolveError(resolved: { ok: false; error: string; exitCode: numbe
 		}
 		output.writeWarn('Hint: run `argus list` to see all watchers.')
 	}
-	process.exitCode = resolved.exitCode
+	setExitCode(resolved.exitCode)
 }
