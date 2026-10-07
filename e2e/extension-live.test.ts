@@ -10,10 +10,12 @@
  * 137+ ignores --load-extension).
  */
 import http from 'node:http'
+import path from 'node:path'
 import { readActiveRegistry, type LogsResponse } from '@vforsh/argus-core'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { ApiResult, EvalResponse, NavigateHistoryResponse, NavigateResponse, StatusResponse } from '@vforsh/argus-core'
 import { resolveTestChromeBin, startExtensionHarness, type ExtensionHarness } from './helpers/extensionHarness.js'
+import { startSession } from './helpers/session.js'
 
 const chromeBin = resolveTestChromeBin()
 const liveTest = chromeBin ? test : test.skip
@@ -323,3 +325,26 @@ liveTest('I: raw/final ingestion through the real extension bridge preserves ord
 		await new Promise<void>((resolve) => server.close(() => resolve()))
 	}
 }, STEP_TIMEOUT_MS)
+
+liveTest(
+	'J: session dialog controls overtake the in-flight eval that opened the dialog',
+	async () => {
+		const env = { ...process.env, ARGUS_HOME: path.dirname(harness.registryPath), ARGUS_REGISTRY_PATH: harness.registryPath }
+		const session = startSession(path.resolve('packages/argus/dist/bin.js'), [WATCHER_ID, '--request-timeout', '20s'], { env, cwd: process.cwd() })
+		try {
+			expect(await session.next()).toMatchObject({ type: 'ready', watcher: { id: WATCHER_ID } })
+			session.send({ id: 'eval', cmd: 'eval', args: { expression: "window.confirm('extension-confirm')" } })
+			session.send({ id: 'status', cmd: 'dialog status' })
+			session.send({ id: 'accept', cmd: 'dialog accept' })
+
+			const responses = [await session.next(), await session.next(), await session.next()]
+			expect(responses.map((response) => response.id)).toEqual(['status', 'accept', 'eval'])
+			expect(responses[0]).toMatchObject({ ok: true, result: { dialog: { type: 'confirm', message: 'extension-confirm' } } })
+			expect(responses[1]).toMatchObject({ ok: true, result: { action: 'accept' } })
+			expect(responses[2]).toMatchObject({ ok: true, result: { result: true } })
+		} finally {
+			await session.close(5_000)
+		}
+	},
+	STEP_TIMEOUT_MS,
+)

@@ -61,7 +61,14 @@ stdin: one JSON object per line. stdout: one JSON object per line, nothing else 
 
 ## Semantics
 
-- **Ordering**: strictly in submission order; pipelining is fine.
+- **Ordering**: submission order; pipelining is fine. Every request waits for all earlier requests, except dialog controls below. Match responses by `id`.
+- **Dialog controls** (`dialog status|accept|dismiss|prompt`): a click or eval that opens `alert`/`confirm`/`prompt` does not return until the dialog closes. A dialog control queued right behind it skips the wait as soon as the page shows a dialog, so its response arrives **before** the response of the request that opened the dialog. If no dialog opens, it waits its turn like any other request. It skips only the request currently running, never queued ones. Requests after the control still wait for it. Controls run one at a time.
+
+  ```json
+  {"id": 1, "cmd": "click", "args": {"selector": "#buy"}}
+  {"id": 2, "cmd": "dialog accept"}
+  ```
+  → response `2`, then `1`.
 - **Timeouts**: a request past its watchdog answers `session_request_timeout` and the session moves on; the abandoned command's later output is discarded.
 - **Error isolation**: malformed line / unknown command / failing command → `ok: false`, session stays up. Transport codes: `session_invalid_request`, `session_unknown_command`, `session_command_rejected`, `session_request_timeout`, `session_command_failed`. Watcher-side codes pass through unchanged.
 - **Watcher loss**: default fail-fast (probe after a failure, exit 1 if gone). `--reconnect` keeps serving after loss. Discovery is cached for at most 250ms (never beyond heartbeat TTL) and refreshed after failures; a subsequent request can use a restarted watcher’s new endpoint. Failed requests, including mutations with a lost response, are never replayed. Late failures only evict the same owner/start/endpoint they resolved.

@@ -82,3 +82,5 @@ argus dialog accept app                   # OK / Leave
 argus dialog dismiss app                  # Cancel / Stay
 argus dialog prompt app --text "value"    # accept a prompt with text; dialog_not_prompt otherwise
 ```
+
+A click or eval that opens a dialog does not return until the dialog closes. In `argus session`, queue the dialog command right behind it; it runs as soon as the dialog appears ([SESSION.md](./SESSION.md#semantics)).

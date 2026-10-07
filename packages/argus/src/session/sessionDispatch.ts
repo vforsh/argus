@@ -1,6 +1,7 @@
 import { CommanderError, type Command } from 'commander'
 import type { ErrorDetail, SessionRequest, SessionResponse } from '@vforsh/argus-core'
 import { formatError, isArgusErrorCode, parseDurationMs } from '@vforsh/argus-core'
+import { runWithExitCodeScope, type ExitCodeScope } from '../output/exitCode.js'
 import { buildSessionArgv } from './sessionArgv.js'
 import type { CapturedStdio, StdioCapture } from './stdioCapture.js'
 
@@ -14,6 +15,11 @@ export type SessionDispatchInput = {
 	watcherId: string
 	/** Watchdog applied when the request does not carry its own `timeout`. `0` disables it. */
 	defaultTimeoutMs: number
+	/**
+	 * Whether this request may reset and read `process.exitCode`. Only the session's serial lane
+	 * may: a dialog control runs beside it and relies on {@link runWithExitCodeScope} alone.
+	 */
+	ownsProcessExitCode: boolean
 }
 
 /**
@@ -33,21 +39,24 @@ export const dispatchSessionRequest = async (input: SessionDispatchInput): Promi
 	}
 
 	const sink: CapturedStdio = { stdout: [], stderr: [] }
-	process.exitCode = 0
+	const scope: ExitCodeScope = {}
+	if (input.ownsProcessExitCode) process.exitCode = 0
 
-	const running = input.capture.run(sink, async () => {
-		try {
-			await input.prepare?.()
-			const built = buildSessionArgv({ program: input.program, request, watcherId: input.watcherId })
-			if (!built.ok) {
-				return new CommanderError(2, built.code, built.message)
+	const running = input.capture.run(sink, () =>
+		runWithExitCodeScope(scope, async () => {
+			try {
+				await input.prepare?.()
+				const built = buildSessionArgv({ program: input.program, request, watcherId: input.watcherId })
+				if (!built.ok) {
+					return new CommanderError(2, built.code, built.message)
+				}
+				await input.program.parseAsync(built.argv, { from: 'user' })
+				return null
+			} catch (error) {
+				return error
 			}
-			await input.program.parseAsync(built.argv, { from: 'user' })
-			return null
-		} catch (error) {
-			return error
-		}
-	})
+		}),
+	)
 
 	const settled = await raceWithTimeout(running, timeoutMs)
 	const stderr = sink.stderr.join('')
@@ -58,9 +67,7 @@ export const dispatchSessionRequest = async (input: SessionDispatchInput): Promi
 		return respond.failure({ message: `Request timed out after ${timeoutMs}ms.`, code: 'session_request_timeout' }, 1, stderr)
 	}
 
-	// Commands report failure through `process.exitCode`; an untouched code means success.
-	const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0
-	process.exitCode = 0
+	const exitCode = takeExitCode(scope, input.ownsProcessExitCode)
 	const stdout = sink.stdout.join('')
 
 	if (settled.error) {
@@ -71,6 +78,20 @@ export const dispatchSessionRequest = async (input: SessionDispatchInput): Promi
 	}
 
 	return respond.success(stdout, stderr)
+}
+
+/**
+ * Read how the command reported failure; an untouched code means success.
+ *
+ * Shared plumbing reports into the request's scope; commands that still assign `process.exitCode`
+ * directly are only trusted on the lane that owns the global.
+ */
+const takeExitCode = (scope: ExitCodeScope, ownsProcessExitCode: boolean): number => {
+	if (!ownsProcessExitCode) return scope.exitCode ?? 0
+
+	const assigned = typeof process.exitCode === 'number' ? process.exitCode : 0
+	process.exitCode = 0
+	return scope.exitCode ?? assigned
 }
 
 /** `--help` and `--version` reach us as a zero-exit Commander throw; both are legitimate answers. */

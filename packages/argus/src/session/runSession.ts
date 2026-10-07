@@ -1,18 +1,24 @@
 import readline from 'node:readline'
 import type { Command } from 'commander'
-import type { SessionOutputLine, SessionReadyEvent, SessionRequest, SessionRequestId, SessionResponse, WatcherRecord } from '@vforsh/argus-core'
+import type {
+	DialogStatusResponse, SessionOutputLine, SessionReadyEvent, SessionRequest, SessionRequestId, SessionResponse, WatcherRecord,
+} from '@vforsh/argus-core'
 import {
-	SESSION_PROTOCOL_VERSION, SESSION_REQUEST_SCHEMA, formatProtocolValidationIssues, parseDurationMs, createWatcherResolver, type WatcherResolver,
+	SESSION_PROTOCOL_VERSION, SESSION_REQUEST_SCHEMA, formatError, formatProtocolValidationIssues, parseDurationMs, createWatcherResolver, type WatcherResolver,
 } from '@vforsh/argus-core'
 import packageJson from '../../package.json' with { type: 'json' }
+import { defineCommands } from '../cli/defineCommand.js'
 import { createProgram } from '../cli/program.js'
+import { dialogCommands } from '../cli/register/dialogCommands.js'
 import { coreProgramRegistrars } from '../cli/register/index.js'
 import { createPluginLoader, type PluginLoader } from '../cli/plugins/registerPlugins.js'
 import { usageError } from '../cli/validation.js'
 import { createOutput, routeConsoleToStderr, type Output } from '../output/io.js'
 import { fetchWatcherJson, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { resolveWatcher, withWatcherResolver } from '../watchers/resolveWatcher.js'
+import { resolveSessionCommand } from './sessionArgv.js'
 import { dispatchSessionRequest } from './sessionDispatch.js'
+import { createSessionScheduler } from './sessionScheduler.js'
 import { installStdioCapture } from './stdioCapture.js'
 
 export type RunSessionOptions = {
@@ -26,6 +32,9 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 
 /** How long the liveness probe waits before calling the watcher gone. */
 const WATCHER_PROBE_TIMEOUT_MS = 1_500
+
+/** How long one "is a dialog open?" probe may take while a dialog control waits. */
+const DIALOG_PROBE_TIMEOUT_MS = 1_000
 
 /**
  * Serve JSONL commands over stdin/stdout against one watcher, in one process.
@@ -49,6 +58,7 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 	if (!resolved) return
 
 	const { program, plugins } = await buildSessionProgram()
+	const controlProgram = buildDialogControlProgram()
 	const capture = installStdioCapture()
 	const writeLine = (line: SessionOutputLine): void => capture.writeStdout(`${JSON.stringify(line)}\n`)
 
@@ -57,6 +67,7 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 	const resolver = createWatcherResolver()
 	const exitCode = await withWatcherResolver(resolver, () => serveRequests({
 		program,
+		controlProgram,
 		plugins,
 		capture,
 		writeLine,
@@ -77,6 +88,8 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 type ServeInput = {
 	resolver: WatcherResolver
 	program: Command
+	/** Separate tree for dialog controls, which may parse while `program` is mid-parse. */
+	controlProgram: Command
 	plugins: PluginLoader
 	capture: ReturnType<typeof installStdioCapture>
 	writeLine: (line: SessionOutputLine) => void
@@ -87,56 +100,121 @@ type ServeInput = {
 }
 
 /**
- * Read one request per line until stdin ends or a `quit` arrives.
+ * Read one request per line until stdin ends, a `quit` arrives, or the watcher is lost.
  *
- * Requests run strictly in submission order. Pipelining is still worth it — the host can
- * keep writing while a command is in flight — but ordering keeps `process.exitCode`, which
- * is how ~200 commands report failure, meaningful for exactly one request at a time.
+ * Requests run in submission order. Pipelining is still worth it — the host can keep writing
+ * while a command is in flight — but ordering keeps `process.exitCode`, which is how ~200
+ * commands report failure, meaningful for one request at a time. The one exception is a dialog
+ * control, which may overtake an in-flight request that is blocked on a native dialog
+ * ({@link createSessionScheduler}); it parses on its own command tree and reports its exit code
+ * through a request scope, so neither request sees the other's state.
  */
 const serveRequests = async (input: ServeInput): Promise<number> => {
 	const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
 
+	// Set once the session decided to end; requests still queued behind that point stay unanswered.
+	let exitCode: number | null = null
+	let markClosed!: () => void
+	const closed = new Promise<void>((resolve) => {
+		markClosed = resolve
+	})
+	const close = (code: number): void => {
+		if (exitCode != null) return
+		exitCode = code
+		lines.close()
+		markClosed()
+	}
+	const answer = (response: SessionResponse): void => {
+		if (exitCode == null) input.writeLine(response)
+	}
+
+	const scheduler = createSessionScheduler({
+		dialogOpen: () => dialogOpen(input.watcher.id),
+		onError: (error) => input.output.writeWarn(`Session request failed unexpectedly: ${formatError(error)}`),
+	})
+
+	const run = (request: SessionRequest, control: boolean) => async (): Promise<void> => {
+		if (exitCode != null) return
+
+		const response = await dispatchSessionRequest({
+			program: control ? input.controlProgram : input.program,
+			// Dialog commands are built in; plugins never need loading for the control tree.
+			prepare: control ? undefined : () => input.plugins.prepare(request.cmd.trim().split(/\s+/)),
+			capture: input.capture,
+			request,
+			watcherId: input.watcher.id,
+			defaultTimeoutMs: input.defaultTimeoutMs,
+			ownsProcessExitCode: !control,
+		})
+		answer(response)
+		// Even commands using direct fetch helpers must refresh after an uncertain result. Never replay them.
+		if (!response.ok) await input.resolver.snapshot(true).catch(() => {})
+
+		if (exitCode == null && (await watcherLost(response, input))) {
+			input.output.writeWarn(`Watcher ${input.watcher.id} is no longer reachable; closing session.`)
+			close(1)
+		}
+	}
+
 	try {
 		for await (const line of lines) {
+			if (exitCode != null) break
 			if (line.trim() === '') continue
 
+			// Framing errors and `ping`/`quit` answer in order too, so a host matching id-less
+			// responses by position stays aligned.
 			const request = parseRequestLine(line)
 			if (!request.ok) {
-				input.writeLine(request.response)
+				const { response } = request
+				scheduler.ordered(async () => answer(response))
 				continue
 			}
 
-			if (request.value.cmd === 'quit') {
-				input.writeLine(controlResponse(request.value.id, { closed: true }))
-				return 0
+			const { id, cmd } = request.value
+			if (cmd === 'quit') {
+				scheduler.ordered(async () => {
+					answer(controlResponse(id, { closed: true }))
+					close(0)
+				})
+				continue
 			}
-			if (request.value.cmd === 'ping') {
-				input.writeLine(controlResponse(request.value.id, { pong: true, watcher: input.watcher.id }))
+			if (cmd === 'ping') {
+				scheduler.ordered(async () => answer(controlResponse(id, { pong: true, watcher: input.watcher.id })))
 				continue
 			}
 
-			const response = await dispatchSessionRequest({
-				program: input.program,
-				prepare: () => input.plugins.prepare(request.value.cmd.trim().split(/\s+/)),
-				capture: input.capture,
-				request: request.value,
-				watcherId: input.watcher.id,
-				defaultTimeoutMs: input.defaultTimeoutMs,
-			})
-			input.writeLine(response)
-			// Even commands using direct fetch helpers must refresh after an uncertain result. Never replay them.
-			if (!response.ok) await input.resolver.snapshot(true).catch(() => {})
-
-			if (await watcherLost(response, input)) {
-				input.output.writeWarn(`Watcher ${input.watcher.id} is no longer reachable; closing session.`)
-				return 1
+			if (isDialogControl(input.controlProgram, cmd)) {
+				scheduler.control(run(request.value, true))
+			} else {
+				scheduler.ordered(run(request.value, false))
 			}
 		}
 	} finally {
 		lines.close()
 	}
 
-	return 0
+	// EOF still answers everything already submitted, unless the watcher is lost meanwhile.
+	await Promise.race([scheduler.drain(), closed])
+	return exitCode ?? 0
+}
+
+/** Whether `cmd` names a dialog control the scheduler may run beside an in-flight request. */
+const isDialogControl = (controlProgram: Command, cmd: string): boolean => {
+	const resolved = resolveSessionCommand(controlProgram, cmd)
+	return resolved.ok && resolved.path.length === 2
+}
+
+/** Probe the watcher's dialog state; any failure reads as "no dialog", so the control just keeps waiting. */
+const dialogOpen = async (id: string): Promise<boolean> => {
+	const resolved = await resolveWatcher({ id })
+	if (!resolved.ok) return false
+
+	try {
+		const status = await fetchWatcherJson<DialogStatusResponse>(resolved.watcher, { path: '/dialog', timeoutMs: DIALOG_PROBE_TIMEOUT_MS })
+		return status.dialog != null
+	} catch {
+		return false
+	}
 }
 
 /**
@@ -212,6 +290,18 @@ const buildSessionProgram = async (): Promise<{ program: Command; plugins: Plugi
 	const plugins = await createPluginLoader(program)
 	await plugins.prepare(['session'])
 	return { program, plugins }
+}
+
+/**
+ * Build the dialog-control tree: only `dialog status|accept|dismiss|prompt`.
+ *
+ * Commander keeps parse state on the command objects, so a control dispatched while the main tree
+ * is mid-parse needs a tree of its own. Controls run one at a time, so one extra tree is enough.
+ */
+const buildDialogControlProgram = (): Command => {
+	const program = createProgram({ mode: 'session' })
+	defineCommands(program, dialogCommands)
+	return program
 }
 
 const readyEvent = (watcher: WatcherRecord): SessionReadyEvent => ({
