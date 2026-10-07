@@ -1,7 +1,9 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runDomKeydown } from '../../commands/domKeydown.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runDomKeydown = lazyAction(() => import('../../commands/domKeydown.js').then((mod) => mod.runDomKeydown))
 
 export const keydownCommand: ArgusCommandDefinition = {
 	name: 'keydown',

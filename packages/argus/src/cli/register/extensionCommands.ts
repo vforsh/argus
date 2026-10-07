@@ -1,22 +1,28 @@
-import { runExtensionDiagnose, runExtensionRecover } from '../../commands/extension/diagnose.js'
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runExtensionInstall } from '../../commands/extension/install.js'
-import { runExtensionSetup } from '../../commands/extension/setup.js'
-import { runExtensionPath } from '../../commands/extension/extensionPath.js'
-import { runExtensionRemove } from '../../commands/extension/remove.js'
-import { runExtensionStatus } from '../../commands/extension/status.js'
-import { runExtensionInfo } from '../../commands/extension/info.js'
-import { runExtensionTabs } from '../../commands/extension/tabs.js'
-import { runExtensionAttach, runExtensionDetach } from '../../commands/extension/attach.js'
-import { runExtensionShow } from '../../commands/extension/show.js'
-import { runExtensionUse } from '../../commands/extension/use.js'
-import { runExtensionDoctor } from '../../commands/extension/doctor.js'
-import { runExtensionTargets } from '../../commands/extension/targets.js'
-import { runExtensionSelect } from '../../commands/extension/select.js'
-import { runExtensionMute } from '../../commands/extension/mute.js'
-import { runExtensionBind, runExtensionBindPrepare } from '../../commands/extension/bind.js'
-import { runExtensionBrowserLabel, runExtensionBrowsers } from '../../commands/extension/browsers.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runExtensionDiagnose = lazyAction(() => import('../../commands/extension/diagnose.js').then((mod) => mod.runExtensionDiagnose))
+const runExtensionRecover = lazyAction(() => import('../../commands/extension/diagnose.js').then((mod) => mod.runExtensionRecover))
+const runExtensionInstall = lazyAction(() => import('../../commands/extension/install.js').then((mod) => mod.runExtensionInstall))
+const runExtensionSetup = lazyAction(() => import('../../commands/extension/setup.js').then((mod) => mod.runExtensionSetup))
+const runExtensionPath = lazyAction(() => import('../../commands/extension/extensionPath.js').then((mod) => mod.runExtensionPath))
+const runExtensionRemove = lazyAction(() => import('../../commands/extension/remove.js').then((mod) => mod.runExtensionRemove))
+const runExtensionStatus = lazyAction(() => import('../../commands/extension/status.js').then((mod) => mod.runExtensionStatus))
+const runExtensionInfo = lazyAction(() => import('../../commands/extension/info.js').then((mod) => mod.runExtensionInfo))
+const runExtensionTabs = lazyAction(() => import('../../commands/extension/tabs.js').then((mod) => mod.runExtensionTabs))
+const runExtensionAttach = lazyAction(() => import('../../commands/extension/attach.js').then((mod) => mod.runExtensionAttach))
+const runExtensionDetach = lazyAction(() => import('../../commands/extension/attach.js').then((mod) => mod.runExtensionDetach))
+const runExtensionShow = lazyAction(() => import('../../commands/extension/show.js').then((mod) => mod.runExtensionShow))
+const runExtensionUse = lazyAction(() => import('../../commands/extension/use.js').then((mod) => mod.runExtensionUse))
+const runExtensionDoctor = lazyAction(() => import('../../commands/extension/doctor.js').then((mod) => mod.runExtensionDoctor))
+const runExtensionTargets = lazyAction(() => import('../../commands/extension/targets.js').then((mod) => mod.runExtensionTargets))
+const runExtensionSelect = lazyAction(() => import('../../commands/extension/select.js').then((mod) => mod.runExtensionSelect))
+const runExtensionMute = lazyAction(() => import('../../commands/extension/mute.js').then((mod) => mod.runExtensionMute))
+const runExtensionBind = lazyAction(() => import('../../commands/extension/bind.js').then((mod) => mod.runExtensionBind))
+const runExtensionBindPrepare = lazyAction(() => import('../../commands/extension/bind.js').then((mod) => mod.runExtensionBindPrepare))
+const runExtensionBrowserLabel = lazyAction(() => import('../../commands/extension/browsers.js').then((mod) => mod.runExtensionBrowserLabel))
+const runExtensionBrowsers = lazyAction(() => import('../../commands/extension/browsers.js').then((mod) => mod.runExtensionBrowsers))
 
 const controlWatcherOption = {
 	flags: '--id <controlWatcherId>',
@@ -144,8 +150,8 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 				description: 'Print the path to the unpacked extension for chrome://extensions "Load unpacked"',
 				options: [jsonOption],
 				examples: ['argus extension path', 'argus extension path --json'],
-				action: (options) => {
-					runExtensionPath(options)
+				action: async (options) => {
+					await runExtensionPath(options)
 				},
 			},
 			{

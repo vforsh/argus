@@ -1,14 +1,16 @@
 import type { Command } from 'commander'
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runList } from '../../commands/list.js'
-import { runStart } from '../../commands/start.js'
-import { runDoctor } from '../../commands/doctor.js'
-import { runReload } from '../../commands/reload.js'
 import { gotoCommand } from './pageCommands.js'
 import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
 import { jsonOption } from './sharedOptions.js'
 import { usageError } from '../validation.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runList = lazyAction(() => import('../../commands/list.js').then((mod) => mod.runList))
+const runStart = lazyAction(() => import('../../commands/start.js').then((mod) => mod.runStart))
+const runDoctor = lazyAction(() => import('../../commands/doctor.js').then((mod) => mod.runDoctor))
+const runReload = lazyAction(() => import('../../commands/reload.js').then((mod) => mod.runReload))
 
 export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 	{

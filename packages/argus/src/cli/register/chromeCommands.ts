@@ -1,12 +1,17 @@
 import type { Command } from 'commander'
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import type { ChromeStartOptions } from '../../commands/chromeStart.js'
-import { runChromeStart } from '../../commands/chromeStart.js'
-import { runChromeVersion, runChromeStatus, runChromeList, runChromeStop } from '../../commands/chrome.js'
 import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig } from '../../config/mergeConfig.js'
 import { jsonOption } from './sharedOptions.js'
 import { usageError } from '../validation.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runChromeStart = lazyAction(() => import('../../commands/chromeStart.js').then((mod) => mod.runChromeStart))
+const runChromeVersion = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeVersion))
+const runChromeStatus = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeStatus))
+const runChromeList = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeList))
+const runChromeStop = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeStop))
 
 const cdpTargetOptions = [
 	{ flags: '--cdp <host:port>', description: 'CDP host:port' },

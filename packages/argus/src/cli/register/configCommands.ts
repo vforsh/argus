@@ -1,5 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runConfigInit } from '../../commands/configInit.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runConfigInit = lazyAction(() => import('../../commands/configInit.js').then((mod) => mod.runConfigInit))
 
 export const configCommands: readonly ArgusCommandDefinition[] = [
 	{

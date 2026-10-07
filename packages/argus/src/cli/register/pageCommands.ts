@@ -1,13 +1,24 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runChromeTargets, runChromeOpen, runChromeActivate, runChromeClose } from '../../commands/chrome.js'
-import { runPageReload } from '../../commands/page.js'
-import { runPageEmulationSet, runPageEmulationClear, runPageEmulationStatus } from '../../commands/pageEmulation.js'
-import { runPageBack, runPageForward, runPageGoto } from '../../commands/pageNavigate.js'
-import { runPageUrl } from '../../commands/pageUrl.js'
-import { runPageShow, runPageHide, runPageVisibilityStatus } from '../../commands/pageVisibility.js'
 import { listPresetNames } from '../../emulation/devices.js'
 import { collectParam } from '../validation.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runChromeTargets = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeTargets))
+const runChromeOpen = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeOpen))
+const runChromeActivate = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeActivate))
+const runChromeClose = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeClose))
+const runPageReload = lazyAction(() => import('../../commands/page.js').then((mod) => mod.runPageReload))
+const runPageEmulationSet = lazyAction(() => import('../../commands/pageEmulation.js').then((mod) => mod.runPageEmulationSet))
+const runPageEmulationClear = lazyAction(() => import('../../commands/pageEmulation.js').then((mod) => mod.runPageEmulationClear))
+const runPageEmulationStatus = lazyAction(() => import('../../commands/pageEmulation.js').then((mod) => mod.runPageEmulationStatus))
+const runPageBack = lazyAction(() => import('../../commands/pageNavigate.js').then((mod) => mod.runPageBack))
+const runPageForward = lazyAction(() => import('../../commands/pageNavigate.js').then((mod) => mod.runPageForward))
+const runPageGoto = lazyAction(() => import('../../commands/pageNavigate.js').then((mod) => mod.runPageGoto))
+const runPageUrl = lazyAction(() => import('../../commands/pageUrl.js').then((mod) => mod.runPageUrl))
+const runPageShow = lazyAction(() => import('../../commands/pageVisibility.js').then((mod) => mod.runPageShow))
+const runPageHide = lazyAction(() => import('../../commands/pageVisibility.js').then((mod) => mod.runPageHide))
+const runPageVisibilityStatus = lazyAction(() => import('../../commands/pageVisibility.js').then((mod) => mod.runPageVisibilityStatus))
 
 const cdpTargetOptions = [
 	{ flags: '--cdp <host:port>', description: 'CDP host:port' },

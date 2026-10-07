@@ -1,7 +1,4 @@
-import path from 'node:path'
 import { existsSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
-import os from 'node:os'
 import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginContextV1, type ArgusPluginV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 
@@ -10,7 +7,8 @@ import { loadArgusConfigOnce } from '../../config/configContext.js'
 import { getGlobalArgusConfigPath } from '../../config/argusHome.js'
 import { createOutput } from '../../output/io.js'
 import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from './pluginAliases.js'
-import { createPluginHost } from './pluginHost.js'
+import { resolvePluginModuleUrl } from './resolvePlugin.js'
+import { readPluginManifest } from './pluginManifest.js'
 import { formatError } from '../parse.js'
 
 type PluginSource = 'global-config' | 'config' | 'env' | 'cli'
@@ -29,7 +27,7 @@ export type PluginLoadEntry =
 			spec: string
 			resolvedSpec: string
 			alias: string | null
-			status: 'loaded'
+			status: 'loaded' | 'deferred'
 			name: string
 			version: string | null
 			description: string | null
@@ -105,77 +103,6 @@ const parseCliPlugins = (argv: readonly string[]): string[] => {
 	return plugins
 }
 
-type ImportMetaWithResolve = ImportMeta & {
-	resolve?: (specifier: string, parent?: string) => string
-}
-
-const resolveWithImportMeta = (specifier: string, parentUrl: string): string => {
-	const resolver = (import.meta as ImportMetaWithResolve).resolve
-	if (typeof resolver !== 'function') {
-		throw new Error('Runtime does not support import.meta.resolve().')
-	}
-	return resolver(specifier, parentUrl)
-}
-
-const expandHomeSpecifier = (specifier: string): string => {
-	if (specifier === '~') return os.homedir()
-	if (specifier.startsWith('~/') || specifier.startsWith('~\\')) return path.join(os.homedir(), specifier.slice(2))
-	return specifier
-}
-
-const isPathLikeSpecifier = (specifier: string): boolean =>
-	specifier.startsWith('.') || specifier.startsWith('/') || specifier === '~' || specifier.startsWith('~/') || specifier.startsWith('~\\')
-
-const resolvePluginModuleUrl = (specifier: string, baseDirs: string[]): { ok: true; url: string } | { ok: false; error: string } => {
-	const trimmed = expandHomeSpecifier(specifier.trim())
-	if (!trimmed) {
-		return { ok: false, error: 'Empty plugin specifier.' }
-	}
-
-	if (trimmed.startsWith('file:')) {
-		return { ok: true, url: trimmed }
-	}
-
-	const errors: string[] = []
-
-	if (isPathLikeSpecifier(trimmed)) {
-		for (const baseDir of baseDirs) {
-			try {
-				const resolvedPath = path.resolve(baseDir, trimmed)
-				if (existsSync(resolvedPath)) {
-					return { ok: true, url: pathToFileURL(resolvedPath).href }
-				}
-				errors.push(`${baseDir}: ${resolvedPath} does not exist`)
-			} catch (error) {
-				const msg = formatError(error)
-				errors.push(`${baseDir}: ${msg}`)
-			}
-		}
-		return { ok: false, error: `Failed to resolve plugin path "${specifier}". Tried:\n${errors.map((e) => `- ${e}`).join('\n')}` }
-	}
-
-	// 1) Prefer resolving relative to the Argus installation itself.
-	// This covers "plugin installed next to argus" (e.g. global install or argus dependency).
-	try {
-		return { ok: true, url: resolveWithImportMeta(trimmed, import.meta.url) }
-	} catch (error) {
-		const msg = formatError(error)
-		errors.push(`argus: ${msg}`)
-	}
-
-	for (const baseDir of baseDirs) {
-		try {
-			const baseUrl = pathToFileURL(path.join(baseDir, 'noop.js')).href
-			return { ok: true, url: resolveWithImportMeta(trimmed, baseUrl) }
-		} catch (error) {
-			const msg = formatError(error)
-			errors.push(`${baseDir}: ${msg}`)
-		}
-	}
-
-	return { ok: false, error: `Failed to resolve plugin "${specifier}". Tried:\n${errors.map((e) => `- ${e}`).join('\n')}` }
-}
-
 const extractPlugin = (mod: unknown): ArgusPluginV1 | null => {
 	if (!mod || typeof mod !== 'object') return null
 
@@ -212,7 +139,7 @@ const recordPluginFailure = (entries: PluginLoadEntry[], entry: PluginInput, err
 	warnPluginLoad(entry.source, entry.spec, error)
 }
 
-const createLoadedEntry = (entry: PluginInput, plugin: ArgusPluginV1, url: string): PluginLoadEntry => ({
+const createLoadedEntry = (entry: PluginInput, plugin: Omit<ArgusPluginV1, 'register'>, url: string): Exclude<PluginLoadEntry, { status: 'failed' }> => ({
 	source: entry.source,
 	spec: entry.spec,
 	resolvedSpec: entry.resolvedSpec,
@@ -227,7 +154,11 @@ const createLoadedEntry = (entry: PluginInput, plugin: ArgusPluginV1, url: strin
 	url,
 })
 
-export const registerPlugins = async (program: Command, argv: readonly string[] = process.argv.slice(2)): Promise<void> => {
+/**
+ * Discover configured plugins once; initialize only manifests selected by `prepare`.
+ * Legacy v1 modules lack a registration isolation contract and therefore remain eager.
+ */
+export const createPluginLoader = async (program: Command, argv: readonly string[] = process.argv.slice(2)): Promise<PluginLoader> => {
 	const cwd = process.cwd()
 
 	const globalConfigPath = getGlobalArgusConfigPath()
@@ -258,7 +189,7 @@ export const registerPlugins = async (program: Command, argv: readonly string[] 
 		entries,
 	}
 
-	if (all.length === 0) return
+	if (all.length === 0) return { prepare: async () => {} }
 
 	// Preserve original order, but avoid duplicate loads.
 	const seen = new Set<string>()
@@ -270,12 +201,33 @@ export const registerPlugins = async (program: Command, argv: readonly string[] 
 		return true
 	})
 
-	const ctxBase: Omit<ArgusPluginContextV1, 'program'> = {
+	const ctxBase: Omit<ArgusPluginContextV1, 'program' | 'host'> = {
 		apiVersion: ARGUS_PLUGIN_API_VERSION,
-		host: createPluginHost(),
 		cwd,
 		configPath: configPath ?? (globalConfigResult ? globalConfigPath : null),
 		configDir: configResult?.configDir ?? globalConfigResult?.configDir ?? null,
+	}
+
+	const pending: Array<{
+		input: PluginInput
+		url: string
+		eager: boolean
+		report: PluginLoadEntry
+		loading?: Promise<PluginLoadEntry>
+	}> = []
+	let host: ArgusPluginContextV1['host'] | undefined
+	const load = async (entry: PluginInput, url: string): Promise<PluginLoadEntry> => {
+		try {
+			const plugin = extractPlugin(await import(url))
+			if (!plugin) throw new Error('Invalid plugin export (expected default export with { apiVersion: 1, name, register() }).')
+			host ??= (await import('./pluginHost.js')).createPluginHost()
+			await plugin.register({ ...ctxBase, host, program })
+			return createLoadedEntry(entry, plugin, url)
+		} catch (error) {
+			const message = formatError(error)
+			warnPluginLoad(entry.source, entry.spec, message)
+			return { ...entry, status: 'failed', url, error: message }
+		}
 	}
 
 	for (const entry of ordered) {
@@ -285,31 +237,56 @@ export const registerPlugins = async (program: Command, argv: readonly string[] 
 			recordPluginFailure(entries, entry, resolved.error)
 			continue
 		}
+		const manifest = readPluginManifest(resolved.url)
+		const metadata = manifest ?? { apiVersion: ARGUS_PLUGIN_API_VERSION, name: entry.spec, commands: [] }
+		const report = { ...createLoadedEntry(entry, metadata, resolved.url), status: 'deferred' as const }
+		entries.push(report)
+		pending.push({ input: entry, url: resolved.url, eager: manifest?.eager !== false, report })
+	}
 
-		let mod: unknown
-		try {
-			mod = await import(resolved.url)
-		} catch (error) {
-			recordPluginFailure(entries, entry, formatError(error), resolved.url)
-			continue
-		}
-
-		const plugin = extractPlugin(mod)
-		if (!plugin) {
-			recordPluginFailure(
-				entries,
-				entry,
-				'Invalid plugin export (expected default export with { apiVersion: 1, name, register() }).',
-				resolved.url,
-			)
-			continue
-		}
-
-		try {
-			await plugin.register({ ...ctxBase, program })
-			entries.push(createLoadedEntry(entry, plugin, resolved.url))
-		} catch (error) {
-			recordPluginFailure(entries, entry, formatError(error), resolved.url)
-		}
+	return {
+		prepare: async (args) => {
+			const root = requestedRoot(args) ?? ''
+			const known = program.commands.find((command) => command.name() === root || command.aliases().includes(root))
+			// Help and explicit listings inspect actual registrations, including dynamically built options.
+			const inspectAll = !root || root === 'help' || ((root === 'plugin' || root === 'plugins') && ['list', 'ls'].includes(args[1]))
+			const advertised = pending.some(({ report }) => report.status !== 'failed' && report.commands.includes(root))
+			const loadAll = inspectAll || (!known && !advertised)
+			for (const item of pending) {
+				if (item.report.status !== 'deferred') continue
+				if (!item.eager && !loadAll && !item.report.commands.includes(root)) continue
+				// A timed-out session request can leave registration in flight. Later requests join it.
+				item.loading ??= load(item.input, item.url)
+				const loaded = await item.loading
+				entries[entries.indexOf(item.report)] = loaded
+				item.report = loaded
+			}
+		},
 	}
 }
+
+export type PluginLoader = {
+	/** Prepare registrations for one CLI argv or session command path; already loaded plugins are reused. */
+	prepare: (args: readonly string[]) => Promise<void>
+}
+
+/** Discover and prepare the plugins used by a one-shot invocation. */
+export const registerPlugins = async (program: Command, argv: readonly string[] = process.argv.slice(2)): Promise<void> => {
+	const loader = await createPluginLoader(program, argv)
+	await loader.prepare(withoutPluginOptions(argv))
+}
+
+const withoutPluginOptions = (argv: readonly string[]): string[] => {
+	const args: string[] = []
+	for (let index = 0; index < argv.length; index++) {
+		if (argv[index] === '--plugin') {
+			index++
+			continue
+		}
+		if (argv[index].startsWith('--plugin=')) continue
+		args.push(argv[index])
+	}
+	return args
+}
+
+const requestedRoot = (args: readonly string[]): string | undefined => args[0]?.startsWith('-') ? undefined : args[0]

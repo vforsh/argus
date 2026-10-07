@@ -1,8 +1,10 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runDomFill } from '../../commands/domFill.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
 import { jsonOption } from './sharedOptions.js'
 import { usageError } from '../validation.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runDomFill = lazyAction(() => import('../../commands/domFill.js').then((mod) => mod.runDomFill))
 
 export const fillCommand: ArgusCommandDefinition = {
 	name: 'fill',

@@ -472,7 +472,7 @@ const plugin: ArgusPluginV1 = {
 	apiVersion: ARGUS_PLUGIN_API_VERSION,
 	name: 'my-plugin',
 	description: 'Short human description',
-	commands: ['mycmd'],
+	commands: ['title'],
 	register(ctx) {
 		ctx.program
 			.command('title [id]')
@@ -490,6 +490,24 @@ export default plugin
 ```
 
 TypeScript plugin authors should import from `@vforsh/argus-plugin-api`.
+
+For import-free discovery, publish an `argusPlugin` object in the nearest `package.json` above the resolved plugin entry, or a JSON sidecar named `<entry>.argus-plugin.json` (for example, `dist/index.js.argus-plugin.json`):
+
+```json
+{
+  "apiVersion": 1,
+  "name": "my-plugin",
+  "commands": ["title"],
+  "eager": false
+}
+```
+
+`commands` must include every top-level command name and alias. With `eager: false`, registration must independently add only those commands; it must not modify existing commands, root options/hooks, or state required by other commands. Only the selected plugin is imported and registered. Root help and `plugin list` initialize all plugins so help, options, metadata, and failures remain accurate. Sessions initialize a plugin on its first request and reuse it.
+
+Omit the manifest or use `eager: true` for unrestricted legacy v1 registration. Invalid manifests also fall back to legacy loading. The old exported `commands` array is descriptive metadata, not proof that registration is safe to skip. Metadata is read fresh each invocation, with sidecars taking precedence over package metadata; no disk cache can retain obsolete command names after an edit, upgrade, or symlink change. A running session keeps its discovered plugin set until restarted.
+
+Built-in command actions are loaded on demand from separate ESM chunks. Keep the entire published `dist` directory when copying the CLI. Bare `argus --version` / `argus -V` bypasses config and plugins.
+
 
 ### Google Sheets plugin
 

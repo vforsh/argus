@@ -1,7 +1,13 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runCodeDeminify, runCodeGrep, runCodeList, runCodeRead, runCodeStrings } from '../../commands/code.js'
-import { runCodeEdit } from '../../commands/codeEdit.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runCodeDeminify = lazyAction(() => import('../../commands/code.js').then((mod) => mod.runCodeDeminify))
+const runCodeGrep = lazyAction(() => import('../../commands/code.js').then((mod) => mod.runCodeGrep))
+const runCodeList = lazyAction(() => import('../../commands/code.js').then((mod) => mod.runCodeList))
+const runCodeRead = lazyAction(() => import('../../commands/code.js').then((mod) => mod.runCodeRead))
+const runCodeStrings = lazyAction(() => import('../../commands/code.js').then((mod) => mod.runCodeStrings))
+const runCodeEdit = lazyAction(() => import('../../commands/codeEdit.js').then((mod) => mod.runCodeEdit))
 
 export const codeCommands: readonly ArgusCommandDefinition[] = [
 	{

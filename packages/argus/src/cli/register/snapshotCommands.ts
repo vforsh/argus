@@ -1,8 +1,10 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runScreenshot } from '../../commands/screenshot.js'
-import { runSnapshot } from '../../commands/snapshot.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runScreenshot = lazyAction(() => import('../../commands/screenshot.js').then((mod) => mod.runScreenshot))
+const runSnapshot = lazyAction(() => import('../../commands/snapshot.js').then((mod) => mod.runSnapshot))
 
 export const snapshotCommands: readonly ArgusCommandDefinition[] = [
 	{

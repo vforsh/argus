@@ -1,8 +1,10 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
-import { runEval } from '../../commands/eval.js'
-import { runEvalUntil } from '../../commands/evalUntil.js'
 import { jsonOption } from './sharedOptions.js'
 import { usageError } from '../validation.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runEval = lazyAction(() => import('../../commands/eval.js').then((mod) => mod.runEval))
+const runEvalUntil = lazyAction(() => import('../../commands/evalUntil.js').then((mod) => mod.runEvalUntil))
 
 const collectValue = (value: string, previous: string[] = []): string[] => [...previous, value]
 

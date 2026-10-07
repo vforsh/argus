@@ -1,20 +1,10 @@
 #!/usr/bin/env node
-import { createProgram } from './cli/program.js'
-import { coreProgramRegistrars } from './cli/register/index.js'
-import { registerPlugins } from './cli/plugins/registerPlugins.js'
-import { configureMachineSafeConsole } from './output/io.js'
+import packageJson from '../package.json' with { type: 'json' }
 
-configureMachineSafeConsole(process.argv.slice(2))
-
-const program = createProgram()
-
-for (const registerProgramPart of coreProgramRegistrars) {
-	registerProgramPart(program)
+// Keep the overwhelmingly common version probe free of Commander, config, and plugins.
+const args = process.argv.slice(2)
+if (args.length === 1 && (args[0] === '--version' || args[0] === '-V')) {
+	console.log(packageJson.version)
+} else {
+	await import('./cli/runCli.js')
 }
-
-await registerPlugins(program)
-
-program.parseAsync(process.argv).catch((error) => {
-	console.error(error)
-	process.exit(1)
-})

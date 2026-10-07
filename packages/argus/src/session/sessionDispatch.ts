@@ -1,11 +1,13 @@
 import { CommanderError, type Command } from 'commander'
 import type { ErrorDetail, SessionRequest, SessionResponse } from '@vforsh/argus-core'
-import { formatError, parseDurationMs } from '@vforsh/argus-core'
+import { formatError, isArgusErrorCode, parseDurationMs } from '@vforsh/argus-core'
 import { buildSessionArgv } from './sessionArgv.js'
 import type { CapturedStdio, StdioCapture } from './stdioCapture.js'
 
 export type SessionDispatchInput = {
 	program: Command
+	/** Load plugin command metadata before resolving args and aliases. */
+	prepare?: () => Promise<void>
 	capture: StdioCapture
 	request: SessionRequest
 	/** Watcher the session is pinned to. */
@@ -30,16 +32,16 @@ export const dispatchSessionRequest = async (input: SessionDispatchInput): Promi
 		return respond.failure({ message: `Invalid timeout "${String(request.timeout)}".`, code: 'session_invalid_request' }, 2)
 	}
 
-	const built = buildSessionArgv({ program: input.program, request, watcherId: input.watcherId })
-	if (!built.ok) {
-		return respond.failure({ message: built.message, code: built.code }, 2)
-	}
-
 	const sink: CapturedStdio = { stdout: [], stderr: [] }
 	process.exitCode = 0
 
 	const running = input.capture.run(sink, async () => {
 		try {
+			await input.prepare?.()
+			const built = buildSessionArgv({ program: input.program, request, watcherId: input.watcherId })
+			if (!built.ok) {
+				return new CommanderError(2, built.code, built.message)
+			}
 			await input.program.parseAsync(built.argv, { from: 'user' })
 			return null
 		} catch (error) {
@@ -79,7 +81,8 @@ const fromThrownError = (respond: Responder, error: unknown, stdout: string, std
 	if (error.exitCode === 0) {
 		return respond.success(stdout, stderr)
 	}
-	return respond.failure({ message: error.message, code: 'session_invalid_request' }, error.exitCode || 2, stderr)
+	const code = error.code.startsWith('session_') && isArgusErrorCode(error.code) ? error.code : 'session_invalid_request'
+	return respond.failure({ message: error.message, code }, error.exitCode || 2, stderr)
 }
 
 /**

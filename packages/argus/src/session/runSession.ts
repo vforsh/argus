@@ -5,7 +5,7 @@ import { SESSION_PROTOCOL_VERSION, SESSION_REQUEST_SCHEMA, formatProtocolValidat
 import packageJson from '../../package.json' with { type: 'json' }
 import { createProgram } from '../cli/program.js'
 import { coreProgramRegistrars } from '../cli/register/index.js'
-import { registerPlugins } from '../cli/plugins/registerPlugins.js'
+import { createPluginLoader, type PluginLoader } from '../cli/plugins/registerPlugins.js'
 import { usageError } from '../cli/validation.js'
 import { createOutput, routeConsoleToStderr, type Output } from '../output/io.js'
 import { fetchWatcherJson, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
@@ -46,7 +46,7 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 	const resolved = await resolveWatcherOrExit({ id }, output)
 	if (!resolved) return
 
-	const program = await buildSessionProgram()
+	const { program, plugins } = await buildSessionProgram()
 	const capture = installStdioCapture()
 	const writeLine = (line: SessionOutputLine): void => capture.writeStdout(`${JSON.stringify(line)}\n`)
 
@@ -54,6 +54,7 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 
 	const exitCode = await serveRequests({
 		program,
+		plugins,
 		capture,
 		writeLine,
 		output,
@@ -71,6 +72,7 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 
 type ServeInput = {
 	program: Command
+	plugins: PluginLoader
 	capture: ReturnType<typeof installStdioCapture>
 	writeLine: (line: SessionOutputLine) => void
 	output: Output
@@ -110,6 +112,7 @@ const serveRequests = async (input: ServeInput): Promise<number> => {
 
 			const response = await dispatchSessionRequest({
 				program: input.program,
+				prepare: () => input.plugins.prepare(request.value.cmd.trim().split(/\s+/)),
 				capture: input.capture,
 				request: request.value,
 				watcherId: input.watcher.id,
@@ -194,13 +197,14 @@ const controlResponse = (id: SessionRequestId | undefined, result: unknown): Ses
 const idOf = (id: SessionRequestId | undefined): { id?: SessionRequestId } => (id === undefined ? {} : { id })
 
 /** Build a second, session-mode command tree; the one currently mid-parse cannot re-enter itself. */
-const buildSessionProgram = async (): Promise<Command> => {
+const buildSessionProgram = async (): Promise<{ program: Command; plugins: PluginLoader }> => {
 	const program = createProgram({ mode: 'session' })
 	for (const registerProgramPart of coreProgramRegistrars) {
 		registerProgramPart(program)
 	}
-	await registerPlugins(program)
-	return program
+	const plugins = await createPluginLoader(program)
+	await plugins.prepare(['session'])
+	return { program, plugins }
 }
 
 const readyEvent = (watcher: WatcherRecord): SessionReadyEvent => ({

@@ -1,17 +1,23 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runDomTree } from '../../commands/domTree.js'
-import { runDomInfo } from '../../commands/domInfo.js'
-import { runDomFocus } from '../../commands/domFocus.js'
-import { runDomAdd } from '../../commands/domAdd.js'
-import { runDomAddScript } from '../../commands/domAddScript.js'
-import { runDomRemove } from '../../commands/domRemove.js'
-import { runDomSetFile } from '../../commands/domSetFile.js'
-import { runDomScroll } from '../../commands/domScroll.js'
-import { runDomScrollTo } from '../../commands/domScrollTo.js'
-import { runDomModifyAttr, runDomModifyClass, runDomModifyStyle, runDomModifyText, runDomModifyHtml } from '../../commands/domModify.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
 import { domSelectorCommand } from './domCommandBuilder.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runDomTree = lazyAction(() => import('../../commands/domTree.js').then((mod) => mod.runDomTree))
+const runDomInfo = lazyAction(() => import('../../commands/domInfo.js').then((mod) => mod.runDomInfo))
+const runDomFocus = lazyAction(() => import('../../commands/domFocus.js').then((mod) => mod.runDomFocus))
+const runDomAdd = lazyAction(() => import('../../commands/domAdd.js').then((mod) => mod.runDomAdd))
+const runDomAddScript = lazyAction(() => import('../../commands/domAddScript.js').then((mod) => mod.runDomAddScript))
+const runDomRemove = lazyAction(() => import('../../commands/domRemove.js').then((mod) => mod.runDomRemove))
+const runDomSetFile = lazyAction(() => import('../../commands/domSetFile.js').then((mod) => mod.runDomSetFile))
+const runDomScroll = lazyAction(() => import('../../commands/domScroll.js').then((mod) => mod.runDomScroll))
+const runDomScrollTo = lazyAction(() => import('../../commands/domScrollTo.js').then((mod) => mod.runDomScrollTo))
+const runDomModifyAttr = lazyAction(() => import('../../commands/domModify.js').then((mod) => mod.runDomModifyAttr))
+const runDomModifyClass = lazyAction(() => import('../../commands/domModify.js').then((mod) => mod.runDomModifyClass))
+const runDomModifyStyle = lazyAction(() => import('../../commands/domModify.js').then((mod) => mod.runDomModifyStyle))
+const runDomModifyText = lazyAction(() => import('../../commands/domModify.js').then((mod) => mod.runDomModifyText))
+const runDomModifyHtml = lazyAction(() => import('../../commands/domModify.js').then((mod) => mod.runDomModifyHtml))
 
 const textFilterOption = {
 	flags: '--text <string>',

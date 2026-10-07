@@ -1,14 +1,16 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
-import { runAuthClone, runAuthExportState, runAuthLoadState } from '../../commands/auth.js'
-import {
-	runAuthCookieClear,
-	runAuthCookieDelete,
-	runAuthCookieGet,
-	runAuthCookies,
-	runAuthCookieSet,
-	runAuthExportCookies,
-} from '../../commands/authCookies.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runAuthClone = lazyAction(() => import('../../commands/auth.js').then((mod) => mod.runAuthClone))
+const runAuthExportState = lazyAction(() => import('../../commands/auth.js').then((mod) => mod.runAuthExportState))
+const runAuthLoadState = lazyAction(() => import('../../commands/auth.js').then((mod) => mod.runAuthLoadState))
+const runAuthCookieClear = lazyAction(() => import('../../commands/authCookies.js').then((mod) => mod.runAuthCookieClear))
+const runAuthCookieDelete = lazyAction(() => import('../../commands/authCookies.js').then((mod) => mod.runAuthCookieDelete))
+const runAuthCookieGet = lazyAction(() => import('../../commands/authCookies.js').then((mod) => mod.runAuthCookieGet))
+const runAuthCookies = lazyAction(() => import('../../commands/authCookies.js').then((mod) => mod.runAuthCookies))
+const runAuthCookieSet = lazyAction(() => import('../../commands/authCookies.js').then((mod) => mod.runAuthCookieSet))
+const runAuthExportCookies = lazyAction(() => import('../../commands/authCookies.js').then((mod) => mod.runAuthExportCookies))
 
 const cookieScopeOptions: readonly ArgusCommandOption[] = [
 	{ flags: '--for-origin', description: 'Only include first-party cookies for the attached page origin' },

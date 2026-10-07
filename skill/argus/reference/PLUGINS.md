@@ -49,3 +49,17 @@ export default plugin // or: export const argusPlugin = plugin
 `ctx.host` helpers: `createOutput` (stdout/stderr conventions, `--json`), `requestWatcherJson` (typed watcher HTTP), `writeRequestError`, `runChromeOpen`, `defineWatcherCommand` (watcher-backed command with JSON/human formatting), and `argus.eval` / `argus.dom.click|drag|info|keydown` / `argus.screenshot` shortcuts.
 
 Local development: build the plugin, then `argus --plugin ~/dev/my-plugin/dist/index.js mycmd …`.
+
+## Lazy Registration
+
+Publish an `argusPlugin` JSON object in the nearest package.json above the resolved entry, or write `<entry>.argus-plugin.json`. Sidecar wins; metadata is reread on each invocation, with no persistent cache.
+
+```json
+{ "apiVersion": 1, "name": "my-plugin", "commands": ["mycmd", "mc"], "eager": false }
+```
+
+`commands` must exhaustively list top-level names and aliases. `eager: false` promises independent, additive command registration: no changes to existing commands, root options/hooks, or global state needed by unrelated commands. Argus imports only matching plugins. Root help and `plugin list` initialize all, giving accurate dynamic help and load failures. Sessions prepare plugin commands on first request and reuse registrations; restart the session to discover edits.
+
+Legacy v1 plugins, missing/invalid manifests, and `eager: true` retain unrestricted eager registration. The module's existing exported `commands` field remains descriptive and is never assumed complete. Optional manifest metadata: `version`, `description`, `homepage`, `minArgusVersion`; `plugin list` reports the actual module metadata and registration status.
+
+Built-in actions also load on demand from ESM chunks. Copy the entire published `dist` directory. Bare `argus --version` / `argus -V` reads only the CLI version and bypasses config and all plugins.

@@ -221,3 +221,24 @@ export type ArgusPluginV1 = {
 	minArgusVersion?: string
 	register: (ctx: ArgusPluginContextV1) => void | Promise<void>
 }
+
+/**
+ * Optional JSON routing metadata, published as package.json's `argusPlugin` object or
+ * `<resolved-entry>.argus-plugin.json`. Read fresh on each CLI invocation, without importing code.
+ *
+ * With `eager: false`, `commands` MUST list every top-level command name and alias. Registration
+ * MUST only add those commands; no changes to existing commands, program options/hooks, or global
+ * state needed by other commands. Argus loads these plugins on demand (and all plugins for root
+ * help and `plugin list`). Use `eager: true` or omit the manifest for unrestricted v1 registration.
+ */
+export type ArgusPluginManifestV1 = {
+	apiVersion: typeof ARGUS_PLUGIN_API_VERSION
+	name: string
+	/** Complete set of top-level names and aliases; no subcommand paths or argument syntax. */
+	commands: string[]
+	eager: boolean
+	version?: string
+	description?: string
+	homepage?: string
+	minArgusVersion?: string
+}

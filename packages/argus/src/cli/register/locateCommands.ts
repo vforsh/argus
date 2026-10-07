@@ -1,6 +1,10 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runLocateLabel, runLocateRole, runLocateText } from '../../commands/locate.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runLocateLabel = lazyAction(() => import('../../commands/locate.js').then((mod) => mod.runLocateLabel))
+const runLocateRole = lazyAction(() => import('../../commands/locate.js').then((mod) => mod.runLocateRole))
+const runLocateText = lazyAction(() => import('../../commands/locate.js').then((mod) => mod.runLocateText))
 
 const sharedLocateOptions = [
 	{ flags: '--exact', description: 'Require an exact normalized text match' },

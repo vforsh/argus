@@ -1,6 +1,10 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runTrace, runTraceStart, runTraceStop } from '../../commands/trace.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runTrace = lazyAction(() => import('../../commands/trace.js').then((mod) => mod.runTrace))
+const runTraceStart = lazyAction(() => import('../../commands/trace.js').then((mod) => mod.runTraceStart))
+const runTraceStop = lazyAction(() => import('../../commands/trace.js').then((mod) => mod.runTraceStop))
 
 export const traceCommands: readonly ArgusCommandDefinition[] = [
 	{

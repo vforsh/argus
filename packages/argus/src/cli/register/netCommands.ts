@@ -1,18 +1,24 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
-import { runNetClear } from '../../commands/netClear.js'
-import { runNetExport } from '../../commands/netExport.js'
-import { runNetInspect } from '../../commands/netInspect.js'
-import { runNet } from '../../commands/net.js'
-import { runNetBody } from '../../commands/netBody.js'
-import { runNetShow } from '../../commands/netShow.js'
-import { runNetSummary } from '../../commands/netSummary.js'
-import { runNetSse } from '../../commands/netSse.js'
-import { runNetTail } from '../../commands/netTail.js'
-import { runNetWatch } from '../../commands/netWatch.js'
-import { runNetMockAdd, runNetMockClear, runNetMockList, runNetMockRemove } from '../../commands/netMock.js'
-import { runNetWebSocket, runNetWebSocketShow } from '../../commands/netWebSocket.js'
 import { collectValues } from '../validation.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runNetClear = lazyAction(() => import('../../commands/netClear.js').then((mod) => mod.runNetClear))
+const runNetExport = lazyAction(() => import('../../commands/netExport.js').then((mod) => mod.runNetExport))
+const runNetInspect = lazyAction(() => import('../../commands/netInspect.js').then((mod) => mod.runNetInspect))
+const runNet = lazyAction(() => import('../../commands/net.js').then((mod) => mod.runNet))
+const runNetBody = lazyAction(() => import('../../commands/netBody.js').then((mod) => mod.runNetBody))
+const runNetShow = lazyAction(() => import('../../commands/netShow.js').then((mod) => mod.runNetShow))
+const runNetSummary = lazyAction(() => import('../../commands/netSummary.js').then((mod) => mod.runNetSummary))
+const runNetSse = lazyAction(() => import('../../commands/netSse.js').then((mod) => mod.runNetSse))
+const runNetTail = lazyAction(() => import('../../commands/netTail.js').then((mod) => mod.runNetTail))
+const runNetWatch = lazyAction(() => import('../../commands/netWatch.js').then((mod) => mod.runNetWatch))
+const runNetMockAdd = lazyAction(() => import('../../commands/netMock.js').then((mod) => mod.runNetMockAdd))
+const runNetMockClear = lazyAction(() => import('../../commands/netMock.js').then((mod) => mod.runNetMockClear))
+const runNetMockList = lazyAction(() => import('../../commands/netMock.js').then((mod) => mod.runNetMockList))
+const runNetMockRemove = lazyAction(() => import('../../commands/netMock.js').then((mod) => mod.runNetMockRemove))
+const runNetWebSocket = lazyAction(() => import('../../commands/netWebSocket.js').then((mod) => mod.runNetWebSocket))
+const runNetWebSocketShow = lazyAction(() => import('../../commands/netWebSocket.js').then((mod) => mod.runNetWebSocketShow))
 
 const RELOAD_SELECTED_SCOPE_NOTE = '\n\nNote:\n  --reload does not support --scope selected or --frame selected.\n'
 

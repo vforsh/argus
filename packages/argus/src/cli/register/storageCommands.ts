@@ -1,7 +1,13 @@
 import type { StorageArea } from '@vforsh/argus-core'
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runStorageClear, runStorageGet, runStorageList, runStorageRemove, runStorageSet } from '../../commands/storage.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runStorageClear = lazyAction(() => import('../../commands/storage.js').then((mod) => mod.runStorageClear))
+const runStorageGet = lazyAction(() => import('../../commands/storage.js').then((mod) => mod.runStorageGet))
+const runStorageList = lazyAction(() => import('../../commands/storage.js').then((mod) => mod.runStorageList))
+const runStorageRemove = lazyAction(() => import('../../commands/storage.js').then((mod) => mod.runStorageRemove))
+const runStorageSet = lazyAction(() => import('../../commands/storage.js').then((mod) => mod.runStorageSet))
 
 const sharedOptions = [
 	{ flags: '--origin <origin>', description: 'Validate page origin matches this value' },

@@ -1,7 +1,10 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runPluginList } from '../../commands/pluginList.js'
-import { runPluginAdd, runPluginRemove } from '../../commands/pluginConfig.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runPluginList = lazyAction(() => import('../../commands/pluginList.js').then((mod) => mod.runPluginList))
+const runPluginAdd = lazyAction(() => import('../../commands/pluginConfig.js').then((mod) => mod.runPluginAdd))
+const runPluginRemove = lazyAction(() => import('../../commands/pluginConfig.js').then((mod) => mod.runPluginRemove))
 
 const configFileOptions = [
 	{ flags: '--path <file>', description: 'Config file to update (default: discovered config or .argus/config.json)' },
@@ -21,8 +24,8 @@ export const pluginCommands: readonly ArgusCommandDefinition[] = [
 				description: 'List plugins discovered for this invocation',
 				options: [jsonOption],
 				examples: ['argus plugin list', 'argus --plugin ./plugins/foo.js plugin list --json'],
-				action: (options) => {
-					runPluginList(options)
+				action: async (options) => {
+					await runPluginList(options)
 				},
 			},
 			{

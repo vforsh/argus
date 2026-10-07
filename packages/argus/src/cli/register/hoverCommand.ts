@@ -1,7 +1,9 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runDomHover } from '../../commands/domHover.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runDomHover = lazyAction(() => import('../../commands/domHover.js').then((mod) => mod.runDomHover))
 
 export const hoverCommand: ArgusCommandDefinition = {
 	name: 'hover',

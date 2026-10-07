@@ -1,7 +1,9 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runDomScrollTo } from '../../commands/domScrollTo.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runDomScrollTo = lazyAction(() => import('../../commands/domScrollTo.js').then((mod) => mod.runDomScrollTo))
 
 export const scrollToCommand: ArgusCommandDefinition = {
 	name: 'scroll-to',

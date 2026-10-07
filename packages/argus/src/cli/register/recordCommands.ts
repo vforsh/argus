@@ -1,7 +1,12 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
-import { runRecord, runRecordStart, runRecordStatus, runRecordStop } from '../../commands/record.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runRecord = lazyAction(() => import('../../commands/record.js').then((mod) => mod.runRecord))
+const runRecordStart = lazyAction(() => import('../../commands/record.js').then((mod) => mod.runRecordStart))
+const runRecordStatus = lazyAction(() => import('../../commands/record.js').then((mod) => mod.runRecordStatus))
+const runRecordStop = lazyAction(() => import('../../commands/record.js').then((mod) => mod.runRecordStop))
 
 const outOption = {
 	flags: '--out <file>',

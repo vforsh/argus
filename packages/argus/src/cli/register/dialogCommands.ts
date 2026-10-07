@@ -1,6 +1,11 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runDialogAccept, runDialogDismiss, runDialogPrompt, runDialogStatus } from '../../commands/dialog.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runDialogAccept = lazyAction(() => import('../../commands/dialog.js').then((mod) => mod.runDialogAccept))
+const runDialogDismiss = lazyAction(() => import('../../commands/dialog.js').then((mod) => mod.runDialogDismiss))
+const runDialogPrompt = lazyAction(() => import('../../commands/dialog.js').then((mod) => mod.runDialogPrompt))
+const runDialogStatus = lazyAction(() => import('../../commands/dialog.js').then((mod) => mod.runDialogStatus))
 
 const simpleDialogCommand = (input: {
 	name: string

@@ -1,6 +1,10 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runThrottleSet, runThrottleClear, runThrottleStatus } from '../../commands/throttle.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runThrottleSet = lazyAction(() => import('../../commands/throttle.js').then((mod) => mod.runThrottleSet))
+const runThrottleClear = lazyAction(() => import('../../commands/throttle.js').then((mod) => mod.runThrottleClear))
+const runThrottleStatus = lazyAction(() => import('../../commands/throttle.js').then((mod) => mod.runThrottleStatus))
 
 export const throttleCommands: readonly ArgusCommandDefinition[] = [
 	{

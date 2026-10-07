@@ -1,15 +1,18 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runList } from '../../commands/list.js'
-import { runReload } from '../../commands/reload.js'
-import { runPageShow, runPageHide } from '../../commands/pageVisibility.js'
-import { runWatcherStart } from '../../commands/watcherStart.js'
-import { runWatcherStatus } from '../../commands/watcherStatus.js'
-import { runWatcherStop } from '../../commands/watcherStop.js'
-import { runWatcherPrune } from '../../commands/watcherPrune.js'
-import { runWatcherNativeHost } from '../../commands/watcherNativeHost.js'
 import { resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runList = lazyAction(() => import('../../commands/list.js').then((mod) => mod.runList))
+const runReload = lazyAction(() => import('../../commands/reload.js').then((mod) => mod.runReload))
+const runPageShow = lazyAction(() => import('../../commands/pageVisibility.js').then((mod) => mod.runPageShow))
+const runPageHide = lazyAction(() => import('../../commands/pageVisibility.js').then((mod) => mod.runPageHide))
+const runWatcherStart = lazyAction(() => import('../../commands/watcherStart.js').then((mod) => mod.runWatcherStart))
+const runWatcherStatus = lazyAction(() => import('../../commands/watcherStatus.js').then((mod) => mod.runWatcherStatus))
+const runWatcherStop = lazyAction(() => import('../../commands/watcherStop.js').then((mod) => mod.runWatcherStop))
+const runWatcherPrune = lazyAction(() => import('../../commands/watcherPrune.js').then((mod) => mod.runWatcherPrune))
+const runWatcherNativeHost = lazyAction(() => import('../../commands/watcherNativeHost.js').then((mod) => mod.runWatcherNativeHost))
 
 export const watcherCommands: readonly ArgusCommandDefinition[] = [
 	{

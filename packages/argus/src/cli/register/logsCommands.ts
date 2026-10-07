@@ -1,7 +1,11 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
-import { runLogCursor, runLogEpoch, runLogs } from '../../commands/logs.js'
-import { runTail } from '../../commands/tail.js'
 import { collectMatch, usageError, validateCaseFlags, validateMatchOptions } from '../validation.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runLogCursor = lazyAction(() => import('../../commands/logs.js').then((mod) => mod.runLogCursor))
+const runLogEpoch = lazyAction(() => import('../../commands/logs.js').then((mod) => mod.runLogEpoch))
+const runLogs = lazyAction(() => import('../../commands/logs.js').then((mod) => mod.runLogs))
+const runTail = lazyAction(() => import('../../commands/tail.js').then((mod) => mod.runTail))
 
 const sharedFilterOptions: readonly ArgusCommandOption[] = [
 	{ flags: '--levels <levels>', description: 'Comma-separated log levels' },

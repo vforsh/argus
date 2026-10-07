@@ -1,6 +1,8 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { runSession } from '../../session/runSession.js'
 import { jsonOption } from './sharedOptions.js'
+import { lazyAction } from '../lazyAction.js'
+
+const runSession = lazyAction(() => import('../../session/runSession.js').then((mod) => mod.runSession))
 
 export const sessionCommands: readonly ArgusCommandDefinition[] = [
 	{

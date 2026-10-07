@@ -4,7 +4,7 @@ Argus: terminal-first debugging for Chromium apps (CLI + watcher over CDP or the
 
 ## Repo Map
 
-- **`packages/argus`**: CLI app. Entry `src/bin.ts`; registration order in `src/cli/register/index.ts` (`coreProgramRegistrars`), flags/help in `src/cli/register/*`; implementations in `src/commands/*` (mostly `defineWatcherCommand`); plugin loading in `src/cli/plugins/`. Bundled to `dist/argus.js` (the `argus` bin).
+- **`packages/argus`**: CLI app. Entry `src/bin.ts`; registration order in `src/cli/register/index.ts` (`coreProgramRegistrars`), flags/help in `src/cli/register/*`; implementations in `src/commands/*` (mostly `defineWatcherCommand`); plugin loading in `src/cli/plugins/`. Lightweight command manifests defer actions via `src/cli/lazyAction.ts`; `scripts/bundle-argus.mjs` emits `dist/argus.js` plus lazy `dist/chunks/` (ship both).
 - **`packages/argus-watcher`**: watcher server. Routes in `src/http/routes/*` (`defineJsonRoute` in `defineRoute.ts`, `defineExtensionRoute`), registered in `routes/index.ts` (`watcherRoutes`), dispatched by `src/http/router.ts`; endpoint names in `src/http/endpoints.ts` (`WATCHER_ENDPOINTS`); response helpers in `src/http/httpUtils.ts`.
 - **`packages/argus-core`**: protocol types and schemas: `src/protocol/http/*`, `src/protocol/schemaFields.ts`, `src/protocol/native-messaging.ts`, `src/protocol/version.ts`. Must stay dependency-free.
 - **`packages/argus-client`**: SDK, `src/client/createArgusClient.ts`.
