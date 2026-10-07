@@ -23,6 +23,7 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 	},
 	{
 		name: 'start',
+		alias: 'up',
 		description: 'Launch Chrome and attach a watcher in one command',
 		options: [
 			{ flags: '--id <watcherId>', description: 'Watcher id (fails with watcher_id_taken if a live watcher holds it)', required: true },
@@ -55,6 +56,7 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 		],
 		examples: [
 			'argus start --id app --url localhost:3000',
+			'argus up --id app --url localhost:3000',
 			'argus start --id app --auth-from extension-2',
 			'argus start --id app --auth-from extension-2 --url https://target.app/',
 			'argus start --id app --url localhost:3000 --dev-tools',

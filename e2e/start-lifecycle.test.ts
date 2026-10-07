@@ -42,12 +42,12 @@ describe('combined Chrome + watcher lifecycle', () => {
 		await fs.rm(tempDir, { recursive: true, force: true })
 	})
 
-	const start = async (id: string, runtime: 'bun' | 'node', flags: string[] = []): Promise<StartResult> => {
+	const start = async (id: string, runtime: 'bun' | 'node', command: 'start' | 'up', flags: string[] = []): Promise<StartResult> => {
 		const { stdout } = await runCommand(
 			runtime,
 			[
 				runtime === 'bun' ? BUNDLE_PATH : BIN_PATH,
-				'start',
+				command,
 				'--id',
 				id,
 				'--url',
@@ -75,10 +75,10 @@ describe('combined Chrome + watcher lifecycle', () => {
 		return (JSON.parse(stdout) as { result: unknown }).result
 	}
 
-	test('Bun and Node detach return ready sessions; stopping one closes only its own Chrome and profile', async () => {
+	test('Bun up and Node start detach return ready sessions; stopping one closes only its own Chrome and profile', async () => {
 		const [first, second] = await Promise.all([
-			start('detached-bun', 'bun'),
-			start('detached-node', 'node', ['--width', '900', '--height', '1250', '--dpr', '2']),
+			start('detached-bun', 'bun', 'up'),
+			start('detached-node', 'node', 'start', ['--width', '900', '--height', '1250', '--dpr', '2']),
 		])
 		expect(first.cdpPort).not.toBe(second.cdpPort)
 		expect(await evaluate(first.id, '[innerWidth, innerHeight, devicePixelRatio]')).toEqual([1280, 900, 1])
@@ -94,11 +94,11 @@ describe('combined Chrome + watcher lifecycle', () => {
 		expect(await evaluate(second.id, 'document.title')).toBe('headless lifecycle')
 	}, 30_000)
 
-	test('foreground startup waits for attachment and POST /shutdown closes the entire session', async () => {
+	test('foreground up waits for attachment and POST /shutdown closes the entire session', async () => {
 		const id = 'foreground-owner'
 		const { proc, stdout } = await spawnAndWait(
 			'node',
-			[BIN_PATH, 'start', '--id', id, '--url', origin, '--headless', '--profile', 'temp', '--json'],
+			[BIN_PATH, 'up', '--id', id, '--url', origin, '--headless', '--profile', 'temp', '--json'],
 			{ env },
 			/\{"id":"foreground-owner"/,
 		)

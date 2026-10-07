@@ -68,6 +68,8 @@ Start Chrome and attach a watcher in one command:
 argus start --id app --url http://localhost:3000
 ```
 
+`argus up` is an alias for `argus start`, with the same flags and behavior.
+
 This command is long-running. It keeps Chrome and the watcher alive until you stop it.
 
 For agent scripts, return after the watcher attaches:
@@ -379,7 +381,7 @@ Four packages:
 
 | Command                                                | Description                              |
 | ------------------------------------------------------ | ---------------------------------------- |
-| `start`                                                | Launch Chrome + watcher in one command   |
+| `start` / `up`                                         | Launch Chrome + watcher in one command   |
 | `list`                                                 | List watchers and Chrome instances       |
 | `doctor`                                               | Run environment diagnostics              |
 | `reload`                                               | Reload the attached page                 |

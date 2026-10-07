@@ -73,6 +73,7 @@ Tab stuck in background or booting: `argus ext show app` then `argus reload app`
 
 ```bash
 argus start --id app --url localhost:3000            # Chrome + watcher, one process (background it)
+argus up --id app --url localhost:3000               # alias for start; same flags and behavior
 argus start --id app --url localhost:3000 --headless --profile temp --detach --json
 argus start --id game --url localhost:3000 --headless --profile temp --detach --width 900 --height 1250 --dpr 2 --json
 argus start --id app --url https://example.com --headless --profile default-medium --user-agent regular-chrome
@@ -131,7 +132,7 @@ argus logs app --after "$c" --levels error,exception --json
 
 | Area               | Commands                                                                                           | Reference                                |
 | ------------------ | -------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| Launch / lifecycle | `start`, `chrome *`, `watcher *`, `page open --attach`, `config init`, `doctor`, `list`            | [START.md](./reference/START.md)         |
+| Launch / lifecycle | `start`/`up`, `chrome *`, `watcher *`, `page open --attach`, `config init`, `doctor`, `list`       | [START.md](./reference/START.md)         |
 | Extension          | `extension install/doctor/tabs/use/attach/select/targets/detach/show/mute/diagnose/recover`        | [EXTENSION.md](./reference/EXTENSION.md) |
 | Iframes            | CDP target flags, `ext select`                                                                     | [IFRAMES.md](./reference/IFRAMES.md)     |
 | Logs               | `logs`, `logs cursor/epoch/tail`                                                                   | [LOGS.md](./reference/LOGS.md)           |

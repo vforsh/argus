@@ -8,6 +8,8 @@ Watcher ids are exact: `start --id`, `watcher start --id`, and `page open --atta
 
 ## `argus start` (Chrome + watcher)
 
+Alias: `argus up`, with the same flags and behavior.
+
 ```bash
 argus start --id app --url localhost:3000
 argus start --id app --url localhost:3000 --headless --profile temp --detach --json
