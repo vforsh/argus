@@ -7,6 +7,9 @@
 		"directory": "packages/argus"
 	},
 	"type": "module",
+	"engines": {
+		"node": "^20.19.0 || >=22.12.0"
+	},
 	"bin": {
 		"argus": "dist/argus.js"
 	},
@@ -36,12 +39,12 @@
 		"@vforsh/argus-watcher": "^0.5.13",
 		"commander": "14.0.2",
 		"esbuild": "0.25.12",
-		"prettier": "3.7.4"
+		"oxfmt": "0.72.0"
 	},
 	"scripts": {
 		"clean": "node ../../scripts/clean-dist.mjs",
 		"build": "npm run clean && tsc -b && bun run bundle",
-		"bundle": "bun build dist/bin.js --outfile dist/argus.js --target node --external esbuild --external prettier --external 'prettier/*' && node ../../scripts/copy-argus-skill.mjs && node ../../scripts/copy-argus-extension.mjs",
+		"bundle": "bun build dist/bin.js --outfile dist/argus.js --target node --external esbuild --external oxfmt && node ../../scripts/copy-argus-skill.mjs && node ../../scripts/copy-argus-extension.mjs",
 		"typecheck": "tsc -b --pretty false",
 		"chrome:start": "bun src/bin.ts chrome start"
 	}

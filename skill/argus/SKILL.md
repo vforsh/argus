@@ -16,6 +16,8 @@ argus skill                   # absolute path of this SKILL.md (reference/ sits 
 
 ---
 
+`code deminify` formats runtime JS/CSS with lazy Oxfmt; formatter failures return the original source. `code grep --pretty` shows source context without loading Oxfmt.
+
 ## Pick A Mode
 
 | Need                                                                             | Mode                   | Connect with                                 |

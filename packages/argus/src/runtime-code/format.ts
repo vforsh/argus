@@ -1,6 +1,5 @@
 import { findTextPatternMatch, type CodeResourceType, type TextPattern } from '@vforsh/argus-core'
 import type { CodeGrepMatch } from '@vforsh/argus-core'
-import type { Plugin } from 'prettier'
 import type { PrettyCodeLine, PrettyCodeMatch, RuntimeSourceFormatResult } from './types.js'
 import { formatError } from '../cli/parse.js'
 
@@ -9,26 +8,30 @@ const PRETTY_CONTEXT_AFTER = 1
 const MAX_PRETTY_LINE_WIDTH = 160
 
 // Cache in-flight imports too; grep's snippet helpers must stay formatter-free.
-let prettierPromise: Promise<typeof import('prettier/standalone')> | undefined
-let scriptPluginsPromise: Promise<Plugin[]> | undefined
-let stylesheetPluginsPromise: Promise<Plugin[]> | undefined
+let formatterPromise: Promise<typeof import('oxfmt')> | undefined
 
-/** Format runtime JS/CSS with lazy, resource-specific parsers; return the original source on failure. */
+/**
+ * Format runtime JS/CSS lazily, without discovering project configuration.
+ * @param source Original runtime text.
+ * @param type Resource kind; selects the parser independently of its URL.
+ * @returns Formatted text, or the original text with diagnostics on any failure.
+ */
 export const formatRuntimeSource = async (source: string, type: CodeResourceType): Promise<RuntimeSourceFormatResult> => {
-	const parser = getPrettierParser(type)
-	if (!parser) {
+	const fileName = getFormatterFileName(type)
+	if (!fileName) {
 		return { source, changed: false }
 	}
 
 	try {
-		const [prettier, plugins] = await Promise.all([prettierPromise ??= import('prettier/standalone'), loadPrettierPlugins(parser)])
-		const formatted = await prettier.format(source, {
-			parser,
-			plugins,
-		})
+		const formatter = await (formatterPromise ??= import('oxfmt'))
+		// Fixed virtual names select the resource parser without reading project config or URL extensions.
+		const result = await formatter.format(fileName, source, { printWidth: 80 })
+		if (result.errors.length > 0) {
+			throw new Error(result.errors.map((error) => error.codeframe?.trim() || error.message).join('\n'))
+		}
 		return {
-			source: formatted,
-			changed: formatted !== source,
+			source: result.code,
+			changed: result.code !== source,
 		}
 	} catch (error) {
 		return {
@@ -39,13 +42,15 @@ export const formatRuntimeSource = async (source: string, type: CodeResourceType
 	}
 }
 
-const loadPrettierPlugins = (parser: 'babel' | 'css'): Promise<Plugin[]> => {
-	if (parser === 'css') {
-		return stylesheetPluginsPromise ??= import('prettier/plugins/postcss').then((plugin) => [plugin.default])
+const getFormatterFileName = (type: CodeResourceType): 'runtime.js' | 'runtime.css' | null => {
+	switch (type) {
+		case 'script':
+			return 'runtime.js'
+		case 'stylesheet':
+			return 'runtime.css'
+		default:
+			return null
 	}
-
-	return scriptPluginsPromise ??= Promise.all([import('prettier/plugins/babel'), import('prettier/plugins/estree')])
-		.then(([babel, estree]) => [babel.default, estree.default])
 }
 
 export const buildPrettyCodeMatches = (matches: CodeGrepMatch[], sourceByUrl: Map<string, string>, pattern: TextPattern): PrettyCodeMatch[] =>
@@ -73,17 +78,6 @@ export const buildPrettyCodeMatches = (matches: CodeGrepMatch[], sourceByUrl: Ma
 			snippet,
 		}
 	})
-
-const getPrettierParser = (type: CodeResourceType): 'babel' | 'css' | null => {
-	switch (type) {
-		case 'script':
-			return 'babel'
-		case 'stylesheet':
-			return 'css'
-		default:
-			return null
-	}
-}
 
 const formatSnippetLine = (line: string, match: { index: number; length: number } | null): string => {
 	if (!match) {

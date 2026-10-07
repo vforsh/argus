@@ -25,7 +25,7 @@ Root `package.json` and `packages/*/package.json` are authoritative.
 - **Build extension**: `npm run build:extension`.
 - **Typecheck (full gate)**: `npm run typecheck` (app + shared packages + extension + tests). Focused: `typecheck:app`, `typecheck:packages`, `typecheck:extension`, `typecheck:tests` (`e2e/`, `packages/*/test`, `packages/*/scripts`, and the playground modules they import).
 - **Tests**: see [Verification](#verification).
-- **No lint/format scripts**: there is no `npm run lint` and no formatter on commit. Prettier in `packages/argus` is a runtime dependency for code deminify (`src/runtime-code/format.ts`), not repo tooling.
+- **No lint/format scripts**: there is no `npm run lint` and no formatter on commit. Oxfmt in `packages/argus` is a runtime dependency for code deminify (`src/runtime-code/format.ts`), not repo tooling.
 
 **Builds must be serial.** Never run `clean`, `tsc -b`, `build:*`, or Bun bundle steps in parallel with anything that reads `dist/`. `clean` deletes emitted files first, so a concurrent reader sees half-built output and reports fake "missing export" errors. If an error points at `packages/*/dist/*`, rebuild serially before treating it as a source bug.
 

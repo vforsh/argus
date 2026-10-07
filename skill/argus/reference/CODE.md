@@ -20,4 +20,4 @@ cat patched.css | argus code edit inline-css://1 --id app
 - `code edit` live-patches **stylesheets** (`CSS.setStyleSheetText`). Editing JS is not supported on Chrome 145+ (V8 dropped `Debugger.setScriptSource`); use `argus eval` for runtime JS changes.
 - `code strings` favors signal over completeness; `--all` includes low-signal literals. Kinds: `url,key,identifier,message,other`.
 - `code grep` skips stale stylesheet handles with a stderr warning and still returns the rest. `deminify` falls back to the original source if formatting fails.
-- `deminify` loads runtime Prettier and only the JS or CSS parsers it needs. `grep --pretty` adds context without loading the formatter.
+- `deminify` lazily loads Oxfmt for native JS/CSS formatting (80-column output, independent of project config). Parse/import/native-binding errors preserve the original source and report a formatting error. Oxfmt requires Node ^20.19.0 or >=22.12.0 and its platform binding; keep optional dependencies enabled when installing. `grep --pretty` adds context without loading the formatter.
