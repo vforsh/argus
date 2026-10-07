@@ -92,6 +92,7 @@ export type WatcherEndpoint = (typeof WATCHER_ENDPOINTS)[number]
  * was ever actually discriminated — while every new route still had to be added to both models.
  */
 export type WatcherRequestQuery = {
+	raw?: boolean
 	id?: number
 	requestId?: string
 	part?: NetRequestBodyPart

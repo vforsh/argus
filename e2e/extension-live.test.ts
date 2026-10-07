@@ -9,6 +9,8 @@
  * Skips itself when no Chromium/Chrome for Testing binary is available (branded Chrome
  * 137+ ignores --load-extension).
  */
+import http from 'node:http'
+import { readActiveRegistry, type LogsResponse } from '@vforsh/argus-core'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { ApiResult, EvalResponse, NavigateHistoryResponse, NavigateResponse, StatusResponse } from '@vforsh/argus-core'
 import { resolveTestChromeBin, startExtensionHarness, type ExtensionHarness } from './helpers/extensionHarness.js'
@@ -74,6 +76,26 @@ const selectIframeByUrl = async (urlSubstring: string): Promise<void> => {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
+const assertTextSelectionInFrame = async (): Promise<void> => {
+	await evalInSelectedTarget(`(() => {
+		let scope = document.getElementById('argus-text-scope'); if (scope) scope.remove();
+		scope = document.createElement('section'); scope.id = 'argus-text-scope';
+		for (let i = 0; i < 1000; i++) {
+			const button = document.createElement('button'); button.className = 'argus-text-candidate';
+			button.id = 'frame-button-' + i; button.textContent = i === 999 ? ' Frame Needle ' : 'Other';
+			button.onclick = () => { document.body.dataset.argusClicked = button.id }; scope.append(button);
+		}
+		document.body.append(scope); return true;
+	})()`)
+	const info = await harness.cliJson<{ ok: boolean; matches: number; elements: Array<{ ref: string; attributes: { id: string } }> }>(
+		'dom', 'info', WATCHER_ID, '--selector', '.argus-text-candidate', '--text', '/frame needle/i', '--json',
+	)
+	expect(info).toMatchObject({ ok: true, matches: 1 })
+	expect(info.elements[0]?.attributes.id).toBe('frame-button-999')
+	expect((await harness.cli('click', WATCHER_ID, '--ref', info.elements[0]!.ref, '--json')).code).toBe(0)
+	expect(await evalInSelectedTarget('document.body.dataset.argusClicked')).toBe('frame-button-999')
+}
+
 liveTest(
 	'0: recovers a real Argus-owned debugger absent from extension bookkeeping',
 	async () => {
@@ -113,6 +135,7 @@ liveTest(
 	async () => {
 		await selectIframeByUrl(`${harness.pageUrlSubstring}/iframe.html`)
 		await waitForEval('location.href', (value) => typeof value === 'string' && value.includes(`${harness.pageUrlSubstring}/iframe.html`))
+		await assertTextSelectionInFrame()
 	},
 	STEP_TIMEOUT_MS,
 )
@@ -148,6 +171,7 @@ liveTest(
 		const crossOriginSubstring = harness.crossOriginUrl.replace('http://', '')
 		await selectIframeByUrl(`${crossOriginSubstring}/iframe.html`)
 		await waitForEval('location.href', (value) => typeof value === 'string' && value.includes(`${crossOriginSubstring}/iframe.html`))
+		await assertTextSelectionInFrame()
 	},
 	STEP_TIMEOUT_MS,
 )
@@ -162,6 +186,7 @@ liveTest(
 
 		const crossOriginSubstring = harness.crossOriginUrl.replace('http://', '')
 		await waitForEval('location.href', (value) => typeof value === 'string' && value.includes(`${crossOriginSubstring}/iframe.html`), 45_000)
+		await assertTextSelectionInFrame()
 
 		const delta = (await pageNavigations()) - navigationsBefore
 		// Exactly one, same contract as scenario C (pre-C2 a reload also counted twice).
@@ -256,3 +281,45 @@ liveTest(
 	},
 	STEP_TIMEOUT_MS,
 )
+
+
+liveTest('I: raw/final ingestion through the real extension bridge preserves order and cursors under a cold map', async () => {
+	const server = http.createServer((req, res) => {
+		if (req.url === '/slow.map') {
+			setTimeout(() => res.end(JSON.stringify({ version: 3, sources: ['original.ts'], names: [], mappings: 'AAAA' })), 250)
+		} else if (req.url === '/bundle.js') {
+			res.end('window.emit = text => console.log(text);\n//# sourceMappingURL=/slow.map')
+		} else {
+			res.setHeader('content-type', 'text/html')
+			res.end('<script src="/bundle.js"></script>')
+		}
+	})
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+	try {
+		const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+		expect((await harness.cli('ext', 'select', WATCHER_ID, '--page', '--json')).code).toBe(0)
+		expect((await harness.cli('goto', WATCHER_ID, url, '--json')).code).toBe(0)
+		await waitForEval('typeof window.emit', (value) => value === 'function')
+		const watcher = (await readActiveRegistry({ registryPath: harness.registryPath })).watchers[WATCHER_ID]!
+		const endpoint = `http://${watcher.host}:${watcher.port}`
+		const json = async <T>(path: string): Promise<T> => (await (await fetch(endpoint + path)).json()) as T
+		const { cursor } = await json<{ cursor: string }>('/logs/cursor')
+		const rawWaiting = json<LogsResponse>(`/tail?after=${cursor}&raw=1`)
+		const finalWaiting = json<LogsResponse>(`/tail?after=${cursor}`)
+		await evalInSelectedTarget('window.emit("extension-first"); console.log("extension-second"); true')
+		const raw = await rawWaiting
+		const final = await finalWaiting
+		expect(raw.events[0]?.text).toBe('extension-first')
+		expect(raw.events[0]?.file).toContain('/bundle.js')
+		expect(final.events[0]?.text).toBe('extension-first')
+		expect(final.events[0]?.file).toContain('/original.ts')
+		expect(final.events[0]?.id).toBe(raw.events[0]?.id)
+		const all = await json<LogsResponse>(`/logs?after=${cursor}`)
+		expect(all.events.filter((event) => event.text.startsWith('extension-')).map((event) => event.text))
+			.toEqual(['extension-first', 'extension-second'])
+		expect((await json<LogsResponse>(`/logs?after=${all.nextCursor}`)).events).toHaveLength(0)
+	} finally {
+		server.closeAllConnections()
+		await new Promise<void>((resolve) => server.close(() => resolve()))
+	}
+}, STEP_TIMEOUT_MS)

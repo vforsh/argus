@@ -24,6 +24,7 @@ export const route = defineJsonRoute<undefined, LogsResponse>({
 			return respondLogEpochError(res, new LogEpochError('invalid', position.error))
 		}
 		const limit = clampNumber(logParam(url, 'limit'), 500, 1, 5000)
+		const raw = ['1', 'true'].includes(logParam(url, 'raw') ?? '')
 		const levels = parseLevels(logParam(url, 'levels'))
 		const match = logParams(url, 'match')
 		const matchCase = resolveMatchCase(logParam(url, 'matchCase'))
@@ -47,6 +48,7 @@ export const route = defineJsonRoute<undefined, LogsResponse>({
 			after: position.kind === 'epoch' && url.searchParams.has('after') ? position.epoch : undefined,
 			sinceEpoch: position.kind === 'epoch' ? position.epoch : undefined,
 			limit,
+			raw,
 			levels,
 			match: matchPatterns.patterns,
 			matchCase,
@@ -55,7 +57,7 @@ export const route = defineJsonRoute<undefined, LogsResponse>({
 		})
 
 		try {
-			const result = listLogsFromPosition(ctx.buffer, position, { levels, match: compiledMatch.match, source, sinceTs }, limit)
+			const result = listLogsFromPosition(ctx.buffer, position, { raw, levels, match: compiledMatch.match, source, sinceTs }, limit)
 			return { ok: true, ...result }
 		} catch (error) {
 			if (error instanceof LogEpochError) {

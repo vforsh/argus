@@ -8,6 +8,7 @@ const runLogs = lazyAction(() => import('../../commands/logs.js').then((mod) => 
 const runTail = lazyAction(() => import('../../commands/tail.js').then((mod) => mod.runTail))
 
 const sharedFilterOptions: readonly ArgusCommandOption[] = [
+	{ flags: '--raw', description: 'Read immediately with generated locations and value previews (no enrichment)' },
 	{ flags: '--levels <levels>', description: 'Comma-separated log levels' },
 	{ flags: '--match <regex>', description: 'Filter by regex (repeatable)', parser: collectMatch, defaultValue: [] },
 	{ flags: '--ignore-case', description: 'Use case-insensitive regex matching' },

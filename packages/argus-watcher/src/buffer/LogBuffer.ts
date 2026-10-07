@@ -8,6 +8,8 @@ import type { LogEpoch, LogEvent, LogLevel } from '@vforsh/argus-core'
  * Used by `LogBuffer.listAfterEpoch()` and `LogBuffer.waitForAfterEpoch()`.
  */
 export type LogFilters = {
+	/** Immutable arrival-time view; never waits for or receives enrichment revisions. */
+	raw?: boolean
 	/** If provided, only include events whose `level` is in this list. */
 	levels?: LogLevel[]
 
@@ -69,7 +71,7 @@ const EPOCH_PREFIX = 'argus-log-epoch-v1.'
 export class LogBuffer {
 	private readonly maxSize: number
 	private readonly streamId = randomUUID()
-	private readonly events: CircularBuffer<LogEvent>
+	private readonly events: CircularBuffer<{ raw: LogEvent; event?: LogEvent }>
 	private nextId = 1
 	private epochWaiters: EpochWaiter[] = []
 
@@ -78,15 +80,28 @@ export class LogBuffer {
 		this.events = new CircularBuffer(maxSize)
 	}
 
-	/** Add a log event and return the stored entry with id. */
+	/** Add an already-final event. System messages take this path without asynchronous work. */
 	add(event: Omit<LogEvent, 'id'>): LogEvent {
-		const entry: LogEvent = {
-			...event,
-			id: this.nextId++,
-		}
-		this.events.push(entry)
+		const entry = { ...event, id: this.nextId++ }
+		this.events.push({ raw: entry, event: entry })
 		this.flushEpochWaiters()
 		return entry
+	}
+
+	/**
+	 * Reserve an id at arrival and publish the immutable raw view. The returned callback publishes
+	 * the final view once; ordinary readers stop at unfinished entries so a cursor never skips them.
+	 */
+	addPending(event: Omit<LogEvent, 'id'>): (event: Omit<LogEvent, 'id'>) => void {
+		const raw = { ...event, id: this.nextId++ }
+		const entry: { raw: LogEvent; event?: LogEvent } = { raw }
+		this.events.push(entry)
+		this.flushEpochWaiters()
+		return (final) => {
+			if (entry.event) return
+			entry.event = final === event ? raw : { ...final, id: raw.id }
+			this.flushEpochWaiters()
+		}
 	}
 
 	/** List events after the given id, respecting filters and limit. */
@@ -112,7 +127,7 @@ export class LogBuffer {
 	 */
 	epochAtStart(): LogEpoch {
 		const oldest = this.events.at(0)
-		return this.getEpochAt(oldest ? oldest.id - 1 : this.currentPosition())
+		return this.getEpochAt(oldest ? oldest.raw.id - 1 : this.currentPosition())
 	}
 
 	/** Encode a known stream position for response pagination. */
@@ -157,8 +172,8 @@ export class LogBuffer {
 		return {
 			size: this.maxSize,
 			count: this.events.length,
-			minId: this.events.at(0)?.id ?? null,
-			maxId: this.events.at(this.events.length - 1)?.id ?? null,
+			minId: this.events.at(0)?.raw.id ?? null,
+			maxId: this.events.at(this.events.length - 1)?.raw.id ?? null,
 		}
 	}
 
@@ -193,11 +208,13 @@ export class LogBuffer {
 
 	private listAfterPosition(position: number, filters: LogFilters, limit: number): LogEvent[] {
 		const events: LogEvent[] = []
-		const firstId = this.events.at(0)?.id ?? this.nextId
+		const firstId = this.events.at(0)?.raw.id ?? this.nextId
 		const boundedLimit = limit < 0 ? Infinity : Math.trunc(limit)
 		const start = Math.max(0, Math.floor(position) - firstId + 1)
 		for (let index = start; index < this.events.length && events.length < boundedLimit; index++) {
-			const event = this.events.at(index)!
+			const entry = this.events.at(index)!
+			const event = filters.raw ? entry.raw : entry.event
+			if (!event) break
 			if (matchesFilters(event, filters)) events.push(event)
 		}
 		return limit < 0 ? events.slice(0, limit) : events
@@ -220,7 +237,7 @@ export class LogBuffer {
 	}
 
 	private validatePosition(position: number): void {
-		if (this.events.length > 0 && position < (this.events.at(0)?.id ?? position + 1) - 1) {
+		if (this.events.length > 0 && position < (this.events.at(0)?.raw.id ?? position + 1) - 1) {
 			throw new LogEpochError('evicted', 'Log epoch is stale because the ring buffer evicted entries. Capture a new epoch.')
 		}
 		if (this.maxSize <= 0 && this.currentPosition() > position) {

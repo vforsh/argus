@@ -38,7 +38,7 @@ import type {
 export type ArgusClientOptions = {
 	/** Override registry path instead of using `ARGUS_REGISTRY_PATH` / default. */
 	registryPath?: string
-	/** TTL used for pruning stale watchers before list/logs. Default: `DEFAULT_TTL_MS`. */
+	/** Heartbeat TTL used for locally hiding expired watcher records. Default: `DEFAULT_TTL_MS`. */
 	ttlMs?: number
 	/** Default HTTP timeout (ms). */
 	timeoutMs?: number
@@ -74,6 +74,8 @@ export type LogsMode = 'preview' | 'full'
 
 /** Options for fetching logs from a watcher. */
 export type LogsOptions = {
+	/** Read arrival-time values/previews and generated locations without waiting for enrichment. */
+	raw?: boolean
 	mode?: LogsMode
 	levels?: string | LogLevel[]
 	/** Regex match patterns (repeatable). */

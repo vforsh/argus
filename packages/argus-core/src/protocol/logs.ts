@@ -9,6 +9,8 @@ export type LogEpoch = string
 
 /** Normalized log payload stored in the buffer and returned via HTTP API. */
 export type LogEvent = {
+	/** Enrichment fell back to arrival-time values; final records are never revised. */
+	enrichment?: 'timeout' | 'overloaded' | 'cancelled' | 'failed'
 	id: number
 	ts: number
 	level: LogLevel

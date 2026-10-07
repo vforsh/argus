@@ -7,6 +7,7 @@ import { appendAfterLimitParams, appendLogFilterParams, appendSinceParam } from 
 
 /** Options for the logs command. */
 export type LogsOptions = {
+	raw?: boolean
 	json?: boolean
 	jsonFull?: boolean
 	levels?: string

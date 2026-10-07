@@ -10,7 +10,7 @@ import type { StartWatcherOptions } from '../index.js'
 import type { NormalizedWatcherSetup } from './watcherSetup.js'
 
 export type WatcherSourceCallbacks = {
-	onLog: (event: Omit<import('@vforsh/argus-core').LogEvent, 'id'>) => void
+	onLog: (event: Omit<import('@vforsh/argus-core').LogEvent, 'id'>, enrich?: import('../cdp/watcherEvents.js').LogEnrichment) => void
 	onStatus: (status: CdpSourceStatus) => void
 	onPageNavigation: (info: { url: string; title: string | null }) => void
 	onPageLoad: () => void

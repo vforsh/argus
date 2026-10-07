@@ -23,6 +23,7 @@ export const selectBestFrame = async (
 	callFrames: CallFrame[] | undefined,
 	ignoreMatcher: IgnoreMatcher | null,
 	sourcemaps: SourcemapResolver,
+	signal?: AbortSignal,
 ): Promise<SelectedLocation | null> => {
 	if (!callFrames || callFrames.length === 0) {
 		return null
@@ -37,7 +38,7 @@ export const selectBestFrame = async (
 			continue
 		}
 
-		const resolved = await sourcemaps.resolve(generated)
+		const resolved = await sourcemaps.resolve(generated, signal)
 		if (resolved) {
 			if (ignoreMatcher?.matches(resolved.file)) {
 				continue

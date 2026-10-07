@@ -13,7 +13,7 @@ import { resolveSourcemappedLocationWithMap, type GeneratedLocation, type Resolv
  */
 export type SourcemapResolver = {
 	/** Map a generated location back to its original source, or `null` when no map applies. */
-	resolve: (location: GeneratedLocation) => Promise<ResolvedLocation | null>
+	resolve: (location: GeneratedLocation, signal?: AbortSignal) => Promise<ResolvedLocation | null>
 	/** Drop every cached map. Called on top-level navigation so a rebuilt bundle is re-read. */
 	clear: () => void
 }
@@ -21,6 +21,8 @@ export type SourcemapResolver = {
 export type SourcemapResolverOptions = {
 	/** Hard cap on cached scripts. Oldest entries are evicted first. Default 128. */
 	maxEntries?: number
+	/** Total script + map load deadline, including response bodies. Default 2s. */
+	loadTimeoutMs?: number
 	/** How long a "no usable map" answer is trusted before being retried. Default 30s. */
 	negativeTtlMs?: number
 	/**
@@ -55,12 +57,13 @@ export const createSourcemapResolver = (options: SourcemapResolverOptions = {}):
 	const fetchScript = createScriptFetcher()
 
 	const cache = new Map<string, CacheEntry>()
-	const pending = new Map<string, Promise<TraceMap | null>>()
+	const pending = new Map<string, { promise: Promise<TraceMap | null>; controller: AbortController }>()
 	/** Bumped by `clear()`; in-flight loads started before the bump don't get to populate the cache. */
 	let generation = 0
 
 	const clear = (): void => {
 		generation += 1
+		for (const load of pending.values()) load.controller.abort()
 		cache.clear()
 		pending.clear()
 	}
@@ -99,11 +102,15 @@ export const createSourcemapResolver = (options: SourcemapResolverOptions = {}):
 
 		const inFlight = pending.get(scriptUrl)
 		if (inFlight) {
-			return inFlight
+			return inFlight.promise
 		}
 
+		// Concurrent log bursts must not create an unbounded set of stalled HTTP loads.
+		if (pending.size >= Math.max(1, maxEntries)) return Promise.resolve(null)
 		const startedAt = generation
-		const promise = loadTraceMap(scriptUrl, tailBytes, fetchScript)
+		const controller = new AbortController()
+		const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(options.loadTimeoutMs ?? 2_000)])
+		const promise = loadTraceMap(scriptUrl, tailBytes, fetchScript, signal)
 			.catch(() => null)
 			.then((traceMap) => {
 				if (startedAt === generation) {
@@ -112,14 +119,14 @@ export const createSourcemapResolver = (options: SourcemapResolverOptions = {}):
 				return traceMap
 			})
 			.finally(() => {
-				pending.delete(scriptUrl)
+				if (pending.get(scriptUrl)?.promise === promise) pending.delete(scriptUrl)
 			})
 
-		pending.set(scriptUrl, promise)
+		pending.set(scriptUrl, { promise, controller })
 		return promise
 	}
 
-	const resolve = async (location: GeneratedLocation): Promise<ResolvedLocation | null> => {
+	const resolve = async (location: GeneratedLocation, signal?: AbortSignal): Promise<ResolvedLocation | null> => {
 		if (!location.file || location.line == null || location.column == null) {
 			return null
 		}
@@ -129,7 +136,11 @@ export const createSourcemapResolver = (options: SourcemapResolverOptions = {}):
 			return null
 		}
 
+		signal?.throwIfAborted()
+		// Keep the worker until the shared physical load settles. Cancelling individual waiters
+		// must not free slots for an unlimited stream of new loads during a logging burst.
 		const traceMap = await getTraceMap(scriptUrl)
+		signal?.throwIfAborted()
 		if (!traceMap) {
 			return null
 		}
@@ -140,8 +151,8 @@ export const createSourcemapResolver = (options: SourcemapResolverOptions = {}):
 	return { resolve, clear }
 }
 
-const loadTraceMap = async (scriptUrl: string, tailBytes: number, fetchScript: ScriptFetcher): Promise<TraceMap | null> => {
-	const tail = await fetchScript(scriptUrl, tailBytes)
+const loadTraceMap = async (scriptUrl: string, tailBytes: number, fetchScript: ScriptFetcher, signal: AbortSignal): Promise<TraceMap | null> => {
+	const tail = await fetchScript(scriptUrl, tailBytes, signal)
 	if (!tail) {
 		return null
 	}
@@ -149,7 +160,7 @@ const loadTraceMap = async (scriptUrl: string, tailBytes: number, fetchScript: S
 	let reference = readSourcemapReference(tail.text, scriptUrl)
 	if (!reference && tail.partial) {
 		// An inline `data:` map is longer than the tail window, so its annotation starts above it.
-		const full = await fetchScript(scriptUrl, null)
+		const full = await fetchScript(scriptUrl, null, signal)
 		reference = full ? readSourcemapReference(full.text, scriptUrl) : null
 	}
 
@@ -161,7 +172,7 @@ const loadTraceMap = async (scriptUrl: string, tailBytes: number, fetchScript: S
 		return new TraceMap(reference.map, reference.baseUrl)
 	}
 
-	const rawMap = await fetchSourcemap(reference.url)
+	const rawMap = await fetchSourcemap(reference.url, signal)
 	if (!rawMap) {
 		return null
 	}
@@ -171,9 +182,10 @@ const loadTraceMap = async (scriptUrl: string, tailBytes: number, fetchScript: S
 }
 
 /** Fetch and parse a sourcemap. A server answering 200-with-JavaScript fails the parse and yields null. */
-const fetchSourcemap = async (mapUrl: string): Promise<SourceMapInput | null> => {
-	const response = await fetch(mapUrl)
+const fetchSourcemap = async (mapUrl: string, signal: AbortSignal): Promise<SourceMapInput | null> => {
+	const response = await fetch(mapUrl, { signal })
 	if (!response.ok) {
+		await response.body?.cancel().catch(() => {})
 		return null
 	}
 

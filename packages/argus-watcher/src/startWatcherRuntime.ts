@@ -1,3 +1,5 @@
+import { LogIngestor } from './buffer/LogIngestor.js'
+import type { LogEnrichment } from './cdp/watcherEvents.js'
 import type { DialogStatus, LogEvent } from '@vforsh/argus-core'
 import { startHttpServer } from './http/server.js'
 import { describeHolder, publishWatcher, releaseWatcherId, startRegistryHeartbeat } from './registry/registry.js'
@@ -91,12 +93,11 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	/** Dialogs, network capture, and the indicator all belong to the page, never to a selected iframe. */
 	const getPageSession = (): CdpSourceHandle['session'] => sourceHandle.pageSession ?? sourceHandle.session
 
-	const handleSourceLog = (event: Omit<LogEvent, 'id'>): void => {
-		buffer.add(event)
-		fileLogger?.writeEvent(event)
-	}
+	const logIngestor = new LogIngestor(buffer, (event) => fileLogger?.writeEvent(event))
+	const handleSourceLog = (event: Omit<LogEvent, 'id'>, enrich?: LogEnrichment): void => logIngestor.add(event, enrich)
 
 	const handlePageNavigation = (info: { url: string; title: string | null }): void => {
+		logIngestor.flush()
 		pageNavigations += 1
 		elementRefs.reset()
 		// A rebuilt bundle keeps its URL on most dev servers, so drop cached maps rather than
@@ -150,6 +151,8 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	}
 
 	const handleSourceDetach = (reason?: string): void => {
+		logIngestor.flush()
+		sourcemaps.clear()
 		elementRefs.reset()
 		dialogTracker.clear()
 		runtimeEditor?.rebind()
@@ -268,6 +271,8 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 			logToPageConsole('detached (reason=watcher_stopped)')
 		}
 		await sourceHandle.stop()
+		logIngestor.close()
+		sourcemaps.clear()
 		await fileLogger?.close()
 		traceRecorder.onDetached('watcher_stopped')
 		recorder.onDetached('watcher_stopped')

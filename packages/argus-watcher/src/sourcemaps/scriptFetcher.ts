@@ -5,7 +5,7 @@ export type ScriptText = { text: string; partial: boolean }
  * Fetch a script body. `tailBytes` asks for only the last N bytes; `null` asks for the whole file.
  * Resolves to `null` when the script cannot be read at all.
  */
-export type ScriptFetcher = (scriptUrl: string, tailBytes: number | null) => Promise<ScriptText | null>
+export type ScriptFetcher = (scriptUrl: string, tailBytes: number | null, signal?: AbortSignal) => Promise<ScriptText | null>
 
 /**
  * Build a script fetcher that survives servers which reject suffix `Range` requests.
@@ -25,20 +25,21 @@ export type ScriptFetcher = (scriptUrl: string, tailBytes: number | null) => Pro
 export const createScriptFetcher = (): ScriptFetcher => {
 	const rangeHostileOrigins = new Set<string>()
 
-	return async (scriptUrl, tailBytes) => {
+	return async (scriptUrl, tailBytes, signal = AbortSignal.timeout(2_000)) => {
 		const origin = originOf(scriptUrl)
 		const ranged = tailBytes !== null && tailBytes > 0 && !rangeHostileOrigins.has(origin)
-		const response = await fetch(scriptUrl, ranged ? { headers: { Range: `bytes=-${tailBytes}` } } : undefined)
+		const response = await fetch(scriptUrl, { signal, ...(ranged ? { headers: { Range: `bytes=-${tailBytes}` } } : {}) })
 		if (response.ok) {
 			return readBody(response)
 		}
 
 		if (!ranged || !looksLikeRangeRejection(response.status)) {
+			await discardBody(response)
 			return null
 		}
 
 		await discardBody(response)
-		const whole = await fetch(scriptUrl)
+		const whole = await fetch(scriptUrl, { signal })
 		if (!whole.ok) {
 			// The script is unreadable either way, so the `Range` header is not what broke it.
 			await discardBody(whole)

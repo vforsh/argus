@@ -18,47 +18,44 @@ type RemoteObjectRecord = {
 	objectId?: string
 }
 
-export const serializeRemoteObjects = async (values: unknown[], cdp?: CdpRuntimeClient): Promise<unknown[]> => {
+export const serializeRemoteObjects = async (values: unknown[], cdp?: CdpRuntimeClient, signal?: AbortSignal): Promise<unknown[]> => {
 	if (!cdp) {
 		return values.map((value) => serializeRemoteObjectSync(value))
 	}
-	return Promise.all(values.map((value) => serializeRemoteObject(value, cdp)))
+	// Sequential expansion bounds physical CDP work per event and stops at cancellation boundaries.
+	const serialized: unknown[] = []
+	for (const value of values) {
+		signal?.throwIfAborted()
+		serialized.push(await serializeRemoteObject(value, cdp, signal))
+	}
+	return serialized
 }
 
-export const serializeRemoteObject = async (value: unknown, cdp?: CdpRuntimeClient): Promise<unknown> => {
+export const serializeRemoteObject = async (value: unknown, cdp?: CdpRuntimeClient, signal?: AbortSignal): Promise<unknown> => {
 	if (!value || typeof value !== 'object') {
 		return value
 	}
 
 	const record = value as RemoteObjectRecord
 
-	if (record.unserializableValue) {
-		return record.unserializableValue
-	}
-
-	if (record.value !== undefined) {
-		return record.value
-	}
-
-	if (record.preview?.properties) {
-		const preview: Record<string, string> = {}
-		for (const prop of record.preview.properties) {
-			preview[prop.name] = prop.value ?? ''
-		}
-		return preview
+	if (record.unserializableValue || record.value !== undefined || record.preview?.properties) {
+		return serializeRemoteObjectSync(value)
 	}
 
 	if (cdp && record.objectId && record.type === 'object') {
+		signal?.throwIfAborted()
 		const expanded = await expandRemoteObjectViaGetProperties(record, cdp)
+		signal?.throwIfAborted()
 		if (expanded) {
 			return expanded
 		}
 	}
 
-	return record.description ?? record.subtype ?? record.type ?? 'Object'
+	return serializeRemoteObjectSync(value)
 }
 
-const serializeRemoteObjectSync = (value: unknown): unknown => {
+/** Read only values/previews present in the CDP event; never calls the page. */
+export const serializeRemoteObjectSync = (value: unknown): unknown => {
 	if (!value || typeof value !== 'object') {
 		return value
 	}
@@ -95,7 +92,7 @@ const expandRemoteObjectViaGetProperties = async (record: RemoteObjectRecord, cd
 			objectId: record.objectId,
 			ownProperties: true,
 			accessorPropertiesOnly: false,
-		})
+		}, { timeoutMs: 1_000 })
 	} catch {
 		return null
 	}

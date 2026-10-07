@@ -9,6 +9,7 @@ import { appendLogFilterParams } from '../watchers/queryParams.js'
 
 /** Options for the tail command. */
 export type TailOptions = {
+	raw?: boolean
 	json?: boolean
 	jsonFull?: boolean
 	levels?: string

@@ -24,6 +24,7 @@ export const route = defineJsonRoute<undefined, TailResponse>({
 		}
 		const limit = clampNumber(logParam(url, 'limit'), 500, 1, 5000)
 		const timeoutMs = clampNumber(logParam(url, 'timeoutMs'), 25_000, 1000, 120_000)
+		const raw = ['1', 'true'].includes(logParam(url, 'raw') ?? '')
 		const levels = parseLevels(logParam(url, 'levels'))
 		const match = logParams(url, 'match')
 		const matchCase = resolveMatchCase(logParam(url, 'matchCase'))
@@ -46,6 +47,7 @@ export const route = defineJsonRoute<undefined, TailResponse>({
 			after: position.kind === 'epoch' ? position.epoch : undefined,
 			sinceEpoch: position.kind === 'epoch' ? position.epoch : undefined,
 			limit,
+			raw,
 			levels,
 			match: matchPatterns.patterns,
 			matchCase,
@@ -54,7 +56,7 @@ export const route = defineJsonRoute<undefined, TailResponse>({
 		})
 
 		try {
-			const result = await waitForLogsFromPosition(ctx.buffer, position, { levels, match: compiledMatch.match, source }, limit, timeoutMs)
+			const result = await waitForLogsFromPosition(ctx.buffer, position, { raw, levels, match: compiledMatch.match, source }, limit, timeoutMs)
 			return { ok: true, ...result, timedOut: result.events.length === 0 }
 		} catch (error) {
 			if (error instanceof LogEpochError) {

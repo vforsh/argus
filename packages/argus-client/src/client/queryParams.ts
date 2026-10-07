@@ -9,6 +9,7 @@ export const buildLogsParams = (options: LogsOptions): URLSearchParams => {
 	}
 
 	const query: LogsQuery = {
+		raw: options.raw,
 		after: options.after,
 		sinceEpoch: options.sinceEpoch,
 		limit: requireNonNegative('limit', options.limit),

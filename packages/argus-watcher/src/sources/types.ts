@@ -73,7 +73,7 @@ export type CdpSourceStatus = {
  */
 export type CdpSourceEvents = {
 	/** Called when a log event is captured. */
-	onLog: (event: Omit<LogEvent, 'id'>) => void
+	onLog: (event: Omit<LogEvent, 'id'>, enrich?: import('../cdp/watcherEvents.js').LogEnrichment) => void
 	/** Called when CDP status changes (attached/detached). */
 	onStatus: (status: CdpSourceStatus) => void
 	/** Called when a session is attached to a target. */

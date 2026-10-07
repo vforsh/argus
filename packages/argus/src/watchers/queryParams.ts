@@ -59,6 +59,7 @@ export const resolveSinceTimestamp = (since?: string): { sinceTs: number | null;
 export const appendLogFilterParams = (
 	params: URLSearchParams,
 	options: {
+		raw?: boolean
 		levels?: string
 		match?: string[]
 		source?: string
@@ -72,6 +73,7 @@ export const appendLogFilterParams = (
 	}
 
 	applyQuery(params, {
+		raw: options.raw,
 		levels: options.levels,
 		match: normalizedMatch.patterns,
 		matchCase: resolveMatchCase(options),

@@ -1,8 +1,9 @@
+import type { CdpSessionHandle } from '../cdp/connection.js'
 import type { ExtensionSession } from '../native-messaging/session-manager.js'
 import type { CdpSourceEvents } from './types.js'
 import { parseExecutionContext, parseFrame, type ExtensionFrameState } from './extension-frame-state.js'
 import type { IgnoreMatcher } from '../cdp/ignoreList.js'
-import { toConsoleEvent, toExceptionEvent } from '../cdp/watcherEvents.js'
+import { captureConsoleEvent, captureExceptionEvent } from '../cdp/watcherEvents.js'
 import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
 
 type RegisterExtensionSessionEventsOptions = {
@@ -160,16 +161,23 @@ export const registerExtensionSessionEventHandlers = ({
 		events.onPageLoad?.()
 	})
 
-	// Same mapper as the direct-CDP watcher, handed the bridge session so remote objects and
-	// sourcemapped locations resolve identically in both modes.
-	const logConfig = { ignoreMatcher, stripUrlPrefixes, sourcemaps, cdp: session.handle }
-
-	session.handle.onEvent('Runtime.consoleAPICalled', (params) => {
-		void toConsoleEvent(params, session, logConfig).then((event) => events.onLog(event))
+	// Object handles belong to the event's protocol session, independently of the selected iframe.
+	const logConfig = (sessionId: string | null) => ({
+		ignoreMatcher, stripUrlPrefixes, sourcemaps,
+		cdp: {
+			...session.handle,
+			sendAndWait: ((method, params, options) => session.handle.sendAndWait(method, params,
+				{ ...options, ...(sessionId ? { sessionId } : {}) })) as CdpSessionHandle['sendAndWait'],
+		},
+	})
+	session.handle.onEvent('Runtime.consoleAPICalled', (params, meta) => {
+		const captured = captureConsoleEvent(params, session, logConfig(meta.sessionId))
+		events.onLog(captured.event, captured.enrich)
 	})
 
-	session.handle.onEvent('Runtime.exceptionThrown', (params) => {
-		void toExceptionEvent(params, session, logConfig).then((event) => events.onLog(event))
+	session.handle.onEvent('Runtime.exceptionThrown', (params, meta) => {
+		const captured = captureExceptionEvent(params, session, logConfig(meta.sessionId))
+		events.onLog(captured.event, captured.enrich)
 	})
 }
 

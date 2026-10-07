@@ -25,6 +25,8 @@ export type NetParty = (typeof NET_PARTIES)[number]
 
 /** Query parameters accepted by the log listing and tail routes. */
 export type LogsQuery = {
+	/** Immediate immutable generated-location/value-preview view; default waits for final enrichment. */
+	raw?: boolean
 	/** Opaque epoch cursor; mutually exclusive with `sinceEpoch`. */
 	after?: string
 	/** Opaque watcher-session marker to read forward from. */

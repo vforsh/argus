@@ -3,7 +3,7 @@ import type { LogEvent, WatcherMatch, WatcherChrome } from '@vforsh/argus-core'
 import { formatError } from '@vforsh/argus-core'
 import { createCdpSessionHandle } from './connection.js'
 import type { CdpSessionController, CdpSessionHandle } from './connection.js'
-import { fetchPageIntl, type PageIntlInfo, toConsoleEvent, toExceptionEvent } from './watcherEvents.js'
+import { fetchPageIntl, type PageIntlInfo, captureConsoleEvent, captureExceptionEvent, type LogEnrichment } from './watcherEvents.js'
 import { tryEvaluateInPage } from './pageState.js'
 import { findTarget, type CdpTarget } from './watcherTargets.js'
 import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
@@ -26,7 +26,7 @@ export type CdpStatus = {
 export type CdpWatcherOptions = {
 	chrome: WatcherChrome
 	match?: WatcherMatch
-	onLog: (event: Omit<LogEvent, 'id'>) => void
+	onLog: (event: Omit<LogEvent, 'id'>, enrich?: LogEnrichment) => void
 	onStatus: (status: CdpStatus) => void
 	onPageNavigation?: (info: { url: string; title: string | null }) => void
 	onPageLoad?: () => void
@@ -85,14 +85,16 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		if (!currentTarget) {
 			return
 		}
-		void toConsoleEvent(params, currentTarget, { ...options, cdp: session }).then((event) => options.onLog(event))
+		const captured = captureConsoleEvent(params, currentTarget, { ...options, cdp: session })
+		options.onLog(captured.event, captured.enrich)
 	})
 
 	session.onEvent('Runtime.exceptionThrown', (params) => {
 		if (!currentTarget) {
 			return
 		}
-		void toExceptionEvent(params, currentTarget, { ...options, cdp: session }).then((event) => options.onLog(event))
+		const captured = captureExceptionEvent(params, currentTarget, { ...options, cdp: session })
+		options.onLog(captured.event, captured.enrich)
 	})
 
 	session.onEvent('Page.frameNavigated', (params) => {

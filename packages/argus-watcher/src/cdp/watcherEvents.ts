@@ -1,12 +1,12 @@
-import type { LogEvent, LogLevel } from '@vforsh/argus-core'
+import type { LogEvent, LogLevel, LogSource } from '@vforsh/argus-core'
 import { previewStringify } from '@vforsh/argus-core'
 import type { IgnoreMatcher } from './ignoreList.js'
 import { stripUrlPrefixes } from './locationCleanup.js'
-import type { CallFrame, SelectedLocation } from './selectBestFrame.js'
+import type { CallFrame } from './selectBestFrame.js'
 import { selectBestFrame } from './selectBestFrame.js'
 import type { SourcemapResolver } from '../sourcemaps/sourcemapResolver.js'
 import type { CdpSessionHandle } from './connection.js'
-import { serializeRemoteObject, serializeRemoteObjects } from './remoteObject.js'
+import { serializeRemoteObject, serializeRemoteObjects, serializeRemoteObjectSync } from './remoteObject.js'
 
 export type PageIntlInfo = {
 	timezone: string | null
@@ -25,6 +25,7 @@ export type LogEventPageInfo = {
 }
 
 type WatcherEventConfig = {
+	signal?: AbortSignal
 	ignoreMatcher?: IgnoreMatcher | null
 	stripUrlPrefixes?: string[]
 	cdp?: CdpSessionHandle
@@ -32,73 +33,74 @@ type WatcherEventConfig = {
 	sourcemaps: SourcemapResolver
 }
 
-/**
- * Map a `Runtime.consoleAPICalled` payload to a `LogEvent`.
- *
- * Source-agnostic: the direct-CDP watcher and the extension bridge both call this, so sourcemap
- * resolution, remote-object serialization, and ignore-list frame selection behave identically in
- * both modes. Pass `config.cdp` to allow serialization round-trips for objects Chrome only sent
- * an `objectId` for; without it the args degrade to their previews.
- */
-export const toConsoleEvent = async (params: unknown, page: LogEventPageInfo, config: WatcherEventConfig): Promise<Omit<LogEvent, 'id'>> => {
-	const record = params as {
-		type?: LogLevel
-		args?: unknown[]
-		timestamp?: number
-		stackTrace?: { callFrames?: CallFrame[] }
-	}
-	const cdp = config.cdp
-	const args = Array.isArray(record.args) ? await serializeRemoteObjects(record.args, cdp) : []
-	const text = formatArgs(args)
-	const baseEvent: Omit<LogEvent, 'id'> = {
-		ts: resolveTimestamp(record.timestamp),
-		level: normalizeLevel(record.type ?? 'log'),
-		text,
-		args,
-		file: null,
-		line: null,
-		column: null,
-		pageUrl: page.url ?? null,
-		pageTitle: page.title ?? null,
-		source: 'console',
-	}
+/** Work admitted by the watcher ingestion queue; cancellation must stop further enrichment. */
+export type LogEnrichment = (signal: AbortSignal) => Promise<Omit<LogEvent, 'id'>>
 
-	return applyLocation(baseEvent, record.stackTrace?.callFrames, config)
+/** An immutable arrival-time view and optional asynchronous enrichment for the same event. */
+export type CapturedLog = { event: Omit<LogEvent, 'id'>; enrich: LogEnrichment }
+
+/** Capture console values/previews and generated location synchronously, before any map or CDP I/O. */
+export const captureConsoleEvent = (params: unknown, page: LogEventPageInfo, config: WatcherEventConfig): CapturedLog => {
+	const record = params as { type?: LogLevel; args?: unknown[]; timestamp?: number; stackTrace?: { callFrames?: CallFrame[] } }
+	const values = Array.isArray(record.args) ? record.args : []
+	const args = values.map(serializeRemoteObjectSync)
+	const base = createBaseEvent(record.timestamp, normalizeLevel(record.type ?? 'log'), formatArgs(args), args, 'console', page)
+	const frames = record.stackTrace?.callFrames
+	return {
+		event: applyGeneratedLocation(base, frames, config),
+		enrich: async (signal) => {
+			signal.throwIfAborted()
+			const args = await serializeRemoteObjects(values, config.cdp, signal)
+			signal.throwIfAborted()
+			return applyLocation({ ...base, args, text: formatArgs(args) }, frames, { ...config, signal })
+		},
+	}
 }
 
-/**
- * Map a `Runtime.exceptionThrown` payload to a `LogEvent`. Shares every helper with
- * {@link toConsoleEvent}, including sourcemap resolution.
- */
-export const toExceptionEvent = async (params: unknown, page: LogEventPageInfo, config: WatcherEventConfig): Promise<Omit<LogEvent, 'id'>> => {
+/** Capture exceptions with the same ingestion/enrichment contract as console events. */
+export const captureExceptionEvent = (params: unknown, page: LogEventPageInfo, config: WatcherEventConfig): CapturedLog => {
 	const record = params as {
 		timestamp?: number
-		exceptionDetails?: {
-			text?: string
-			exception?: unknown
-			stackTrace?: { callFrames?: CallFrame[] }
-		}
+		exceptionDetails?: { text?: string; exception?: unknown; stackTrace?: { callFrames?: CallFrame[] } }
 	}
 	const details = record.exceptionDetails
-	const cdp = config.cdp
-	const exceptionValue = details?.exception ? await serializeRemoteObject(details.exception, cdp) : null
-	const args = exceptionValue != null ? [exceptionValue] : []
-	const exceptionDescription = describeExceptionValue(exceptionValue)
-	const text = formatExceptionText(details?.text, exceptionDescription)
-	const baseEvent: Omit<LogEvent, 'id'> = {
-		ts: resolveTimestamp(record.timestamp),
-		level: 'exception',
-		text,
-		args,
-		file: null,
-		line: null,
-		column: null,
-		pageUrl: page.url ?? null,
-		pageTitle: page.title ?? null,
-		source: 'exception',
+	const value = details?.exception ? serializeRemoteObjectSync(details.exception) : null
+	const args = value != null ? [value] : []
+	const base = createBaseEvent(record.timestamp, 'exception', formatExceptionText(details?.text, describeExceptionValue(value)), args, 'exception', page)
+	const frames = details?.stackTrace?.callFrames
+	return {
+		event: applyGeneratedLocation(base, frames, config),
+		enrich: async (signal) => {
+			signal.throwIfAborted()
+			const value = details?.exception ? await serializeRemoteObject(details.exception, config.cdp, signal) : null
+			signal.throwIfAborted()
+			return applyLocation({
+				...base,
+				args: value != null ? [value] : [],
+				text: formatExceptionText(details?.text, describeExceptionValue(value)),
+			}, frames, { ...config, signal })
+		},
 	}
+}
 
-	return applyLocation(baseEvent, details?.stackTrace?.callFrames, config)
+/** Fully enrich a console payload. Source handlers use captureConsoleEvent for synchronous ingestion. */
+export const toConsoleEvent = async (params: unknown, page: LogEventPageInfo, config: WatcherEventConfig): Promise<Omit<LogEvent, 'id'>> =>
+	captureConsoleEvent(params, page, config).enrich(config.signal ?? new AbortController().signal)
+
+/** Fully enrich an exception payload; generated locations survive failed/absent sourcemaps. */
+export const toExceptionEvent = async (params: unknown, page: LogEventPageInfo, config: WatcherEventConfig): Promise<Omit<LogEvent, 'id'>> =>
+	captureExceptionEvent(params, page, config).enrich(config.signal ?? new AbortController().signal)
+
+const createBaseEvent = (
+	timestamp: number | undefined, level: LogLevel, text: string, args: unknown[], source: LogSource, page: LogEventPageInfo,
+): Omit<LogEvent, 'id'> => ({
+	ts: resolveTimestamp(timestamp), level, text, args, source,
+	file: null, line: null, column: null, pageUrl: page.url ?? null, pageTitle: page.title ?? null,
+})
+
+const applyGeneratedLocation = (event: Omit<LogEvent, 'id'>, frames: CallFrame[] | undefined, config: WatcherEventConfig): Omit<LogEvent, 'id'> => {
+	const frame = frames?.find((frame) => frame.url && frame.lineNumber != null && frame.columnNumber != null && !config.ignoreMatcher?.matches(frame.url))
+	return applyLocationCleanup(applyFirstFrame(event, frame ? [frame] : frames), config.stripUrlPrefixes)
 }
 
 export const fetchPageIntl = async (session: CdpSessionHandle): Promise<PageIntlInfo | null> => {
@@ -131,12 +133,14 @@ const applyLocation = async (
 	callFrames: CallFrame[] | undefined,
 	config: WatcherEventConfig,
 ): Promise<Omit<LogEvent, 'id'>> => {
-	const selected = await selectLocationFromFrames(callFrames, config.ignoreMatcher ?? null, config.sourcemaps)
+	const selected = config.ignoreMatcher
+		? await selectBestFrame(callFrames, config.ignoreMatcher, config.sourcemaps, config.signal)
+		: null
 	if (selected) {
 		return applyLocationCleanup({ ...event, ...selected }, config.stripUrlPrefixes)
 	}
 
-	const fallback = await applySourcemap(applyFirstFrame(event, callFrames), config.sourcemaps)
+	const fallback = await applySourcemap(applyFirstFrame(event, callFrames), config.sourcemaps, config.signal)
 	return applyLocationCleanup(fallback, config.stripUrlPrefixes)
 }
 
@@ -144,7 +148,7 @@ const applyLocation = async (
 const resolveTimestamp = (timestamp: number | undefined): number =>
 	typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : Date.now()
 
-const applySourcemap = async (event: Omit<LogEvent, 'id'>, sourcemaps: SourcemapResolver): Promise<Omit<LogEvent, 'id'>> => {
+const applySourcemap = async (event: Omit<LogEvent, 'id'>, sourcemaps: SourcemapResolver, signal?: AbortSignal): Promise<Omit<LogEvent, 'id'>> => {
 	if (!event.file || event.line == null || event.column == null) {
 		return event
 	}
@@ -153,7 +157,7 @@ const applySourcemap = async (event: Omit<LogEvent, 'id'>, sourcemaps: Sourcemap
 			file: event.file,
 			line: event.line,
 			column: event.column,
-		})
+		}, signal)
 		if (!resolved) {
 			return event
 		}
@@ -166,17 +170,6 @@ const applySourcemap = async (event: Omit<LogEvent, 'id'>, sourcemaps: Sourcemap
 	} catch {
 		return event
 	}
-}
-
-const selectLocationFromFrames = async (
-	callFrames: CallFrame[] | undefined,
-	ignoreMatcher: IgnoreMatcher | null,
-	sourcemaps: SourcemapResolver,
-): Promise<SelectedLocation | null> => {
-	if (!ignoreMatcher) {
-		return null
-	}
-	return selectBestFrame(callFrames, ignoreMatcher, sourcemaps)
 }
 
 const applyFirstFrame = (event: Omit<LogEvent, 'id'>, callFrames: CallFrame[] | undefined): Omit<LogEvent, 'id'> => {
