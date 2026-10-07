@@ -64,7 +64,7 @@ stdin: one JSON object per line. stdout: one JSON object per line, nothing else 
 - **Ordering**: strictly in submission order; pipelining is fine.
 - **Timeouts**: a request past its watchdog answers `session_request_timeout` and the session moves on; the abandoned command's later output is discarded.
 - **Error isolation**: malformed line / unknown command / failing command → `ok: false`, session stays up. Transport codes: `session_invalid_request`, `session_unknown_command`, `session_command_rejected`, `session_request_timeout`, `session_command_failed`. Watcher-side codes pass through unchanged.
-- **Watcher loss**: default fail-fast (probe after a failure, exit 1 if gone). `--reconnect` re-resolves the id on every request.
+- **Watcher loss**: default fail-fast (probe after a failure, exit 1 if gone). `--reconnect` keeps serving after loss. Discovery is cached for at most 250ms (never beyond heartbeat TTL) and refreshed after failures; a subsequent request can use a restarted watcher’s new endpoint. Failed requests, including mutations with a lost response, are never replayed. Late failures only evict the same owner/start/endpoint they resolved.
 - **Shutdown**: `quit` or EOF exits 0. Queued requests after that are unanswered; fail them host-side.
 
 ## Refused (`session_command_rejected`)

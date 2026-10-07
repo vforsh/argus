@@ -51,7 +51,7 @@ type ArgusClientOptions = {
 ```
 
 - `registryPath`: override registry path instead of `ARGUS_REGISTRY_PATH` / default.
-- `ttlMs`: staleness threshold for pruning watchers (default `DEFAULT_TTL_MS`).
+- `ttlMs`: staleness threshold for locally hiding expired watchers (default `DEFAULT_TTL_MS`).
 - `timeoutMs`: default HTTP timeout; applied as 2s for status and 5s for logs.
 
 ### `client.list(options?)`
@@ -69,8 +69,8 @@ type ListResult = {
 }
 ```
 
-- Reads registry, prunes stale entries, pings `/status` for each watcher.
-- Unreachable watchers are removed from the registry, but still returned with `reachable: false` and `error`.
+- Refreshes the client’s lock-free registry snapshot, hides expired entries locally, then pings `/status` for each watcher.
+- Failed probes return `reachable: false` and `error`; connection refusal conditionally removes the same failed registration, while timeouts keep it.
 - `byCwd` filters watchers by `cwd` substring (empty/whitespace treated as unset).
 
 ### `client.logs(watcherId, options?)`
@@ -194,11 +194,13 @@ Returns the same API with `watcherId` pre-bound, minus `list`.
 
 - Throws on invalid inputs (`since`, `after`, `limit`) and on missing/conflicting options, before any request.
 - Throws if the watcher id is not in the registry.
-- If the watcher is **unreachable** (connection refused, timeout), the registry entry is removed and the call throws.
+- Connection refusal removes only the same owner/start/endpoint that failed. Timeouts keep the entry; a lost response does not prove that a mutation was not executed. Failed requests are never replayed.
 - If the watcher **answers with an error status**, the registry entry is kept: the watcher is demonstrably alive, and evicting it would break every later call in the process over one bad selector or a page mid-navigation.
 - A cursor from another watcher session, a restarted watcher, or an evicted ring-buffer range is rejected; capture a new epoch.
 
 ## Notes
 
-- `list()` and `logs()` prune stale registry entries before doing work.
+- Discovery caches a live snapshot per client for at most 250ms, capped by heartbeat TTL. Transport failures invalidate it; the next call can use a replacement endpoint. Ordinary reads never lock or write the registry. `argus watcher prune` performs physical cleanup.
 - This package is Node-only and uses the Argus registry on disk.
+
+Log ingestion assigns IDs at arrival. Default reads return final enriched records in that order. `client.logs(id, { raw: true })` returns immutable arrival-time previews/generated locations immediately; use one view consistently with a cursor. The watcher bounds enrichment and finalizes generated fallbacks on timeout, overload or navigation; see [log guarantees](../../skill/argus/reference/LOGS.md).

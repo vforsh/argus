@@ -566,6 +566,8 @@ argus extension info
 
 Watchers register in `~/.argus/registry.json` on macOS/Linux or `%USERPROFILE%\\.argus\\registry.json` on Windows.
 
+Performance contracts: discovery reads a lock-free, locally TTL-filtered snapshot; physical pruning is explicit. Sessions/SDK cache discovery for at most 250ms and refresh after transport failures without replaying requests. `logs --raw` / `logs tail --raw` select immediate immutable arrival-time previews/generated locations; default readers and file logs receive final enriched records in arrival order. Enrichment is bounded and cancelled at navigation/teardown. See [log semantics](skill/argus/reference/LOGS.md) and [measurements](PERFORMANCE.md).
+
 ## Package Docs
 
 - [packages/argus/README.md](./packages/argus/README.md): npm package entry

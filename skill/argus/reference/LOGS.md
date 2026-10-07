@@ -8,11 +8,22 @@ argus logs app --since 10m --levels error,warning
 argus logs app --match "Error|Exception" --ignore-case --match "checkout"   # --match repeats (OR)
 argus logs app --source console                 # substring on the event source
 argus logs app --limit 50 --json                # bounded JSON preview
+argus logs app --raw --json                     # immediate values/previews + generated locations
 argus logs app --json-full                      # full events (can be huge)
 argus logs tail app --levels error --json       # long-poll stream (NDJSON); --timeout <ms> per poll
 ```
 
 Levels: `log`, `info`, `warning`, `error`, `debug`, `exception`. `--match` is a JS regex over the event text; repeated patterns match if any hits. `--ignore-case` (default) / `--case-sensitive` apply to all of them. `--source` is a case-insensitive substring of the event source.
+
+## Arrival And Enrichment
+
+IDs and cursor positions are allocated synchronously when CDP/extension events arrive, before remote-object expansion or sourcemap I/O. The default view publishes final records in that order, retaining mapped locations, ignore-list frame selection and full serialization. A later fast record cannot overtake an earlier slow one. File logs use this same final order.
+
+`logs --raw` and `logs tail --raw` opt into an immutable arrival-time view: values/previews from the CDP payload and generated locations, with generated ignore-list filtering and configured URL-prefix cleanup. No remote-object round trips or cold maps delay this view. SDK: `client.logs(id, { raw: true })`; HTTP: `/logs?raw=1` and `/tail?raw=1` (also accept `true`). This is separate from `--json-full`, which controls output truncation only. The default remains enriched; old watchers may ignore the additive raw option.
+
+Both views assign the same IDs. Neither view emits revisions. A raw event stays raw even after its final counterpart is ready. Keep one view throughout a cursored stream: a cursor acknowledges event IDs, so switching views does not replay their other representation. A cursor captured after arrival excludes that event even if its enrichment is still pending. Normal ring eviction/epoch errors apply to both views.
+
+Enrichment uses four workers, at most 128 pending records (or the buffer capacity, if smaller), and a 2s event deadline including queue time. On overload the backlog commits available results/generated previews in order; queued work is cancelled. Cancelled workers keep their slot until the current shared fetch/CDP call settles. Deadline, overload, navigation/teardown cancellation and unexpected failures report `enrichment: "timeout" | "overloaded" | "cancelled" | "failed"` when a final event falls back. A missing/failed map also falls back to its generated location as before. Script+map fetches have a shared 2s deadline, pending-load deduplication, a 128-entry cache/load cap, and the existing 30s negative TTL. Navigation aborts old map loads and finalizes old records before file rotation. Long-poll default readers wake only when final records are ready; raw readers wake on arrival.
 
 ## Cursors And Epochs
 
