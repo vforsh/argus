@@ -1,141 +1,109 @@
-## General rules
+# AGENTS.md
 
-- **Keep files small**: Keep files under ~500 LOC so changes stay reviewable. If a file starts to sprawl, split it before adding more logic. Prefer extracting cohesive helpers/hooks/subcomponents over adding branching in-place.
+Argus: terminal-first debugging for Chromium apps (CLI + watcher over CDP or the Argus extension). Bun workspace, TypeScript 7 (`tsc`).
 
-- **Writing style**: Direct; information-dense. Avoid filler, repetition, and long preambles (esp. in agent replies and “how-to” docs). Optimize for scanability: someone should find the rule fast and apply it correctly.
+## Repo Map
 
-- **Adding rules**: When adding new rules/sections to `AGENTS.md`, keep them short and scannable. 3-5 sentences per bullet. Use the existing format: `##` section headers, bold-labeled bullets, and `---` separators between sections. Prefer telegraph style; add extra sentences only when they prevent misinterpretation.
-
-- **Return early (guard clauses)**: Use guard clauses to handle error conditions and edge cases first. Return early to avoid deep nesting. Prefer multiple small guards over one large nested block.
-
-- **Locality (order by call sequence)**: Declare functions/methods close to their callsites. Order them in call sequence (caller before callee) so readers can follow top-to-bottom. Keep helpers next to the primary method that uses them unless they’re widely reused.
-
-- **Plans (implementation/refactor)**: When the user asks for an implementation or refactor plan, always end the plan with a short “final checklist”. It must explicitly say to run `npm run typecheck` and relevant integration/end-to-end checks after implementation, and to fix any errors found. Keep this checklist to 1–2 short sentences.
-
-- **Typechecking**: Use `npm run typecheck` for the full one-shot pass (CLI app + shared packages + extension + every test suite). Use `npm run typecheck:app`, `npm run typecheck:packages`, `npm run typecheck:extension`, or `npm run typecheck:tests` only for focused checks. `typecheck:tests` covers `e2e/`, `packages/*/test`, and `playground/` (the suites import its harness). Don't use `typecheck-dev` for "quick checks" (watch mode).
-
-- **Runtime & deps**: Bun is the runtime and package manager (`bun install`, `bun run`). Prefer Bun/Node built-ins over new deps. Add deps to the specific package that needs them, not root. Keep `argus-core` dependency-free.
-
-- **Code style**: Use tabs, no semicolons, single quotes, and ~150-char lines. Follow the surrounding code; no automated formatter or source linter runs on commit.
-
-- **Skill docs**: `skill/argus/SKILL.md` is the AI-facing cheat sheet for the CLI. When adding or changing a command, update SKILL.md to match. Keep examples minimal and behavior-focused. Advanced topics go in `skill/argus/reference/`.
+- **`packages/argus`**: CLI app. Entry `src/bin.ts`; registration order in `src/cli/register/index.ts` (`coreProgramRegistrars`), flags/help in `src/cli/register/*`; implementations in `src/commands/*` (mostly `defineWatcherCommand`); plugin loading in `src/cli/plugins/`. Bundled to `dist/argus.js` (the `argus` bin).
+- **`packages/argus-watcher`**: watcher server. Routes in `src/http/routes/*` (`defineJsonRoute` in `defineRoute.ts`, `defineExtensionRoute`), registered in `routes/index.ts` (`watcherRoutes`), dispatched by `src/http/router.ts`; endpoint names in `src/http/endpoints.ts` (`WATCHER_ENDPOINTS`); response helpers in `src/http/httpUtils.ts`.
+- **`packages/argus-core`**: protocol types and schemas: `src/protocol/http/*`, `src/protocol/schemaFields.ts`, `src/protocol/native-messaging.ts`, `src/protocol/version.ts`. Must stay dependency-free.
+- **`packages/argus-client`**: SDK, `src/client/createArgusClient.ts`.
+- **`packages/argus-plugin-api`**: versioned types for CLI plugins (`ArgusPluginHostV1`, `ARGUS_PLUGIN_API_VERSION`).
+- **`packages/argus-extension`**: Chrome extension (esbuild bundle, own tsconfig). Frame table in `src/background/frame-table.ts`.
+- **`skill/argus/`**: AI-facing CLI cheat sheet (`SKILL.md`) plus advanced topics in `reference/`. Copied into the CLI build.
+- **Tests**: `e2e/*.test.ts` (integration), `packages/*/test` (existing package tests), `playground/` (manual harness + suite helpers).
 
 ---
 
-## Workspace packages
+## Commands
 
-- **Workspace packages (`packages/*`)**: `packages/` are npm workspaces. `packages/argus` is the CLI app, `tsconfig.packages.json` covers the shared packages, and the extension has its own TS config + script.
+Root `package.json` and `packages/*/package.json` are authoritative.
 
-- **Rebuild + package typecheck**: If you change anything under `packages/`, rebuild and typecheck the affected package(s) before testing. Prefer the package-specific scripts (e.g. `npm run build:<PACKAGE_1>`, `npm run build:<PACKAGE_2>`, etc.`); use `npm run build:packages` only when multiple packages changed.
+- **Install**: `bun install`. Bun is the runtime and package manager.
+- **Build all packages**: `npm run build:packages` (cleans `dist/`, runs `tsc -b`, bundles the CLI). Required before the `argus` bin reflects source changes.
+- **Build one package**: `bun run --cwd packages/<name> build` (e.g. `packages/argus-core`). Building `packages/argus` also builds its referenced packages and re-bundles.
+- **Build extension**: `npm run build:extension`.
+- **Typecheck (full gate)**: `npm run typecheck` (app + shared packages + extension + tests). Focused: `typecheck:app`, `typecheck:packages`, `typecheck:extension`, `typecheck:tests` (`e2e/`, `packages/*/test`, `packages/*/scripts`, and the playground modules they import).
+- **Tests**: see [Verification](#verification).
+- **No lint/format scripts**: there is no `npm run lint` and no formatter on commit. Prettier in `packages/argus` is a runtime dependency for code deminify (`src/runtime-code/format.ts`), not repo tooling.
 
-- **Build steps must be serial**: Don’t run `clean`, `tsc -b`, `npm run build:*`, or Bun bundle steps in parallel with other commands that read from `dist/`. `clean:packages` removes emitted files first; anything that inspects/bundles `dist/` mid-rebuild can report fake “missing export” failures from half-built output. If a bundle error points at `packages/*/dist/*`, rerun the build serially before treating it as a real source bug.
-
-- **Extension rebuild**: If you change anything under `packages/argus-extension`, rebuild it with `bun run --cwd packages/argus-extension build`. For extension-only checks, pair it with `npm run typecheck:extension`.
-
-- **Public API must be documented (JSDoc)**: Any public API in `packages/*` (anything exported for consumption by other packages/apps) must have JSDoc. Document parameters, return values, and important invariants/edge cases so changes are safe to make later.
-
-- **Release hygiene**: Before `npm publish`, check the live registry versions with `npm view <pkg> version`. If the repo version already exists on npm, bump the affected package version(s) first, commit that bump, then publish. Do not discover this mid-publish.
-
----
-
-## Critical Thinking
-
-- **Fix root cause**: Fix the underlying cause, not symptoms. Trace failures to the violated invariant/contract; correct it. Add guards/fallbacks only when product-required (not to hide bugs).
-
-- **Unclear?**: Read more code until you understand the existing pattern + constraints. Still unclear: ask concise questions with a small set of options. Don’t guess across layers (UI + RPC + data model) at once.
-
-- **Conflicts**: Call out the conflict; state the tradeoff (1–2 sentences). Prefer the safer path when uncertainty is high (esp. persistence/editor behavior/user data). If risk is real: propose a minimal, reversible first step.
-
-- **Unrecognized changes**: Assume intentional/another agent; keep going; focus scope. If it affects your work (types/APIs/build), stop and ask before large rewrites. When in doubt: isolate your fix; don’t depend on speculative refactors.
-
-- **Breadcrumbs**: Leave short notes about what changed + why (esp. non-obvious decisions). Mention key files/functions so someone can follow the trail. If you rejected an approach: leave a one-line reason to prevent rework.
+**Builds must be serial.** Never run `clean`, `tsc -b`, `build:*`, or Bun bundle steps in parallel with anything that reads `dist/`. `clean` deletes emitted files first, so a concurrent reader sees half-built output and reports fake "missing export" errors. If an error points at `packages/*/dist/*`, rebuild serially before treating it as a source bug.
 
 ---
 
-## Git
+## Code Rules
 
-- **Commits**: Conventional Commits only (`feat|fix|refactor|build|ci|chore|docs|style|perf|test`). Pick type by user-visible intent, not files touched. If there’s nuance: add a short “why” body.
-
-- **Commit message length**: Keep the commit message header under 120 characters. This is enforced by `commitlint.config.mjs` to allow for descriptive headers while maintaining readability. If a header needs more detail, use the commit body.
-
-- **Worktrees root**: Worktrees live as siblings under `~/dev/argus/` "container" directory.
-
-- **Main checkout**: Primary working tree: `~/dev/argus/argus` (`main` branch). Treat it as the default base for tooling/scripts unless a worktree is mentioned.
-
-- **Worktrunk (`wt`) CLI**: Manage worktrees via Worktrunk’s `wt` CLI: `https://github.com/max-sixty/worktrunk`. Use it to create/switch worktrees without manual branch/folder wiring.
-
-- **Worktrunk workflow docs**: See `docs/workflows/git/git-worktrees.md`. Unsure which `wt` command fits: check docs before improvising. Keep examples aligned with the real repo layout.
-
-- **Worktrunk common commands**: `wt list` (see worktrees), `wt switch -c <branch> -y` (create + switch), `wt merge` (merge back). Always sanity-check merge commit message before shipping.
-
-- **Merging worktree**: Don’t let `wt merge` create the squash commit if it would fall back to “Squash commits from …” (commitlint will fail). Do the squash commit yourself, then let Worktrunk fast-forward without creating a commit. From the feature worktree run: `base=$(git merge-base master HEAD) && git reset --soft "$base" && git add -A && git commit -m "feat: <summary>" && wt merge --no-commit -y`. (Use `fix:`/`refactor:` etc. as appropriate.)
-
-- **Plan files before merge**: If the worktree was created from a plan file (e.g. `tasks/*.md`), remove that file before running `wt merge`. Remove it without asking for confirmation.
+- **Style**: tabs, no semicolons, single quotes, ~150-char lines. Applied by hand; match surrounding code.
+- **File size**: keep files under ~500 LOC. Split into cohesive helpers/subcomponents before a file sprawls.
+- **Structure**: guard clauses and early returns over nesting. Order functions by call sequence (caller before callee); keep helpers next to their only caller.
+- **Dependencies**: prefer Bun/Node built-ins. Add deps to the package that needs them, never root. `argus-core` stays dependency-free.
+- **Public API JSDoc**: anything exported from `packages/*` for other packages documents params, return values, and invariants/edge cases.
+- **Skill docs**: adding or changing a CLI command means updating `skill/argus/SKILL.md` (minimal, behavior-focused examples; advanced topics in `skill/argus/reference/`).
+- **Root cause**: fix the violated invariant, not the symptom. Add guards/fallbacks only when product-required.
+- **Breadcrumbs**: leave short notes on non-obvious decisions and rejected approaches, naming key files/functions.
+- **Plans**: implementation/refactor plans end with a 1–2 sentence checklist: run `npm run typecheck` and relevant integration/e2e checks, fix what fails.
 
 ---
 
-## Playground
+## Golden Paths
 
-- **What it is**: `playground/` is a self-contained test harness for manually exercising all Argus CLI capabilities. It bundles an HTML page with console/network/DOM/storage/eval/iframe sections, an HTTP server with API stubs, and an orchestrator that wires up Chrome + watcher in one command.
-
-- **Quick start**: `npm run playground` starts everything (server on `:3333`, cross-origin server on `:3334`, Chrome with temp profile, watcher `playground`). Run it in the background — it's a long-running process that must stay alive while you test CLI commands in the foreground. Individual pieces: `npm run playground:serve`, `playground:chrome`, `playground:attach`.
-
-- **When to use**: Use the playground to smoke-test CLI commands after changes to `packages/argus/` or `packages/argus-watcher/`. The watcher ID is always `playground`, so commands look like `argus eval playground "..."`, `argus dom tree playground --selector "body"`, etc.
-
-- **Cross-origin iframe**: The page includes both a same-origin iframe (`#playground-iframe`, port 3333) and a cross-origin iframe (`#cross-origin-iframe`, port 3334). Use them to verify iframe target selection and in-frame eval across origins (`argus ext select`, `--type iframe`).
-
-- **Extending**: When adding new Argus commands or capabilities, add matching controls/structure to `playground/index.html` so they can be tested interactively. Keep the HTML self-contained (inline scripts, no build step).
-
-- **Sourcemap fixtures**: Don't reformat `playground/sourcemapped-app.js`, `playground/inline-mapped-app.js`, `playground/maps/`, or `playground/src/`. The committed source maps encode exact line/column positions in these files.
+- **New CLI command (no new watcher API)**: register in `src/cli/register/*` → implement in `src/commands/*` → support `--json` → add/adjust `e2e/*` → update `SKILL.md`.
+- **New watcher endpoint**: request/response types **and** a request `ProtocolSchema` in `argus-core/src/protocol/http/<domain>.ts` → add the name to `WATCHER_ENDPOINTS` → route file in `argus-watcher/src/http/routes/` via `defineJsonRoute` → add it to `watcherRoutes` in `routes/index.ts` → call from CLI (`defineWatcherCommand`) and SDK (`createArgusClient`) → `e2e/*` → `SKILL.md` → playground controls if interactive.
+- **Extension-only route**: use `defineExtensionRoute` with the needed `capability`. It owns the availability guard, the `not_available` response, and `extension_action_failed` mapping; don't re-check `ctx.sourceHandle?.x` in the handler.
+- **Protocol changes**: additive by default. Breaking changes bump `ARGUS_PROTOCOL_VERSION` (`protocol/version.ts`). Keep `ok`/`error` shapes stable.
 
 ---
 
-## Repo Tour (edit compass)
+## Contracts / Invariants
 
-- **CLI entry**: `packages/argus/src/bin.ts` (register order) + `packages/argus/src/cli/register/*` (flags/help).
-- **CLI commands**: `packages/argus/src/commands/*` (use `requestWatcherJson`).
-- **Watcher API**: `packages/argus-watcher/src/http/routes/*` + `packages/argus-watcher/src/http/router.ts`.
-- **Route helpers**: `packages/argus-watcher/src/http/httpUtils.ts` (body parsing + errors).
-- **Protocol types**: `packages/argus-core/src/protocol/http/*` + `packages/argus-core/src/protocol/version.ts`.
-- **Client SDK**: `packages/argus-client/src/client/createArgusClient.ts`.
-- **Tests**: `e2e/*` + `playground/`.
+- **Response envelope**: success is `Ok<{…}>`; failure is `ok: false` with `{ error: ErrorDetail }` (`argus-core/src/protocol/http/errors.ts`). Consumers take `ApiResult<TResponse>`, not hand-written `TResponse | ErrorResponse`.
+- **Error codes are a closed union**: add to `ARGUS_ERROR_CODES` before emitting a new code. `codedError`/`getErrorCode` are typed to it, so foreign codes (Node's `ENOENT`) can't reach the wire and renames break readers at compile time.
+- **Query params are typed**: GET params live in `protocol/http/query.ts` (`LogsQuery`, `NetQuery`), serialized with `toSearchParams`. CLI and SDK build those shapes; the watcher reads them via `keyof`-checked helpers. No ad-hoc `params.set('…')`.
+- **POST bodies are schema-only**: a route reads a body only by declaring `bodySchema`. Write the `ProtocolSchema` next to the request type, composed from `protocol/schemaFields.ts` readers; no hand-rolled `typeof` checks in routes.
+- **`cdp_event` carries only real Chrome events**: the extension never fabricates one. The extension owns the frame table and sends full, deduplicated `frame_snapshot` messages; the watcher applies every snapshot (pushed or pulled) through `applyExtensionFrameSnapshot` and runs navigation side effects (log rotation, sourcemap reset, indicator) only on the real top-frame `Page.frameNavigated`. Synthesized events double-fire those effects.
+- **Frame snapshots apply in wire order**: `SessionManager.handleFrameSnapshot` applies a pull reply before resolving its promise. Applying it in the awaiting caller runs a microtask later, after events that arrived behind it, and the stale table deletes frames those events created.
+- **Native messaging is versioned**: the `host_info` handshake rejects mismatched peers, so extension and CLI ship as a pair. Additive fields need no bump; a new required message or changed shape bumps `NATIVE_MESSAGING_PROTOCOL_VERSION`.
 
 ---
 
-## Debug Cookbook (1-liners)
+## Verification
+
+- **No new unit tests**: don't add unit tests or unit-test targets. Existing package tests (`npm run test:unit`) may be run. Verify with typecheck, integration/e2e, and playground smoke checks.
+- **After package changes**: rebuild the affected package(s) serially, then typecheck, before testing.
+- **Quick**: `npm run typecheck`.
+- **Focused**: `npm run test:playground` (builds packages, runs `e2e/playground-*.test.ts` in a real browser) or `npm run test:unit` (`packages/*/test`, no browser).
+- **Extension**: `npm run test:e2e:extension` for any change to `packages/argus-extension` or the extension source in `argus-watcher`. Runs real Chromium with the unpacked extension and real native hosts in a temp profile. Needs Chrome for Testing/Chromium (branded Chrome 137+ ignores `--load-extension`): found in the Playwright cache or via `ARGUS_E2E_CHROME_BIN`. **Without a binary it skips itself; a green run with a skip warning proves nothing.** `ARGUS_E2E_HEADED=1` to watch.
+- **Full**: `npm run test:e2e` builds packages + extension, runs `test:unit`, then each `e2e/*.test.ts` serially (`scripts/test-e2e.mjs`). Slow; run when the change warrants it.
+
+### Playground
+
+- **What**: self-contained harness (`playground/`) with console/network/DOM/storage/eval/iframe sections, API stubs, and an orchestrator for Chrome + watcher.
+- **Run**: `npm run playground` (long-running; start it in the background). Serves `:3333` and cross-origin `:3334`, launches Chrome with a temp profile, starts watcher `playground`. Pieces: `playground:serve`, `playground:chrome`, `playground:attach`.
+- **Use**: smoke-test after `packages/argus` or `packages/argus-watcher` changes, e.g. `argus eval playground "..."`, `argus dom tree playground --selector "body"`.
+- **Iframes**: same-origin `#playground-iframe` (3333) and cross-origin `#cross-origin-iframe` (3334) for target selection and in-frame eval (`argus ext select`, `--type iframe`).
+- **Extend**: new commands/capabilities get matching controls in `playground/index.html`. Keep it self-contained (inline scripts, no build step).
+- **Sourcemap fixtures**: never reformat `playground/sourcemapped-app.js`, `playground/inline-mapped-app.js`, `playground/maps/`, or `playground/src/`. Committed source maps encode exact line/column positions.
+
+### Debug Cookbook
 
 - **Watcher not found**: `argus list` → `argus doctor` → `argus watcher status <id>`.
 - **Unreachable watcher**: check registry host/port; restart `argus watcher start ...`; verify `argus chrome start`.
 - **CLI change not visible**: `npm run build:packages`.
-- **Weird CLI vs watcher mismatch**: rebuild + run `npm run test:playground`.
+- **CLI vs watcher mismatch**: rebuild, then `npm run test:playground`.
 
 ---
 
-## Tests / Gate (exact commands)
+## Git / Release
 
-- **Quick**: `npm run typecheck`.
-- **Focused**: `npm run test:playground` (browser) or `npm run test:unit` (`packages/*/test`, no browser, ~4s).
-- **Extension mode**: `npm run test:e2e:extension` — real Chromium, unpacked extension, real native hosts, all in a temp profile. Run it for any change to `packages/argus-extension` or the extension source in `argus-watcher`. Needs a Chrome for Testing/Chromium binary (branded Chrome 137+ ignores `--load-extension`); auto-found in the Playwright cache, else set `ARGUS_E2E_CHROME_BIN`. **It skips itself when no such binary exists** — a green run that printed a skip warning proves nothing. `ARGUS_E2E_HEADED=1` to watch it.
-- **Full**: `npm run test:e2e` — builds packages + extension, runs `test:unit`, then every `e2e/*.test.ts`.
-
----
-
-## Golden Paths (checklists)
-
-- **New CLI command (no new watcher API)**: add to `register*.ts` → implement in `packages/argus/src/commands/*` → ensure `--json` → add/adjust `e2e/*` → update `skill/argus/SKILL.md`.
-- **New watcher endpoint**: add types **and a request `ProtocolSchema`** in `packages/argus-core/src/protocol/http/<domain>.ts` → add the endpoint to `WATCHER_ENDPOINTS` (`argus-watcher/src/http/endpoints.ts`) → add route in `packages/argus-watcher/src/http/routes/*` + wire in `packages/argus-watcher/src/http/router.ts` → call via `requestWatcherJson` (CLI) / `createArgusClient` (client) → `e2e/*` → SKILL + (if interactive) playground UI.
-- **Extension-only route**: use `defineExtensionRoute` with the `capability` the route needs. It owns the availability guard, the `not_available` response, and the `extension_action_failed` mapping — don't re-check `ctx.sourceHandle?.x` in the handler.
-- **Protocol change rules**: additive-by-default; breaking => bump `ARGUS_PROTOCOL_VERSION`; keep `ok`/`error` shapes stable.
+- **Commits**: Conventional Commits (`feat|fix|refactor|build|ci|chore|docs|style|perf|test`), typed by user-visible intent. Header ≤120 chars, enforced by commitlint via `.husky/commit-msg`. Put nuance in the body.
+- **Worktrees**: `~/dev/argus/` is a container; `argus/` is the primary checkout on `main`, feature worktrees are siblings. Managed with Worktrunk (`wt list`, `wt switch -c <branch> -y`, `wt merge`); run `wt` from inside a worktree. Hooks in `.config/wt.toml`: post-create copies `.env`, installs deps, builds packages; pre-merge runs `bun run typecheck`.
+- **Merging**: `wt merge`'s fallback "Squash commits from …" message fails commitlint. Squash yourself, then let Worktrunk fast-forward: `base=$(git merge-base main HEAD) && git reset --soft "$base" && git add -A && git commit -m "feat: <summary>" && wt merge --no-commit -y`.
+- **Plan files**: if a worktree was created from a plan file, delete it before merging (no confirmation needed).
+- **Publishing**: before `npm publish`, check `npm view <pkg> version`. If the repo version already exists, bump and commit first.
+- **Extension release asset**: `.github/workflows/release-extension.yml` attaches the extension zip when a GitHub release is published.
 
 ---
 
-## Contracts / Invariants (don’t break these)
+## Editing This File
 
-- **HTTP payload shape**: success `Ok<{…}>`; failure `ok: false` with `{ error: ErrorDetail }` (see `packages/argus-core/src/protocol/http/errors.ts`). Consumers take `ApiResult<TResponse>` rather than writing `TResponse | ErrorResponse`.
-- **Error codes are a closed union**: add a member to `ARGUS_ERROR_CODES` before emitting a new one. `codedError`/`getErrorCode` are typed to it, so a foreign code (Node's `ENOENT`) can't reach the wire, and a rename breaks every reader at compile time.
-- **Query params are typed too**: a GET endpoint's params belong in `protocol/http/query.ts` (`LogsQuery`/`NetQuery`), serialized with `toSearchParams`. The CLI and SDK builders both construct those shapes; the watcher reads params through `keyof`-checked helpers. Don't add a `params.set('…')` the type doesn't know about.
-- **Watcher route conventions**: GET vs POST, path naming, `extensionOnly` behavior in `packages/argus-watcher/src/http/router.ts`.
-- **POST bodies are schema-only**: a route reads a body by declaring `bodySchema`; there is no unvalidated path. Write the `ProtocolSchema` next to the request type in `packages/argus-core/src/protocol/http/<domain>.ts`, composing the readers in `protocol/schemaFields.ts` — don't hand-roll `typeof` checks in the route. An empty body simply fails schema parse with a real message.
-- **`cdp_event` carries only real Chrome events**: the extension must never fabricate one. The frame table is the extension's (`background/frame-table.ts`) and travels as full, deduplicated `frame_snapshot` messages; the watcher applies every snapshot — pushed or pulled — through `applyExtensionFrameSnapshot`, and reacts to navigation (log rotation, sourcemap reset, indicator) only on the real top-frame `Page.frameNavigated`. Synthesizing events to keep the watcher's copy fresh is what C2 removed; it double-fired those side effects.
-- **Frame snapshots apply in wire order**: `SessionManager.handleFrameSnapshot` applies a pull reply before resolving its promise. Applying it in the awaiting caller instead runs a microtask later, after real events that arrived behind it — a stale table then deletes frames those events just created.
-- **Native-messaging changes bump `NATIVE_MESSAGING_PROTOCOL_VERSION`**: the `host_info` handshake refuses mismatched peers, so extension and CLI ship as a pair. Additive fields are fine without a bump; a new required message or a changed shape is not.
+Keep entries short, telegraphic, and verified against the repo (paths, scripts, symbols). Delete stale rules instead of annotating them.
