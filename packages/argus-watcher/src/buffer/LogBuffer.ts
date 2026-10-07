@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { CircularBuffer } from './CircularBuffer.js'
 import type { LogEpoch, LogEvent, LogLevel } from '@vforsh/argus-core'
 
 /**
@@ -68,12 +69,13 @@ const EPOCH_PREFIX = 'argus-log-epoch-v1.'
 export class LogBuffer {
 	private readonly maxSize: number
 	private readonly streamId = randomUUID()
-	private events: LogEvent[] = []
+	private readonly events: CircularBuffer<LogEvent>
 	private nextId = 1
 	private epochWaiters: EpochWaiter[] = []
 
 	constructor(maxSize: number) {
 		this.maxSize = maxSize
+		this.events = new CircularBuffer(maxSize)
 	}
 
 	/** Add a log event and return the stored entry with id. */
@@ -83,7 +85,6 @@ export class LogBuffer {
 			id: this.nextId++,
 		}
 		this.events.push(entry)
-		this.trim()
 		this.flushEpochWaiters()
 		return entry
 	}
@@ -110,7 +111,7 @@ export class LogBuffer {
 	 * same path as a cursored one instead of a parallel id-based long-poll subsystem.
 	 */
 	epochAtStart(): LogEpoch {
-		const oldest = this.events[0]
+		const oldest = this.events.at(0)
 		return this.getEpochAt(oldest ? oldest.id - 1 : this.currentPosition())
 	}
 
@@ -156,21 +157,9 @@ export class LogBuffer {
 		return {
 			size: this.maxSize,
 			count: this.events.length,
-			minId: this.events[0]?.id ?? null,
-			maxId: this.events[this.events.length - 1]?.id ?? null,
+			minId: this.events.at(0)?.id ?? null,
+			maxId: this.events.at(this.events.length - 1)?.id ?? null,
 		}
-	}
-
-	private trim(): void {
-		if (this.maxSize <= 0) {
-			this.events = []
-			return
-		}
-		if (this.events.length <= this.maxSize) {
-			return
-		}
-
-		this.events = this.events.slice(this.events.length - this.maxSize)
 	}
 
 	private flushEpochWaiters(): void {
@@ -203,7 +192,15 @@ export class LogBuffer {
 	}
 
 	private listAfterPosition(position: number, filters: LogFilters, limit: number): LogEvent[] {
-		return this.events.filter((event) => event.id > position && matchesFilters(event, filters)).slice(0, limit)
+		const events: LogEvent[] = []
+		const firstId = this.events.at(0)?.id ?? this.nextId
+		const boundedLimit = limit < 0 ? Infinity : Math.trunc(limit)
+		const start = Math.max(0, Math.floor(position) - firstId + 1)
+		for (let index = start; index < this.events.length && events.length < boundedLimit; index++) {
+			const event = this.events.at(index)!
+			if (matchesFilters(event, filters)) events.push(event)
+		}
+		return limit < 0 ? events.slice(0, limit) : events
 	}
 
 	private resolveEpoch(epoch: LogEpoch): number {
@@ -223,10 +220,10 @@ export class LogBuffer {
 	}
 
 	private validatePosition(position: number): void {
-		if (this.events.length > 0 && position < (this.events[0]?.id ?? position + 1) - 1) {
+		if (this.events.length > 0 && position < (this.events.at(0)?.id ?? position + 1) - 1) {
 			throw new LogEpochError('evicted', 'Log epoch is stale because the ring buffer evicted entries. Capture a new epoch.')
 		}
-		if (this.maxSize === 0 && this.currentPosition() > position) {
+		if (this.maxSize <= 0 && this.currentPosition() > position) {
 			throw new LogEpochError('evicted', 'Log epoch is stale because the ring buffer evicted entries. Capture a new epoch.')
 		}
 	}
