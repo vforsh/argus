@@ -16,7 +16,7 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.5.16",
+      "version": "0.5.17",
       "bin": {
         "argus": "dist/argus.js",
       },
