@@ -1,7 +1,7 @@
 import type { CdpNode } from '../protocol.js'
 import type { CdpSessionHandle, CdpTargetContext } from '../connection.js'
 import type { ElementRefRegistry } from '../elementRefs.js'
-import { filterNodesByText } from '../text-filter.js'
+import { queryNodesByText } from '../text-filter.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Selector resolution
@@ -57,13 +57,9 @@ export const resolveSelectorMatches = async (
 	all: boolean,
 	text?: string,
 ): Promise<SelectorMatchResult> => {
-	// Always use querySelectorAll to get the true match count
-	const result = await session.sendAndWait('DOM.querySelectorAll', { nodeId: rootId, selector })
-	let allNodeIds = result.nodeIds ?? []
-
-	if (text != null) {
-		allNodeIds = await filterNodesByText(session, allNodeIds, text)
-	}
+	const allNodeIds = text != null
+		? await queryNodesByText(session, selector, text, rootId)
+		: (await session.sendAndWait('DOM.querySelectorAll', { nodeId: rootId, selector })).nodeIds ?? []
 
 	// If all=false, only return the first match (if any)
 	const nodeIds = all ? allNodeIds : allNodeIds.slice(0, 1)
@@ -85,8 +81,7 @@ export const waitForSelectorMatches = async (
 ): Promise<SelectorMatchResult> => {
 	const deadline = Date.now() + waitMs
 	while (true) {
-		const rootId = await getDomRootId(session)
-		const result = await resolveSelectorMatches(session, rootId, selector, all, text)
+		const result = await querySelectorTargets(session, selector, all, text)
 		if (result.allNodeIds.length > 0) return result
 		const remaining = deadline - Date.now()
 		if (remaining <= 0) return result
@@ -105,8 +100,7 @@ export const resolveSelectorTargets = async (session: CdpSessionHandle, options:
 		return waitForSelectorMatches(session, options.selector, options.all, options.text, waitMs)
 	}
 
-	const rootId = await getDomRootId(session)
-	return resolveSelectorMatches(session, rootId, options.selector, options.all, options.text)
+	return querySelectorTargets(session, options.selector, options.all, options.text)
 }
 
 export const resolveElementTargets = async (
@@ -144,7 +138,7 @@ export const resolveElementTargets = async (
 	const result =
 		(options.waitMs ?? 0) > 0
 			? await waitForSelectorMatches(session, options.selector, options.all, options.text, options.waitMs ?? 0)
-			: await resolveSelectorMatches(session, await getDomRootId(session), options.selector, options.all, options.text)
+			: await querySelectorTargets(session, options.selector, options.all, options.text)
 
 	return {
 		target: { kind: 'selector', value: options.selector },
@@ -152,6 +146,13 @@ export const resolveElementTargets = async (
 		handles: result.nodeIds.map((nodeId) => ({ nodeId })),
 		...result,
 	}
+}
+
+// The common document path avoids creating a handle for every CSS candidate or for the root.
+const querySelectorTargets = async (session: CdpSessionHandle, selector: string, all: boolean, text?: string): Promise<SelectorMatchResult> => {
+	if (text == null) return resolveSelectorMatches(session, await getDomRootId(session), selector, all)
+	const allNodeIds = await queryNodesByText(session, selector, text)
+	return { allNodeIds, nodeIds: all ? allNodeIds : allNodeIds.slice(0, 1) }
 }
 
 /** Resolve the first node id matching a selector, or null when no match exists. */

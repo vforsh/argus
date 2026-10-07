@@ -211,7 +211,7 @@ export type CdpCommandMap = {
 	'DOM.pushNodesByBackendIdsToFrontend': Command<{ backendNodeIds: number[] }, { nodeIds?: number[] }>
 	'DOM.querySelectorAll': Command<{ nodeId: number; selector: string }, { nodeIds?: number[] }>
 	'DOM.requestNode': Command<{ objectId: string }, { nodeId?: number }>
-	'DOM.resolveNode': Command<CdpNodeDescriptor & { executionContextId?: number }, { object?: RuntimeRemoteObject }>
+	'DOM.resolveNode': Command<CdpNodeDescriptor & { executionContextId?: number; objectGroup?: string }, { object?: RuntimeRemoteObject }>
 	'DOM.scrollIntoViewIfNeeded': Command<CdpNodeDescriptor & { rect?: { x: number; y: number; width: number; height: number } }, unknown>
 	'DOM.setFileInputFiles': Command<CdpNodeDescriptor & { files: string[] }, unknown>
 
@@ -272,6 +272,7 @@ export type CdpCommandMap = {
 		},
 		{ data?: string }
 	>
+	'Page.createIsolatedWorld': Command<{ frameId: string; worldName?: string }, { executionContextId: number }>
 	'Page.enable': Command<NoParams, unknown>
 	'Page.getFrameTree': Command<NoParams, { frameTree?: CdpFrameTreeNode }>
 	'Page.getLayoutMetrics': Command<NoParams, { cssVisualViewport?: CdpVisualViewport; visualViewport?: CdpVisualViewport }>
@@ -289,6 +290,8 @@ export type CdpCommandMap = {
 	'Runtime.awaitPromise': Command<{ promiseObjectId: string; returnByValue?: boolean; generatePreview?: boolean }, RuntimeEvaluatePayload>
 	'Runtime.callFunctionOn': Command<
 		{
+			objectGroup?: string
+			silent?: boolean
 			functionDeclaration: string
 			objectId?: string
 			executionContextId?: number
@@ -318,6 +321,7 @@ export type CdpCommandMap = {
 		{ objectId: string; ownProperties?: boolean; accessorPropertiesOnly?: boolean; generatePreview?: boolean },
 		{ result?: RuntimePropertyDescriptor[]; exceptionDetails?: RuntimeExceptionDetails }
 	>
+	'Runtime.releaseObjectGroup': Command<{ objectGroup: string }, unknown>
 	'Runtime.removeBinding': Command<{ name: string }, unknown>
 
 	// --- Storage ---
