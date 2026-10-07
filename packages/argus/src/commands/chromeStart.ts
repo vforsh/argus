@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
-import { pruneRegistry } from '../registry.js'
+import { loadActiveRegistry } from '../registry.js'
 import { createOutput } from '../output/io.js'
 import { formatError } from '../cli/parse.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
@@ -323,7 +323,7 @@ export const runChromeStart = async (options: ChromeStartOptions): Promise<void>
 	let startupUrl: string | null = null
 
 	if (options.fromWatcher) {
-		const registry = await pruneRegistry()
+		const registry = await loadActiveRegistry()
 		const watcher = registry.watchers[options.fromWatcher]
 		if (!watcher) {
 			output.writeWarn(`Watcher not found: ${options.fromWatcher}`)

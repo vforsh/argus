@@ -1,5 +1,5 @@
 import type { ShutdownResponse } from '@vforsh/argus-core'
-import { pruneRegistry, removeWatcherAndPersist } from '../registry.js'
+import { loadActiveRegistry, removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatError } from '../cli/parse.js'
 import { formatWatcherLine } from '../output/format.js'
@@ -24,7 +24,7 @@ export const runWatcherStop = async (id: string | undefined, options: WatcherSto
 			process.exitCode = 2
 			return
 		}
-		const registry = await pruneRegistry()
+		const registry = await loadActiveRegistry()
 		const matches = Object.values(registry.watchers).filter((watcher) => watcher.port === port && (!id || watcher.id === id))
 		if (matches.length !== 1) {
 			output.writeWarn(`Expected one registered watcher on port ${port}${id ? ` with id ${id}` : ''}; found ${matches.length}. Use --id.`)
@@ -70,7 +70,7 @@ export const runWatcherStop = async (id: string | undefined, options: WatcherSto
 		process.kill(pid, 'SIGTERM')
 	} catch (error) {
 		if (isNoSuchProcessError(error)) {
-			await removeWatcherAndPersist(watcher.id)
+			await removeWatcherAndPersist(watcher.id, undefined, watcher)
 			writeStopped(watcher.id)
 			return
 		}
@@ -81,7 +81,7 @@ export const runWatcherStop = async (id: string | undefined, options: WatcherSto
 
 	const waitResult = await waitForProcessExit(pid, 2_000, 100)
 	if (waitResult.state === 'dead') {
-		await removeWatcherAndPersist(watcher.id)
+		await removeWatcherAndPersist(watcher.id, undefined, watcher)
 		writeStopped(watcher.id)
 		return
 	}

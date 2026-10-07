@@ -83,7 +83,7 @@ export const runWatcherPrune = async (options: WatcherPruneOptions): Promise<voi
 		return
 	}
 
-	await removeWatchersAndPersist(removedIds)
+	await removeWatchersAndPersist(removedIds, undefined, registry.watchers)
 
 	if (options.json) {
 		output.writeJson({ keptIds, removedIds, dryRun: false } satisfies PruneResult)

@@ -1,11 +1,13 @@
 import type { ArgusClientOptions } from '../types.js'
-import { DEFAULT_TTL_MS } from '@vforsh/argus-core'
+import { DEFAULT_TTL_MS, createWatcherResolver, type WatcherResolver } from '@vforsh/argus-core'
 
 /**
  * Resolved client configuration shared by every method group.
  * Built once by `createArgusClient` and threaded into the group factories.
  */
 export type ClientContext = {
+	/** Discovery reused briefly by this client only; invalidated on transport failures. */
+	watchers: WatcherResolver
 	/** Override registry path instead of using `ARGUS_REGISTRY_PATH` / default. */
 	registryPath?: string
 	/** TTL used for pruning stale watchers before registry reads. */
@@ -17,7 +19,7 @@ export type ClientContext = {
 }
 
 /** Registry-scoped subset of {@link ClientContext} accepted by `requestWatcher`. */
-export type RegistryContext = Pick<ClientContext, 'registryPath' | 'ttlMs'>
+export type RegistryContext = Pick<ClientContext, 'registryPath' | 'ttlMs' | 'watchers'>
 
 /**
  * Timeout for screenshots. Well above the default request budget: a full-page capture on a
@@ -36,6 +38,7 @@ export const RECORD_TIMEOUT_MS = 30_000
 
 /** Normalize user-supplied client options into a fully resolved {@link ClientContext}. */
 export const createClientContext = (options: ArgusClientOptions): ClientContext => ({
+	watchers: createWatcherResolver(options),
 	registryPath: options.registryPath,
 	ttlMs: options.ttlMs ?? DEFAULT_TTL_MS,
 	listTimeoutMs: options.timeoutMs ?? 2_000,

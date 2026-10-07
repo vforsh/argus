@@ -4,17 +4,12 @@ import {
 	classifyWatcherFailure,
 	formatError,
 	formatWatcherTransportError,
-	readAndPruneRegistry,
 	removeWatcherAndPersist,
 	shouldEvictWatcherOnFailure,
 } from '@vforsh/argus-core'
 import type { HttpOptions } from '../http/fetchJson.js'
 import { fetchJson } from '../http/fetchJson.js'
-
-type RegistryContext = {
-	registryPath?: string
-	ttlMs: number
-}
+import type { RegistryContext } from './context.js'
 
 type WatcherRequestOptions = {
 	path: string
@@ -25,7 +20,7 @@ type WatcherRequestOptions = {
 }
 
 export const withWatcher = async <T>(context: RegistryContext, watcherId: string, callback: (watcher: WatcherRecord) => Promise<T>): Promise<T> => {
-	const registry = await readAndPruneRegistry({ registryPath: context.registryPath, ttlMs: context.ttlMs })
+	const registry = await context.watchers.snapshot()
 	const watcher = registry.watchers[watcherId]
 	if (!watcher) {
 		throw new Error(`Watcher not found: ${watcherId}`)
@@ -55,8 +50,9 @@ export const requestWatcher = async <T>(
 				throw new Error(`${watcher.id}: ${formatError(error)}`)
 			}
 
+			context.watchers.invalidate(watcher)
 			if (shouldEvictWatcherOnFailure(failure)) {
-				await removeWatcherAndPersist(watcher.id, context.registryPath)
+				await removeWatcherAndPersist(watcher.id, context.registryPath, watcher)
 			}
 
 			throw new Error(formatWatcherTransportError(watcher, error))

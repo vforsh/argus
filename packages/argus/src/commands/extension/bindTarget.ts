@@ -1,6 +1,6 @@
 import type { ApiResult, ErrorResponse, ExtensionBrowserTab, ExtensionDiagnosticsResponse, WatcherRecord } from '@vforsh/argus-core'
 import type { Output } from '../../output/io.js'
-import { pruneRegistry } from '../../registry.js'
+import { loadActiveRegistry } from '../../registry.js'
 import type { BindCheckpoint } from './bindTickets.js'
 import { emitFailure } from './failures.js'
 import { fetchControlDiagnostics, probeControls, type LiveControl, type UnreachableControl } from './liveControls.js'
@@ -13,7 +13,7 @@ import { readPinnedWatcherStatus } from './watcherIdentity.js'
  * so the error names them separately.
  */
 export const findTicketTab = async (ticket: string, output: Output): Promise<{ control: LiveControl; tab: ExtensionBrowserTab } | null> => {
-	const probe = await probeControls(Object.values((await pruneRegistry()).watchers), { browser: true })
+	const probe = await probeControls(Object.values((await loadActiveRegistry()).watchers), { browser: true })
 	const searched = await Promise.all(
 		probe.live.map(async (control) => ({ control, tabs: await fetchExtensionTabs(control.watcher, { kind: 'query', url: ticket }) })),
 	)

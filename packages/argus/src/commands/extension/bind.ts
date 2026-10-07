@@ -2,7 +2,7 @@ import type { ApiResult, NavigateResponse, VisibilityPolicy, ErrorResponse, Watc
 import { DEFAULT_NAVIGATION_TIMEOUT_MS, delay, isBindTicket } from '@vforsh/argus-core'
 import { formatError } from '../../cli/parse.js'
 import { createOutput, type Output } from '../../output/io.js'
-import { pruneRegistry } from '../../registry.js'
+import { loadActiveRegistry } from '../../registry.js'
 import { buildWatcherUrl, fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import {
 	checkpointBindTicket,
@@ -41,7 +41,7 @@ export const runExtensionBindPrepare = async (options: ExtensionBindPrepareOptio
 		return
 	}
 
-	const { live } = await probeControls(Object.values((await pruneRegistry()).watchers))
+	const { live } = await probeControls(Object.values((await loadActiveRegistry()).watchers))
 	const server = await findBindPageServer(live)
 	if (!server) {
 		emitFailure(output, {

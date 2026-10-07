@@ -75,6 +75,34 @@ const isReplaceError = (error: unknown): error is NodeJS.ErrnoException => {
 	return err.code === 'EEXIST' || err.code === 'EPERM'
 }
 
+/**
+ * Read a complete snapshot without locking. Retry ENOENT across Windows' rm+rename gap while
+ * another writer holds the lock (up to 2s); absent a writer, retry just once. Never writes files.
+ * Callers already holding the writer lock should read directly to avoid waiting on themselves.
+ */
+export const readFileSnapshot = async (filePath: string): Promise<string> => {
+	const deadline = Date.now() + 2_000
+	let retryWithoutWriter = true
+	while (true) {
+		try {
+			return await fs.readFile(filePath, 'utf8')
+		} catch (error) {
+			if (!isMissingFileError(error) || Date.now() >= deadline) throw error
+			let replacing = false
+			try {
+				await fs.access(`${filePath}.lock`)
+				replacing = true
+			} catch {
+				// A missing lock means initial startup/deletion, or the writer just completed.
+			}
+			if (!replacing && !retryWithoutWriter) throw error
+			// One last read after a writer releases its lock observes the completed rename.
+			retryWithoutWriter = replacing
+			await new Promise((resolve) => setTimeout(resolve, 5))
+		}
+	}
+}
+
 /** True for Node's "no such file" error. */
 export const isMissingFileError = (error: unknown): error is NodeJS.ErrnoException => {
 	if (!error || typeof error !== 'object' || !('code' in error)) {

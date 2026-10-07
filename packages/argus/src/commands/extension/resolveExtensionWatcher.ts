@@ -1,5 +1,5 @@
 import type { RegistryV1, WatcherRecord, ArgusErrorCode } from '@vforsh/argus-core'
-import { pruneRegistry } from '../../registry.js'
+import { loadActiveRegistry } from '../../registry.js'
 import { formatError } from '../../cli/parse.js'
 import { readBrowserLabels } from './browserLabels.js'
 import { getBrowserInstanceId, probeControl, probeControls, toCandidate, type ExtensionWatcherCandidate } from './liveControls.js'
@@ -33,7 +33,7 @@ export const resolveExtensionWatcher = async (input: ControlSelector): Promise<R
 
 	let registry: RegistryV1
 	try {
-		registry = await pruneRegistry()
+		registry = await loadActiveRegistry()
 	} catch (error) {
 		return { ok: false, error: `Failed to load registry: ${formatError(error)}`, exitCode: 1 }
 	}

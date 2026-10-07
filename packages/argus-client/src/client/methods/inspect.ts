@@ -1,4 +1,4 @@
-import { describeProtocolMismatch, formatError, readAndPruneRegistry } from '@vforsh/argus-core'
+import { describeProtocolMismatch, formatError } from '@vforsh/argus-core'
 import type {
 	LogCursorResponse,
 	LogEpochResponse,
@@ -18,7 +18,7 @@ import { requestWatcher } from '../watcherRequest.js'
 /** Registry, log, and network read methods. */
 export const createInspectMethods = (ctx: ClientContext) => ({
 	list: async (options: ListOptions = {}): Promise<ListResult[]> => {
-		const registry = await readAndPruneRegistry({ registryPath: ctx.registryPath, ttlMs: ctx.ttlMs })
+		const registry = await ctx.watchers.snapshot(true)
 		const byCwd = normalizeByCwd(options.byCwd)
 		const watchers = byCwd ? filterByCwd(registry, byCwd) : Object.values(registry.watchers)
 

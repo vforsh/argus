@@ -20,3 +20,5 @@ export * from './http/fetch.js'
 export * from './http/watcher.js'
 export * from './diagnostics/events.js'
 export * from './diagnostics/journal.js'
+
+export * from './registry/watcherResolver.js'

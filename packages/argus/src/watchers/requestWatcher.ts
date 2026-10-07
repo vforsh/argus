@@ -15,7 +15,7 @@ import {
 import type { Output } from '../output/io.js'
 import { fetchJson } from '../httpClient.js'
 import { formatWatcherLine } from '../output/format.js'
-import { resolveWatcher } from './resolveWatcher.js'
+import { invalidateWatcher, resolveWatcher } from './resolveWatcher.js'
 
 // ---------------------------------------------------------------------------
 // Request helper
@@ -72,8 +72,9 @@ export async function requestWatcherJson<T>(input: WatcherRequestInput): Promise
 	} catch (error) {
 		// Same classifier and eviction policy the SDK uses — the registry is shared, so one stack
 		// must not leave it in a state the other would not have produced.
+		invalidateWatcher(watcher)
 		if (shouldEvictWatcherOnFailure(classifyWatcherFailure(error))) {
-			await removeWatcherAndPersist(watcher.id)
+			await removeWatcherAndPersist(watcher.id, undefined, watcher)
 		}
 
 		return {

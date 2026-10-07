@@ -1,7 +1,9 @@
 import readline from 'node:readline'
 import type { Command } from 'commander'
 import type { SessionOutputLine, SessionReadyEvent, SessionRequest, SessionRequestId, SessionResponse, WatcherRecord } from '@vforsh/argus-core'
-import { SESSION_PROTOCOL_VERSION, SESSION_REQUEST_SCHEMA, formatProtocolValidationIssues, parseDurationMs } from '@vforsh/argus-core'
+import {
+	SESSION_PROTOCOL_VERSION, SESSION_REQUEST_SCHEMA, formatProtocolValidationIssues, parseDurationMs, createWatcherResolver, type WatcherResolver,
+} from '@vforsh/argus-core'
 import packageJson from '../../package.json' with { type: 'json' }
 import { createProgram } from '../cli/program.js'
 import { coreProgramRegistrars } from '../cli/register/index.js'
@@ -9,7 +11,7 @@ import { createPluginLoader, type PluginLoader } from '../cli/plugins/registerPl
 import { usageError } from '../cli/validation.js'
 import { createOutput, routeConsoleToStderr, type Output } from '../output/io.js'
 import { fetchWatcherJson, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
-import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { resolveWatcher, withWatcherResolver } from '../watchers/resolveWatcher.js'
 import { dispatchSessionRequest } from './sessionDispatch.js'
 import { installStdioCapture } from './stdioCapture.js'
 
@@ -52,7 +54,8 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 
 	writeLine(readyEvent(resolved.watcher))
 
-	const exitCode = await serveRequests({
+	const resolver = createWatcherResolver()
+	const exitCode = await withWatcherResolver(resolver, () => serveRequests({
 		program,
 		plugins,
 		capture,
@@ -61,7 +64,8 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 		watcher: resolved.watcher,
 		defaultTimeoutMs,
 		reconnect: options.reconnect === true,
-	})
+		resolver,
+	}))
 
 	capture.restore()
 	await flushStdout()
@@ -71,6 +75,7 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 }
 
 type ServeInput = {
+	resolver: WatcherResolver
 	program: Command
 	plugins: PluginLoader
 	capture: ReturnType<typeof installStdioCapture>
@@ -119,6 +124,8 @@ const serveRequests = async (input: ServeInput): Promise<number> => {
 				defaultTimeoutMs: input.defaultTimeoutMs,
 			})
 			input.writeLine(response)
+			// Even commands using direct fetch helpers must refresh after an uncertain result. Never replay them.
+			if (!response.ok) await input.resolver.snapshot(true).catch(() => {})
 
 			if (await watcherLost(response, input)) {
 				input.output.writeWarn(`Watcher ${input.watcher.id} is no longer reachable; closing session.`)
@@ -137,7 +144,7 @@ const serveRequests = async (input: ServeInput): Promise<number> => {
  *
  * Default is fail-fast: once the watcher is gone every later request would fail anyway, and
  * a host is better served by a dead session than by an endless stream of `ok: false`.
- * `--reconnect` opts out — each request re-resolves the id through the registry, so a watcher
+ * `--reconnect` opts out — discovery expires after 250ms and refreshes after failures, so a watcher
  * restarted under the same id is picked up without restarting the session.
  */
 const watcherLost = async (response: SessionResponse, input: ServeInput): Promise<boolean> => {

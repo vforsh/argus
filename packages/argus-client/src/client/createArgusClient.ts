@@ -10,7 +10,8 @@ import { createWatcherClient } from './watcherHandle.js'
  * Create an Argus client for driving a watcher over its HTTP API.
  *
  * Throws on invalid input, missing watcher, or unreachable watcher.
- * Note: registry-backed calls prune stale entries and remove unreachable watchers.
+ * Discovery caches live registry snapshots for at most 250ms; transport failures invalidate the cache.
+ * Unreachable entries are removed only if their run identity and endpoint still match. Failed requests are never replayed.
  *
  * @example
  * const client = createArgusClient()

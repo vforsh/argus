@@ -1,5 +1,5 @@
 import { createOutput } from '../../output/io.js'
-import { pruneRegistry } from '../../registry.js'
+import { loadActiveRegistry } from '../../registry.js'
 import { readBrowserLabels, setBrowserLabel, type BrowserLabel } from './browserLabels.js'
 import { emitFailure } from './failures.js'
 import { getBrowserInstanceId, probeControls, type LiveControl } from './liveControls.js'
@@ -23,7 +23,7 @@ export type ExtensionBrowserRow = {
 
 /** List one row per browser instance (one per control watcher). */
 export const collectExtensionBrowsers = async (): Promise<ExtensionBrowserRow[]> => {
-	const registry = await pruneRegistry()
+	const registry = await loadActiveRegistry()
 	const [probe, labels] = await Promise.all([probeControls(Object.values(registry.watchers), { browser: true }), readBrowserLabels()])
 	const live = await Promise.all(probe.live.map((control) => toRow(control, labels)))
 	const unreachable: ExtensionBrowserRow[] = probe.unreachable.map(({ watcher }) => ({

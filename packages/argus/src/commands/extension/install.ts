@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { readRegistry } from '@vforsh/argus-core'
 import { createOutput, type Output } from '../../output/io.js'
-import { pruneRegistry } from '../../registry.js'
+import { loadActiveRegistry } from '../../registry.js'
 import { resolveChromeBin } from '../../utils/chromeBin.js'
 import { ARGUS_EXTENSION_ID } from './extensionId.js'
 import { resolveExtensionDir } from './extensionPath.js'
@@ -55,7 +55,7 @@ export const runExtensionInstall = async (options: ExtensionInstallOptions): Pro
 		return emitFailure(output, { error: `Failed to install native hosts: ${(error as Error).message}` })
 	}
 
-	await pruneRegistry()
+	await loadActiveRegistry()
 	let connected = await isControlConnected()
 
 	const shouldOpen = options.open !== false && !connected

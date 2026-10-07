@@ -1,6 +1,6 @@
 import { describeProtocolMismatch } from '@vforsh/argus-core'
 import type { StatusResponse, WatcherRecord } from '@vforsh/argus-core'
-import { pruneRegistry } from '../registry.js'
+import { loadActiveRegistry } from '../registry.js'
 import { formatWatcherLine } from '../output/format.js'
 import { createOutput } from '../output/io.js'
 import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/requestWatcher.js'
@@ -51,7 +51,7 @@ const listWatchers = async (
 	options: ListOptions,
 	output: ReturnType<typeof createOutput>,
 ): Promise<Array<{ watcher: WatcherRecord; status?: StatusResponse }>> => {
-	const registry = await pruneRegistry()
+	const registry = await loadActiveRegistry()
 
 	let watchers = Object.values(registry.watchers)
 

@@ -1,7 +1,8 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { RegistryV1, WatcherRecord } from '@vforsh/argus-core'
-import { describeProtocolMismatch } from '@vforsh/argus-core'
+import { describeProtocolMismatch, type WatcherResolver } from '@vforsh/argus-core'
 import type { StatusResponse } from '@vforsh/argus-core'
-import { pruneRegistry } from '../registry.js'
+import { loadActiveRegistry } from '../registry.js'
 import { fetchWatcherJson } from './requestWatcher.js'
 import { formatError } from '../cli/parse.js'
 
@@ -13,10 +14,18 @@ export type ResolveWatcherResult =
 	| { ok: true; watcher: WatcherRecord; registry: RegistryV1 }
 	| { ok: false; error: string; exitCode: 1 | 2; candidates?: WatcherRecord[] }
 
+const sessionResolver = new AsyncLocalStorage<WatcherResolver>()
+
+/** Scope discovery reuse to one session; unrelated one-shot invocations always read a fresh snapshot. */
+export const withWatcherResolver = <T>(resolver: WatcherResolver, action: () => T): T => sessionResolver.run(resolver, action)
+
+/** Invalidate a failed session endpoint; a later request rediscovers it without replaying this one. */
+export const invalidateWatcher = (watcher: WatcherRecord): void => sessionResolver.getStore()?.invalidate(watcher)
+
 export const resolveWatcher = async (input: ResolveWatcherInput): Promise<ResolveWatcherResult> => {
 	let registry: RegistryV1
 	try {
-		registry = await pruneRegistry()
+		registry = await (sessionResolver.getStore()?.snapshot() ?? loadActiveRegistry())
 	} catch (error) {
 		return { ok: false, error: `Failed to load registry: ${formatError(error)}`, exitCode: 1 }
 	}
