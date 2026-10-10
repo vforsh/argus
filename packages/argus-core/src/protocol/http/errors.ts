@@ -77,6 +77,8 @@ export const isArgusErrorCode = (value: unknown): value is ArgusErrorCode =>
 export type ErrorDetail = {
 	message: string
 	code?: ArgusErrorCode
+	/** Session timeout after a mutation was dispatched: inspect state before retrying. */
+	mutation?: { operation: string; requestId?: string; deadline?: number; outcome: 'uncertain' }
 }
 
 /** Standard error payload for API failures. */

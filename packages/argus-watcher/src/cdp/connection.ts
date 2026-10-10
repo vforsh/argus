@@ -1,4 +1,4 @@
-import { createNotAttachedError } from '../errors.js'
+import { createNotAttachedError, cdpCommandError } from '../errors.js'
 import type { CdpEvent, CdpEventPayload, CdpMethod, CdpParams, CdpResult } from './protocol.js'
 
 export type CdpEventMeta = {
@@ -147,7 +147,7 @@ export const createCdpSessionHandle = (): CdpSessionController => {
 					clearTimeout(pending.timer)
 				}
 				if (payload.error) {
-					pending.reject(new Error(payload.error.message ?? 'CDP request failed'))
+					pending.reject(cdpCommandError(payload.error.message ?? 'CDP request failed'))
 					return
 				}
 				pending.resolve(payload.result)

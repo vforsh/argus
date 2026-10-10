@@ -37,3 +37,26 @@ export const hasErrorCode = (error: unknown, code: ArgusErrorCode): boolean => g
 
 /** The watcher is not attached to a CDP target. Raised by both transports. */
 export const createNotAttachedError = (message = 'No tab attached via extension'): CodedError => codedError('cdp_not_attached', message)
+
+/** Normalize the few CDP renderer-lifecycle failures that have stable protocol meanings.
+ * Chrome/native messaging expose prose at this boundary; consumers decide recovery by code.
+ */
+export const cdpCommandError = (message: string): Error => {
+	let detail = message
+	if (message.startsWith('{')) {
+		try {
+			const parsed = JSON.parse(message)
+			if (typeof parsed.message === 'string') detail = parsed.message
+		} catch {
+			/* Plain error text. */
+		}
+	}
+	if (
+		/^(?:Inspected target navigated or closed|Cannot find context with specified id|Execution context was destroyed|Cannot find execution context)(?:[.\s]|$)/i.test(
+			detail,
+		)
+	) {
+		return codedError('cdp_target_replaced', message)
+	}
+	return new Error(message)
+}

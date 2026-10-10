@@ -1,3 +1,4 @@
+import { getRequestContext, markMutationDispatched } from '../session/requestContext.js'
 import type {
 	ArgusWatcherRequestError,
 	ArgusWatcherRequestInput,
@@ -7,6 +8,10 @@ import type {
 import type { ErrorResponse, WatcherRecord, ApiResult } from '@vforsh/argus-core'
 import {
 	buildWatcherUrl,
+	isArgusErrorCode,
+	isHttpResponseError,
+	isHttpTimeoutError,
+	isHttpRequestAbortedError,
 	classifyWatcherFailure,
 	formatWatcherTransportError,
 	removeWatcherAndPersist,
@@ -42,10 +47,17 @@ export type WatcherRequestResult<T> = ArgusWatcherRequestResult<T>
 export { buildWatcherUrl, formatWatcherTransportError }
 
 export async function fetchWatcherJson<T>(watcher: Pick<WatcherRecord, 'host' | 'port'>, input: Omit<WatcherRequestInput, 'id'>): Promise<T> {
+	const context = getRequestContext()
+	const deadline = Math.min(input.deadline ?? Infinity, context.deadline ?? Infinity)
+	const remaining = Number.isFinite(deadline) ? deadline - Date.now() : Infinity
+	const timeoutMs = Math.max(0, Math.min(input.timeoutMs ?? 5000, remaining))
+	const body = boundBrowserRequest(input.path, input.body, timeoutMs)
 	return fetchJson<T>(buildWatcherUrl(watcher, input.path, input.query), {
+		signal: input.signal && context.signal ? AbortSignal.any([input.signal, context.signal]) : (input.signal ?? context.signal),
+		deadline: Number.isFinite(deadline) ? deadline : undefined,
 		method: input.method,
-		body: input.body,
-		timeoutMs: input.timeoutMs,
+		body,
+		timeoutMs,
 		returnErrorResponse: input.returnErrorResponse,
 	})
 }
@@ -62,12 +74,28 @@ export async function requestWatcherJson<T>(input: WatcherRequestInput): Promise
 			exitCode: resolved.exitCode,
 			message: resolved.error,
 			candidates: resolved.candidates,
+			code: 'not_found',
+			failureKind: 'resolve',
 		}
 	}
 
 	const { watcher } = resolved
+	const context = getRequestContext()
+	const deadline = Math.min(context.deadline ?? Infinity, input.deadline ?? Infinity)
+	if (context.signal?.aborted || input.signal?.aborted || deadline <= Date.now()) {
+		return {
+			ok: false,
+			watcher,
+			exitCode: 1,
+			message: 'Request cancelled before dispatch.',
+			code: 'request_cancelled',
+			failureKind: 'transport',
+			dispatched: false,
+		}
+	}
 
 	try {
+		if (input.mutation) markMutationDispatched(input.mutation)
 		const data = await fetchWatcherJson<T>(watcher, input)
 		return { ok: true, watcher, data }
 	} catch (error) {
@@ -83,6 +111,11 @@ export async function requestWatcherJson<T>(input: WatcherRequestInput): Promise
 			watcher,
 			exitCode: 1,
 			message: formatWatcherTransportError(watcher, error),
+			failureKind: classifyWatcherFailure(error),
+			dispatched: true,
+			code: watcherFailureCode(error),
+			...(isHttpResponseError(error) ? { status: error.status } : {}),
+			cause: technicalCause(error),
 		}
 	}
 }
@@ -166,4 +199,35 @@ function writeResolveError(resolved: { ok: false; error: string; exitCode: numbe
 		output.writeWarn('Hint: run `argus list` to see all watchers.')
 	}
 	setExitCode(resolved.exitCode)
+}
+
+/** Preserve bounded technical identity without reflecting request payloads or arbitrary cause messages. */
+const technicalCause = (error: unknown): { name: string; code?: string } | undefined => {
+	if (!(error instanceof Error)) return undefined
+	const nested = error.cause && typeof error.cause === 'object' ? error.cause : error
+	const code = (nested as { code?: unknown }).code
+	return { name: error.name.slice(0, 80), ...(typeof code === 'string' ? { code: code.slice(0, 80) } : {}) }
+}
+
+/** The page must exhaust its work budget before HTTP/session waiting expires. */
+const boundBrowserRequest = (path: string, body: unknown, transportMs: number): unknown => {
+	if (!body || typeof body !== 'object' || (path !== '/eval' && path !== '/navigate')) return body
+	const request = body as { timeoutMs?: number; args?: Record<string, string> }
+	const slack = Math.min(1000, Math.max(1, Math.floor(transportMs / 5)))
+	const browserMs = Math.max(1, Math.min(request.timeoutMs ?? 30000, transportMs - slack))
+	if (path !== '/eval') return { ...request, timeoutMs: browserMs }
+	const deadline = Date.now() + browserMs - Math.min(500, Math.floor(browserMs / 5))
+	const supplied = Number(request.args?.__argusDeadline)
+	return {
+		...request,
+		timeoutMs: browserMs,
+		args: { ...request.args, __argusDeadline: String(Number.isFinite(supplied) && supplied > 0 ? Math.min(supplied, deadline) : deadline) },
+	}
+}
+
+const watcherFailureCode = (error: unknown): ArgusWatcherRequestError['code'] => {
+	if (isHttpRequestAbortedError(error)) return 'request_cancelled'
+	if (isHttpTimeoutError(error)) return 'transport_timeout'
+	if (isHttpResponseError(error)) return isArgusErrorCode(error.code) ? error.code : 'http_error'
+	return 'watcher_unreachable'
 }

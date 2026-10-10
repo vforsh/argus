@@ -1,5 +1,7 @@
+import { assertPluginCompatibility } from './pluginCompatibility.js'
+import { registerIndependentPlugin } from './registerIndependentPlugin.js'
 import { existsSync } from 'node:fs'
-import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginContextV1, type ArgusPluginV1 } from '@vforsh/argus-plugin-api'
+import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginContextV1, type ArgusPluginV1, type ArgusPluginManifestV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 
 import { resolveArgusConfigPath } from '../../config/loadConfig.js'
@@ -21,8 +23,11 @@ type PluginInput = {
 	configDir: string | null
 }
 
+export type PluginProvenance = Pick<PluginInput, 'source' | 'spec' | 'resolvedSpec' | 'alias' | 'configDir'>
+
 export type PluginLoadEntry =
 	| {
+			provenance?: PluginProvenance[]
 			source: PluginSource
 			spec: string
 			resolvedSpec: string
@@ -37,6 +42,7 @@ export type PluginLoadEntry =
 			url: string
 	  }
 	| {
+			provenance?: PluginProvenance[]
 			source: PluginSource
 			spec: string
 			resolvedSpec: string
@@ -75,11 +81,21 @@ const parseEnvPlugins = (): string[] => {
 		.filter(Boolean)
 }
 
-const uniq = (values: string[]): string[] => Array.from(new Set(values))
-
-const createPluginInput = (source: PluginSource, spec: string, aliases: Record<string, string>, configDir: string | null): PluginInput => {
+const createPluginInput = (
+	source: PluginSource,
+	spec: string,
+	aliases: Record<string, string>,
+	configDir: string | null,
+	aliasDirs: Record<string, string | null>,
+): PluginInput => {
 	const resolved = resolvePluginAlias(spec, aliases)
-	return { source, spec, resolvedSpec: resolved.spec, alias: resolved.alias, configDir }
+	return {
+		source,
+		spec,
+		resolvedSpec: resolved.spec,
+		alias: resolved.alias,
+		configDir: resolved.alias && resolved.alias in aliasDirs ? aliasDirs[resolved.alias] : configDir,
+	}
 }
 
 /** Plugins must be loaded before Commander parses commands, so scan raw argv for dynamic loads. */
@@ -111,7 +127,7 @@ const extractPlugin = (mod: unknown): ArgusPluginV1 | null => {
 	if (!candidate || typeof candidate !== 'object') return null
 
 	const plugin = candidate as Partial<ArgusPluginV1>
-	if (plugin.apiVersion !== ARGUS_PLUGIN_API_VERSION) return null
+	assertPluginCompatibility({ apiVersion: plugin.apiVersion, name: plugin.name ?? 'unknown', minArgusVersion: plugin.minArgusVersion })
 	if (!plugin.name || typeof plugin.name !== 'string') return null
 	if (typeof plugin.register !== 'function') return null
 
@@ -139,7 +155,11 @@ const recordPluginFailure = (entries: PluginLoadEntry[], entry: PluginInput, err
 	warnPluginLoad(entry.source, entry.spec, error)
 }
 
-const createLoadedEntry = (entry: PluginInput, plugin: Omit<ArgusPluginV1, 'register'>, url: string): Exclude<PluginLoadEntry, { status: 'failed' }> => ({
+const createLoadedEntry = (
+	entry: PluginInput,
+	plugin: Omit<ArgusPluginV1, 'register'>,
+	url: string,
+): Exclude<PluginLoadEntry, { status: 'failed' }> => ({
 	source: entry.source,
 	spec: entry.spec,
 	resolvedSpec: entry.resolvedSpec,
@@ -173,11 +193,19 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 	const envPlugins = parseEnvPlugins()
 	const cliPlugins = parseCliPlugins(argv)
 
+	const globalAliasDirs = Object.fromEntries(
+		Object.keys(globalConfigResult?.config.pluginAliases ?? {}).map((name) => [name, globalConfigResult?.configDir ?? null]),
+	)
+	const localAliasDirs = {
+		...globalAliasDirs,
+		...Object.fromEntries(Object.keys(configResult?.config.pluginAliases ?? {}).map((name) => [name, configResult?.configDir ?? null])),
+	}
 	const all: PluginInput[] = []
-	for (const spec of globalConfigPlugins) all.push(createPluginInput('global-config', spec, globalAliases, globalConfigResult?.configDir ?? null))
-	for (const spec of configPlugins) all.push(createPluginInput('config', spec, localAliases, configResult?.configDir ?? null))
-	for (const spec of envPlugins) all.push(createPluginInput('env', spec, localAliases, null))
-	for (const spec of cliPlugins) all.push(createPluginInput('cli', spec, localAliases, null))
+	for (const spec of globalConfigPlugins)
+		all.push(createPluginInput('global-config', spec, globalAliases, globalConfigResult?.configDir ?? null, globalAliasDirs))
+	for (const spec of configPlugins) all.push(createPluginInput('config', spec, localAliases, configResult?.configDir ?? null, localAliasDirs))
+	for (const spec of envPlugins) all.push(createPluginInput('env', spec, localAliases, null, localAliasDirs))
+	for (const spec of cliPlugins) all.push(createPluginInput('cli', spec, localAliases, null, localAliasDirs))
 
 	const entries: PluginLoadEntry[] = []
 	lastPluginLoadReport = {
@@ -191,16 +219,6 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 
 	if (all.length === 0) return { prepare: async () => {} }
 
-	// Preserve original order, but avoid duplicate loads.
-	const seen = new Set<string>()
-	const ordered = all.filter((p) => {
-		const key = p.resolvedSpec.trim()
-		if (!key) return false
-		if (seen.has(key)) return false
-		seen.add(key)
-		return true
-	})
-
 	const ctxBase: Omit<ArgusPluginContextV1, 'program' | 'host'> = {
 		apiVersion: ARGUS_PLUGIN_API_VERSION,
 		cwd,
@@ -212,16 +230,26 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 		input: PluginInput
 		url: string
 		eager: boolean
+		manifest: ArgusPluginManifestV1 | null
 		report: PluginLoadEntry
 		loading?: Promise<PluginLoadEntry>
 	}> = []
 	let host: ArgusPluginContextV1['host'] | undefined
-	const load = async (entry: PluginInput, url: string): Promise<PluginLoadEntry> => {
+	const claimedNames = new Map<string, string>()
+	const claimName = (name: string, url: string): void => {
+		const owner = claimedNames.get(name)
+		if (owner && owner !== url) throw new Error(`Plugin name "${name}" conflicts between ${owner} and ${url}. Remove or rename one module.`)
+		claimedNames.set(name, url)
+	}
+	const load = async (entry: PluginInput, url: string, manifest: ArgusPluginManifestV1 | null): Promise<PluginLoadEntry> => {
 		try {
 			const plugin = extractPlugin(await import(url))
 			if (!plugin) throw new Error('Invalid plugin export (expected default export with { apiVersion: 1, name, register() }).')
+			claimName(plugin.name, url)
 			host ??= (await import('./pluginHost.js')).createPluginHost()
-			await plugin.register({ ...ctxBase, host, program })
+			const ctx = { ...ctxBase, configDir: entry.configDir ?? ctxBase.configDir, host, program }
+			if (manifest?.eager === false) await registerIndependentPlugin(plugin, manifest, ctx)
+			else await plugin.register(ctx)
 			return createLoadedEntry(entry, plugin, url)
 		} catch (error) {
 			const message = formatError(error)
@@ -230,18 +258,30 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 		}
 	}
 
-	for (const entry of ordered) {
-		const baseDirs = uniq([entry.configDir, configResult?.configDir, globalConfigResult?.configDir, cwd].filter((v): v is string => Boolean(v)))
-		const resolved = resolvePluginModuleUrl(entry.resolvedSpec, baseDirs)
+	const byUrl = new Map<string, (typeof pending)[number]>()
+	for (const entry of all) {
+		const resolved = resolvePluginModuleUrl(entry.resolvedSpec, [entry.configDir ?? cwd])
 		if (!resolved.ok) {
 			recordPluginFailure(entries, entry, resolved.error)
 			continue
 		}
-		const manifest = readPluginManifest(resolved.url)
-		const metadata = manifest ?? { apiVersion: ARGUS_PLUGIN_API_VERSION, name: entry.spec, commands: [] }
-		const report = { ...createLoadedEntry(entry, metadata, resolved.url), status: 'deferred' as const }
-		entries.push(report)
-		pending.push({ input: entry, url: resolved.url, eager: manifest?.eager !== false, report })
+		const duplicate = byUrl.get(resolved.url)
+		if (duplicate) {
+			duplicate.report.provenance?.push(entry)
+			continue
+		}
+		try {
+			const manifest = readPluginManifest(resolved.url)
+			if (manifest) claimName(manifest.name, resolved.url)
+			const metadata = manifest ?? { apiVersion: ARGUS_PLUGIN_API_VERSION, name: entry.spec, commands: [] }
+			const report = { ...createLoadedEntry(entry, metadata, resolved.url), provenance: [entry], status: 'deferred' as const }
+			entries.push(report)
+			const item = { input: entry, url: resolved.url, eager: manifest?.eager !== false, manifest, report }
+			pending.push(item)
+			byUrl.set(resolved.url, item)
+		} catch (error) {
+			recordPluginFailure(entries, entry, formatError(error), resolved.url)
+		}
 	}
 
 	return {
@@ -256,8 +296,9 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 				if (item.report.status !== 'deferred') continue
 				if (!item.eager && !loadAll && !item.report.commands.includes(root)) continue
 				// A timed-out session request can leave registration in flight. Later requests join it.
-				item.loading ??= load(item.input, item.url)
+				item.loading ??= load(item.input, item.url, item.manifest)
 				const loaded = await item.loading
+				loaded.provenance = item.report.provenance
 				entries[entries.indexOf(item.report)] = loaded
 				item.report = loaded
 			}
@@ -289,4 +330,4 @@ const withoutPluginOptions = (argv: readonly string[]): string[] => {
 	return args
 }
 
-const requestedRoot = (args: readonly string[]): string | undefined => args[0]?.startsWith('-') ? undefined : args[0]
+const requestedRoot = (args: readonly string[]): string | undefined => (args[0]?.startsWith('-') ? undefined : args[0])

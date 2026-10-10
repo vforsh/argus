@@ -1,3 +1,4 @@
+import { cdpCommandError } from '../errors.js'
 /**
  * Session manager for CDP sessions routed through the Chrome extension.
  * Implements CdpSessionHandle interface using Native Messaging.
@@ -198,7 +199,7 @@ export class SessionManager {
 
 	private resolvePendingRequest(requestId: number, result: unknown, error?: { message: string }): void {
 		if (error) {
-			this.pendingRequests.fail(requestId, new Error(error.message))
+			this.pendingRequests.fail(requestId, cdpCommandError(error.message))
 			return
 		}
 		this.pendingRequests.settle(requestId, result)

@@ -1,5 +1,5 @@
 import type { WatcherRecord } from '../registry/types.js'
-import { isHttpResponseError, isHttpTimeoutError } from './fetch.js'
+import { isHttpResponseError, isHttpTimeoutError, isHttpRequestAbortedError } from './fetch.js'
 import { formatError } from '../errorMessage.js'
 
 /** Build the URL for a watcher endpoint. */
@@ -44,7 +44,7 @@ export const classifyWatcherFailure = (error: unknown): WatcherFailureKind => {
 		return 'api-rejection'
 	}
 
-	return isHttpTimeoutError(error) ? 'transport' : 'unreachable'
+	return isHttpTimeoutError(error) || isHttpRequestAbortedError(error) ? 'transport' : 'unreachable'
 }
 
 /**

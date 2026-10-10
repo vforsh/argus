@@ -1,6 +1,6 @@
 import path from 'node:path'
-import { existsSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
+import { existsSync, realpathSync } from 'node:fs'
+import { pathToFileURL, fileURLToPath } from 'node:url'
 import os from 'node:os'
 import { formatError } from '../parse.js'
 
@@ -32,7 +32,11 @@ export const resolvePluginModuleUrl = (specifier: string, baseDirs: string[]): {
 	}
 
 	if (trimmed.startsWith('file:')) {
-		return { ok: true, url: trimmed }
+		try {
+			return { ok: true, url: canonicalModuleUrl(trimmed) }
+		} catch (error) {
+			return { ok: false, error: formatError(error) }
+		}
 	}
 
 	const errors: string[] = []
@@ -42,7 +46,7 @@ export const resolvePluginModuleUrl = (specifier: string, baseDirs: string[]): {
 			try {
 				const resolvedPath = path.resolve(baseDir, trimmed)
 				if (existsSync(resolvedPath)) {
-					return { ok: true, url: pathToFileURL(resolvedPath).href }
+					return { ok: true, url: canonicalModuleUrl(pathToFileURL(resolvedPath).href) }
 				}
 				errors.push(`${baseDir}: ${resolvedPath} does not exist`)
 			} catch (error) {
@@ -53,24 +57,28 @@ export const resolvePluginModuleUrl = (specifier: string, baseDirs: string[]): {
 		return { ok: false, error: `Failed to resolve plugin path "${specifier}". Tried:\n${errors.map((e) => `- ${e}`).join('\n')}` }
 	}
 
-	// 1) Prefer resolving relative to the Argus installation itself.
-	// This covers "plugin installed next to argus" (e.g. global install or argus dependency).
-	try {
-		return { ok: true, url: resolveWithImportMeta(trimmed, import.meta.url) }
-	} catch (error) {
-		const msg = formatError(error)
-		errors.push(`argus: ${msg}`)
-	}
-
 	for (const baseDir of baseDirs) {
 		try {
 			const baseUrl = pathToFileURL(path.join(baseDir, 'noop.js')).href
-			return { ok: true, url: resolveWithImportMeta(trimmed, baseUrl) }
+			return { ok: true, url: canonicalModuleUrl(resolveWithImportMeta(trimmed, baseUrl)) }
 		} catch (error) {
 			const msg = formatError(error)
 			errors.push(`${baseDir}: ${msg}`)
 		}
 	}
 
+	// Config-owned packages win; the Argus installation is the final package fallback.
+	try {
+		return { ok: true, url: canonicalModuleUrl(resolveWithImportMeta(trimmed, import.meta.url)) }
+	} catch (error) {
+		errors.push(`argus: ${formatError(error)}`)
+	}
+
 	return { ok: false, error: `Failed to resolve plugin "${specifier}". Tried:\n${errors.map((e) => `- ${e}`).join('\n')}` }
+}
+
+/** One physical entry has one identity, irrespective of symlinks, file URL escapes, query, or fragment. */
+const canonicalModuleUrl = (url: string): string => {
+	if (!url.startsWith('file:')) return url
+	return pathToFileURL(realpathSync(fileURLToPath(url))).href
 }

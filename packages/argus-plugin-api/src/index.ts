@@ -14,8 +14,12 @@ import type {
 	ScreenshotRequest,
 	ScreenshotResponse,
 	WatcherRecord,
+	ArgusErrorCode,
+	WatcherFailureKind,
 } from '@vforsh/argus-core'
 import type { Command } from 'commander'
+
+export type { EvalRequest, EvalResponse, WatcherRecord } from '@vforsh/argus-core'
 
 /** Version tag that plugin modules must export so Argus can reject incompatible contracts. */
 export const ARGUS_PLUGIN_API_VERSION = 1 as const
@@ -49,6 +53,12 @@ export type ArgusWatcherRequestInput = {
 	body?: unknown
 	timeoutMs?: number
 	returnErrorResponse?: boolean
+	/** Abort local waiting; dispatched browser mutations may still complete. */
+	signal?: AbortSignal
+	/** Absolute deadline, in Unix milliseconds. */
+	deadline?: number
+	/** Mutation identity recorded only once a watcher request is dispatched. */
+	mutation?: ArgusMutationDispatch
 }
 
 /** Successful watcher request result. */
@@ -65,6 +75,13 @@ export type ArgusWatcherRequestError = {
 	exitCode: number
 	message: string
 	candidates?: WatcherRecord[]
+	code?: ArgusErrorCode | 'transport_timeout' | 'request_cancelled' | 'http_error' | 'watcher_unreachable'
+	failureKind?: WatcherFailureKind | 'resolve'
+	status?: number
+	/** Bounded technical cause, without request body or credentials. */
+	cause?: { name: string; code?: string }
+	/** True once HTTP dispatch began, even if the acknowledgement was lost. */
+	dispatched?: boolean
 }
 
 /** Combined watcher request result. */
@@ -156,6 +173,7 @@ export type ArgusDefineWatcherCommand = <
 /** Optional request timeout override for high-level plugin browser helpers. */
 export type ArgusBrowserHelperOptions = {
 	timeoutMs?: number
+	mutation?: ArgusMutationDispatch
 }
 
 /** High-level browser helpers exposed to plugins for common watcher operations. */
@@ -190,8 +208,22 @@ export type ArgusBrowserHelpers = {
 	) => Promise<ArgusWatcherRequestResult<ScreenshotResponse>>
 }
 
+/** Identity of a dispatched mutation whose acknowledgement may be lost. */
+export type ArgusMutationDispatch = { operation: string; requestId?: string; deadline?: number }
+
+/** Request-local cancellation and deadline; empty outside a session. */
+export type ArgusRequestContext = { signal?: AbortSignal; deadline?: number }
+
 /** Host helpers that plugins can rely on across Argus releases. */
 export type ArgusPluginHostV1 = {
+	/** Report failure in the current session request, or the process for one-shot CLI calls. */
+	setExitCode: (code: number) => void
+	/** Return the current request budget; do not cache across actions. */
+	getRequestContext: () => ArgusRequestContext
+	/** Declare the leading positional watcher argument explicitly; the name is immaterial. */
+	watcherArgument: (command: Command) => Command
+	/** Record dispatch before awaiting a mutation acknowledgement; no automatic replay. */
+	markMutationDispatched: (mutation: ArgusMutationDispatch) => void
 	createOutput: ArgusCreateOutput
 	requestWatcherJson: ArgusRequestWatcherJson
 	writeRequestError: ArgusWriteRequestError

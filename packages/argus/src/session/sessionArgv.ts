@@ -1,3 +1,4 @@
+import { takesWatcherArgument } from '../cli/watcherArgument.js'
 import type { Command, Option } from 'commander'
 import type { ArgusErrorCode, SessionRequest } from '@vforsh/argus-core'
 
@@ -60,7 +61,7 @@ export const resolveSessionCommand = (program: Command, cmd: string): ResolvedSe
 export const buildSessionArgv = (input: {
 	program: Command
 	request: SessionRequest
-	/** Watcher the session is pinned to, injected as the leading `[id]` argument. */
+	/** Watcher the session is pinned to, injected into the declared leading watcher argument. */
 	watcherId: string
 }): SessionArgvSuccess | SessionArgvFailure => {
 	const resolved = resolveSessionCommand(input.program, input.request.cmd)
@@ -79,7 +80,7 @@ export const buildSessionArgv = (input: {
 	}
 
 	const argv = [...resolved.path]
-	if (takesWatcherId(resolved.command) && tail[0] !== input.watcherId) {
+	if (takesWatcherArgument(resolved.command) && tail[0] !== input.watcherId) {
 		argv.push(input.watcherId)
 	}
 	argv.push(...tail)
@@ -142,9 +143,6 @@ const isArgvFailure = (value: string[] | SessionArgvFailure): value is SessionAr
 
 const isJsonFlag = (token: string): boolean => token === '--json' || token === '--no-json' || token === '--json-full'
 
-/** A command whose first declared argument is the watcher id gets it injected. */
-const takesWatcherId = (command: Command): boolean => command.registeredArguments[0]?.name() === 'id'
-
 const declaresOption = (command: Command, name: string): boolean => findOptions(command, name).length > 0
 
 /**
@@ -183,7 +181,7 @@ const buildArgvFromArgs = (command: Command, args: Record<string, unknown>): str
 		tokens.push(...emitted)
 	}
 
-	const ordered = orderPositionals(names, positionals)
+	const ordered = orderPositionals(names, positionals, takesWatcherArgument(command))
 	if (isArgvFailure(ordered)) {
 		return ordered
 	}
@@ -222,12 +220,12 @@ const emitOption = (options: readonly Option[], key: string, value: unknown): st
 }
 
 /** Place named positionals into declaration order, rejecting gaps a CLI could not express. */
-const orderPositionals = (declaredNames: readonly string[], values: Record<string, unknown>): string[] | SessionArgvFailure => {
+const orderPositionals = (declaredNames: readonly string[], values: Record<string, unknown>, watcher: boolean): string[] | SessionArgvFailure => {
 	const tokens: string[] = []
 	let missing: string | null = null
 
 	for (const name of declaredNames) {
-		if (name === 'id') continue
+		if (watcher && name === declaredNames[0]) continue
 
 		const value = values[name]
 		if (value === undefined) {

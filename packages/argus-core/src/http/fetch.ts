@@ -10,14 +10,17 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT'
 export class HttpResponseError extends Error {
 	/** HTTP status code returned by the server. */
 	readonly status: number
+	/** Structured server error code, when the peer returned an error envelope. */
+	readonly code?: string
 
 	/** Brand, so the check survives two copies of this module in one process. */
 	readonly isHttpResponseError = true
 
-	constructor(message: string, status: number) {
+	constructor(message: string, status: number, code?: string) {
 		super(message)
 		this.name = 'HttpResponseError'
 		this.status = status
+		this.code = code
 	}
 }
 
@@ -52,7 +55,24 @@ export class HttpTimeoutError extends Error {
 export const isHttpTimeoutError = (error: unknown): error is HttpTimeoutError =>
 	error != null && typeof error === 'object' && (error as { isHttpTimeoutError?: unknown }).isHttpTimeoutError === true
 
+/** Local cancellation; it does not prove a dispatched browser operation was undone. */
+export class HttpRequestAbortedError extends Error {
+	readonly isHttpRequestAbortedError = true
+	constructor() {
+		super('Request cancelled.')
+		this.name = 'HttpRequestAbortedError'
+	}
+}
+
+/** Cross-module cancellation guard. */
+export const isHttpRequestAbortedError = (error: unknown): error is HttpRequestAbortedError =>
+	error != null && typeof error === 'object' && (error as { isHttpRequestAbortedError?: unknown }).isHttpRequestAbortedError === true
+
 export type HttpOptions = {
+	/** Cancel local waiting; does not roll back remote effects. */
+	signal?: AbortSignal
+	/** Absolute Unix millisecond deadline, also bounding response-body reads. */
+	deadline?: number
 	timeoutMs?: number
 	method?: HttpMethod
 	body?: unknown
@@ -60,46 +80,37 @@ export type HttpOptions = {
 	returnErrorResponse?: boolean
 }
 
-export const fetchJson = async <T>(url: string, options: HttpOptions = {}): Promise<T> => {
-	const controller = new AbortController()
-	const timeoutMs = options.timeoutMs ?? 5_000
-	const timer = setTimeout(() => controller.abort(), timeoutMs)
-	const body = options.body != null ? JSON.stringify(options.body) : undefined
-
-	try {
-		const response = await fetch(url, {
-			method: options.method ?? 'GET',
-			signal: controller.signal,
-			body,
-			headers: body ? { 'Content-Type': 'application/json' } : undefined,
-		})
-
-		if (!response.ok) {
-			if (options.returnErrorResponse && response.status >= 400) {
+/** Fetch JSON with a bounded response/body read and optional request cancellation. */
+export const fetchJson = <T>(url: string, options: HttpOptions = {}): Promise<T> =>
+	withHttpResponse(url, options, async (response) => {
+		if (response.ok || (options.returnErrorResponse && response.status >= 400)) {
+			try {
 				return (await response.json()) as T
+			} catch (error) {
+				if (!(error instanceof SyntaxError)) throw error
+				throw new HttpResponseError('Watcher returned invalid JSON.', response.status, 'invalid_json')
 			}
-
-			const errorMessage = await extractErrorMessage(response)
-			throw new HttpResponseError(errorMessage ?? `Request failed (${response.status} ${response.statusText})`, response.status)
 		}
+		const detail = await extractErrorDetail(response)
+		throw new HttpResponseError(detail?.message ?? `Request failed (${response.status} ${response.statusText})`, response.status, detail?.code)
+	})
 
-		return (await response.json()) as T
-	} catch (error) {
-		if (isAbortError(error)) {
-			throw new HttpTimeoutError(timeoutMs)
-		}
-		throw error
-	} finally {
-		clearTimeout(timer)
-	}
-}
+/** Fetch text with the same deadline and cancellation semantics as JSON. */
+export const fetchText = (url: string, options: HttpOptions = {}): Promise<string> =>
+	withHttpResponse(url, options, async (response) => {
+		if (!response.ok) throw new HttpResponseError(`Request failed (${response.status} ${response.statusText})`, response.status)
+		return response.text()
+	})
 
-export const fetchText = async (url: string, options: HttpOptions = {}): Promise<string> => {
-	const controller = new AbortController()
-	const timeoutMs = options.timeoutMs ?? 5_000
-	const timer = setTimeout(() => controller.abort(), timeoutMs)
+const withHttpResponse = async <T>(url: string, options: HttpOptions, read: (response: Response) => Promise<T>): Promise<T> => {
 	const body = options.body != null ? JSON.stringify(options.body) : undefined
-
+	const controller = new AbortController()
+	const remaining = options.deadline === undefined ? Infinity : options.deadline - Date.now()
+	const timeoutMs = Math.max(0, Math.min(options.timeoutMs ?? 5000, remaining))
+	const abort = () => controller.abort()
+	options.signal?.addEventListener('abort', abort, { once: true })
+	if (options.signal?.aborted || timeoutMs <= 0) controller.abort()
+	const timer = setTimeout(abort, timeoutMs)
 	try {
 		const response = await fetch(url, {
 			method: options.method ?? 'GET',
@@ -107,19 +118,14 @@ export const fetchText = async (url: string, options: HttpOptions = {}): Promise
 			body,
 			headers: body ? { 'Content-Type': 'application/json' } : undefined,
 		})
-
-		if (!response.ok) {
-			throw new HttpResponseError(`Request failed (${response.status} ${response.statusText})`, response.status)
-		}
-
-		return await response.text()
+		return await read(response)
 	} catch (error) {
-		if (isAbortError(error)) {
-			throw new HttpTimeoutError(timeoutMs)
-		}
-		throw error
+		if (!controller.signal.aborted && !isAbortError(error)) throw error
+		if (options.signal?.aborted) throw new HttpRequestAbortedError()
+		throw new HttpTimeoutError(timeoutMs)
 	} finally {
 		clearTimeout(timer)
+		options.signal?.removeEventListener('abort', abort)
 	}
 }
 
@@ -131,13 +137,14 @@ const isAbortError = (error: unknown): boolean => {
 	return (error as { name: string }).name === 'AbortError'
 }
 
-const extractErrorMessage = async (response: Response): Promise<string | null> => {
+const extractErrorDetail = async (response: Response): Promise<{ message: string; code?: string } | null> => {
 	try {
 		const body = await response.json()
 		if (body && typeof body === 'object' && 'error' in body) {
 			const error = (body as { error?: unknown }).error
 			if (error && typeof error === 'object' && 'message' in error) {
-				return (error as { message: string }).message
+				const detail = error as { message: string; code?: unknown }
+				return { message: detail.message, code: typeof detail.code === 'string' ? detail.code : undefined }
 			}
 		}
 	} catch {

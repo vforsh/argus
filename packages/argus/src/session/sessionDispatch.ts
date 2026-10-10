@@ -2,6 +2,7 @@ import { CommanderError, type Command } from 'commander'
 import type { ErrorDetail, SessionRequest, SessionResponse } from '@vforsh/argus-core'
 import { formatError, isArgusErrorCode, parseDurationMs } from '@vforsh/argus-core'
 import { runWithExitCodeScope, type ExitCodeScope } from '../output/exitCode.js'
+import { withRequestContext, type RequestScope } from './requestContext.js'
 import { buildSessionArgv } from './sessionArgv.js'
 import type { CapturedStdio, StdioCapture } from './stdioCapture.js'
 
@@ -40,31 +41,44 @@ export const dispatchSessionRequest = async (input: SessionDispatchInput): Promi
 
 	const sink: CapturedStdio = { stdout: [], stderr: [] }
 	const scope: ExitCodeScope = {}
+	const controller = new AbortController()
+	const requestScope: RequestScope = { signal: controller.signal, deadline: timeoutMs > 0 ? Date.now() + timeoutMs : undefined }
 	if (input.ownsProcessExitCode) process.exitCode = 0
 
 	const running = input.capture.run(sink, () =>
-		runWithExitCodeScope(scope, async () => {
-			try {
-				await input.prepare?.()
-				const built = buildSessionArgv({ program: input.program, request, watcherId: input.watcherId })
-				if (!built.ok) {
-					return new CommanderError(2, built.code, built.message)
+		withRequestContext(requestScope, () =>
+			runWithExitCodeScope(scope, async () => {
+				try {
+					await input.prepare?.()
+					const built = buildSessionArgv({ program: input.program, request, watcherId: input.watcherId })
+					if (!built.ok) {
+						return new CommanderError(2, built.code, built.message)
+					}
+					await input.program.parseAsync(built.argv, { from: 'user' })
+					return null
+				} catch (error) {
+					return error
 				}
-				await input.program.parseAsync(built.argv, { from: 'user' })
-				return null
-			} catch (error) {
-				return error
-			}
-		}),
+			}),
+		),
 	)
 
 	const settled = await raceWithTimeout(running, timeoutMs)
 	const stderr = sink.stderr.join('')
 
 	if (settled.timedOut) {
+		controller.abort()
 		// The abandoned command keeps its own sink through {@link installStdioCapture}, so
 		// whatever it writes later cannot land in the next request's output.
-		return respond.failure({ message: `Request timed out after ${timeoutMs}ms.`, code: 'session_request_timeout' }, 1, stderr)
+		return respond.failure(
+			{
+				message: `Request timed out after ${timeoutMs}ms.${requestScope.mutation ? ' Mutation acknowledgement was lost; inspect state before retrying.' : ''}`,
+				code: 'session_request_timeout',
+				...(requestScope.mutation ? { mutation: { ...requestScope.mutation, outcome: 'uncertain' as const } } : {}),
+			},
+			1,
+			stderr,
+		)
 	}
 
 	const exitCode = takeExitCode(scope, input.ownsProcessExitCode)
