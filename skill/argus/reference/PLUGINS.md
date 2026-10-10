@@ -63,7 +63,7 @@ Publish an `argusPlugin` JSON object in the nearest package.json above the resol
 
 Legacy v1 plugins, missing/invalid manifests, and `eager: true` retain unrestricted eager registration. The module's existing exported `commands` field remains descriptive and is never assumed complete. `apiVersion` and `minArgusVersion` are checked before registration (including manifest-only discovery); minimum versions are semantic version floors, not ranges. Unsupported requirements fail with upgrade guidance. Optional manifest metadata: `version`, `description`, `homepage`, `minArgusVersion`; `plugin list` reports the actual module metadata and registration status.
 
-Built-in actions also load on demand from ESM chunks. Copy the entire published `dist` directory. Bare `argus --version` / `argus -V` reads only the CLI version and bypasses config and all plugins.
+Built-in actions also load on demand from ESM chunks. Copy the entire published `dist` directory, including generated `argus.assets.json` and `chunks/`. The bundled entry checks its generated asset inventory before loading commands and reports actionable guidance for incomplete installs. Bare `argus --version` / `argus -V` reads only the CLI version and bypasses config and all plugins.
 
 Plugin command actions report failures with `ctx.host.setExitCode(code)` so a timed-out session action cannot contaminate another request. Use `ctx.host.watcherArgument(command)` to declare a leading watcher positional explicitly; sessions inject the pinned watcher regardless of its argument name (legacy leading `id` remains supported).
 
