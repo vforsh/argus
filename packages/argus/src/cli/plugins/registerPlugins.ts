@@ -1,6 +1,7 @@
 import { assertPluginCompatibility } from './pluginCompatibility.js'
 import { registerIndependentPlugin } from './registerIndependentPlugin.js'
 import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { ARGUS_PLUGIN_API_VERSION, type ArgusPluginContextV1, type ArgusPluginV1, type ArgusPluginManifestV1 } from '@vforsh/argus-plugin-api'
 import type { Command } from 'commander'
 
@@ -10,7 +11,7 @@ import { getGlobalArgusConfigPath } from '../../config/argusHome.js'
 import { createOutput } from '../../output/io.js'
 import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from './pluginAliases.js'
 import { resolvePluginModuleUrl } from './resolvePlugin.js'
-import { readPluginManifest } from './pluginManifest.js'
+import { inspectPluginManifest, type PluginManifestInspection } from './pluginManifest.js'
 import { formatError } from '../parse.js'
 
 type PluginSource = 'global-config' | 'config' | 'env' | 'cli'
@@ -25,9 +26,21 @@ type PluginInput = {
 
 export type PluginProvenance = Pick<PluginInput, 'source' | 'spec' | 'resolvedSpec' | 'alias' | 'configDir'>
 
+export type PluginDiscovery = {
+	resolvedPath: string | null
+	manifestSource: string | null
+	manifestStatus: PluginManifestInspection['status']
+	compatibility: PluginManifestInspection['compatibility']
+	registration: 'eager' | 'deferred' | 'blocked'
+	reason: 'absent-manifest' | 'invalid-manifest' | 'explicit-eager' | 'independent-manifest' | 'incompatible-manifest' | 'resolution-failed' | 'name-conflict'
+	metadataError?: string
+	timings: { resolveMs: number; manifestMs: number; importMs?: number; registerMs?: number }
+}
+
 export type PluginLoadEntry =
 	| {
 			provenance?: PluginProvenance[]
+			discovery: PluginDiscovery
 			source: PluginSource
 			spec: string
 			resolvedSpec: string
@@ -43,6 +56,7 @@ export type PluginLoadEntry =
 	  }
 	| {
 			provenance?: PluginProvenance[]
+			discovery: PluginDiscovery
 			source: PluginSource
 			spec: string
 			resolvedSpec: string
@@ -58,6 +72,7 @@ export type PluginLoadReport = {
 	globalConfigPath: string | null
 	globalConfigDir: string | null
 	cwd: string
+	mode: 'inspection' | 'discovery'
 	entries: PluginLoadEntry[]
 }
 
@@ -67,6 +82,7 @@ let lastPluginLoadReport: PluginLoadReport = {
 	globalConfigPath: null,
 	globalConfigDir: null,
 	cwd: process.cwd(),
+	mode: 'inspection',
 	entries: [],
 }
 
@@ -150,8 +166,8 @@ const warnPluginLoad = (source: PluginSource, spec: string, message: string): vo
 	output.writeWarn(`[plugins] Failed to load (${source}) "${spec}": ${message}`)
 }
 
-const recordPluginFailure = (entries: PluginLoadEntry[], entry: PluginInput, error: string, url?: string): void => {
-	entries.push({ source: entry.source, spec: entry.spec, resolvedSpec: entry.resolvedSpec, alias: entry.alias, status: 'failed', url, error })
+const recordPluginFailure = (entries: PluginLoadEntry[], entry: PluginInput, error: string, discovery: PluginDiscovery, url?: string): void => {
+	entries.push({ ...entry, provenance: [entry], discovery, status: 'failed', url, error })
 	warnPluginLoad(entry.source, entry.spec, error)
 }
 
@@ -159,11 +175,13 @@ const createLoadedEntry = (
 	entry: PluginInput,
 	plugin: Omit<ArgusPluginV1, 'register'>,
 	url: string,
+	discovery: PluginDiscovery,
 ): Exclude<PluginLoadEntry, { status: 'failed' }> => ({
 	source: entry.source,
 	spec: entry.spec,
 	resolvedSpec: entry.resolvedSpec,
 	alias: entry.alias,
+	discovery,
 	status: 'loaded',
 	name: plugin.name,
 	version: normalizeOptionalString(plugin.version),
@@ -214,6 +232,7 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 		globalConfigPath: globalConfigResult ? globalConfigPath : null,
 		globalConfigDir: globalConfigResult?.configDir ?? null,
 		cwd,
+		mode: isDiscoveryRequest(withoutPluginOptions(argv)) ? 'discovery' : 'inspection',
 		entries,
 	}
 
@@ -241,28 +260,50 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 		if (owner && owner !== url) throw new Error(`Plugin name "${name}" conflicts between ${owner} and ${url}. Remove or rename one module.`)
 		claimedNames.set(name, url)
 	}
-	const load = async (entry: PluginInput, url: string, manifest: ArgusPluginManifestV1 | null): Promise<PluginLoadEntry> => {
+	const load = async (entry: PluginInput, url: string, manifest: ArgusPluginManifestV1 | null, discovery: PluginDiscovery): Promise<PluginLoadEntry> => {
 		try {
-			const plugin = extractPlugin(await import(url))
+			const importStarted = performance.now()
+			let mod: unknown
+			try {
+				mod = await import(url)
+			} finally {
+				discovery.timings.importMs = performance.now() - importStarted
+			}
+			const plugin = extractPlugin(mod)
 			if (!plugin) throw new Error('Invalid plugin export (expected default export with { apiVersion: 1, name, register() }).')
 			claimName(plugin.name, url)
 			host ??= (await import('./pluginHost.js')).createPluginHost()
 			const ctx = { ...ctxBase, configDir: entry.configDir ?? ctxBase.configDir, host, program }
-			if (manifest?.eager === false) await registerIndependentPlugin(plugin, manifest, ctx)
-			else await plugin.register(ctx)
-			return createLoadedEntry(entry, plugin, url)
+			const registerStarted = performance.now()
+			try {
+				if (manifest?.eager === false) await registerIndependentPlugin(plugin, manifest, ctx)
+				else await plugin.register(ctx)
+			} finally {
+				discovery.timings.registerMs = performance.now() - registerStarted
+			}
+			return createLoadedEntry(entry, plugin, url, discovery)
 		} catch (error) {
 			const message = formatError(error)
 			warnPluginLoad(entry.source, entry.spec, message)
-			return { ...entry, status: 'failed', url, error: message }
+			return { ...entry, discovery, status: 'failed', url, error: message }
 		}
 	}
 
 	const byUrl = new Map<string, (typeof pending)[number]>()
 	for (const entry of all) {
+		const resolveStarted = performance.now()
 		const resolved = resolvePluginModuleUrl(entry.resolvedSpec, [entry.configDir ?? cwd])
+		const resolveMs = performance.now() - resolveStarted
 		if (!resolved.ok) {
-			recordPluginFailure(entries, entry, resolved.error)
+			recordPluginFailure(entries, entry, resolved.error, {
+				resolvedPath: null,
+				manifestSource: null,
+				manifestStatus: 'absent',
+				compatibility: 'unknown',
+				registration: 'blocked',
+				reason: 'resolution-failed',
+				timings: { resolveMs, manifestMs: 0 },
+			})
 			continue
 		}
 		const duplicate = byUrl.get(resolved.url)
@@ -270,22 +311,39 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 			duplicate.report.provenance?.push(entry)
 			continue
 		}
+		const manifestStarted = performance.now()
+		const inspection = inspectPluginManifest(resolved.url)
+		const manifest = inspection.manifest
+		const discovery: PluginDiscovery = {
+			resolvedPath: resolved.url.startsWith('file:') ? fileURLToPath(resolved.url) : null,
+			manifestSource: inspection.source,
+			manifestStatus: inspection.status,
+			compatibility: inspection.compatibility,
+			registration: manifest?.eager === false ? 'deferred' : 'eager',
+			reason: manifestReason(inspection),
+			metadataError: inspection.error,
+			timings: { resolveMs, manifestMs: performance.now() - manifestStarted },
+		}
 		try {
-			const manifest = readPluginManifest(resolved.url)
+			if (inspection.compatibility === 'incompatible') throw new Error(inspection.error)
 			if (manifest) claimName(manifest.name, resolved.url)
 			const metadata = manifest ?? { apiVersion: ARGUS_PLUGIN_API_VERSION, name: entry.spec, commands: [] }
-			const report = { ...createLoadedEntry(entry, metadata, resolved.url), provenance: [entry], status: 'deferred' as const }
+			const report = { ...createLoadedEntry(entry, metadata, resolved.url, discovery), provenance: [entry], status: 'deferred' as const }
 			entries.push(report)
 			const item = { input: entry, url: resolved.url, eager: manifest?.eager !== false, manifest, report }
 			pending.push(item)
 			byUrl.set(resolved.url, item)
 		} catch (error) {
-			recordPluginFailure(entries, entry, formatError(error), resolved.url)
+			discovery.registration = 'blocked'
+			discovery.reason = inspection.compatibility === 'incompatible' ? 'incompatible-manifest' : 'name-conflict'
+			recordPluginFailure(entries, entry, formatError(error), discovery, resolved.url)
 		}
 	}
 
 	return {
 		prepare: async (args) => {
+			lastPluginLoadReport.mode = isDiscoveryRequest(args) ? 'discovery' : 'inspection'
+			if (lastPluginLoadReport.mode === 'discovery') return
 			const root = requestedRoot(args) ?? ''
 			const known = program.commands.find((command) => command.name() === root || command.aliases().includes(root))
 			// Help and explicit listings inspect actual registrations, including dynamically built options.
@@ -296,7 +354,7 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 				if (item.report.status !== 'deferred') continue
 				if (!item.eager && !loadAll && !item.report.commands.includes(root)) continue
 				// A timed-out session request can leave registration in flight. Later requests join it.
-				item.loading ??= load(item.input, item.url, item.manifest)
+				item.loading ??= load(item.input, item.url, item.manifest, item.report.discovery)
 				const loaded = await item.loading
 				loaded.provenance = item.report.provenance
 				entries[entries.indexOf(item.report)] = loaded
@@ -331,3 +389,12 @@ const withoutPluginOptions = (argv: readonly string[]): string[] => {
 }
 
 const requestedRoot = (args: readonly string[]): string | undefined => (args[0]?.startsWith('-') ? undefined : args[0])
+
+const isDiscoveryRequest = (args: readonly string[]): boolean =>
+	['plugin', 'plugins'].includes(args[0]) && ['list', 'ls'].includes(args[1]) && args.includes('--discovery')
+
+const manifestReason = (inspection: PluginManifestInspection): PluginDiscovery['reason'] => {
+	if (inspection.status === 'absent') return 'absent-manifest'
+	if (inspection.status === 'invalid') return 'invalid-manifest'
+	return inspection.manifest?.eager ? 'explicit-eager' : 'independent-manifest'
+}

@@ -150,7 +150,7 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 | Runtime code       | `code ls/read/grep/deminify/edit/strings`                                                          | [CODE.md](./reference/CODE.md)           |
 | Startup injection  | `--inject`, config `inject`, `window.__ARGUS__`                                                    | [INJECT.md](./reference/INJECT.md)       |
 | Session transport  | `session` JSONL protocol                                                                           | [SESSION.md](./reference/SESSION.md)     |
-| Plugins            | `plugin list/add/remove`, `--plugin`, plugin contract                                              | [PLUGINS.md](./reference/PLUGINS.md)     |
+| Plugins            | `plugin list/add/remove`, `plugin list --discovery`, `--plugin`, plugin contract                                              | [PLUGINS.md](./reference/PLUGINS.md)     |
 
 ---
 

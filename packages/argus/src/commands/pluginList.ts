@@ -3,6 +3,7 @@ import { createOutput } from '../output/io.js'
 
 export type PluginListOptions = {
 	json?: boolean
+	discovery?: boolean
 }
 
 export const runPluginList = (options: PluginListOptions): void => {
@@ -21,6 +22,16 @@ export const runPluginList = (options: PluginListOptions): void => {
 
 	for (const entry of report.entries) {
 		const spec = entry.alias ? `${entry.alias} -> ${entry.resolvedSpec}` : entry.spec
+		if (options.discovery) {
+			const discovery = entry.discovery
+			output.writeHuman(`${entry.source}\t${spec}\t${discovery.registration} (${discovery.reason})`)
+			output.writeHuman(`  resolved: ${discovery.resolvedPath ?? entry.url ?? 'unresolved'}`)
+			output.writeHuman(`  manifest: ${discovery.manifestStatus} (${discovery.manifestSource ?? 'none'}); compatibility: ${discovery.compatibility}`)
+			output.writeHuman(`  discovery: resolve ${discovery.timings.resolveMs.toFixed(2)}ms, manifest ${discovery.timings.manifestMs.toFixed(2)}ms`)
+			if (discovery.metadataError) output.writeHuman(`  metadata: ${discovery.metadataError}`)
+			if (entry.status === 'failed') output.writeHuman(`  failed: ${entry.error}`)
+			continue
+		}
 		if (entry.status === 'failed') {
 			output.writeHuman(`${entry.source}\t${spec}\tfailed\t${entry.error}`)
 			continue

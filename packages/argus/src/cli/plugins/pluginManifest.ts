@@ -4,29 +4,52 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ArgusPluginManifestV1 } from '@vforsh/argus-plugin-api'
 
-/**
- * Read routing metadata without executing a plugin. No persistent cache: edits, installs,
- * symlink replacements, and config changes take effect on the next CLI invocation.
- * Invalid metadata falls back to the original v1 loader, never hides an existing command.
- */
-export const readPluginManifest = (url: string): ArgusPluginManifestV1 | null => {
-	if (!url.startsWith('file:')) return null
+export type PluginManifestInspection = {
+	status: 'absent' | 'invalid' | 'valid'
+	source: string | null
+	manifest: ArgusPluginManifestV1 | null
+	compatibility: 'unknown' | 'compatible' | 'incompatible'
+	error?: string
+}
+
+/** Inspect routing metadata without importing plugin code. Sidecars take precedence, including invalid ones. */
+export const inspectPluginManifest = (url: string): PluginManifestInspection => {
+	let source: string | null = null
 	try {
+		if (!url.startsWith('file:')) return absentManifest(source)
 		const entry = fileURLToPath(url)
 		const sidecar = `${entry}.argus-plugin.json`
-		if (existsSync(sidecar)) return validateManifest(JSON.parse(readFileSync(sidecar, 'utf8')))
-		for (let dir = path.dirname(entry); ; dir = path.dirname(dir)) {
-			const packagePath = path.join(dir, 'package.json')
-			if (existsSync(packagePath)) {
-				return validateManifest(JSON.parse(readFileSync(packagePath, 'utf8')).argusPlugin)
+		let value: unknown
+		if (existsSync(sidecar)) {
+			source = sidecar
+			value = JSON.parse(readFileSync(source, 'utf8'))
+		} else {
+			for (let dir = path.dirname(entry); ; dir = path.dirname(dir)) {
+				const packagePath = path.join(dir, 'package.json')
+				if (existsSync(packagePath)) {
+					source = packagePath
+					value = JSON.parse(readFileSync(source, 'utf8')).argusPlugin
+					if (value === undefined) return absentManifest(source)
+					break
+				}
+				if (path.dirname(dir) === dir) return absentManifest(source)
 			}
-			if (path.dirname(dir) === dir) return null
+		}
+		const manifest = validateManifest(value)
+		if (!manifest) return { status: 'invalid', source, manifest: null, compatibility: 'unknown', error: 'Invalid plugin routing metadata.' }
+		try {
+			assertPluginCompatibility(manifest)
+			return { status: 'valid', source, manifest, compatibility: 'compatible' }
+		} catch (error) {
+			return { status: 'valid', source, manifest, compatibility: 'incompatible', error: errorMessage(error) }
 		}
 	} catch (error) {
-		if (error instanceof PluginManifestCompatibilityError) throw error
-		return null
+		return { status: 'invalid', source, manifest: null, compatibility: 'unknown', error: errorMessage(error) }
 	}
 }
+
+const absentManifest = (source: string | null): PluginManifestInspection => ({ status: 'absent', source, manifest: null, compatibility: 'unknown' })
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
 const validateManifest = (value: unknown): ArgusPluginManifestV1 | null => {
 	if (!value || typeof value !== 'object') return null
@@ -36,12 +59,5 @@ const validateManifest = (value: unknown): ArgusPluginManifestV1 | null => {
 	for (const key of ['version', 'description', 'homepage', 'minArgusVersion'] as const) {
 		if (item[key] !== undefined && typeof item[key] !== 'string') return null
 	}
-	try {
-		assertPluginCompatibility({ apiVersion: item.apiVersion, name: item.name, minArgusVersion: item.minArgusVersion })
-	} catch (error) {
-		throw new PluginManifestCompatibilityError(error instanceof Error ? error.message : String(error))
-	}
 	return item as ArgusPluginManifestV1
 }
-
-class PluginManifestCompatibilityError extends Error {}

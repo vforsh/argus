@@ -6,6 +6,7 @@ Plugins are ESM modules loaded before Commander parses argv. They add top-level 
 
 ```bash
 argus plugin list [--json]                          # what this invocation discovered, with status/commands
+argus plugin list --discovery --json                # metadata only; never imports plugin code
 argus --plugin ./plugins/foo.js foo …               # one invocation only
 ARGUS_PLUGINS=foo,./plugins/bar.js argus plugin list   # env, comma-separated
 argus plugin add gsheets                            # workspace config (.argus/config.json, created if missing)
@@ -67,3 +68,5 @@ Built-in actions also load on demand from ESM chunks. Copy the entire published 
 Plugin command actions report failures with `ctx.host.setExitCode(code)` so a timed-out session action cannot contaminate another request. Use `ctx.host.watcherArgument(command)` to declare a leading watcher positional explicitly; sessions inject the pinned watcher regardless of its argument name (legacy leading `id` remains supported).
 
 `ctx.host.getRequestContext()` exposes the current request's absolute deadline and abort signal. Watcher requests also accept `signal`, `deadline`, and a `mutation` identity. The host bounds HTTP and browser budgets and records mutation identity at dispatch. Lost mutation acknowledgements must be treated as uncertain: inspect state/status before explicitly retrying. `requestWatcherJson` failures preserve `code`, `failureKind`, HTTP `status`, a bounded technical `cause`, and `dispatched`.
+
+Discovery reports each configured source and provenance, canonical resolved path, manifest file/status, compatibility, eager/deferred registration and its reason. Absent and invalid metadata remain eager; explicit eager metadata is identified separately. Compatibility is unknown without valid metadata. Resolution and manifest read timings are always included; normal inspection adds import and registration timings (also on failures). Root help and ordinary listings continue to load actual registrations. In a session, discovery starts no new imports; already loaded entries remain loaded.

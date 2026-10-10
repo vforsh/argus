@@ -22,8 +22,8 @@ export const pluginCommands: readonly ArgusCommandDefinition[] = [
 				name: 'list',
 				alias: 'ls',
 				description: 'List plugins discovered for this invocation',
-				options: [jsonOption],
-				examples: ['argus plugin list', 'argus --plugin ./plugins/foo.js plugin list --json'],
+				options: [{ flags: '--discovery', description: 'Inspect routing metadata without importing plugins' }, jsonOption],
+				examples: ['argus plugin list', 'argus plugin list --discovery --json', 'argus --plugin ./plugins/foo.js plugin list --json'],
 				action: async (options) => {
 					await runPluginList(options)
 				},
