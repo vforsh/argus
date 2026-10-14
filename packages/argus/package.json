@@ -33,7 +33,7 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@vforsh/argus-client": "^0.5.4",
+		"@vforsh/argus-client": "^0.5.5",
 		"@vforsh/argus-core": "^0.5.11",
 		"@vforsh/argus-plugin-api": "^0.5.2",
 		"@vforsh/argus-watcher": "^0.5.16",
