@@ -199,10 +199,23 @@ export const waitForWatcherIdRelease = async (id: string, timeoutMs = ID_RELEASE
 }
 
 /** Human summary of who holds an id, for error messages. */
-export const describeHolder = (holder: WatcherIdHolder): string =>
-	holder.kind === 'watcher'
-		? `pid ${holder.record.pid}, ${holder.record.host}:${holder.record.port}${holder.record.ownerId ? '' : ', legacy host'}`
-		: `pid ${holder.reservation.pid}, still starting`
+export const describeHolder = (holder: WatcherIdHolder): string => {
+	if (holder.kind === 'reservation') {
+		return `pid ${holder.reservation.pid}, still starting`
+	}
+
+	// cwd and the CDP endpoint say *which session* owns the id — the pid alone rarely does.
+	const { record } = holder
+	return [
+		`pid ${record.pid}`,
+		`${record.host}:${record.port}`,
+		record.chrome ? `chrome ${record.chrome.host}:${record.chrome.port}` : null,
+		record.cwd ? `cwd ${record.cwd}` : null,
+		record.ownerId ? null : 'legacy host',
+	]
+		.filter((part) => part != null)
+		.join(', ')
+}
 
 /**
  * The live claim on `id` by anyone other than `ownerId`. A record without `ownerId` comes from an
