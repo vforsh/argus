@@ -6,6 +6,7 @@ import { domDragCommandDefinition } from './domDragCommand.js'
 import { quickAccessCommands } from './quickAccessCommands.js'
 import { chromeCommands } from './chromeCommands.js'
 import { watcherCommands } from './watcherCommands.js'
+import { androidCommands } from './androidCommands.js'
 import { pageCommands } from './pageCommands.js'
 import { dialogCommands } from './dialogCommands.js'
 import { logsCommands } from './logsCommands.js'
@@ -37,6 +38,7 @@ const coreCommandDefinitions: readonly ArgusCommandDefinition[] = [
 	...quickAccessCommands,
 	...chromeCommands,
 	...watcherCommands,
+	...androidCommands,
 	...pageCommands,
 	...dialogCommands,
 	...logsCommands,

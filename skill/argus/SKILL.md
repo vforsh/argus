@@ -27,12 +27,13 @@ Bare `argus --version` bypasses config/plugins. Built-in actions load on demand;
 | User's real Chrome: saved login, cookies, extensions, already-open tabs          | **Extension-control**  | `argus ext use --url <substr> --as <id>`     |
 | Isolated/temp profile, headless, custom CDP port, startup injection, clean repro | **CDP**                | `argus start --id <id> --url <url>`          |
 | App lives inside an iframe of a host page                                        | either + iframe select | `--iframe-url` (ext) / `--type iframe` (CDP) |
+| WebView inside an Android app on a USB device                                    | **Android**            | `argus android attach --package <pkg> --id <id>` |
 
-Never use `argus start`, `--profile temp`, or headless for a flow that needs the user's login. Details: [EXTENSION.md](./reference/EXTENSION.md), [START.md](./reference/START.md), [IFRAMES.md](./reference/IFRAMES.md).
+Never use `argus start`, `--profile temp`, or headless for a flow that needs the user's login. Details: [EXTENSION.md](./reference/EXTENSION.md), [START.md](./reference/START.md), [IFRAMES.md](./reference/IFRAMES.md), [ANDROID.md](./reference/ANDROID.md).
 
 **Agent startup**: `start --detach` returns after CDP attachment with the watcher id, Chrome/watcher PIDs, CDP coordinates, and launcher log (`--json` for automation). Stop with `watcher stop <id> --json`; this also closes the Chrome owned by `start` and removes its temp profile. A standalone `watcher start` owns only its watcher.
 
-**Long-running commands** (`start` without `--detach`, `chrome start`, `watcher start`, `page open --attach`, `logs tail`, `net tail`, `net sse`, `session`) stay alive. Run them in the background in agent shells.
+**Long-running commands** (`start` without `--detach`, `chrome start`, `watcher start`, `android attach`, `page open --attach`, `logs tail`, `net tail`, `net sse`, `session`) stay alive. Run them in the background in agent shells.
 
 ---
 
@@ -117,7 +118,7 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 
 **Eval scripts**: `eval --file ./script.js --body` supports local declarations, `await`, and an explicit `return`; also works with inline/stdin input. Default eval keeps REPL completion values and top-level await. Successful output preserves full nested values; `--no-return-by-value` requests a preview. Canvas key handlers need a focusable canvas and `keydown --selector canvas`.
 
-**Multi-step suites**: write a bundled TypeScript scenario (`export default async function scenario(ctx)`) and run `argus eval app --file ./scenario.ts --arg level=3 --json`; `ctx` exposes screenshots, checkpoints, recordings, and log sessions. Many sequential commands from a harness: `argus session app` (JSONL over stdin, one process). Session deadlines bound watcher requests; a timed-out dispatched mutation returns an uncertain outcome, so inspect state before retrying.
+**Multi-step suites**: write a bundled TypeScript scenario (`export default async function scenario(ctx)`) and run `argus eval app --file ./scenario.ts --arg level=3 --json`; `ctx` exposes screenshots, checkpoints, recordings, log sessions, and `ctx.progress(value)`, whose last value is returned (with `timedOut`) when the eval hits its timeout. Many sequential commands from a harness: `argus session app` (JSONL over stdin, one process). Session deadlines bound watcher requests; a timed-out dispatched mutation returns an uncertain outcome, so inspect state before retrying.
 
 ---
 
@@ -139,6 +140,7 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 | Launch / lifecycle | `start`/`up`, `chrome *`, `watcher *`, `page open --attach`, `config init`, `doctor`, `list`       | [START.md](./reference/START.md)         |
 | Extension          | `extension install/doctor/tabs/use/attach/select/targets/detach/show/mute/diagnose/recover`        | [EXTENSION.md](./reference/EXTENSION.md) |
 | Iframes            | CDP target flags, `ext select`                                                                     | [IFRAMES.md](./reference/IFRAMES.md)     |
+| Android WebView    | `android attach/doctor`, device proxy and `adb reverse` checks                                     | [ANDROID.md](./reference/ANDROID.md)     |
 | Logs               | `logs`, `logs cursor/epoch/tail`                                                                   | [LOGS.md](./reference/LOGS.md)           |
 | Eval               | `eval`/`js`, `eval-until`/`wait`, scenarios, `--arg`, polling                                      | [EVAL.md](./reference/EVAL.md)           |
 | DOM & discovery    | `dom tree/info/focus/add/add-script/remove/modify/set-file/scroll`, `snapshot`, `locate`           | [DOM.md](./reference/DOM.md)             |
