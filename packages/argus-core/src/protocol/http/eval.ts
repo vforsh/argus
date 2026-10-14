@@ -44,7 +44,21 @@ export type EvalResponse = Ok<{
 	result: unknown
 	type: string | null
 	exception: { text: string; details?: unknown } | null
+	/**
+	 * Present when a bundled scenario exceeded `timeoutMs` after calling `ctx.progress()`.
+	 * `result` is then the last progress value rather than the scenario's return value, and
+	 * `code`/`message` carry the watcher's diagnosis of why the deadline was missed.
+	 */
+	timedOut?: EvalTimedOut
 }>
+
+/** Why a scenario eval stopped early; see `EvalResponse.timedOut`. */
+export type EvalTimedOut = {
+	code: string
+	message: string
+	/** Epoch milliseconds of the `ctx.progress()` call that produced `result`. */
+	progressAt: number
+}
 
 /** Schema for POST /eval request payloads. */
 export const evalRequestSchema = defineProtocolSchema<EvalRequest>((value) => {

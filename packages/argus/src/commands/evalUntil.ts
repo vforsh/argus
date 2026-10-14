@@ -72,7 +72,7 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 	}
 
 	if (pollResult.kind === 'eval-error') {
-		emitter.emitError(pollResult.failure)
+		await emitter.emitError(pollResult.failure)
 		process.exitCode = 1
 		return
 	}

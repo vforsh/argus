@@ -1,6 +1,8 @@
 import type { EvalRequest, EvalResponse } from '@vforsh/argus-core'
 import { evalRequestSchema } from '@vforsh/argus-core'
-import { evaluateExpression } from '../../cdp/eval.js'
+import { evaluateExpression, ScenarioTimeoutError } from '../../cdp/eval.js'
+import type { CdpHealthDiagnosis } from '../../cdp/health.js'
+import type { RouteContext } from './types.js'
 import { defineJsonRoute } from './defineRoute.js'
 import { normalizeBoolean, normalizeTimeout } from '../httpUtils.js'
 
@@ -18,23 +20,54 @@ export const route = defineJsonRoute<EvalRequest, EvalResponse>({
 	path: '/eval',
 	bodySchema: evalRequestSchema,
 	endpoint: 'eval',
-	handle: ({ ctx, body: payload }) =>
-		evaluateExpression(ctx.cdpSession, {
-			expression: payload.expression,
-			args: normalizeEvalArgs(payload.args),
-			awaitPromise: normalizeBoolean(payload.awaitPromise, true),
-			replMode: normalizeBoolean(payload.replMode, true),
-			returnByValue: normalizeBoolean(payload.returnByValue, true),
-			jsonValue: normalizeBoolean(payload.jsonValue, false),
-			timeoutMs: normalizeTimeout(payload.timeoutMs) ?? DEFAULT_EVAL_CDP_TIMEOUT_MS,
-			scenario: normalizeBoolean(payload.scenario, false),
-			scenarioServices: {
-				buffer: ctx.buffer,
-				screenshotter: ctx.screenshotter,
-				recorder: ctx.recorder,
-			},
-		}),
+	handle: async ({ ctx, body: payload }) => {
+		try {
+			return await runEval(ctx, payload)
+		} catch (error) {
+			if (!(error instanceof ScenarioTimeoutError)) throw error
+			return await respondWithProgress(ctx, error)
+		}
+	},
 })
+
+const runEval = (ctx: RouteContext, payload: EvalRequest): Promise<EvalResponse> =>
+	evaluateExpression(ctx.cdpSession, {
+		expression: payload.expression,
+		args: normalizeEvalArgs(payload.args),
+		awaitPromise: normalizeBoolean(payload.awaitPromise, true),
+		replMode: normalizeBoolean(payload.replMode, true),
+		returnByValue: normalizeBoolean(payload.returnByValue, true),
+		jsonValue: normalizeBoolean(payload.jsonValue, false),
+		timeoutMs: normalizeTimeout(payload.timeoutMs) ?? DEFAULT_EVAL_CDP_TIMEOUT_MS,
+		scenario: normalizeBoolean(payload.scenario, false),
+		scenarioServices: {
+			buffer: ctx.buffer,
+			screenshotter: ctx.screenshotter,
+			recorder: ctx.recorder,
+		},
+	})
+
+/** Return the scenario's last progress snapshot, labeled with the same diagnosis a bare timeout gets. */
+const respondWithProgress = async (ctx: RouteContext, error: ScenarioTimeoutError): Promise<EvalResponse> => {
+	const diagnosis = await diagnoseQuietly(ctx)
+	const { value, at } = error.progress
+	return {
+		ok: true,
+		result: value,
+		type: value === null ? 'object' : typeof value,
+		exception: null,
+		timedOut: { code: diagnosis.code, message: `${error.message}. ${diagnosis.message}`, progressAt: at },
+	}
+}
+
+const diagnoseQuietly = async (ctx: RouteContext): Promise<CdpHealthDiagnosis> => {
+	try {
+		if (ctx.diagnoseCdp) return await ctx.diagnoseCdp()
+	} catch {
+		// The diagnosis is a label on data we already have; never let it cost the data.
+	}
+	return { code: 'cdp_timeout', message: 'The scenario exceeded its deadline. Pass a longer timeout.' }
+}
 
 const normalizeEvalArgs = (args: EvalRequest['args']): Record<string, string> | undefined => {
 	if (args == null || typeof args !== 'object' || Array.isArray(args)) {

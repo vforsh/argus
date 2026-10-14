@@ -73,7 +73,7 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		})
 
 		if (!singleResult.ok) {
-			emitter.emitError(singleResult)
+			await emitter.emitError(singleResult)
 			process.exitCode = 1
 			return
 		}
@@ -114,13 +114,13 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 	})
 
 	if (pollResult.kind === 'eval-error') {
-		emitter.emitError(pollResult.failure)
+		await emitter.emitError(pollResult.failure, true)
 		process.exitCode = 1
 		return
 	}
 
 	if (pollResult.kind === 'condition-error') {
-		emitter.emitError({ kind: 'until', error: pollResult.error })
+		await emitter.emitError({ kind: 'until', error: pollResult.error })
 		process.exitCode = 1
 		return
 	}

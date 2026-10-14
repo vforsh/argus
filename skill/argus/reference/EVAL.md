@@ -102,5 +102,19 @@ Context:
 | `ctx.record.start(name, opts?)` / `.stop()`  | `scenarios/recordings/<name>.<fmt>`; opts mirror the CLI (`selector`, `clip`, `fps`, `format`, `quality`, `maxDurationMs`) |
 | `ctx.logs.cursor()` / `.read(cursor, opts?)` | Zero-download baseline + delta read                                                                                        |
 | `ctx.logs.session()`                         | Stateful reader; cursor advances after each `read()`                                                                       |
+| `ctx.progress(value)`                        | Sync, fire-and-forget; the watcher keeps the latest JSON snapshot (≤ 8 MiB) as the result if the eval times out            |
+
+**Partial results on timeout.** When a scenario misses `--timeout` after calling `ctx.progress()`, the eval returns that last value instead of losing everything. The response carries `timedOut: { code, message, progressAt }`, where `code`/`message` give the watcher's stall diagnosis (`cdp_timeout`, `dialog_blocking`, …). Human output prints the value and then the warning. `--json` and `--out` keep the full response. The exit code is 1. The value lives on the watcher, so it survives a page blocked by a native dialog. After a timeout the scenario is abandoned: its next `ctx` call throws, so it stops itself instead of running on in the page.
+
+```ts
+export default async function scenario(ctx: ArgusScenarioContext) {
+	const samples = []
+	for (const action of actions) {
+		samples.push(await sampleFrames(action))
+		ctx.progress({ done: samples.length, samples })   // cheap: call at step boundaries, not per frame
+	}
+	return samples
+}
+```
 
 Bundling uses esbuild from your cwd (imports outside the entry dir and `node_modules` resolve; Node built-ins are rejected; TypeScript is transpiled, not type-checked). Scenario actions time out after 30s, so stop long recordings from the CLI. The binding is nonce-scoped and installed only for the eval's lifetime; page code cannot choose artifact paths. Bundled files without a default export keep final-expression semantics. For iframe scenarios select the iframe as the target ([IFRAMES.md](./IFRAMES.md)).

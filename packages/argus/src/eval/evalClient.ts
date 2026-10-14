@@ -29,13 +29,14 @@ export type EvalWithRetriesInput = EvalOnceInput & {
 	retryCount: number
 }
 
-export type EvalOutcome =
-	| { ok: true; response: EvalResponse }
-	| { ok: false; kind: 'transport' | 'exception'; error: string; response?: EvalResponse }
+/** `timeout`: a scenario missed its deadline; `response.result` holds its last `ctx.progress()` value. */
+export type EvalFailureKind = 'transport' | 'exception' | 'timeout'
+
+export type EvalOutcome = { ok: true; response: EvalResponse } | { ok: false; kind: EvalFailureKind; error: string; response?: EvalResponse }
 
 export type EvalAttemptResult =
 	| { ok: true; response: EvalResponse; attempt: number }
-	| { ok: false; kind: 'transport' | 'exception'; error: string; response?: EvalResponse; attempt: number }
+	| { ok: false; kind: EvalFailureKind; error: string; response?: EvalResponse; attempt: number }
 
 export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 	// Always name the page-side deadline. The watcher can say *which layer* stalled — dead browser,
@@ -66,6 +67,15 @@ export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 			ok: false,
 			kind: 'transport',
 			error: formatEvalTransportError(input.watcher, error, input.timeoutMs),
+		}
+	}
+
+	if (response.timedOut) {
+		return {
+			ok: false,
+			kind: 'timeout',
+			response,
+			error: `${response.timedOut.message} Returned the last ctx.progress() value, reported ${formatProgressAge(response.timedOut.progressAt)}.`,
 		}
 	}
 
@@ -110,6 +120,11 @@ export const formatEvalTransportError = (watcher: Pick<WatcherRecord, 'id'>, err
 const isTimeoutError = (error: unknown): boolean => {
 	const message = formatError(error)
 	return /timed out|timeout/i.test(message)
+}
+
+const formatProgressAge = (progressAt: number): string => {
+	const ageMs = Math.max(0, Date.now() - progressAt)
+	return ageMs < 1_000 ? 'just before the timeout' : `${(ageMs / 1_000).toFixed(1)}s before the timeout`
 }
 
 const formatSuggestedDuration = (timeoutMs: number): string => {

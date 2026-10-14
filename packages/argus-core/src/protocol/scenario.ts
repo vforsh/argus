@@ -98,4 +98,14 @@ export type ArgusScenarioContext = {
 	readonly logs: ArgusScenarioLogs
 	/** Start and stop a silent video recording for part of the scenario. */
 	readonly record: ArgusScenarioRecord
+	/**
+	 * Hand the watcher a JSON-serializable snapshot of the scenario's progress so far.
+	 *
+	 * Synchronous and fire-and-forget: the watcher keeps only the latest value. If the eval later
+	 * hits its timeout, that value comes back as the result, flagged by `EvalResponse.timedOut`,
+	 * instead of everything being lost. It lives on the watcher, so it survives a page whose main
+	 * thread is blocked by the time the deadline fires. Throws when the value cannot be serialized
+	 * or is larger than 8 MiB of JSON.
+	 */
+	progress: (value: unknown) => void
 }

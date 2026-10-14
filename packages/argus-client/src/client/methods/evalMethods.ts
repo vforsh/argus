@@ -25,7 +25,7 @@ export const createEvalMethods = (ctx: ClientContext) => {
 			body: options,
 		})
 
-		return { result: response.result, type: response.type, exception: response.exception }
+		return { result: response.result, type: response.type, exception: response.exception, timedOut: response.timedOut }
 	}
 
 	const evalValue = async <T = unknown>(watcherId: string, expression: string, options: EvalValueOptions = {}): Promise<T> => {
@@ -44,6 +44,10 @@ export const createEvalMethods = (ctx: ClientContext) => {
 
 		if (result.exception) {
 			throw ArgusEvalError.fromException(result.exception)
+		}
+		// A timed-out scenario's result is its last progress snapshot, not the value asked for.
+		if (result.timedOut) {
+			throw new Error(result.timedOut.message)
 		}
 
 		return useJsonValue ? unwrapJsonValue<T>(result.result) : (result.result as T)

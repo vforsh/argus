@@ -15,6 +15,10 @@ import type { CdpEventMeta, CdpSessionHandle } from './connection.js'
 import { formatError } from '@vforsh/argus-core'
 
 const SCENARIO_ACTION_TIMEOUT_MS = 30_000
+/** Upper bound on one serialized `ctx.progress()` message, so a runaway sampler cannot balloon the watcher. */
+const MAX_PROGRESS_JSON_LENGTH = 8 * 1024 * 1024
+/** Abandoning is best-effort cleanup on an already-failed eval; a blocked page must not stall the reply. */
+const ABANDON_TIMEOUT_MS = 1_000
 const DEFAULT_LOG_LIMIT = 500
 const MAX_LOG_LIMIT = 5_000
 
@@ -31,7 +35,7 @@ type BindingCalledEvent = {
 	executionContextId?: number
 }
 
-type BridgeResponse = { id: number; ok: true; result: unknown } | { id: number; ok: false; error: string }
+type BridgeResponse = { id: number; ok: true; result: unknown } | { id: number; ok: false; error: string } | { abandon: true }
 
 /** Host services exposed to a bundled scenario for the lifetime of one eval. */
 export type ScenarioBridgeServices = {
@@ -40,9 +44,22 @@ export type ScenarioBridgeServices = {
 	recorder: Recorder
 }
 
+/** The latest value a scenario handed to `ctx.progress()`. */
+export type ScenarioProgress = {
+	value: unknown
+	at: number
+}
+
 /** A scenario-wrapped expression plus cleanup for its temporary CDP binding. */
 export type InstalledScenarioBridge = {
 	expression: string
+	/** Latest `ctx.progress()` snapshot, or null when the scenario never reported one. */
+	readProgress: () => ScenarioProgress | null
+	/**
+	 * Tell a scenario the eval gave up on it. Its next `ctx` call throws, so a timed-out scenario
+	 * stops itself instead of running in the page indefinitely.
+	 */
+	abandon: () => Promise<void>
 	dispose: () => Promise<void>
 }
 
@@ -58,6 +75,8 @@ export const installScenarioBridge = async (
 	const suffix = token.replaceAll('-', '')
 	const bindingName = `__argusScenarioSend_${suffix}`
 	const responseName = `__argusScenarioReceive_${suffix}`
+	let progress: ScenarioProgress | null = null
+	let lastCaller: { executionContextId: number; meta: CdpEventMeta } | null = null
 	const off = session.onEvent('Runtime.bindingCalled', (rawEvent, meta) => {
 		const { name, payload, executionContextId } = rawEvent as BindingCalledEvent
 		if (name !== bindingName || typeof payload !== 'string' || typeof executionContextId !== 'number' || !Number.isInteger(executionContextId)) {
@@ -66,6 +85,13 @@ export const installScenarioBridge = async (
 
 		const request = parseBridgeRequest(payload, token)
 		if (!request) {
+			return
+		}
+		lastCaller = { executionContextId, meta }
+
+		// Progress is fire-and-forget on the page side, so it gets no response round-trip.
+		if (request.action === 'progress') {
+			progress = { value: request.payload ?? null, at: Date.now() }
 			return
 		}
 
@@ -82,6 +108,15 @@ export const installScenarioBridge = async (
 	let disposed = false
 	return {
 		expression: buildScenarioExpression(expression, { bindingName, responseName, token, args: args ?? {} }),
+		readProgress: () => progress,
+		abandon: async () => {
+			if (!lastCaller) return
+			try {
+				await sendBridgeResponse(session, responseName, { abandon: true }, lastCaller.executionContextId, lastCaller.meta, ABANDON_TIMEOUT_MS)
+			} catch {
+				// A blocked or navigated page cannot be told; the scenario dies with it or never resumes.
+			}
+		},
 		dispose: async () => {
 			if (disposed) return
 			disposed = true
@@ -346,10 +381,21 @@ const buildScenarioExpression = (
     if (typeof send !== 'function') throw new Error('Argus scenario bridge is unavailable');
     const pending = new Map();
     let nextId = 1;
+    let abandoned = false;
+    const abandonedError = () => new Error('Argus eval timed out; this scenario was abandoned');
     const receiveName = ${JSON.stringify(options.responseName)};
     Object.defineProperty(globalThis, receiveName, {
       configurable: true,
       value: (message) => {
+        if (message?.abandon) {
+          abandoned = true;
+          for (const entry of pending.values()) {
+            clearTimeout(entry.timeout);
+            entry.reject(abandonedError());
+          }
+          pending.clear();
+          return;
+        }
         const entry = pending.get(message?.id);
         if (!entry) return;
         pending.delete(message.id);
@@ -359,6 +405,7 @@ const buildScenarioExpression = (
       },
     });
     const request = (action, payload) => new Promise((resolve, reject) => {
+      if (abandoned) throw abandonedError();
       const id = nextId++;
       const timeout = setTimeout(() => {
         pending.delete(id);
@@ -392,12 +439,25 @@ const buildScenarioExpression = (
       start: (name, recordOptions) => request('record.start', { name, options: recordOptions }),
       stop: () => request('record.stop'),
     });
+    const progress = (value) => {
+      if (abandoned) throw abandonedError();
+      const message = JSON.stringify({ token: ${JSON.stringify(options.token)}, id: nextId++, action: 'progress', payload: value });
+      if (message.length > ${MAX_PROGRESS_JSON_LENGTH}) {
+        throw new Error('Argus scenario progress exceeds ${MAX_PROGRESS_JSON_LENGTH} characters of JSON; report a summary instead');
+      }
+      try {
+        send(message);
+      } catch {
+        // The binding is gone once the eval has finished or timed out; late progress has nowhere to go.
+      }
+    };
     const context = Object.freeze({
       args: Object.freeze(${JSON.stringify(options.args)}),
       screenshot: (screenshotOptions) => request('screenshot', screenshotOptions),
       checkpoint: (name, screenshotOptions) => request('checkpoint', { name, options: screenshotOptions }),
       logs,
       record,
+      progress,
     });
     return {
       context,

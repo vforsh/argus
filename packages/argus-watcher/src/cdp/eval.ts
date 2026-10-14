@@ -1,7 +1,8 @@
 import type { EvalResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import { serializeRemoteObject } from './remoteObject.js'
-import { installScenarioBridge, type ScenarioBridgeServices } from './scenarioBridge.js'
+import { installScenarioBridge, type ScenarioBridgeServices, type ScenarioProgress } from './scenarioBridge.js'
+import { isCdpTimeoutError } from './health.js'
 
 export type EvalRequestOptions = {
 	expression: string
@@ -27,6 +28,22 @@ type RuntimeRemoteObject = {
 type RuntimeEvaluatePayload = {
 	result?: RuntimeRemoteObject
 	exceptionDetails?: { text?: string; exception?: unknown }
+}
+
+/**
+ * A scenario missed its deadline after reporting progress.
+ *
+ * Carries the last `ctx.progress()` value out of the eval so the route can return it — with the
+ * watcher's diagnosis of the stall — instead of discarding everything the scenario collected.
+ */
+export class ScenarioTimeoutError extends Error {
+	readonly progress: ScenarioProgress
+
+	constructor(cause: Error, progress: ScenarioProgress) {
+		super(cause.message, { cause })
+		this.name = 'ScenarioTimeoutError'
+		this.progress = progress
+	}
 }
 
 export const evaluateExpression = async (session: CdpSessionHandle, options: EvalRequestOptions): Promise<EvalResponse> => {
@@ -70,6 +87,12 @@ export const evaluateExpression = async (session: CdpSessionHandle, options: Eva
 			type: record?.type ?? null,
 			exception: null,
 		}
+	} catch (error) {
+		if (!scenarioBridge || !(error instanceof Error) || !isCdpTimeoutError(error)) throw error
+
+		await scenarioBridge.abandon()
+		const progress = scenarioBridge.readProgress()
+		throw progress ? new ScenarioTimeoutError(error, progress) : error
 	} finally {
 		await scenarioBridge?.dispose()
 	}

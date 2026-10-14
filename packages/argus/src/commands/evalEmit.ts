@@ -1,4 +1,5 @@
 import type { EvalResponse } from '@vforsh/argus-core'
+import type { EvalFailureKind } from '../eval/evalClient.js'
 import { previewStringify } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
 import { createEvalResultFileSink, formatEvalValue, type EvalResultFileOptions } from './evalResultOutput.js'
@@ -27,7 +28,7 @@ export const formatException = (response: EvalResponse): string => {
 /** Failure shape used by eval emitters. */
 export type EvalAttemptFailure = {
 	ok: false
-	kind: 'transport' | 'exception'
+	kind: EvalFailureKind
 	error: string
 	response?: EvalResponse
 	attempt: number
@@ -41,7 +42,7 @@ export type EvalEmitOptions = EvalResultFileOptions & {
 /** Writes eval results to stdout/stderr and optionally to `--out`. */
 export type EvalEmitter = {
 	emitSuccess: (response: EvalResponse, streaming: boolean) => Promise<void>
-	emitError: (error: EvalAttemptFailure | { kind: 'until'; error: string }) => void
+	emitError: (error: EvalAttemptFailure | { kind: 'until'; error: string }, streaming?: boolean) => Promise<void>
 }
 
 /** Create stdout/stderr and optional file sinks for eval command output. */
@@ -57,7 +58,11 @@ export const createEvalEmitter = (options: EvalEmitOptions, output: Output): Eva
 				output.writeHuman(`Result saved: ${fileSink.displayPath}`)
 			}
 		},
-		emitError: (error) => {
+		emitError: async (error, streaming = false) => {
+			// A timed-out scenario still carries its last progress value: keep it wherever a result would go.
+			if (error.kind === 'timeout' && 'response' in error && error.response) {
+				await fileSink?.write(error.response, streaming)
+			}
 			writeEvalError(error, options, output)
 		},
 	}
@@ -90,6 +95,10 @@ export const writeEvalSuccess = (response: EvalResponse, options: EvalEmitOption
 const writeEvalError = (error: EvalAttemptFailure | { kind: 'until'; error: string }, options: EvalEmitOptions, output: Output): void => {
 	if (options.json && 'response' in error && error.response) {
 		output.writeJsonLine(error.response)
+	}
+
+	if (error.kind === 'timeout' && 'response' in error && error.response && !options.json && !options.silent) {
+		output.writeHuman(formatEvalValue(error.response.result))
 	}
 
 	if (error.kind === 'exception' && 'response' in error && error.response?.exception) {
