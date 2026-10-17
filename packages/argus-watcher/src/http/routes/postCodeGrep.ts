@@ -11,5 +11,7 @@ export const route = defineJsonRoute<CodeGrepRequest, CodeGrepResponse>({
 		ctx.runtimeEditor.grep({
 			pattern: payload.pattern,
 			urlPattern: payload.urlPattern,
+			around: payload.around,
+			maxPerLine: payload.maxPerLine,
 		}),
 })

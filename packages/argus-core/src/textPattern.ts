@@ -54,3 +54,27 @@ export const findTextPatternMatch = (line: string, pattern: TextPattern): { inde
 		length: Math.max(1, matched[0]?.length ?? 0),
 	}
 }
+
+/**
+ * Find up to `limit` non-overlapping match ranges within a line, left to right.
+ */
+export const findTextPatternMatches = (line: string, pattern: TextPattern, limit: number): Array<{ index: number; length: number }> => {
+	const ranges: Array<{ index: number; length: number }> = []
+	if (pattern.type === 'exact') {
+		if (pattern.value === '') return limit > 0 ? [{ index: 0, length: 0 }] : ranges
+		for (let index = line.indexOf(pattern.value); index >= 0 && ranges.length < limit; index = line.indexOf(pattern.value, index + pattern.value.length)) {
+			ranges.push({ index, length: pattern.value.length })
+		}
+		return ranges
+	}
+
+	const regex = new RegExp(pattern.regex.source, pattern.regex.flags.includes('g') ? pattern.regex.flags : `${pattern.regex.flags}g`)
+	for (let matched = regex.exec(line); matched && ranges.length < limit; matched = regex.exec(line)) {
+		ranges.push({ index: matched.index, length: matched[0].length })
+		if (matched[0].length > 0) continue
+		if (matched.index >= line.length) break
+		// Step past an empty match by a whole code point, or a `u` regex re-matches inside a surrogate pair.
+		regex.lastIndex = matched.index + (line.codePointAt(matched.index)! > 0xffff ? 2 : 1)
+	}
+	return ranges
+}

@@ -31,6 +31,8 @@ export type CodeReadOptions = {
 export type CodeGrepOptions = {
 	url?: string
 	pretty?: boolean
+	around?: string
+	maxPerLine?: string
 	json?: boolean
 }
 
@@ -101,6 +103,15 @@ export const runCodeGrep = async (id: string | undefined, pattern: string, optio
 		return
 	}
 
+	const around = parseOptionalInteger(options.around, '--around', output, { min: 0, description: 'a non-negative integer' })
+	if (around === null) {
+		return
+	}
+	const maxPerLine = parseOptionalInteger(options.maxPerLine, '--max-per-line', output, { min: 1, description: 'a positive integer' })
+	if (maxPerLine === null) {
+		return
+	}
+
 	const response = await requestCodeResponse<CodeGrepResponse>(id, output, {
 		id,
 		path: '/code/grep',
@@ -108,6 +119,8 @@ export const runCodeGrep = async (id: string | undefined, pattern: string, optio
 		body: {
 			pattern,
 			urlPattern: options.url,
+			around,
+			maxPerLine,
 		},
 	})
 	if (!response) {

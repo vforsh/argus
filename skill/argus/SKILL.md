@@ -18,7 +18,7 @@ argus skill                   # absolute path of this SKILL.md (reference/ sits 
 
 Bare `argus --version` bypasses config/plugins. Built-in actions load on demand; plugins can opt into import-free routing with JSON manifests ([PLUGINS.md](./reference/PLUGINS.md)). Copy the entire packaged `dist` directory, including chunks.
 
-`code deminify` formats runtime JS/CSS with lazy Oxfmt; formatter failures return the original source. `code grep --pretty` shows source context without loading Oxfmt.
+`code deminify` formats runtime JS/CSS with lazy Oxfmt; formatter failures return the original source. `code grep --pretty` shows source context without loading Oxfmt; lines over 2000 chars come back as per-match excerpts (`--around <chars>`, `--max-per-line <n>`).
 
 ## Pick A Mode
 

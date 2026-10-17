@@ -1,6 +1,6 @@
 import type { CdpResult } from './protocol.js'
 import {
-	matchesTextPattern,
+	CODE_GREP_DEFAULT_MAX_PER_LINE,
 	parseTextPattern,
 	type CodeEditResponse,
 	type CodeGrepMatch,
@@ -12,6 +12,7 @@ import {
 	type CodeResourceType,
 } from '@vforsh/argus-core'
 import type { CdpEventMeta, CdpSessionHandle } from './connection.js'
+import { grepLine } from './grepLine.js'
 import { formatError } from '@vforsh/argus-core'
 
 type RuntimeResource = {
@@ -47,7 +48,7 @@ const MAX_GREP_MATCHES = 500
 export type RuntimeEditor = {
 	list: (options?: { pattern?: string }) => Promise<CodeListResponse>
 	read: (options: { url: string; offset?: number; limit?: number }) => Promise<CodeReadResponse>
-	grep: (options: { pattern: string; urlPattern?: string }) => Promise<CodeGrepResponse>
+	grep: (options: { pattern: string; urlPattern?: string; around?: number; maxPerLine?: number }) => Promise<CodeGrepResponse>
 	edit: (options: { url: string; source: string }) => Promise<CodeEditResponse>
 	/**
 	 * The page navigated: drop the inventory, keep the enable.
@@ -152,7 +153,7 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 			return { ok: true, resource: toCodeResource(resource) }
 		},
 
-		grep: async ({ pattern, urlPattern }) => {
+		grep: async ({ pattern, urlPattern, around, maxPerLine = CODE_GREP_DEFAULT_MAX_PER_LINE }) => {
 			await ensureEnabled()
 			const parsedPattern = parseTextPattern(pattern)
 			const normalizedUrlPattern = normalizeSearchPattern(urlPattern)
@@ -171,19 +172,11 @@ export const createRuntimeEditor = (session: CdpSessionHandle): RuntimeEditor =>
 
 				const lines = source.split('\n')
 				for (let index = 0; index < lines.length; index++) {
-					const line = lines[index] ?? ''
-					if (!matchesLine(line, parsedPattern)) {
-						continue
-					}
-
-					matches.push({
-						url: resource.url,
-						type: resource.type,
-						lineNumber: index + 1,
-						lineContent: line,
-					})
-					if (matches.length >= MAX_GREP_MATCHES) {
-						return { ok: true, matches, skippedResources }
+					for (const match of grepLine(resource, lines[index] ?? '', index + 1, parsedPattern, { around, maxPerLine })) {
+						matches.push(match)
+						if (matches.length >= MAX_GREP_MATCHES) {
+							return { ok: true, matches, skippedResources }
+						}
 					}
 				}
 			}
@@ -448,8 +441,6 @@ const normalizeSearchPattern = (pattern: string | undefined): string | null => {
 }
 
 const matchesUrlPattern = (resource: RuntimeResource, pattern: string | null): boolean => !pattern || resource.url.toLowerCase().includes(pattern)
-
-const matchesLine = (line: string, pattern: ReturnType<typeof parseTextPattern>): boolean => matchesTextPattern(line, pattern)
 
 const getSessionOptions = (resource: RuntimeResource): { sessionId?: string } | undefined =>
 	resource.sessionId ? { sessionId: resource.sessionId } : undefined

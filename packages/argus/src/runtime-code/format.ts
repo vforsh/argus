@@ -65,7 +65,7 @@ export const buildPrettyCodeMatches = (matches: CodeGrepMatch[], sourceByUrl: Ma
 		for (let index = startIndex; index < endIndex; index++) {
 			const rawLine = lines[index] ?? ''
 			const isMatch = index === currentIndex
-			const matchRange = isMatch ? findTextPatternMatch(rawLine, pattern) : null
+			const matchRange = isMatch ? findMatchRange(match, rawLine, pattern) : null
 			snippet.push({
 				lineNumber: index + 1,
 				content: formatSnippetLine(rawLine, matchRange),
@@ -78,6 +78,14 @@ export const buildPrettyCodeMatches = (matches: CodeGrepMatch[], sourceByUrl: Ma
 			snippet,
 		}
 	})
+
+/** Excerpted matches pin their own occurrence (several can share one minified line); others take the first. */
+const findMatchRange = (match: CodeGrepMatch, line: string, pattern: TextPattern): { index: number; length: number } | null => {
+	if (match.column == null) {
+		return findTextPatternMatch(line, pattern)
+	}
+	return { index: match.column - 1, length: Math.max(1, match.matchLength ?? 1) }
+}
 
 const formatSnippetLine = (line: string, match: { index: number; length: number } | null): string => {
 	if (!match) {

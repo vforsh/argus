@@ -51,10 +51,16 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--id <watcherId>', description: 'Watcher id to query' },
 					{ flags: '--url <substring>', description: 'Limit search to resource URLs containing this substring' },
 					{ flags: '--pretty', description: 'Render compact context snippets for human output' },
+					{
+						flags: '--around <chars>',
+						description: 'Report each match as an excerpt with this many characters of context per side (default: 200, for lines over 2000 chars only)',
+					},
+					{ flags: '--max-per-line <n>', description: 'Most matches reported per excerpted line (default: 10)' },
 					jsonOption,
 				],
 				examples: [
 					'argus code grep playground --id playground',
+					'argus code grep fetchBoard --id app --url bundle --around 80',
 					"argus code grep '/window\\\\.playground/' --id playground --url index",
 					'argus code grep showLogsByHost --id playground --pretty',
 				],

@@ -6,7 +6,16 @@ export const formatCodeResources = (resources: CodeResource[]): string => {
 }
 
 export const formatCodeMatches = (matches: CodeGrepMatch[]): string => {
-	return matches.map((match) => `${match.type.padEnd(10)} ${match.url}:${match.lineNumber}\n  ${match.lineContent}`).join('\n')
+	return matches
+		.map((match) => {
+			if (!match.excerpt) {
+				return `${match.type.padEnd(10)} ${match.url}:${match.lineNumber}\n  ${match.lineContent}`
+			}
+			const { start, end, lineLength } = match.excerpt
+			const content = `${start > 0 ? '…' : ''}${match.lineContent}${end < lineLength ? '…' : ''}`
+			return `${match.type.padEnd(10)} ${match.url}:${match.lineNumber}:${match.column}\n  ${content}`
+		})
+		.join('\n')
 }
 
 export const formatPrettyCodeMatches = (matches: PrettyCodeMatch[]): string =>
@@ -15,7 +24,8 @@ export const formatPrettyCodeMatches = (matches: PrettyCodeMatch[]): string =>
 			const snippet = match.snippet
 				.map((line) => `${line.isMatch ? '>' : ' '} ${String(line.lineNumber).padStart(5)}| ${line.content}`)
 				.join('\n')
-			return `${match.type.padEnd(10)} ${match.url}:${match.lineNumber}\n${snippet}`
+			const column = match.column != null ? `:${match.column}` : ''
+			return `${match.type.padEnd(10)} ${match.url}:${match.lineNumber}${column}\n${snippet}`
 		})
 		.join('\n\n')
 
