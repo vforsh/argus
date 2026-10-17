@@ -1,10 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import type { TraceStartRequest, TraceStartResponse, TraceStopResponse } from '@vforsh/argus-core'
+import type { TraceStartRequest, TraceStartResponse, TraceStatusSummary, TraceStopResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import { ensureArtifactsDir, ensureParentDir, moveArtifactFile, resolveArtifactPath } from '../artifacts.js'
 import { createDeferred, type Deferred } from '../deferred.js'
+import { codedError, readCdpErrorDetail } from '../errors.js'
 
 type TraceState = {
 	traceId: string
@@ -24,13 +25,24 @@ export type TraceRecorder = {
 	start: (options: TraceStartRequest) => Promise<TraceStartResponse>
 	stop: (options: { traceId?: string; outFile?: string }) => Promise<TraceStopResponse>
 	onDetached: (reason?: string) => void
+	/** The trace this watcher is recording, or `null`. Surfaced on GET /status so a conflict can name its holder. */
+	status: () => TraceStatusSummary | null
 }
+
+/**
+ * Chrome runs one tracing session per browser. A start that loses that race reports this prose
+ * (wording varies slightly across Chrome versions), with no protocol-level code to match on.
+ */
+const isChromeTracingBusy = (detail: string): boolean => /tracing (?:has )?already (?:been )?started/i.test(detail)
+const isChromeTracingIdle = (detail: string): boolean => /tracing is not started/i.test(detail)
+const chromeErrorDetail = (error: unknown): string => readCdpErrorDetail(error instanceof Error ? error.message : String(error))
 
 export const createTraceRecorder = (options: { session: CdpSessionHandle; artifactsDir: string }): TraceRecorder => {
 	let active: TraceState | null = null
 
 	const finalizeTraceFile = async (state: TraceState): Promise<void> => {
-		if (state.stream.closed) {
+		// A failed start ends the stream while a racing stale stop may still try to finalize it.
+		if (state.stream.writableEnded || state.stream.destroyed) {
 			return
 		}
 		state.stream.write(']}')
@@ -91,23 +103,23 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 
 	const start = async (request: TraceStartRequest): Promise<TraceStartResponse> => {
 		if (active) {
-			throw new Error('Tracing already active')
+			throw codedError('trace_already_active', `This watcher is already recording trace ${active.traceId}; stop it first`)
 		}
 
 		await ensureArtifactsDir(options.artifactsDir)
 		const traceId = crypto.randomUUID()
 		const sessionName = `trace-${new Date().toISOString().replace(/[:.]/g, '-')}`
 		const defaultName = `traces/${sessionName}.json`
-		const absolutePath = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
+		const absolutePath = path.resolve(resolveArtifactPath(options.artifactsDir, request.outFile, defaultName))
 		await ensureParentDir(absolutePath)
 
-		const stream = fs.createWriteStream(path.resolve(absolutePath), { encoding: 'utf8' })
+		const stream = fs.createWriteStream(absolutePath, { encoding: 'utf8' })
 		stream.write('{"traceEvents":[', 'utf8')
 
-		active = {
+		const state: TraceState = {
 			traceId,
 			sessionName,
-			absolutePath: path.resolve(absolutePath),
+			absolutePath,
 			outFile: absolutePath,
 			stream,
 			hasWritten: false,
@@ -116,22 +128,43 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 			state: 'recording',
 			completion: createDeferred(),
 		}
+		// Detach and stale-stop reject completion even when no stop is waiting on it.
+		state.completion.promise.catch(() => {})
+		// Claimed before Chrome answers so a concurrent start can't slip in, and so the first
+		// `Tracing.dataCollected` batch has somewhere to go.
+		active = state
 
-		await options.session.sendAndWait('Tracing.start', {
-			categories: request.categories,
-			options: request.options,
-			transferMode: 'ReportEvents',
-		})
+		try {
+			await options.session.sendAndWait('Tracing.start', {
+				categories: request.categories,
+				options: request.options,
+				transferMode: 'ReportEvents',
+			})
+		} catch (error) {
+			// Chrome never started, so nothing will ever send `tracingComplete`: release the half-written
+			// file and then the claim, or every later start is refused as "already active". The file goes
+			// first so a retry with the same --out can't have its new file deleted.
+			await new Promise<void>((resolve) => stream.end(resolve))
+			await fs.promises.rm(absolutePath, { force: true })
+			if (active === state) {
+				active = null
+			}
+			const detail = chromeErrorDetail(error)
+			if (isChromeTracingBusy(detail)) {
+				throw codedError('trace_conflict', `Chrome is already tracing for another client: ${detail}`)
+			}
+			throw error
+		}
 
 		return { ok: true, traceId, sessionName, outFile: absolutePath }
 	}
 
 	const stop = async ({ traceId, outFile }: { traceId?: string; outFile?: string }): Promise<TraceStopResponse> => {
 		if (!active) {
-			throw new Error('No active trace to stop')
+			throw codedError('no_active_trace', 'No active trace to stop')
 		}
 		if (traceId && traceId !== active.traceId) {
-			throw new Error('Trace id does not match active trace')
+			throw codedError('invalid_request', 'Trace id does not match active trace')
 		}
 		const current = active
 		if (current.state === 'stopping') {
@@ -147,7 +180,27 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		}
 
 		current.state = 'stopping'
-		await options.session.sendAndWait('Tracing.end', {}, { timeoutMs: 15_000 })
+		try {
+			await options.session.sendAndWait('Tracing.end', {}, { timeoutMs: 15_000 })
+		} catch (error) {
+			if (!isChromeTracingIdle(chromeErrorDetail(error))) {
+				current.state = 'recording'
+				throw error
+			}
+			// Chrome holds no trace for us (the session was replaced, or a reattach dropped it), so no
+			// `tracingComplete` is coming. Drop the local claim so the next start isn't refused.
+			// A concurrent stop may be waiting on completion; settle it instead of leaving it hanging.
+			current.completion.reject(new Error('Chrome reports no trace running for this watcher'))
+			if (active === current) {
+				active = null
+			}
+			await finalizeTraceFile(current).catch(() => {})
+			const kept = current.eventCount > 0 ? ` (partial file kept: ${current.outFile})` : ''
+			if (!kept) {
+				await fs.promises.rm(current.absolutePath, { force: true })
+			}
+			throw codedError('no_active_trace', `Chrome had no trace running for this watcher; cleared the stale local trace state${kept}`)
+		}
 		await current.completion.promise
 		await resolveFinalPath(current, outFile)
 		return {
@@ -170,5 +223,16 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		})
 	}
 
-	return { start, stop, onDetached }
+	const status = (): TraceStatusSummary | null =>
+		active
+			? {
+					traceId: active.traceId,
+					sessionName: active.sessionName,
+					outFile: active.outFile,
+					startedAt: active.startedAt,
+					state: active.state,
+				}
+			: null
+
+	return { start, stop, onDetached, status }
 }

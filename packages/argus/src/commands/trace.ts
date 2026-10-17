@@ -1,9 +1,11 @@
-import type { TraceStartResponse, TraceStopResponse, WatcherRecord } from '@vforsh/argus-core'
+import type { ApiResult, TraceStartResponse, TraceStopResponse, WatcherRecord } from '@vforsh/argus-core'
 import { createOutput } from '../output/io.js'
 import { parseDurationMs } from '@vforsh/argus-core'
 import { fetchWatcherJson, formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { resolveArtifactOutFile } from '../utils/paths.js'
 import { delay } from '@vforsh/argus-core'
+import { setExitCode } from '../output/exitCode.js'
+import { writeTraceError } from './traceHolder.js'
 
 /** Options for the trace command (start + stop). */
 export type TraceOptions = {
@@ -12,6 +14,8 @@ export type TraceOptions = {
 	out?: string
 	categories?: string
 	options?: string
+	/** Comma-separated watcher ids traced together in one browser-level session (CDP watchers only). */
+	targets?: string
 }
 
 /** Options for the trace start command. */
@@ -45,6 +49,11 @@ export const runTrace = async (id: string | undefined, options: TraceOptions): P
 		return
 	}
 
+	if (options.targets !== undefined) {
+		await runTraceAcrossTargets(id, options, durationMs, output)
+		return
+	}
+
 	const resolved = await resolveWatcherOrExit({ id }, output)
 	if (!resolved) return
 
@@ -68,6 +77,37 @@ export const runTrace = async (id: string | undefined, options: TraceOptions): P
 	}
 
 	output.writeHuman(`Trace saved: ${stop.outFile} (${stop.eventCount} events, ${formatDurationMs(stop.durationMs)})`)
+}
+
+const runTraceAcrossTargets = async (
+	id: string | undefined,
+	options: TraceOptions,
+	durationMs: number,
+	output: ReturnType<typeof createOutput>,
+): Promise<void> => {
+	const targets = [...new Set((options.targets ?? '').split(',').map((target) => target.trim()).filter(Boolean))]
+	if (id || targets.length === 0) {
+		output.writeWarn(id ? 'Pass watcher ids through --targets, not as the positional id' : 'Missing watcher ids for --targets (e.g. --targets app,admin)')
+		setExitCode(2)
+		return
+	}
+
+	const { runTraceTargets } = await import('./traceTargets.js')
+	const result = await runTraceTargets(targets, options, durationMs, output)
+	if (!result) {
+		return
+	}
+
+	if (options.json) {
+		output.writeJson(result)
+		return
+	}
+
+	output.writeHuman(`Trace saved: ${result.outFile} (${result.eventCount} events, ${formatDurationMs(result.durationMs)})`)
+	for (const renderer of result.renderers) {
+		const pid = renderer.pid == null ? 'renderer pid not found in trace' : `renderer pid ${renderer.pid}`
+		output.writeHuman(`  ${renderer.watcherId}: ${pid}${renderer.url ? ` (${renderer.url})` : ''}`)
+	}
 }
 
 /** Execute the trace start command for a watcher id. */
@@ -114,44 +154,54 @@ const runTraceStartInternal = async (
 	watcher: WatcherRecord,
 	options: { out?: string; categories?: string; options?: string },
 	output: ReturnType<typeof createOutput>,
-): Promise<TraceStartResponse | null> => {
-	try {
-		const response = await fetchWatcherJson<TraceStartResponse>(watcher, {
+): Promise<TraceStartResponse | null> =>
+	requestTrace<TraceStartResponse>(
+		watcher,
+		{
 			path: '/trace/start',
-			method: 'POST',
 			body: {
 				outFile: resolveArtifactOutFile(options.out),
 				categories: options.categories,
 				options: options.options,
 			},
 			timeoutMs: 10_000,
-		})
-		return response
-	} catch (error) {
-		output.writeWarn(formatWatcherTransportError(watcher, error))
-		process.exitCode = 1
-		return null
-	}
-}
+		},
+		output,
+	)
 
 const runTraceStopInternal = async (
 	watcher: WatcherRecord,
 	options: { traceId?: string; outFile?: string },
 	output: ReturnType<typeof createOutput>,
-): Promise<TraceStopResponse | null> => {
-	try {
-		const response = await fetchWatcherJson<TraceStopResponse>(watcher, {
+): Promise<TraceStopResponse | null> =>
+	requestTrace<TraceStopResponse>(
+		watcher,
+		{
 			path: '/trace/stop',
-			method: 'POST',
 			body: { traceId: options.traceId, outFile: resolveArtifactOutFile(options.outFile) },
 			timeoutMs: 20_000,
-		})
-		return response
+		},
+		output,
+	)
+
+const requestTrace = async <T extends { ok: true }>(
+	watcher: WatcherRecord,
+	input: { path: string; body: Record<string, unknown>; timeoutMs: number },
+	output: ReturnType<typeof createOutput>,
+): Promise<T | null> => {
+	let response: ApiResult<T>
+	try {
+		response = await fetchWatcherJson<ApiResult<T>>(watcher, { ...input, method: 'POST', returnErrorResponse: true })
 	} catch (error) {
 		output.writeWarn(formatWatcherTransportError(watcher, error))
-		process.exitCode = 1
+		setExitCode(1)
 		return null
 	}
+	if (response.ok) {
+		return response
+	}
+	await writeTraceError(watcher, response, output)
+	return null
 }
 
 const formatDurationMs = (ms: number): string => `${(ms / 1000).toFixed(3)}s`

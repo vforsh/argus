@@ -136,6 +136,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		updateCdpStatus({
 			attached: true,
 			target: {
+				id: target.id,
 				title: target.title ?? null,
 				url: target.url ?? null,
 				type: target.type ?? null,

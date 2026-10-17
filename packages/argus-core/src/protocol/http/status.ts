@@ -4,6 +4,7 @@ import { compact, optionalBoolean, readFields, requireObject } from '../schemaFi
 import type { WatcherRecord } from '../../registry/types.js'
 import type { DialogStatus } from './dialog.js'
 import type { RecordStatusSummary } from './record.js'
+import type { TraceStatusSummary } from './trace.js'
 import type { ArgusProtocolVersion } from '../version.js'
 import type { Ok } from './errors.js'
 
@@ -21,6 +22,8 @@ export type StatusResponse = Ok<{
 	/** Whether the currently selected target is ready for frame-scoped commands. */
 	targetReady?: boolean | null
 	target: {
+		/** Selected target id: Chrome target id (CDP) or the extension's tab/frame target id. Absent on older watchers. */
+		id?: string | null
 		title: string | null
 		url: string | null
 		/** Target type, such as `page` or `iframe`, when the source can report it. */
@@ -37,6 +40,11 @@ export type StatusResponse = Ok<{
 	 * show for it, so a forgotten one was only discoverable by killing the watcher.
 	 */
 	recording?: RecordStatusSummary | null
+	/**
+	 * The active Chrome trace, or `null`. Chrome allows one tracing session per browser, so a
+	 * rejected `trace start` reads this from every watcher to name who holds it. Absent on older watchers.
+	 */
+	trace?: TraceStatusSummary | null
 	buffer: {
 		size: number
 		count: number

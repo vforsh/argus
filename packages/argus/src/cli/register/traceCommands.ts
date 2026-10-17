@@ -16,9 +16,13 @@ export const traceCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--out <file>', description: 'Output trace file path (absolute, or relative to the current working directory)' },
 			{ flags: '--categories <categories>', description: 'Comma-separated tracing categories' },
 			{ flags: '--options <options>', description: 'Tracing options string' },
+			{
+				flags: '--targets <ids>',
+				description: 'Comma-separated watcher ids to trace together in one session, renderers labelled per watcher (CDP watchers only)',
+			},
 			jsonOption,
 		],
-		examples: ['argus trace app --duration 3s --out trace.json'],
+		examples: ['argus trace app --duration 3s --out trace.json', 'argus trace --targets app,admin --duration 5s --out compare.json'],
 		action: async (id, options) => {
 			await runTrace(id, options)
 		},

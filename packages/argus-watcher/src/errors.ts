@@ -38,19 +38,27 @@ export const hasErrorCode = (error: unknown, code: ArgusErrorCode): boolean => g
 /** The watcher is not attached to a CDP target. Raised by both transports. */
 export const createNotAttachedError = (message = 'No tab attached via extension'): CodedError => codedError('cdp_not_attached', message)
 
+/**
+ * The human message inside a CDP failure. The extension relays `chrome.debugger` errors as the raw
+ * protocol error JSON (`{"code":-32000,"message":"…"}`), a direct CDP socket as the bare message.
+ */
+export const readCdpErrorDetail = (message: string): string => {
+	if (!message.startsWith('{')) {
+		return message
+	}
+	try {
+		const parsed = JSON.parse(message)
+		return typeof parsed.message === 'string' ? parsed.message : message
+	} catch {
+		return message
+	}
+}
+
 /** Normalize the few CDP renderer-lifecycle failures that have stable protocol meanings.
  * Chrome/native messaging expose prose at this boundary; consumers decide recovery by code.
  */
 export const cdpCommandError = (message: string): Error => {
-	let detail = message
-	if (message.startsWith('{')) {
-		try {
-			const parsed = JSON.parse(message)
-			if (typeof parsed.message === 'string') detail = parsed.message
-		} catch {
-			/* Plain error text. */
-		}
-	}
+	const detail = readCdpErrorDetail(message)
 	if (
 		/^(?:Inspected target navigated or closed|Cannot find context with specified id|Execution context was destroyed|Cannot find execution context)(?:[.\s]|$)/i.test(
 			detail,

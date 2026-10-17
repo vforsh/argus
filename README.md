@@ -324,6 +324,7 @@ command prints. See `skill/argus/reference/SESSION.md`.
 argus screenshot app --out shot.png
 argus screenshot app --selector "canvas" --out canvas.png
 argus trace app --duration 3s --out trace.json
+argus trace --targets app,admin --duration 5s --out compare.json   # several tabs in one trace (CDP watchers)
 ```
 
 ## Core Concepts

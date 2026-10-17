@@ -13,6 +13,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 export type CdpStatus = {
 	attached: boolean
 	target: {
+		/** Chrome target id (CDP) or `tab:<tabId>`-style id (extension) of the selected target. */
+		id: string | null
 		title: string | null
 		url: string | null
 		type: string | null
@@ -149,6 +151,7 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		options.onStatus({
 			attached: true,
 			target: {
+				id: currentTarget.id ?? null,
 				title: currentTarget.title ?? null,
 				url: currentTarget.url ?? null,
 				type: currentTarget.type ?? null,
@@ -242,6 +245,7 @@ export const startCdpWatcher = (options: CdpWatcherOptions): CdpWatcherHandle =>
 		options.onStatus({
 			attached: true,
 			target: {
+				id: target.id ?? null,
 				title: target.title ?? null,
 				url: target.url ?? null,
 				type: target.type ?? null,

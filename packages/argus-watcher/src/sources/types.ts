@@ -59,6 +59,8 @@ export type CdpSourceStatus = {
 	/** Whether the currently selected target is ready for frame-scoped commands. */
 	targetReady?: boolean | null
 	target: {
+		/** Chrome target id (CDP) or `tab:<tabId>`-style id (extension) of the selected target. */
+		id: string | null
 		title: string | null
 		url: string | null
 		type: string | null

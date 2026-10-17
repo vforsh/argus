@@ -44,6 +44,16 @@ export type TraceStopResponse = Ok<{
 	durationMs: number
 }>
 
+/** Live trace summary, reported on GET /status while a watcher records. */
+export type TraceStatusSummary = {
+	traceId: string
+	sessionName: string
+	outFile: string
+	/** Epoch milliseconds when the watcher asked Chrome to start. */
+	startedAt: number
+	state: 'recording' | 'stopping'
+}
+
 /** Schema for POST /trace/start request payloads. */
 export const traceStartRequestSchema = defineProtocolSchema<TraceStartRequest>((value) => {
 	const invalid = requireObject<TraceStartRequest>(value)

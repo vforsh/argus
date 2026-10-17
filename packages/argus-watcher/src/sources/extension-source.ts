@@ -390,6 +390,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 						url: target.url,
 						type: target.type ?? 'page',
 						parentId: target.parentId ?? null,
+						id: target.id,
 					}
 				: null,
 			reason,

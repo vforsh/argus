@@ -180,6 +180,7 @@ Read the error code before retrying or raising a timeout.
 | `log_epoch_*`                   | cursor from another session / evicted           | take a fresh `logs cursor`                                                                                          |
 | `not_available`                 | capture under background policy, or old watcher | `page show --policy foreground`; restart watcher on current build                                                   |
 | `watcher_id_taken`              | name held by another live watcher               | `argus watcher stop <id>` or pick another `--id`/`--as`                                                             |
+| `trace_conflict`                | Chrome already tracing (one session/browser)    | message names the holding watcher → `argus trace stop <holder>`; no holder named = DevTools/other client            |
 | `ambiguous_control`             | several browsers run Argus                      | pick from `candidates`: `--id <controlId>` or `--browser <label>`                                                   |
 | `ambiguous_browser`             | label on several live instances                 | `argus ext browsers`, relabel one or pass an `instanceId`                                                           |
 | `ambiguous_tab`                 | bind ticket open in several tabs                | close extras, or `ext bind prepare` again and open it once                                                          |
