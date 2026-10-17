@@ -15,13 +15,16 @@ import type {
 } from '../types/messages.js'
 
 export class CdpProxy {
+	/** The one tab this proxy's native host watches; the debugger manager reports every tab. */
+	private readonly tabId: number
 	private debuggerManager: DebuggerManager
 	private bridgeClient: BridgeClient<TabHostToExtension, ExtensionToTabHost>
 	private removeDebuggerEventForwarding: (() => void) | null = null
 	private removeDebuggerDetachForwarding: (() => void) | null = null
 	private removeFramesChangedForwarding: (() => void) | null = null
 
-	constructor(debuggerManager: DebuggerManager, bridgeClient: BridgeClient<TabHostToExtension, ExtensionToTabHost>) {
+	constructor(tabId: number, debuggerManager: DebuggerManager, bridgeClient: BridgeClient<TabHostToExtension, ExtensionToTabHost>) {
+		this.tabId = tabId
 		this.debuggerManager = debuggerManager
 		this.bridgeClient = bridgeClient
 
@@ -30,10 +33,14 @@ export class CdpProxy {
 	}
 
 	/**
-	 * Forward CDP events from debugger to bridge.
+	 * Forward this tab's CDP events, detaches and frame snapshots to the bridge.
+	 *
+	 * Each tab has its own native host. Forwarding other tabs' traffic used to reach every host,
+	 * and a `tab_detached` for tab B made tab A's watcher report itself detached while it kept working.
 	 */
 	private setupEventForwarding(): void {
 		this.removeDebuggerEventForwarding = this.debuggerManager.onEvent((tabId, method, params, meta) => {
+			if (tabId !== this.tabId) return
 			this.bridgeClient.send({
 				type: 'cdp_event',
 				tabId,
@@ -44,6 +51,7 @@ export class CdpProxy {
 		})
 
 		this.removeDebuggerDetachForwarding = this.debuggerManager.onDetach((tabId, reason) => {
+			if (tabId !== this.tabId) return
 			this.bridgeClient.send({
 				type: 'tab_detached',
 				tabId,
@@ -54,6 +62,7 @@ export class CdpProxy {
 		// The authoritative frame table travels as full snapshots, never as fabricated
 		// Page.frameNavigated/frameDetached events. The watcher filters by tabId.
 		this.removeFramesChangedForwarding = this.debuggerManager.onFramesChanged((tabId, reason) => {
+			if (tabId !== this.tabId) return
 			this.bridgeClient.send({
 				type: 'frame_snapshot',
 				tabId,

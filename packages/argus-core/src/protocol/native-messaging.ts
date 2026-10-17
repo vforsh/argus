@@ -17,7 +17,7 @@ import type { LifecycleEvent } from '../diagnostics/events.js'
  * Bump on any breaking change to the message shapes below. Peers exchange it in the
  * `host_info` handshake and refuse to proceed on a mismatch.
  */
-export const NATIVE_MESSAGING_PROTOCOL_VERSION = 4 as const
+export const NATIVE_MESSAGING_PROTOCOL_VERSION = 5 as const
 
 /** Type-level alias for the current native-messaging protocol version. */
 export type NativeMessagingProtocolVersion = typeof NATIVE_MESSAGING_PROTOCOL_VERSION
@@ -187,6 +187,13 @@ export type TargetInfoMessage = {
 export type InitTabWatcherMessage = {
 	type: 'init_tab_watcher'
 	watcherId?: string
+	/**
+	 * How strictly to hold `watcherId`. `exact` (default) fails the attach when another live watcher
+	 * has it: a name the user typed. `prefer` falls back to a suffixed id: the name the extension
+	 * remembered for this tab, which must never block a re-attach. Added in protocol 5: an older
+	 * host would read every remembered name as exact and fail re-attaches once another tab took it.
+	 */
+	watcherIdPolicy?: 'exact' | 'prefer'
 }
 
 export type TabInfo = {

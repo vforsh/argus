@@ -21,6 +21,8 @@ The extension id is pinned via a manifest `key`, and the prebuilt extension ship
 
 - **Control watcher** (`extension-control`, `extension-control-2`, …): one per browser instance, auto-named in startup order. With one live control, commands use it; with several, commands without `--id <controlWatcherId>` fail with `ambiguous_control` (JSON lists `candidates`).
 - **Tab watcher**: created per attached tab, named by `--as <id>` or auto (`extension`, `extension-2`, …). An `--as` name held by another live watcher fails with `watcher_id_taken`; re-attaching the tab that already owns it reuses it. All normal commands (`logs`, `eval`, `click`, …) take this id.
+- **Stable names**: the extension remembers each tab's last watcher id (tab id + origin, until the browser restarts). Re-attaching without `--as` — CLI or popup — reuses it, waiting briefly for the old host to release it; if another live watcher holds it, the tab gets a suffixed id instead of failing. A tab that moved to another origin starts fresh.
+- `argus list` shows control watchers as `[control]`; a tab watcher is `[detached]` only when its own tab detached.
 - **Registry ownership**: each run records a random `ownerId` (also in `/status`) and `extensionRole`. Only the owner refreshes or removes its entry, so concurrent browsers, overlapping reloads, and crashed hosts never overwrite or delete each other's records. `ext doctor` flags entries from older hosts (no `ownerId`); reload the extension or restart the browser to respawn them.
 - Chrome shows an orange "debugging" bar on attached tabs. It cannot be hidden.
 

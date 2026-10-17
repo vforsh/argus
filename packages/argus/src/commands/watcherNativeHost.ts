@@ -1,6 +1,6 @@
 import packageJson from '../../package.json' with { type: 'json' }
 import { randomUUID } from 'node:crypto'
-import { appendLifecycleEvent, errorEvidence, NATIVE_MESSAGING_PROTOCOL_VERSION } from '@vforsh/argus-core'
+import { appendLifecycleEvent, errorEvidence, NATIVE_MESSAGING_PROTOCOL_VERSION, type InitTabWatcherMessage } from '@vforsh/argus-core'
 /**
  * Native Messaging host command for Chrome extension.
  *
@@ -9,7 +9,7 @@ import { appendLifecycleEvent, errorEvidence, NATIVE_MESSAGING_PROTOCOL_VERSION 
  * using Chrome's Native Messaging protocol (length-prefixed JSON).
  */
 
-import { startWatcher, type WatcherHandle } from '@vforsh/argus-watcher'
+import { startWatcher, type WatcherHandle, type WatcherIdConflictPolicy } from '@vforsh/argus-watcher'
 import { formatError } from '../cli/parse.js'
 
 export type NativeHostOptions = {
@@ -35,11 +35,12 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 	let handle: WatcherHandle
 	try {
 		// Controls are auto-named per browser (`extension-control`, `-2`, …). A tab watcher keeps an
-		// explicit `--as` name exactly; an unnamed one takes the next free suffix.
-		const watcherId = role === 'tab' ? await resolveTabWatcherId() : { id: options.id?.trim() || 'extension', explicit: false }
+		// explicit `--as` name exactly, prefers the name the extension remembered for the tab, and
+		// otherwise takes the next free suffix.
+		const watcherId = role === 'tab' ? await resolveTabWatcherId() : { id: options.id?.trim() || 'extension', idConflict: 'suffix' as const }
 		handle = await startWatcher({
 			id: watcherId.id,
-			idConflict: watcherId.explicit ? 'error' : 'suffix',
+			idConflict: watcherId.idConflict,
 			source: 'extension',
 			extensionRole: role,
 			host: '127.0.0.1',
@@ -92,8 +93,8 @@ export const runWatcherNativeHost = async (options: NativeHostOptions): Promise<
 	await new Promise(() => {})
 }
 
-const resolveTabWatcherId = async (): Promise<{ id: string; explicit: boolean }> => {
-	const message = await new Promise<{ type?: string; watcherId?: string }>((resolve, reject) => {
+const resolveTabWatcherId = async (): Promise<{ id: string; idConflict: WatcherIdConflictPolicy }> => {
+	const message = await new Promise<Partial<InitTabWatcherMessage>>((resolve, reject) => {
 		let buffer = Buffer.alloc(0)
 		const timeout = setTimeout(() => {
 			cleanup()
@@ -125,7 +126,7 @@ const resolveTabWatcherId = async (): Promise<{ id: string; explicit: boolean }>
 			const messageBytes = buffer.subarray(4, 4 + messageLength)
 			cleanup()
 			try {
-				resolve(JSON.parse(messageBytes.toString('utf8')) as { type?: string; watcherId?: string })
+				resolve(JSON.parse(messageBytes.toString('utf8')) as Partial<InitTabWatcherMessage>)
 			} catch (error) {
 				reject(error instanceof Error ? error : new Error(String(error)))
 			}
@@ -142,5 +143,8 @@ const resolveTabWatcherId = async (): Promise<{ id: string; explicit: boolean }>
 		throw new Error(`Expected init_tab_watcher, received ${message.type ?? 'unknown message'}`)
 	}
 	const requested = message.watcherId?.trim()
-	return requested ? { id: requested, explicit: true } : { id: 'extension', explicit: false }
+	if (!requested) {
+		return { id: 'extension', idConflict: 'suffix' }
+	}
+	return { id: requested, idConflict: message.watcherIdPolicy === 'prefer' ? 'prefer' : 'error' }
 }

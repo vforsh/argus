@@ -91,12 +91,16 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 
 		onDetach: (tabId: number, reason: string) => {
 			console.error(`[ExtensionSource] Tab detached: ${tabId} - ${reason}`)
-			if (currentSession?.tabId === tabId) {
-				currentSession = null
-			}
-			rebindDelegatingSessions()
 			targetRecovery.clear(tabId)
 			frameStateByTabId.delete(tabId)
+			// Older extensions forward every tab's detach to every tab host. Another tab's detach says
+			// nothing about the tab this watcher holds; without a session (e.g. a failed attach) the
+			// reason is still worth reporting.
+			if (currentSession && currentSession.tabId !== tabId) {
+				return
+			}
+			currentSession = null
+			rebindDelegatingSessions()
 			emitStatus(null, reason)
 			events.onDetach?.(reason)
 		},
@@ -386,11 +390,11 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 			targetReady,
 			target: target
 				? {
+						id: target.id,
 						title: target.title,
 						url: target.url,
 						type: target.type ?? 'page',
 						parentId: target.parentId ?? null,
-						id: target.id,
 					}
 				: null,
 			reason,

@@ -29,6 +29,8 @@ export type TabBridgeSessionEvents = {
 
 export type TabBridgeSessionOptions = {
 	watcherId?: string
+	/** `prefer` for a remembered name the host may suffix on conflict; see `InitTabWatcherMessage`. */
+	watcherIdPolicy?: 'exact' | 'prefer'
 }
 
 /**
@@ -43,6 +45,7 @@ export class TabBridgeSession {
 	private watcherInfo: TabWatcherInfo | null = null
 	private targetInfo: TabTargetInfo | null = null
 	private desiredWatcherId: string | undefined
+	private readonly watcherIdPolicy: TabBridgeSessionOptions['watcherIdPolicy']
 	private lastMessageAt: number | null = null
 	private readonly hostReady = createLatch()
 	private readonly watcherInfoReceived = createLatch()
@@ -55,8 +58,9 @@ export class TabBridgeSession {
 		this.tabId = tabId
 		this.events = events
 		this.desiredWatcherId = options.watcherId
+		this.watcherIdPolicy = options.watcherIdPolicy
 		this.bridgeClient = new BridgeClient(BRIDGE_HOST_NAME, { autoReconnect: false })
-		this.cdpProxy = new CdpProxy(debuggerManager, this.bridgeClient)
+		this.cdpProxy = new CdpProxy(tabId, debuggerManager, this.bridgeClient)
 
 		this.bridgeClient.onMessage((message) => {
 			this.handleMessage(message)
@@ -79,6 +83,7 @@ export class TabBridgeSession {
 		const sent = this.bridgeClient.send({
 			type: 'init_tab_watcher',
 			watcherId: this.desiredWatcherId,
+			watcherIdPolicy: this.watcherIdPolicy,
 		})
 		if (!sent) {
 			throw new Error(`Failed to initialize watcher for tab ${this.tabId}`)

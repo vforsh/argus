@@ -78,6 +78,7 @@ export type StartWatcherOptions = {
 	 * What to do when `id` is held by another live watcher.
 	 * - `error` (default): reject with a `watcher_id_taken` coded error. An explicit name means exactly that name.
 	 * - `suffix`: take the first free `<id>-2`, `<id>-3`, …; for auto-named watchers.
+	 * - `prefer`: wait briefly for `id` to be released, then behave like `suffix`; for remembered names.
 	 *
 	 * Either way the id is reserved atomically, so concurrent starts never share one.
 	 */

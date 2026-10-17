@@ -16,8 +16,10 @@ import { codedError } from '../errors.js'
  * What to do when the requested id is held by another live watcher.
  * - `suffix`: take the first free `<id>-2`, `<id>-3`, … (auto-named watchers such as extension controls).
  * - `error`: fail with `watcher_id_taken` (a name the user chose must mean exactly that name).
+ * - `prefer`: wait like `error` for the id to be released, then fall back to `suffix` (a name the
+ *   extension remembered for a re-attached tab: worth keeping, never worth failing the attach over).
  */
-export type WatcherIdConflictPolicy = 'suffix' | 'error'
+export type WatcherIdConflictPolicy = 'suffix' | 'error' | 'prefer'
 
 /** A live claim on an id by another run: its published record, or its startup reservation. */
 export type WatcherIdHolder = { kind: 'watcher'; record: WatcherRecord } | { kind: 'reservation'; reservation: WatcherReservation }
@@ -27,6 +29,11 @@ export type WatcherIdHolder = { kind: 'watcher'; record: WatcherRecord } | { kin
  * detach-then-reattach sequence, where the previous holder is still shutting down.
  */
 const ID_RELEASE_WAIT_MS = 2_000
+/**
+ * `prefer` waits less: the extension gives the host 3s to come up, and a remembered name is a
+ * nicety. A detach-then-reattach releases the old id well within this.
+ */
+const PREFERRED_ID_RELEASE_WAIT_MS = 1_000
 const ID_RELEASE_POLL_MS = 100
 
 /**
@@ -35,14 +42,15 @@ const ID_RELEASE_POLL_MS = 100
  * @throws A `watcher_id_taken` coded error under the `error` policy when the id stays held.
  */
 export const reserveWatcherId = async (input: { id: string; ownerId: string; onConflict: WatcherIdConflictPolicy }): Promise<string> => {
-	const deadline = Date.now() + ID_RELEASE_WAIT_MS
+	const deadline = Date.now() + (input.onConflict === 'prefer' ? PREFERRED_ID_RELEASE_WAIT_MS : ID_RELEASE_WAIT_MS)
 
 	while (true) {
 		// Written from inside the locked updater; an object keeps TS from narrowing it to its initial value.
 		const attempt: { claimed: string | null; holder: WatcherIdHolder | null } = { claimed: null, holder: null }
+		const policy = resolveAttemptPolicy(input.onConflict, Date.now() < deadline)
 		await updateRegistry((registry) => {
 			const now = Date.now()
-			for (const candidate of candidateIds(input.id, input.onConflict)) {
+			for (const candidate of candidateIds(input.id, policy)) {
 				attempt.holder = findLiveHolder(registry, candidate, input.ownerId, now)
 				if (attempt.holder) {
 					continue
@@ -56,7 +64,7 @@ export const reserveWatcherId = async (input: { id: string; ownerId: string; onC
 		if (attempt.claimed) {
 			return attempt.claimed
 		}
-		if (Date.now() >= deadline && attempt.holder) {
+		if (input.onConflict === 'error' && Date.now() >= deadline && attempt.holder) {
 			throw codedError(
 				'watcher_id_taken',
 				`Watcher id "${input.id}" is already in use (${describeHolder(attempt.holder)}). Stop that watcher or choose another id.`,
@@ -66,8 +74,16 @@ export const reserveWatcherId = async (input: { id: string; ownerId: string; onC
 	}
 }
 
+/** `prefer` holds out for the exact id while the release wait lasts, then accepts a suffix. */
+const resolveAttemptPolicy = (policy: WatcherIdConflictPolicy, waiting: boolean): 'suffix' | 'error' => {
+	if (policy !== 'prefer') {
+		return policy
+	}
+	return waiting ? 'error' : 'suffix'
+}
+
 /** `error` checks the exact id once per attempt; `suffix` walks `<id>`, `<id>-2`, … until one is free. */
-function* candidateIds(id: string, policy: WatcherIdConflictPolicy): Generator<string> {
+function* candidateIds(id: string, policy: 'suffix' | 'error'): Generator<string> {
 	yield id
 	if (policy === 'error') {
 		return

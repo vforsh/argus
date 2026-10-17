@@ -7,6 +7,7 @@ import { startLifecycleJournal, recordLifecycle } from './lifecycle-journal.js'
  */
 
 import { TabAttachments } from './tab-attachments.js'
+import { TabWatcherNames } from './tab-watcher-names.js'
 import { DebuggerManager } from './debugger-manager.js'
 import type { TabBridgeSessionOptions } from './tab-bridge-session.js'
 import { ControlBridgeSession, type TabActionResult } from './control-bridge-session.js'
@@ -51,15 +52,24 @@ const controlBridgeSession: ControlBridgeSession = new ControlBridgeSession(debu
 		recordEvent('error', 'bridge', 'Control native host disconnected')
 	},
 })
-const tabAttachments = new TabAttachments(debuggerManager, {
-	onWatcherInfo: (info, tabId) => recordEvent('info', 'bridge', `Watcher ready for tab ${tabId}: ${info.watcherId} (pid ${info.pid})`),
-	onTargetInfo: (info) => syncSelectedFrameFromWatcher(info.targetId),
-	onDisconnect: (tabId) => {
-		recordEvent('error', 'bridge', `Native host disconnected for tab ${tabId}`)
-		void syncActionBadge(debuggerManager)
+const tabWatcherNames = new TabWatcherNames()
+const tabAttachments = new TabAttachments(
+	debuggerManager,
+	{
+		onWatcherInfo: (info, tabId) => recordEvent('info', 'bridge', `Watcher ready for tab ${tabId}: ${info.watcherId} (pid ${info.pid})`),
+		onTargetInfo: (info) => syncSelectedFrameFromWatcher(info.targetId),
+		onDisconnect: (tabId) => {
+			recordEvent('error', 'bridge', `Native host disconnected for tab ${tabId}`)
+			void syncActionBadge(debuggerManager)
+		},
+		onError: (error) => recordEvent('error', 'bridge', formatError(error)),
 	},
-	onError: (error) => recordEvent('error', 'bridge', formatError(error)),
-})
+	{
+		names: tabWatcherNames,
+		getTabUrl: async (tabId) => (await chrome.tabs.get(tabId)).url,
+	},
+)
+chrome.tabs.onRemoved?.addListener((tabId) => void tabWatcherNames.forget(tabId))
 const attachments = tabAttachments.records
 
 /**

@@ -2,6 +2,7 @@ import type { DebuggerManager } from './debugger-manager.js'
 import { TabBridgeSession, type TabBridgeSessionOptions, type TabBridgeSessionEvents, type TabWatcherInfo } from './tab-bridge-session.js'
 import { TabOperationQueue } from './tab-operation-queue.js'
 import type { RememberedTargetSelection } from './target-selection-history.js'
+import type { TabWatcherNames } from './tab-watcher-names.js'
 
 /** Session and selection state share one lifetime, including while attachment is pending. */
 export type TabAttachment = {
@@ -16,6 +17,12 @@ type Events = Omit<TabBridgeSessionEvents, 'onDisconnect' | 'onWatcherInfo'> & {
 	onError: (error: unknown) => void
 }
 
+/** Per-tab name memory, so a re-attach without an explicit name keeps the tab's previous watcher id. */
+type NameMemory = {
+	names: TabWatcherNames
+	getTabUrl: (tabId: number) => Promise<string | undefined>
+}
+
 /** Owns per-tab native sessions and serializes their debugger lifecycle. */
 export class TabAttachments {
 	readonly records = new Map<number, TabAttachment>()
@@ -24,6 +31,7 @@ export class TabAttachments {
 	constructor(
 		private readonly debuggerManager: DebuggerManager,
 		private readonly events: Events,
+		private readonly nameMemory?: NameMemory,
 	) {}
 
 	/** Reuse an initialized session; simultaneous callers wait for the same tab's transition. */
@@ -34,6 +42,12 @@ export class TabAttachments {
 	private async createSession(tabId: number, options: TabBridgeSessionOptions): Promise<TabBridgeSession> {
 		const existing = this.records.get(tabId)?.session
 		if (existing) return existing
+
+		const url = await this.nameMemory?.getTabUrl(tabId).catch(() => undefined)
+		if (!options.watcherId) {
+			const remembered = await this.nameMemory?.names.recall(tabId, url)
+			if (remembered) options = { ...options, watcherId: remembered, watcherIdPolicy: 'prefer' }
+		}
 
 		const session = new TabBridgeSession(
 			tabId,
@@ -48,6 +62,10 @@ export class TabAttachments {
 		this.records.set(tabId, { session })
 		try {
 			await session.connectAndAttach()
+			// A remembered name the host had to suffix stays the one remembered, so the tab goes back
+			// to it next time instead of drifting to `name-2`, `name-2-2`, …
+			const watcherId = options.watcherIdPolicy === 'prefer' ? options.watcherId : session.getWatcherInfo()?.watcherId
+			if (watcherId) await this.nameMemory?.names.remember(tabId, url, watcherId)
 			return session
 		} catch (error) {
 			if (this.records.get(tabId)?.session === session) {

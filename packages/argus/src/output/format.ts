@@ -9,12 +9,23 @@ export const formatWatcherLine = (
 	const base = `${watcher.id} ${watcher.host}:${watcher.port}`
 	const match = formatMatch(watcher)
 	const cwd = formatCwd(watcher)
-	const state = status ? (status.attached ? 'attached' : 'detached') : 'unknown'
+	const state = formatWatcherState(watcher, status)
 	const target = status?.target
 	const targetLabel = target?.title || target?.url ? `${target?.title ?? ''}${target?.title && target?.url ? ' • ' : ''}${target?.url ?? ''}` : ''
 	const targetSuffix = targetLabel ? ` (${targetLabel})` : ''
 
 	return `${base} ${match} ${cwd} [${state}]${targetSuffix}`.trim()
+}
+
+/** A control watcher brokers tabs and never attaches to one, so "detached" would misreport it. */
+const formatWatcherState = (watcher: WatcherRecord, status: { attached: boolean } | undefined): string => {
+	if (watcher.extensionRole === 'control') {
+		return 'control'
+	}
+	if (!status) {
+		return 'unknown'
+	}
+	return status.attached ? 'attached' : 'detached'
 }
 
 /** Format a log event for human output. */
