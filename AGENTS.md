@@ -34,7 +34,7 @@ Root `package.json` and `packages/*/package.json` are authoritative.
 ## Code Rules
 
 - **Style**: tabs, no semicolons, single quotes, ~150-char lines. Applied by hand; match surrounding code.
-- **File size**: keep files under ~500 LOC. Split into cohesive helpers/subcomponents before a file sprawls.
+- **File size**: keep files under ~1000 LOC. Split into cohesive helpers/subcomponents before a file sprawls.
 - **Structure**: guard clauses and early returns over nesting. Order functions by call sequence (caller before callee); keep helpers next to their only caller.
 - **Dependencies**: prefer Bun/Node built-ins. Add deps to the package that needs them, never root. `argus-core` stays dependency-free.
 - **Public API JSDoc**: anything exported from `packages/*` for other packages documents params, return values, and invariants/edge cases.
