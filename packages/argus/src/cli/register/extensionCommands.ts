@@ -343,10 +343,16 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 			{
 				name: 'detach',
 				description: 'Ask the extension control watcher to detach a browser tab',
+				arguments: [{ flags: '[watcherId]', description: 'Attached extension tab watcher id (alternative to --tab/--url/--title)' }],
 				options: tabTargetOptions,
-				examples: ['argus ext detach --tab 123', 'argus ext detach --url localhost', 'argus ext detach --title Docs --json'],
-				action: async (options) => {
-					await runExtensionDetach(options)
+				examples: [
+					'argus ext detach miro',
+					'argus ext detach --tab 123',
+					'argus ext detach --url localhost',
+					'argus ext detach --title Docs --json',
+				],
+				action: async (watcherId, options) => {
+					await runExtensionDetach(watcherId, options)
 				},
 			},
 			{

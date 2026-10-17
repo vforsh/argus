@@ -35,7 +35,7 @@ argus ext use --url portal.example --as app    # attach, or reuse an existing at
 argus ext use --tab 123 --as app
 argus ext use --title "Docs" --show            # lock shown+focused after attaching
 argus ext attach --url localhost --as app      # attach only (no reuse), --no-wait returns early
-argus ext detach --tab 123 | --url … | --title …
+argus ext detach app                          # by tab watcher id; or --tab 123 | --url … | --title …
 argus ext show app                             # attach if needed + sticky shown+focused lock
 argus ext mute app / unmute --tab 123          # persistent Chrome tab mute; selectors don't attach
 ```

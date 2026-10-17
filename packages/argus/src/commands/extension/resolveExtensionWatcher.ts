@@ -3,6 +3,7 @@ import { loadActiveRegistry } from '../../registry.js'
 import { formatError } from '../../cli/parse.js'
 import { readBrowserLabels } from './browserLabels.js'
 import { getBrowserInstanceId, probeControl, probeControls, toCandidate, type ExtensionWatcherCandidate } from './liveControls.js'
+import { fetchExtensionTabs } from './tabSelection.js'
 
 export type { ExtensionWatcherCandidate } from './liveControls.js'
 
@@ -55,6 +56,35 @@ export const resolveExtensionWatcher = async (input: ControlSelector): Promise<R
 
 	const resolved = input.browser ? await resolveByBrowser(extensionWatchers, input.browser) : await resolveOnlyControl(extensionWatchers)
 	return resolved.ok ? { ...resolved, registry } : resolved
+}
+
+/**
+ * Resolve the control watcher for a command that names a tab watcher. The tab watcher already pins
+ * the browser, so several live controls are only ambiguous when none — or more than one — of them
+ * lists a tab attached under `tabWatcherId`.
+ */
+export const resolveExtensionWatcherForTab = async (input: ControlSelector, tabWatcherId: string | undefined): Promise<ResolveExtensionWatcherResult> => {
+	const resolved = await resolveExtensionWatcher(input)
+	if (resolved.ok || resolved.code !== 'ambiguous_control' || !tabWatcherId) {
+		return resolved
+	}
+
+	const owners = await Promise.all(
+		(resolved.candidates ?? []).map(async (control) => {
+			const tabs = await fetchExtensionTabs(control, { kind: 'query' })
+			return tabs.ok && tabs.tabs.some((tab) => tab.watcherId === tabWatcherId) ? control : null
+		}),
+	)
+	const matches = owners.filter((control): control is ExtensionWatcherCandidate => control != null)
+	if (matches.length === 0) {
+		return { ok: false, error: `No extension tab is attached as ${tabWatcherId} in any live browser.`, exitCode: 2 }
+	}
+	if (matches.length > 1) {
+		return resolved
+	}
+	const registry = await loadActiveRegistry().catch(() => null)
+	const watcher = registry?.watchers[matches[0]!.id]
+	return registry && watcher ? { ok: true, watcher, registry } : resolved
 }
 
 const resolveById = async (

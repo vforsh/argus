@@ -3,7 +3,7 @@ import { formatError } from '../../cli/parse.js'
 import { createOutput, type Output } from '../../output/io.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { emitFailure, emitResolveFailure } from './failures.js'
-import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
+import { resolveExtensionWatcherForTab } from './resolveExtensionWatcher.js'
 import {
 	fetchExtensionTabs,
 	formatExtensionTabLine,
@@ -28,7 +28,7 @@ export const runExtensionMute = async (id: string | undefined, options: Extensio
 		return
 	}
 
-	const control = await resolveExtensionWatcher(options)
+	const control = await resolveExtensionWatcherForTab(options, id)
 	if (!control.ok) {
 		emitResolveFailure(output, control)
 		return
@@ -67,7 +67,8 @@ export const runExtensionMute = async (id: string | undefined, options: Extensio
 	output.writeHuman(`  ${formatExtensionTabLine(response.tab)}`)
 }
 
-const resolveTabByWatcherId = async (control: WatcherRecord, id: string, output: Output): Promise<ExtensionBrowserTab | null> => {
+/** Find the one tab the extension reports as attached under watcher `id`; reports the failure itself. */
+export const resolveTabByWatcherId = async (control: WatcherRecord, id: string, output: Output): Promise<ExtensionBrowserTab | null> => {
 	const tabs = await fetchExtensionTabs(control, { kind: 'query' })
 	if (!tabs.ok) {
 		emitFailure(output, { error: tabs.error })

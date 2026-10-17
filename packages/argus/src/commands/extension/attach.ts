@@ -1,13 +1,15 @@
 import { emitFailure, emitResolveFailure } from './failures.js'
-import type { ErrorResponse, ExtensionTabActionResponse, ApiResult } from '@vforsh/argus-core'
+import type { ErrorResponse, ExtensionBrowserTab, ExtensionTabActionResponse, ApiResult } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
-import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
+import { resolveExtensionWatcher, resolveExtensionWatcherForTab } from './resolveExtensionWatcher.js'
 import { runExtensionShow } from './show.js'
 import { waitForTabWatcher } from './tabAttach.js'
+import { resolveTabByWatcherId } from './mute.js'
 import {
 	fetchExtensionTabs,
 	formatExtensionTabLine,
+	hasTabSelector,
 	parseTabSelector,
 	resolveTab,
 	type SelectorResult,
@@ -43,33 +45,26 @@ export const runExtensionAttach = async (options: ExtensionAttachOptions): Promi
 	await runExtensionTabAction('attach', options)
 }
 
-export const runExtensionDetach = async (options: ExtensionDetachOptions): Promise<void> => {
-	await runExtensionTabAction('detach', options)
+/** Detach a tab picked by its tab watcher id (`watcherId`) or by --tab/--url/--title. */
+export const runExtensionDetach = async (watcherId: string | undefined, options: ExtensionDetachOptions): Promise<void> => {
+	await runExtensionTabAction('detach', options, watcherId)
 }
 
-const runExtensionTabAction = async (action: ExtensionTabAction, options: ExtensionTabActionOptions): Promise<void> => {
+const runExtensionTabAction = async (action: ExtensionTabAction, options: ExtensionTabActionOptions, watcherId?: string): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveExtensionWatcher(options)
+	if (watcherId && hasTabSelector(options)) {
+		emitFailure(output, { error: 'Use either watcher id or --tab/--url/--title, not both.', exitCode: 2 })
+		return
+	}
+
+	const resolved = await resolveExtensionWatcherForTab(options, watcherId)
 	if (!resolved.ok) {
 		writeResolveFailure(output, options, resolved)
 		return
 	}
 
-	const selector = parseTabSelector(options, 'Specify --tab <tabId>, --url <substring>, or --title <substring>.')
-	if (!selector.ok) {
-		writeTabResolutionFailure(output, options, selector)
-		return
-	}
-
-	const tabs = await fetchExtensionTabs(resolved.watcher, selector.selector)
-	if (!tabs.ok) {
-		writeCommandError(output, options, tabs.error, tabs.error)
-		return
-	}
-
-	const tab = resolveTab(tabs.tabs, selector.selector)
-	if (!tab.ok) {
-		writeTabResolutionFailure(output, options, tab)
+	const tab = watcherId ? await resolveTabByWatcherId(resolved.watcher, watcherId, output) : await resolveSelectedTab(resolved.watcher, options, output)
+	if (!tab) {
 		return
 	}
 
@@ -78,7 +73,7 @@ const runExtensionTabAction = async (action: ExtensionTabAction, options: Extens
 		response = await fetchWatcherJson<ApiResult<ExtensionTabActionResponse>>(resolved.watcher, {
 			path: action === 'attach' ? '/attach' : '/detach',
 			method: 'POST',
-			body: { tabId: tab.tab.tabId, watcherId: action === 'attach' ? options.as : undefined },
+			body: { tabId: tab.tabId, watcherId: action === 'attach' ? options.as : undefined },
 			timeoutMs: action === 'attach' ? 18_000 : 5_000,
 			returnErrorResponse: true,
 		})
@@ -125,21 +120,48 @@ const runExtensionTabAction = async (action: ExtensionTabAction, options: Extens
 		return
 	}
 
+	// The extension's detach reply carries no watcher id, but the tab listing knew who owned it.
+	const resultWatcherId = response.watcherId ?? (action === 'detach' ? tab.watcherId : undefined)
 	if (options.json) {
 		output.writeJson({
 			ok: true,
 			tab: response.tab,
-			watcherId: response.watcherId,
+			watcherId: resultWatcherId,
 		})
 		return
 	}
 
 	const verb = action === 'attach' ? 'attached' : 'detached'
-	output.writeHuman(`${verb}${response.watcherId ? ` ${response.watcherId}` : ''}`)
+	output.writeHuman(`${verb}${resultWatcherId ? ` ${resultWatcherId}` : ''}`)
 	output.writeHuman(`  ${formatExtensionTabLine(response.tab)}`)
 }
 
 type TabActionFailure = Exclude<TabResolutionResult, { ok: true }> | Exclude<SelectorResult, { ok: true }>
+
+const resolveSelectedTab = async (
+	control: Parameters<typeof fetchExtensionTabs>[0],
+	options: ExtensionTabActionOptions,
+	output: ReturnType<typeof createOutput>,
+): Promise<ExtensionBrowserTab | null> => {
+	const selector = parseTabSelector(options, 'Specify --tab <tabId>, --url <substring>, or --title <substring>.')
+	if (!selector.ok) {
+		writeTabResolutionFailure(output, options, selector)
+		return null
+	}
+
+	const tabs = await fetchExtensionTabs(control, selector.selector)
+	if (!tabs.ok) {
+		writeCommandError(output, options, tabs.error, tabs.error)
+		return null
+	}
+
+	const tab = resolveTab(tabs.tabs, selector.selector)
+	if (!tab.ok) {
+		writeTabResolutionFailure(output, options, tab)
+		return null
+	}
+	return tab.tab
+}
 
 const writeTabResolutionFailure = (output: ReturnType<typeof createOutput>, _options: ExtensionTabActionOptions, result: TabActionFailure): void => {
 	const matches = 'matches' in result ? (result.matches ?? []) : []
