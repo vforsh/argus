@@ -44,9 +44,12 @@ argus trace app --duration 3s --out trace.json
 argus trace start app --categories "devtools.timeline,v8.execute" --options "sampling-frequency=1000"
 argus trace stop app --out trace.json       # --trace-id when several
 argus trace --targets app,admin --duration 5s --out compare.json   # several tabs, one session (CDP watchers)
+argus trace app --preset frames --duration 7s --out a.json          # frames | input | gpu; --categories appends
+argus trace analyze a.json frames      # presentation states, per-state stages, main-frame cost (streaming)
+argus trace analyze a.json input       # EventLatency by type, "presentation not attributed" flag
 ```
 
-Output is Chrome trace JSON; open in `chrome://tracing` or Perfetto.
+Output is Chrome trace JSON; open in `chrome://tracing` or Perfetto. `trace analyze` and `argus perf compare a.json b.json` read it directly; gesture smoothness tooling is in [PERF.md](./PERF.md).
 
 - Chrome runs **one tracing session per browser**. A `trace start` that loses that race fails with `trace_conflict` and names the watcher holding it (`Trace held by watcher "app" (…), started 20:46:31; stop it with: argus trace stop app`; `--json` adds `holders`). No named holder means another client (DevTools Performance panel, another CDP client) has it. A rejected start leaves no state behind; `/status.trace` shows a watcher's live trace.
 - A watcher's trace is page-scoped: Chrome records only that tab's renderer (plus Browser/GPU). To compare tabs under the same load, `--targets a,b` traces the browser target once and labels each watcher's renderer (`process_labels` events, `metadata.argusRenderers` = watcher → pid). It needs CDP watchers on one Chrome and `--duration`. **Not available in extension mode**: `chrome.debugger` only attaches to tabs, never the browser target, so each tab's trace is limited to its own renderer — trace tabs one at a time there.

@@ -327,6 +327,17 @@ argus trace app --duration 3s --out trace.json
 argus trace --targets app,admin --duration 5s --out compare.json   # several tabs in one trace (CDP watchers)
 ```
 
+### Gate gesture smoothness
+
+```bash
+argus perf gesture app --press-key h --path line:-600,0 --rate 250 --repeat 5 --warmup 1 --motion --out runs/a.json
+argus perf compare runs/a.json runs/b.json          # per-metric deltas with a noise-aware verdict
+argus perf capture app --duration 7s --probe "window.app.camera.x"   # passive capture of a human gesture
+argus input record app --out pan.jsonl && argus perf gesture app --replay pan.jsonl
+```
+
+See [skill/argus/reference/PERF.md](skill/argus/reference/PERF.md) for the run-result schema, validity guards, the recording format, and a headed second-machine recipe.
+
 ## Core Concepts
 
 ### Chrome
@@ -402,7 +413,9 @@ Four packages:
 | `dom modify attr\|class\|style\|text\|html`            | Modify element properties                |
 | `snapshot` / `ax`                                      | Accessibility tree snapshot              |
 | `screenshot`                                           | Capture screenshot                       |
-| `trace` / `trace start\|stop`                          | Chrome performance tracing               |
+| `trace` / `trace start\|stop\|analyze`                 | Chrome tracing (`--preset`), trace analyzers |
+| `perf gesture\|capture\|motion\|compare`               | Gesture smoothness: measure, compare, gate |
+| `input record\|replay`                                 | Record real input once, replay its timing |
 | `storage local\|session get\|set\|remove\|list\|clear` | Manage `localStorage` / `sessionStorage` |
 | `session`                                              | Serve JSONL commands over stdin/stdout   |
 | `config init`                                          | Create config file                       |
