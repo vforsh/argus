@@ -16,7 +16,7 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.5.25",
+      "version": "0.5.26",
       "bin": {
         "argus": "dist/argus.js",
       },
@@ -65,7 +65,7 @@
     },
     "packages/argus-watcher": {
       "name": "@vforsh/argus-watcher",
-      "version": "0.5.18",
+      "version": "0.5.19",
       "dependencies": {
         "@jridgewell/trace-mapping": "^0.3.31",
         "@vforsh/argus-core": "^0.5.9",
