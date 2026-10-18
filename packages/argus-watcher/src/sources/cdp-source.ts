@@ -9,6 +9,7 @@ import { createCdpBrowserCookieReader } from '../cdp/browserCookies.js'
 import { createCdpSessionHandle, type CdpSessionController } from '../cdp/connection.js'
 import { CDP_HEALTH_PROBE_TIMEOUT_MS, type CdpTransportCheck } from '../cdp/health.js'
 import { fetchCdpTargets } from '../cdp/watcherTargets.js'
+import { openFrameHost } from '../cdp/frameHost.js'
 import type { IgnoreMatcher } from '../cdp/ignoreList.js'
 import type { CdpSourceHandle, CdpSourceBaseOptions } from './types.js'
 
@@ -69,6 +70,11 @@ export const createCdpSource = (options: CdpSourceOptions): CdpSourceHandle => {
 		session: watcher.session,
 		pageSession: watcher.session,
 		readBrowserCookies: createCdpBrowserCookieReader(chrome, () => watcher.getTarget()?.id ?? null),
+		// Chrome refuses capture commands on iframe targets, so borrow the page that renders them.
+		openFrameHost: async () => {
+			const target = watcher.getTarget()
+			return target?.type === 'iframe' ? openFrameHost(chrome, target) : null
+		},
 		getNetFilterContext: () => {
 			const target = watcher.getTarget()
 			const context = watcher.session.getTargetContext()

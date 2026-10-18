@@ -97,9 +97,11 @@ export const createWatcherRuntimeServices = (
 	/**
 	 * Only an extension session can be scoped to an iframe while a separate top-level session stays
 	 * available, which is what lets visual capture translate frame-relative coordinates. A direct CDP
-	 * session is its own page session, so it has nothing to translate against and passes `undefined`.
+	 * session is its own page session, so it has nothing to translate against and passes `undefined`;
+	 * on an out-of-process iframe it borrows its parent page per capture through `openFrameHost`.
 	 */
 	const pageSession = sourceMode === 'extension' ? sourceHandle.pageSession : undefined
+	const openFrameHost = sourceHandle.openFrameHost
 
 	return {
 		sourceHandle,
@@ -114,12 +116,14 @@ export const createWatcherRuntimeServices = (
 		screenshotter: createScreenshotter({
 			session: sourceHandle.session,
 			pageSession,
+			openFrameHost,
 			artifactsDir: artifactsBaseDir,
 			getVisibilityPolicy: () => setup.visibilityController.getPolicy(),
 		}),
 		recorder: createRecorder({
 			session: sourceHandle.session,
 			pageSession,
+			openFrameHost,
 			artifactsDir: artifactsBaseDir,
 			getVisibilityPolicy: () => setup.visibilityController.getPolicy(),
 			onRecordingStateChange: callbacks.onRecordingStateChange,

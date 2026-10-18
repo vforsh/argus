@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import type { ScreenshotRequest, ScreenshotResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import { ensureArtifactsDir, ensureParentDir, resolveArtifactPath } from '../artifacts.js'
-import { createVisualCapturePlan, toPageClip, type VisualCaptureClip } from './visualCapture.js'
+import { createVisualCapturePlan, toPageClip, type OpenFrameHost, type VisualCaptureClip } from './visualCapture.js'
 import { assertCaptureAllowed, type GetVisibilityPolicy } from './capturePolicy.js'
 
 const SCREENSHOT_CDP_TIMEOUT_MS = 20_000
@@ -20,6 +20,7 @@ export type Screenshotter = {
 export const createScreenshotter = (options: {
 	session: CdpSessionHandle
 	pageSession?: CdpSessionHandle
+	openFrameHost?: OpenFrameHost
 	artifactsDir: string
 	getVisibilityPolicy?: GetVisibilityPolicy
 }): Screenshotter => {
@@ -34,14 +35,19 @@ export const createScreenshotter = (options: {
 		const defaultName = `screenshots/${new Date().toISOString().replace(/[:.]/g, '-')}.png`
 		const absolutePath = resolveArtifactPath(options.artifactsDir, request.outFile, defaultName)
 		await ensureParentDir(absolutePath)
-		const capturePlan = await createVisualCapturePlan(options.session, options.pageSession, request)
+		const capturePlan = await createVisualCapturePlan(options.session, options.pageSession, request, options.openFrameHost)
 
-		const result = await captureScreenshot(capturePlan.session, {
-			format,
-			// `Page.captureScreenshot` clips in document coordinates, not viewport ones.
-			clip: capturePlan.clip && toPageClip(capturePlan.clip, capturePlan.pageOffset),
-			getVisibilityPolicy: options.getVisibilityPolicy,
-		})
+		let result: CaptureResult
+		try {
+			result = await captureScreenshot(capturePlan.session, {
+				format,
+				// `Page.captureScreenshot` clips in document coordinates, not viewport ones.
+				clip: capturePlan.clip && toPageClip(capturePlan.clip, capturePlan.pageOffset),
+				getVisibilityPolicy: options.getVisibilityPolicy,
+			})
+		} finally {
+			capturePlan.release?.()
+		}
 
 		await fs.writeFile(absolutePath, Buffer.from(result.data, 'base64'))
 		return { ok: true, outFile: absolutePath, clipped: result.clipped }

@@ -24,6 +24,8 @@ export type RecordingState = {
 	outFile: string
 	/** Page-scoped session that produces pixels. For an iframe target this is the top-level page. */
 	session: CdpSessionHandle
+	/** Close a page session borrowed for this recording (direct-CDP iframe targets). */
+	releaseSession?: () => void
 	/** Selected target, where an `until` expression is evaluated. Same session for page targets. */
 	evalSession: CdpSessionHandle
 	/** Current visibility policy; checked before every screencast arm and re-arm. */

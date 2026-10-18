@@ -1,7 +1,8 @@
 import { evaluateInPage } from './pageState.js'
 import type { ScreenshotClipRegion } from '@vforsh/argus-core'
-import type { CdpSessionHandle, CdpTargetContext } from './connection.js'
+import type { CdpSessionHandle } from './connection.js'
 import { resolveFirstSelectorNodeId } from './dom/selector.js'
+import type { FrameHost } from './frameHost.js'
 
 export type VisualCaptureClip = { x: number; y: number; width: number; height: number; scale: number }
 
@@ -33,7 +34,15 @@ export type VisualCapturePlan = {
 	viewport?: VisualCaptureViewport
 	/** Scroll offset of the captured viewport within the document. Set whenever `clip` is. */
 	pageOffset?: { x: number; y: number }
+	/** Close a capture session borrowed for this plan. Callers run it once capture is done. */
+	release?: () => void
 }
+
+/**
+ * Open the top-level page hosting the selected target, or `null` when the target is itself top-level.
+ * Supplied by direct-CDP sources, whose iframe targets have no page session of their own.
+ */
+export type OpenFrameHost = () => Promise<FrameHost | null>
 
 /** Translate a viewport-relative clip into the document coordinates `Page.captureScreenshot` expects. */
 export const toPageClip = (clip: VisualCaptureClip, pageOffset: { x: number; y: number } | undefined): VisualCaptureClip => ({
@@ -52,16 +61,37 @@ export const createVisualCapturePlan = async (
 	session: CdpSessionHandle,
 	pageSession: CdpSessionHandle | undefined,
 	request: VisualCaptureRequest,
+	openFrameHost?: OpenFrameHost,
 ): Promise<VisualCapturePlan> => {
 	const subject = resolveVisualCaptureSubject(request)
 	const targetContext = await session.getReadyTargetContext()
 	if (targetContext?.kind === 'frame' && pageSession) {
+		const pageViewport = await resolveViewportState(pageSession)
 		return createFrameCapturePlan({
 			frameSession: session,
 			pageSession,
-			frameContext: targetContext,
+			pageViewport,
+			frameClip: await resolveFrameViewportClip(pageSession, targetContext.frameId, pageViewport),
 			subject,
 		})
+	}
+
+	const frameHost = await openFrameHost?.()
+	if (frameHost) {
+		try {
+			const pageViewport = await resolveViewportState(frameHost.session)
+			const plan = await createFrameCapturePlan({
+				frameSession: session,
+				pageSession: frameHost.session,
+				pageViewport,
+				frameClip: { ...frameHost.frameRect, scale: pageViewport.scale },
+				subject,
+			})
+			return { ...plan, release: frameHost.close }
+		} catch (error) {
+			frameHost.close()
+			throw error
+		}
 	}
 
 	// Whole-viewport capture needs no geometry at all, so it costs no round-trips.
@@ -81,11 +111,12 @@ export const createVisualCapturePlan = async (
 const createFrameCapturePlan = async (options: {
 	frameSession: CdpSessionHandle
 	pageSession: CdpSessionHandle
-	frameContext: Extract<CdpTargetContext, { kind: 'frame' }>
+	pageViewport: ViewportState
+	/** The iframe's content box in page-viewport space. */
+	frameClip: VisualCaptureClip
 	subject: VisualCaptureSubject
 }): Promise<VisualCapturePlan> => {
-	const pageViewport = await resolveViewportState(options.pageSession)
-	const frameClip = await resolveFrameViewportClip(options.pageSession, options.frameContext.frameId, pageViewport)
+	const { pageViewport, frameClip } = options
 	if (options.subject.kind === 'viewport') {
 		return {
 			session: options.pageSession,
@@ -250,7 +281,7 @@ const offsetClip = (outer: VisualCaptureClip, inner: VisualCaptureClip): VisualC
 	scale: outer.scale,
 })
 
-const quadToRect = (quad: number[]): { x: number; y: number; width: number; height: number } => {
+export const quadToRect = (quad: number[]): { x: number; y: number; width: number; height: number } => {
 	const xs = [quad[0], quad[2], quad[4], quad[6]]
 	const ys = [quad[1], quad[3], quad[5], quad[7]]
 	const minX = Math.min(...xs)

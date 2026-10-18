@@ -14,6 +14,7 @@ import type {
 } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from '../cdp/connection.js'
 import type { CdpHealthProbe } from '../cdp/health.js'
+import type { OpenFrameHost } from '../cdp/visualCapture.js'
 import type { NetFilterContext } from '../net/filtering.js'
 
 export type ExtensionTabListFilter = {
@@ -115,6 +116,8 @@ export type CdpSourceHandle = {
 	 * diagnosis simply skips those layers.
 	 */
 	healthChecks?: Pick<CdpHealthProbe, 'checkTransport' | 'onTargetGone'>
+	/** Open the top-level page hosting an out-of-process iframe target, for visual capture (CDP mode only). */
+	openFrameHost?: OpenFrameHost
 	/** Resolve the child CDP session that owns a given frame (extension mode only). */
 	getFrameSessionId?: (frameId: string) => string | null
 	/** Stop the source and clean up resources. */

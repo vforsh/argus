@@ -16,7 +16,7 @@ import type { CdpSessionHandle } from './connection.js'
 import { ensureArtifactsDir, ensureParentDir, moveArtifactFile, resolveArtifactPath } from '../artifacts.js'
 import { createDeferred } from '../deferred.js'
 import { formatFfmpegError, readFrameInfo, startFfmpeg, type FrameCodec } from './ffmpeg.js'
-import { createVisualCapturePlan } from './visualCapture.js'
+import { createVisualCapturePlan, type OpenFrameHost } from './visualCapture.js'
 import { evaluateInPage } from './pageState.js'
 import { assertCaptureAllowed, type GetVisibilityPolicy } from './capturePolicy.js'
 import {
@@ -57,6 +57,7 @@ export type Recorder = {
 export const createRecorder = (options: {
 	session: CdpSessionHandle
 	pageSession?: CdpSessionHandle
+	openFrameHost?: OpenFrameHost
 	artifactsDir: string
 	getVisibilityPolicy?: GetVisibilityPolicy
 	onRecordingStateChange?: (recording: boolean) => void
@@ -81,9 +82,14 @@ export const createRecorder = (options: {
 			await scrollSelectorIntoView(options.session, request.selector)
 		}
 
-		const capturePlan = await createVisualCapturePlan(options.session, options.pageSession, request)
+		const capturePlan = await createVisualCapturePlan(options.session, options.pageSession, request, options.openFrameHost)
 		if (capturePlan.clip) {
-			assertClipIsVisible(capturePlan.clip, capturePlan.viewport, request.selector ? `Selector "${request.selector}"` : 'The requested clip')
+			try {
+				assertClipIsVisible(capturePlan.clip, capturePlan.viewport, request.selector ? `Selector "${request.selector}"` : 'The requested clip')
+			} catch (error) {
+				capturePlan.release?.()
+				throw error
+			}
 		}
 
 		const firstFrameDeferred = createDeferred<Buffer>()
@@ -93,6 +99,7 @@ export const createRecorder = (options: {
 			absolutePath: path.resolve(absolutePath),
 			outFile: absolutePath,
 			session: capturePlan.session,
+			releaseSession: capturePlan.release,
 			evalSession: options.session,
 			getVisibilityPolicy: options.getVisibilityPolicy,
 			onRearmError: undefined,
@@ -285,6 +292,7 @@ export const createRecorder = (options: {
 			state.partial = true
 			state.encodeError = error
 		} finally {
+			state.releaseSession?.()
 			state.state = 'stopped'
 			state.sizeBytes = await fileSize(state.absolutePath)
 			options.onRecordingStateChange?.(false)
@@ -400,6 +408,7 @@ const cleanupFailedStart = async (state: RecordingState): Promise<void> => {
 	state.removeFrameHandler()
 	state.removeNavigationHandler()
 	await state.session.sendAndWait('Page.stopScreencast', undefined, { timeoutMs: 5_000 }).catch(() => {})
+	state.releaseSession?.()
 	state.ffmpeg?.child.kill('SIGTERM')
 	state.ffmpeg?.child.stdin.destroy()
 	try {

@@ -221,6 +221,8 @@ const parseMessage = (data: unknown): unknown => {
 
 /** A short-lived connection to one CDP endpoint, for commands that need no session. */
 export type OneShotCdpConnection = {
+	/** Full session over this connection, for callers that also subscribe to events. */
+	session: CdpSessionHandle
 	sendAndWait: <M extends CdpMethod>(method: M, params?: CdpParams<M>, options?: CdpSendOptions) => Promise<CdpResult<M>>
 	close: () => void
 }
@@ -266,6 +268,7 @@ export const openCdpConnection = async (wsUrl: string, connectTimeoutMs = 5_000)
 	})
 
 	return {
+		session: controller.session,
 		sendAndWait: controller.session.sendAndWait,
 		close: () => {
 			controller.detach('closed')
