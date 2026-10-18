@@ -6,12 +6,15 @@ import { resolveArtifactOutFile } from '../utils/paths.js'
 import { delay } from '@vforsh/argus-core'
 import { setExitCode } from '../output/exitCode.js'
 import { writeTraceError } from './traceHolder.js'
+import { resolveTraceCategories } from '../perf/traceRun.js'
 
 /** Options for the trace command (start + stop). */
 export type TraceOptions = {
 	json?: boolean
 	duration?: string
 	out?: string
+	/** Named category set (`frames`, `input`, `gpu`); `categories` are appended to it. */
+	preset?: string
 	categories?: string
 	options?: string
 	/** Comma-separated watcher ids traced together in one browser-level session (CDP watchers only). */
@@ -22,6 +25,7 @@ export type TraceOptions = {
 export type TraceStartOptions = {
 	json?: boolean
 	out?: string
+	preset?: string
 	categories?: string
 	options?: string
 }
@@ -50,7 +54,15 @@ export const runTrace = async (id: string | undefined, options: TraceOptions): P
 	}
 
 	if (options.targets !== undefined) {
-		await runTraceAcrossTargets(id, options, durationMs, output)
+		let categories: string | undefined
+		try {
+			categories = resolveTraceCategories(options.preset, options.categories)
+		} catch (error) {
+			output.writeWarn(error instanceof Error ? error.message : String(error))
+			setExitCode(2)
+			return
+		}
+		await runTraceAcrossTargets(id, { ...options, categories }, durationMs, output)
 		return
 	}
 
@@ -152,22 +164,31 @@ export const runTraceStop = async (id: string | undefined, options: TraceStopOpt
 
 const runTraceStartInternal = async (
 	watcher: WatcherRecord,
-	options: { out?: string; categories?: string; options?: string },
+	options: { out?: string; preset?: string; categories?: string; options?: string },
 	output: ReturnType<typeof createOutput>,
-): Promise<TraceStartResponse | null> =>
-	requestTrace<TraceStartResponse>(
+): Promise<TraceStartResponse | null> => {
+	let categories: string | undefined
+	try {
+		categories = resolveTraceCategories(options.preset, options.categories)
+	} catch (error) {
+		output.writeWarn(error instanceof Error ? error.message : String(error))
+		setExitCode(2)
+		return null
+	}
+	return requestTrace<TraceStartResponse>(
 		watcher,
 		{
 			path: '/trace/start',
 			body: {
 				outFile: resolveArtifactOutFile(options.out),
-				categories: options.categories,
+				categories,
 				options: options.options,
 			},
 			timeoutMs: 10_000,
 		},
 		output,
 	)
+}
 
 const runTraceStopInternal = async (
 	watcher: WatcherRecord,

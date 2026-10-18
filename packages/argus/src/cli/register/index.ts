@@ -25,6 +25,7 @@ import { throttleCommands } from './throttleCommands.js'
 import { snapshotCommands } from './snapshotCommands.js'
 import { recordCommands } from './recordCommands.js'
 import { traceCommands } from './traceCommands.js'
+import { perfCommands } from './perfCommands.js'
 import { configCommands } from './configCommands.js'
 import { pluginCommands } from './pluginCommands.js'
 import { extensionCommands } from './extensionCommands.js'
@@ -59,6 +60,7 @@ const coreCommandDefinitions: readonly ArgusCommandDefinition[] = [
 	...snapshotCommands,
 	...recordCommands,
 	...traceCommands,
+	...perfCommands,
 	...configCommands,
 	...sessionCommands,
 	...pluginCommands,
