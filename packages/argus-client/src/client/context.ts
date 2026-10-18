@@ -32,6 +32,8 @@ export const TRACE_START_TIMEOUT_MS = 10_000
 
 /** Timeout for trace stop, which drains and writes the full event stream. */
 export const TRACE_STOP_TIMEOUT_MS = 20_000
+/** Added to the schedule length of an input playback for acks and button release. */
+export const INPUT_PLAY_TIMEOUT_SLACK_MS = 15_000
 
 /** Timeout for record start/stop; encoding a captured buffer can outlast a normal request. */
 export const RECORD_TIMEOUT_MS = 30_000

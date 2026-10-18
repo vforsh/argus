@@ -250,6 +250,7 @@ export type CdpCommandMap = {
 	// --- Input ---
 	'Input.dispatchKeyEvent': Command<Record<string, unknown>, unknown>
 	'Input.dispatchMouseEvent': Command<Record<string, unknown>, unknown>
+	'Input.dispatchTouchEvent': Command<Record<string, unknown>, unknown>
 
 	// --- Network ---
 	'Network.enable': Command<{ maxTotalBufferSize?: number; maxResourceBufferSize?: number; maxPostDataSize?: number }, unknown>

@@ -1,4 +1,5 @@
 import type {
+	InputPlayResponse,
 	RecordResponse,
 	RecordStartResponse,
 	RecordStatusResponse,
@@ -8,6 +9,8 @@ import type {
 	TraceStopResponse,
 } from '@vforsh/argus-core'
 import type {
+	InputPlayOptions,
+	InputPlayResult,
 	RecordCaptureOptions,
 	RecordOptions,
 	RecordStartResult,
@@ -22,7 +25,7 @@ import type {
 	TraceStopResult,
 } from '../../types.js'
 import type { ClientContext } from '../context.js'
-import { RECORD_TIMEOUT_MS, SCREENSHOT_TIMEOUT_MS, TRACE_START_TIMEOUT_MS, TRACE_STOP_TIMEOUT_MS } from '../context.js'
+import { INPUT_PLAY_TIMEOUT_SLACK_MS, RECORD_TIMEOUT_MS, SCREENSHOT_TIMEOUT_MS, TRACE_START_TIMEOUT_MS, TRACE_STOP_TIMEOUT_MS } from '../context.js'
 import { requestWatcherData } from '../watcherRequest.js'
 
 /** Capture methods: screenshots, video recording, Chrome traces. All write to disk on the watcher host. */
@@ -90,6 +93,17 @@ export const createCaptureMethods = (ctx: ClientContext) => ({
 		return await requestWatcherData<TraceStopResponse>(ctx, watcherId, {
 			path: '/trace/stop',
 			timeoutMs: TRACE_STOP_TIMEOUT_MS,
+			method: 'POST',
+			body: options,
+		})
+	},
+
+	inputPlay: async (watcherId: string, options: InputPlayOptions): Promise<InputPlayResult> => {
+		const lastOffsetMs = options.events.reduce((max, event) => Math.max(max, event.t), 0)
+		// The watcher answers only after the whole schedule played, so the timeout scales with it.
+		return await requestWatcherData<InputPlayResponse>(ctx, watcherId, {
+			path: '/input/play',
+			timeoutMs: lastOffsetMs + INPUT_PLAY_TIMEOUT_SLACK_MS,
 			method: 'POST',
 			body: options,
 		})

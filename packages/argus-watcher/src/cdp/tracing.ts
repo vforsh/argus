@@ -15,6 +15,8 @@ type TraceState = {
 	stream: fs.WriteStream
 	hasWritten: boolean
 	eventCount: number
+	/** Chrome's `tracingComplete.dataLossOccurred`: the buffer overflowed and events were dropped. */
+	dataLossOccurred: boolean
 	startedAt: number
 	state: 'recording' | 'stopping'
 	/** Settled when `Tracing.tracingComplete` has been written out, or the session failed. */
@@ -85,10 +87,11 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 		state.outFile = absolutePath
 	}
 
-	options.session.onEvent('Tracing.tracingComplete', () => {
+	options.session.onEvent('Tracing.tracingComplete', (params) => {
 		if (!active) {
 			return
 		}
+		active.dataLossOccurred = params.dataLossOccurred === true
 		void finalizeTraceFile(active)
 			.then(() => {
 				active?.completion.resolve()
@@ -124,6 +127,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 			stream,
 			hasWritten: false,
 			eventCount: 0,
+			dataLossOccurred: false,
 			startedAt: Date.now(),
 			state: 'recording',
 			completion: createDeferred(),
@@ -176,6 +180,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 				outFile: current.outFile,
 				eventCount: current.eventCount,
 				durationMs: Math.max(0, Date.now() - current.startedAt),
+				dataLossOccurred: current.dataLossOccurred,
 			}
 		}
 
@@ -209,6 +214,7 @@ export const createTraceRecorder = (options: { session: CdpSessionHandle; artifa
 			outFile: current.outFile,
 			eventCount: current.eventCount,
 			durationMs: Math.max(0, Date.now() - current.startedAt),
+			dataLossOccurred: current.dataLossOccurred,
 		}
 	}
 

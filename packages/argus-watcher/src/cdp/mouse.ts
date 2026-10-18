@@ -2,7 +2,7 @@ import { codedError } from '../errors.js'
 import { callFunctionOnNode, evaluateInPage } from './pageState.js'
 import type { CdpSessionHandle } from './connection.js'
 import { resolveSelectorTargets, toDomNodeDescriptor, type DomNodeHandle } from './dom/selector.js'
-import { delay } from '@vforsh/argus-core'
+import { MOUSE_BUTTON_BITS as BUTTON_MASK, delay } from '@vforsh/argus-core'
 
 type SelectorMatchResult = {
 	allNodeIds: number[]
@@ -44,8 +44,6 @@ export const hoverDomNodes = async (session: CdpSessionHandle, handles: DomNodeH
 	}
 }
 
-/** CDP buttons bitmask per button name. */
-const BUTTON_MASK: Record<MouseButton, number> = { left: 1, middle: 4, right: 2 }
 
 export const clickAtPoint = async (session: CdpSessionHandle, x: number, y: number, button: MouseButton = 'left'): Promise<void> => {
 	const mask = BUTTON_MASK[button] ?? 1

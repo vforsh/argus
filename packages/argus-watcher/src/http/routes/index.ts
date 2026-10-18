@@ -23,6 +23,7 @@ import { route as postAuthStateLoad } from './postAuthStateLoad.js'
 import { route as postEval } from './postEval.js'
 import { route as postTraceStart } from './postTraceStart.js'
 import { route as postTraceStop } from './postTraceStop.js'
+import { route as postInputPlay } from './postInputPlay.js'
 import { recordRoutes } from './postRecord.js'
 import { route as postScreenshot } from './postScreenshot.js'
 import { route as postSnapshot } from './postSnapshot.js'
@@ -96,6 +97,7 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	postEval,
 	postTraceStart,
 	postTraceStop,
+	postInputPlay,
 	...recordRoutes,
 	postScreenshot,
 	postSnapshot,

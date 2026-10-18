@@ -40,6 +40,9 @@ export type MouseButton = 'left' | 'middle' | 'right'
 /** Runtime list of mouse buttons accepted by pointer-style interaction commands. */
 export const MOUSE_BUTTONS = ['left', 'middle', 'right'] as const
 
+/** DOM/CDP `buttons` bitmask bit per button (left 1, right 2, middle 4). */
+export const MOUSE_BUTTON_BITS: Readonly<Record<MouseButton, number>> = { left: 1, right: 2, middle: 4 }
+
 /**
  * Request payload for POST /dom/click.
  */

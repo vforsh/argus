@@ -33,6 +33,7 @@ export const WATCHER_ENDPOINTS = [
 	'eval',
 	'trace/start',
 	'trace/stop',
+	'input/play',
 	'record',
 	'record/start',
 	'record/stop',

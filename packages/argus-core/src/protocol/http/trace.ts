@@ -42,6 +42,11 @@ export type TraceStopResponse = Ok<{
 	outFile: string
 	eventCount: number
 	durationMs: number
+	/**
+	 * Chrome reported that the trace buffer overflowed and events were dropped
+	 * (`Tracing.tracingComplete.dataLossOccurred`). Absent on watchers that predate the field.
+	 */
+	dataLossOccurred?: boolean
 }>
 
 /** Live trace summary, reported on GET /status while a watcher records. */

@@ -1,4 +1,6 @@
 import type {
+	InputPlayRequest,
+	InputPlayResponse,
 	DomClickRequest,
 	DomClickResponse,
 	EvalRequest,
@@ -150,6 +152,12 @@ export type TraceStopOptions = TraceStopRequest
 
 /** Trace stop result metadata. */
 export type TraceStopResult = ResponseData<TraceStopResponse>
+
+/** Options for playing a scheduled input gesture; this is the POST /input/play body. */
+export type InputPlayOptions = InputPlayRequest
+
+/** Dispatch statistics for a played input schedule. */
+export type InputPlayResult = ResponseData<InputPlayResponse>
 
 /** Options for capturing a screenshot. */
 export type ScreenshotOptions = ScreenshotRequest
@@ -335,6 +343,11 @@ export type ArgusClient = {
 	traceStart: (watcherId: string, options?: TraceStartOptions) => Promise<TraceStartResult>
 	/** Stop an active Chrome trace and finalize the file. */
 	traceStop: (watcherId: string, options?: TraceStopOptions) => Promise<TraceStopResult>
+	/**
+	 * Play trusted mouse/key/touch events at their scheduled offsets, without awaiting each ack.
+	 * Resolves after the last acknowledgement; held buttons and keys are released if playback aborts.
+	 */
+	inputPlay: (watcherId: string, options: InputPlayOptions) => Promise<InputPlayResult>
 	/** Capture a screenshot and write to disk on the watcher. */
 	screenshot: (watcherId: string, options?: ScreenshotOptions) => Promise<ScreenshotResult>
 	/** Capture a fixed-duration silent video and write it to disk on the watcher. */
