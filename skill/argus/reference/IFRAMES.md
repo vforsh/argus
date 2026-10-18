@@ -20,7 +20,7 @@ argus watcher start --id game --target CC1135709D9AC3B9CC0446F8B58CC344  # exact
 argus start --id game --url "https://yandex.ru/games/app/123" --type iframe --origin https://localhost:3007
 ```
 
-The watcher then treats the iframe as its page: `logs game`, `eval game "window.gameState"`, `screenshot game` all run in-frame. Reload still reloads the top tab.
+The watcher then treats the iframe as its page: `logs game`, `eval game "window.gameState"`, `screenshot game` all run in-frame. Chrome only captures pixels from top-level targets, so `screenshot`/`record` borrow the parent page, scroll the iframe into view if needed, and crop to it (`clipped: true`). Reload still reloads the top tab.
 
 ## Extension: select the iframe
 

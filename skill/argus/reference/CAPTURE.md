@@ -12,7 +12,7 @@ argus screenshot app --clip 100,80,640,360 --out crop.png      # viewport CSS px
 argus screenshot app                                           # watcher picks a path under its artifacts dir
 ```
 
-Captures the visible viewport; off-screen elements need `scroll-to` first. With an iframe selected, the selector resolves inside the iframe and the crop is translated to page pixels.
+Captures the visible viewport; off-screen elements need `scroll-to` first. With an iframe selected (extension) or a CDP `--type iframe` watcher, the selector resolves inside the iframe and the crop is translated to page pixels; a CDP iframe watcher also scrolls the host page to bring the iframe into view.
 
 ## Record
 
