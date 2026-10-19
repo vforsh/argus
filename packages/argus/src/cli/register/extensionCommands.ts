@@ -62,8 +62,13 @@ const attachTargetOptions = [
 const useTargetOptions = [
 	...controlSelectorOptions,
 	{ flags: '--tab <tabId>', description: 'Browser tab id' },
-	{ flags: '--url <substring>', description: 'Resolve tab by URL substring' },
+	{ flags: '--url <substring>', description: 'Resolve tab by URL substring (an exact URL match wins among several)' },
 	{ flags: '--title <substring>', description: 'Resolve tab by title substring' },
+	{ flags: '--pick <strategy>', description: 'Choose among several matching tabs: newest, active, or first' },
+	{
+		flags: '--open <url>',
+		description: 'Open the URL in a new tab and attach it when no tab matches (--url/--title, else this exact URL)',
+	},
 	{
 		flags: '--as <watcherId>',
 		description: 'Start the tab watcher with a stable id when attaching (fails with watcher_id_taken if another live watcher holds it)',
@@ -293,6 +298,9 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 					'argus ext use --url vk.com/app --as vk-game --iframe auto',
 					'argus ext use --title Docs --show',
 					'argus ext use --tab 123 --json',
+					'argus ext use --url client-logs.stark.games --pick newest --as clogs',
+					'argus ext use --open https://client-logs.stark.games/admin/logs --as clogs',
+					'argus ext use --browser codex --open vk.com/app123 --as vk-game --iframe-url stark.games',
 				],
 				action: async (options) => {
 					await runExtensionUse(options)

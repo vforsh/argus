@@ -74,6 +74,7 @@ export const WATCHER_ENDPOINTS = [
 	'shutdown',
 	'tabs',
 	'tabs/mute',
+	'tabs/open',
 	'extension/diagnostics',
 	'targets',
 	'attach',

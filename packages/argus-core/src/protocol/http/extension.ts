@@ -12,6 +12,12 @@ export type ExtensionBrowserTab = {
 	faviconUrl?: string
 	attached: boolean
 	watcherId?: string
+	/** Whether the tab is the active tab of its window. Absent on older extensions. */
+	active?: boolean
+	/** Epoch ms of the tab's last activation (Chrome 121+). Absent on older extensions. */
+	lastAccessed?: number
+	/** Chrome window id. Absent on older extensions. */
+	windowId?: number
 }
 
 export type ExtensionTabsResponse = Ok<{
@@ -76,6 +82,16 @@ export type ExtensionDetachRequest = {
 	targetId?: string
 	tabId?: number
 }
+
+/** Request payload for POST /tabs/open. */
+export type ExtensionTabOpenRequest = {
+	url: string
+}
+
+/** Result of POST /tabs/open: the new tab, loaded or past the extension's load deadline. */
+export type ExtensionTabOpenResponse = Ok<{
+	tab: ExtensionBrowserTab
+}>
 
 /** Request payload for POST /tabs/mute. */
 export type ExtensionTabMuteRequest = {
@@ -148,4 +164,16 @@ export const extensionTabMuteRequestSchema = defineProtocolSchema<ExtensionTabMu
 	if (fields.value.muted == null) return invalidProtocolPayload('muted is required')
 
 	return validProtocolPayload({ tabId: fields.value.tabId, muted: fields.value.muted })
+})
+
+/** Schema for POST /tabs/open request payloads. */
+export const extensionTabOpenRequestSchema = defineProtocolSchema<ExtensionTabOpenRequest>((value) => {
+	const invalid = requireObject<ExtensionTabOpenRequest>(value)
+	if (invalid) return invalid
+
+	const fields = readFields(value as Record<string, unknown>, { url: optionalNonEmptyString })
+	if (!fields.ok) return fields
+	if (fields.value.url == null) return invalidProtocolPayload('url is required')
+
+	return validProtocolPayload({ url: fields.value.url })
 })

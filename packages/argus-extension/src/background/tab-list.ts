@@ -28,6 +28,9 @@ export const listBrowserTabs = async (debuggerManager: DebuggerManager, filter?:
 			faviconUrl: tab.favIconUrl,
 			attached: attachedTabIds.has(tab.id),
 			watcherId: options.getWatcherIdForTab?.(tab.id) ?? undefined,
+			active: tab.active,
+			lastAccessed: tab.lastAccessed,
+			windowId: tab.windowId,
 		}))
 
 	if (filter?.url) {

@@ -1,10 +1,8 @@
+import type { ExtensionBrowserTab } from '@vforsh/argus-core'
 import { formatExtensionTabLine } from './tabSelection.js'
 import { emitFailure, emitResolveFailure } from './failures.js'
-import { formatError } from '../../cli/parse.js'
-import type { ExtensionTabsResponse, ApiResult } from '@vforsh/argus-core'
 import { createOutput } from '../../output/io.js'
-import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
-import { resolveExtensionWatcher } from './resolveExtensionWatcher.js'
+import { formatBrowserGroupName, resolveControlTabs } from './browserTabs.js'
 
 export type ExtensionTabsOptions = {
 	id?: string
@@ -15,64 +13,71 @@ export type ExtensionTabsOptions = {
 	json?: boolean
 }
 
+/**
+ * List extension tabs. With several live browsers and no `--id`/`--browser`, a `--url`/`--title`
+ * filter that matches in one browser lists that browser; otherwise every browser's tabs are listed,
+ * grouped by control watcher, instead of failing with `ambiguous_control`.
+ */
 export const runExtensionTabs = async (options: ExtensionTabsOptions): Promise<void> => {
 	const output = createOutput(options)
-	const resolved = await resolveExtensionWatcher(options)
-	if (!resolved.ok) {
-		emitResolveFailure(output, resolved)
+	const resolved = await resolveControlTabs(options, { kind: 'query', url: options.url?.trim() || undefined, title: options.title?.trim() || undefined })
+
+	if (resolved.kind === 'failed') {
+		emitResolveFailure(output, resolved.failure)
 		return
 	}
 
-	const query = buildTabsQuery(options)
-
-	let response: ApiResult<ExtensionTabsResponse>
-	try {
-		response = await fetchWatcherJson<ApiResult<ExtensionTabsResponse>>(resolved.watcher, {
-			path: '/tabs',
-			query,
-			timeoutMs: 5_000,
-			returnErrorResponse: true,
-		})
-	} catch (error) {
-		emitFailure(output, { error: `${resolved.watcher.id}: failed to list extension tabs (${formatError(error)})` })
+	if (resolved.kind === 'single') {
+		if (resolved.fetchFailure) {
+			emitFailure(output, { error: resolved.fetchFailure.response ?? resolved.fetchFailure.error })
+			return
+		}
+		for (const warning of resolved.warnings) output.writeWarn(warning)
+		if (options.json) {
+			output.writeJson({ viaWatcherId: resolved.watcher.id, tabs: resolved.tabs })
+			return
+		}
+		output.writeHuman(`Extension tabs via ${resolved.watcher.id}`)
+		writeTabLines(output, resolved.tabs)
 		return
 	}
 
-	if (!response.ok) {
-		emitFailure(output, { error: response })
-		return
+	// Every browser failing is a failure, even though the listing itself still renders.
+	if (resolved.groups.every((group) => group.error)) {
+		process.exitCode = 1
 	}
 
 	if (options.json) {
 		output.writeJson({
-			viaWatcherId: resolved.watcher.id,
-			tabs: response.tabs,
+			viaWatcherId: null,
+			tabs: resolved.groups.flatMap((group) => group.tabs.map((tab) => ({ ...tab, controlId: group.control.id }))),
+			browsers: resolved.groups.map((group) => ({
+				controlId: group.control.id,
+				label: group.label,
+				tabs: group.tabs,
+				...(group.error ? { error: group.error } : {}),
+			})),
 		})
 		return
 	}
 
-	output.writeHuman(`Extension tabs via ${resolved.watcher.id}`)
-	if (response.tabs.length === 0) {
+	resolved.groups.forEach((group, index) => {
+		if (index > 0) output.writeHuman('')
+		output.writeHuman(`Extension tabs via ${formatBrowserGroupName(group)}`)
+		if (group.error) {
+			output.writeHuman(`  (failed: ${group.error})`)
+			return
+		}
+		writeTabLines(output, group.tabs)
+	})
+}
+
+const writeTabLines = (output: ReturnType<typeof createOutput>, tabs: readonly ExtensionBrowserTab[]): void => {
+	if (tabs.length === 0) {
 		output.writeHuman('  (none)')
 		return
 	}
-
-	for (const tab of response.tabs) {
+	for (const tab of tabs) {
 		output.writeHuman(`  ${formatExtensionTabLine(tab)}`)
 	}
-}
-
-const buildTabsQuery = (options: ExtensionTabsOptions): URLSearchParams => {
-	const query = new URLSearchParams()
-	const url = options.url?.trim()
-	const title = options.title?.trim()
-
-	if (url) {
-		query.set('url', url)
-	}
-	if (title) {
-		query.set('title', title)
-	}
-
-	return query
 }

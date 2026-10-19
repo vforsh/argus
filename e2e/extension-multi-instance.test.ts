@@ -50,12 +50,10 @@ liveTest(
 			expect(instanceIds.every(Boolean)).toBe(true)
 			expect(new Set(instanceIds).size).toBe(2)
 
-			// Without --id, two live controls are ambiguous rather than silently picking one browser.
-			const ambiguousTabs = await first.cli('ext', 'tabs', '--json')
-			expect(ambiguousTabs.code).toBe(2)
-			const ambiguousTabsJson = JSON.parse(ambiguousTabs.stdout) as { error: { code: string }; candidates: Array<{ id: string }> }
-			expect(ambiguousTabsJson.error.code).toBe('ambiguous_control')
-			expect(ambiguousTabsJson.candidates.map((candidate) => candidate.id).sort()).toEqual(['extension-control', 'extension-control-2'])
+			// Without --id, two live controls list every browser's tabs, grouped, rather than silently picking one browser.
+			const groupedTabs = await first.cliJson<{ viaWatcherId: string | null; browsers: Array<{ controlId: string }> }>('ext', 'tabs', '--json')
+			expect(groupedTabs.viaWatcherId).toBeNull()
+			expect(groupedTabs.browsers.map((browser) => browser.controlId).sort()).toEqual(['extension-control', 'extension-control-2'])
 			const ambiguousDoctor = await first.cliJson<{ ok: boolean; error: { code: string } | null; candidates: unknown[] }>(
 				'ext',
 				'doctor',

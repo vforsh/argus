@@ -46,6 +46,7 @@ const controlBridgeSession: ControlBridgeSession = new ControlBridgeSession(debu
 	onAttachTabWatcher: attachTabFromControl,
 	onDetachTabWatcher: detachTabFromControl,
 	onSetTabMuted: setTabMutedFromControl,
+	onOpenTab: openTabFromControl,
 	getWatcherIdForTab,
 	getDiagnostics: () => buildWorkerDiagnostics(controlBridgeSession, bridgeSessions.entries(), debuggerManager, recentEvents),
 	onDisconnect: () => {
@@ -185,6 +186,55 @@ async function detachTabFromControl(tabId: number): Promise<TabActionResult> {
 	} catch (error) {
 		return { ok: false, error: formatError(error) }
 	}
+}
+
+/** Stay under the host's 16s tab-action deadline; a slow page is returned still loading. */
+const OPEN_TAB_LOAD_TIMEOUT_MS = 12_000
+
+async function openTabFromControl(url: string): Promise<TabActionResult> {
+	try {
+		const created = await chrome.tabs.create({ url, active: true })
+		if (created.id === undefined) {
+			return { ok: false, error: `Chrome did not report an id for the tab opened at ${url}` }
+		}
+		await waitForTabLoad(created.id, OPEN_TAB_LOAD_TIMEOUT_MS)
+		const tab = await getTabInfo(created.id)
+		if (!tab) {
+			return { ok: false, error: `Tab ${created.id} opened at ${url} is no longer available` }
+		}
+
+		recordEvent('info', 'bridge', `Opened tab ${created.id}: ${url}`)
+		return { ok: true, tab }
+	} catch (error) {
+		return { ok: false, error: formatError(error) }
+	}
+}
+
+function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
+	return new Promise((resolve) => {
+		const finish = (): void => {
+			clearTimeout(timer)
+			chrome.tabs.onUpdated.removeListener(onUpdated)
+			chrome.tabs.onRemoved.removeListener(onRemoved)
+			resolve()
+		}
+		const onUpdated = (updatedId: number, changeInfo: { status?: string }): void => {
+			if (updatedId === tabId && changeInfo.status === 'complete') finish()
+		}
+		const onRemoved = (removedId: number): void => {
+			if (removedId === tabId) finish()
+		}
+		const timer = setTimeout(finish, timeoutMs)
+		chrome.tabs.onUpdated.addListener(onUpdated)
+		chrome.tabs.onRemoved.addListener(onRemoved)
+		// The load may have finished before the listeners were registered.
+		void chrome.tabs
+			.get(tabId)
+			.then((tab) => {
+				if (tab.status === 'complete') finish()
+			})
+			.catch(finish)
+	})
 }
 
 async function setTabMutedFromControl(tabId: number, muted: boolean): Promise<TabMuteResult> {

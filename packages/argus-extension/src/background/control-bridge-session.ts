@@ -18,6 +18,7 @@ export type ControlBridgeSessionEvents = {
 	onAttachTabWatcher?: (tabId: number, options: { watcherId?: string }) => Promise<TabActionResult>
 	onDetachTabWatcher?: (tabId: number) => Promise<TabActionResult>
 	onSetTabMuted?: (tabId: number, muted: boolean) => Promise<TabMuteResult>
+	onOpenTab?: (url: string) => Promise<TabActionResult>
 	getWatcherIdForTab?: (tabId: number) => string | null | undefined
 	getDiagnostics?: () => Promise<ControlDiagnostics>
 	onDisconnect?: () => void
@@ -121,6 +122,10 @@ export class ControlBridgeSession {
 
 			case 'set_tab_muted':
 				await this.handleTabMute(message.requestId, () => this.events.onSetTabMuted?.(message.tabId, message.muted))
+				return
+
+			case 'open_tab':
+				await this.handleTabAction(message.requestId, () => this.events.onOpenTab?.(message.url))
 				return
 
 			case 'list_tabs':

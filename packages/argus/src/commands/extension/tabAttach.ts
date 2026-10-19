@@ -1,5 +1,5 @@
 import { formatError } from '../../cli/parse.js'
-import type { ExtensionBrowserTab, ExtensionTabActionResponse, StatusResponse, WatcherRecord, ApiResult, ErrorResponse } from '@vforsh/argus-core'
+import type { ExtensionBrowserTab, ExtensionTabActionResponse, ExtensionTabOpenResponse, StatusResponse, WatcherRecord, ApiResult, ErrorResponse } from '@vforsh/argus-core'
 import { fetchWatcherJson } from '../../watchers/requestWatcher.js'
 import { resolveWatcher } from '../../watchers/resolveWatcher.js'
 import { fetchExtensionTabs, resolveTab, type TabSelector } from './tabSelection.js'
@@ -31,6 +31,35 @@ export const attachTab = async (
 		})
 	} catch (error) {
 		return { ok: false, error: { message: `${controlWatcher.id}: failed to attach tab (${formatError(error)})` } }
+	}
+}
+
+/**
+ * Open `url` in a new tab of the control's browser. The extension answers once the tab finished
+ * loading (or after its ~12s load deadline), so the caller can attach right away.
+ */
+export const openExtensionTab = async (controlWatcher: WatcherRecord, url: string): Promise<{ ok: true; tab: ExtensionBrowserTab } | ErrorResponse> => {
+	try {
+		const identity = await readPinnedWatcherStatus(controlWatcher)
+		if (!identity.ok) return identity
+		const response = await fetchWatcherJson<ApiResult<ExtensionTabOpenResponse>>(controlWatcher, {
+			path: '/tabs/open',
+			method: 'POST',
+			body: { url },
+			timeoutMs: 20_000,
+			returnErrorResponse: true,
+		})
+		if (!response.ok && response.error.code === 'not_found') {
+			return {
+				ok: false,
+				error: {
+					message: `${controlWatcher.id} cannot open tabs: its native host predates \`ext use --open\`. Reload the extension at chrome://extensions to respawn it.`,
+				},
+			}
+		}
+		return response
+	} catch (error) {
+		return { ok: false, error: { message: `${controlWatcher.id}: failed to open ${url} (${formatError(error)})` } }
 	}
 }
 

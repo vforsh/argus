@@ -203,6 +203,12 @@ export type TabInfo = {
 	faviconUrl?: string
 	attached: boolean
 	watcherId?: string
+	/** Whether the tab is the active tab of its window. Absent on older extensions. */
+	active?: boolean
+	/** Epoch ms of the tab's last activation (Chrome 121+). Absent on older extensions. */
+	lastAccessed?: number
+	/** Chrome window id. Absent on older extensions. */
+	windowId?: number
 }
 
 /** Runtime state of the extension-level control bridge. */
@@ -319,6 +325,17 @@ export type SetTabMutedMessage = {
 	muted: boolean
 }
 
+/**
+ * Control host -> extension: open `url` in a new tab and answer with `tab_action_response`
+ * (no `watcherId`) once it finished loading or the load deadline passed. Older extensions
+ * ignore the message, so the host request times out.
+ */
+export type OpenTabMessage = {
+	type: 'open_tab'
+	requestId: number
+	url: string
+}
+
 export type DetachTabMessage = {
 	type: 'detach_tab'
 	tabId: number
@@ -371,6 +388,7 @@ export type ControlHostToExtension =
 	| AttachTabWatcherMessage
 	| DetachTabWatcherMessage
 	| SetTabMutedMessage
+	| OpenTabMessage
 	| ListTabsMessage
 	| ControlStatusMessage
 	| HostInfoMessage

@@ -96,15 +96,27 @@ export const waitForSelectedTarget = async (
 	return { ok: false, error: lastError }
 }
 
-export const resolveExtensionTarget = (
-	targets: ExtensionTargetSummary[],
-	options: ExtensionTargetSelectorOptions,
-): ExtensionTargetSelectionResult => {
+/** A selector that can never match, whatever targets exist; `null` when it is well-formed. */
+export const describeExtensionTargetSelectorError = (options: ExtensionTargetSelectorOptions): string | null => {
 	const selectorCount = [options.page === true, Boolean(options.iframe), Boolean(options.iframeUrl), Boolean(options.iframeTitle)].filter(
 		Boolean,
 	).length
 	if (selectorCount !== 1) {
-		return { ok: false, reason: 'Specify exactly one of --page, --iframe auto, --iframe-url, or --iframe-title.', exitCode: 2 }
+		return 'Specify exactly one of --page, --iframe auto, --iframe-url, or --iframe-title.'
+	}
+	if (options.iframe && options.iframe !== 'auto') {
+		return '--iframe currently supports only "auto".'
+	}
+	return null
+}
+
+export const resolveExtensionTarget = (
+	targets: ExtensionTargetSummary[],
+	options: ExtensionTargetSelectorOptions,
+): ExtensionTargetSelectionResult => {
+	const selectorError = describeExtensionTargetSelectorError(options)
+	if (selectorError) {
+		return { ok: false, reason: selectorError, exitCode: 2 }
 	}
 
 	if (options.page) {

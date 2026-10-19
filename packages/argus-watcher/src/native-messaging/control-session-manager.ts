@@ -51,6 +51,15 @@ export class ControlSessionManager {
 		}))
 	}
 
+	/** Open `url` in a new tab; the extension answers once it loaded (or its load deadline passed). */
+	async openTab(url: string): Promise<TabActionResult> {
+		return await this.sendRequest(
+			this.pendingTabActionRequests,
+			'Open tab request timed out. The extension may predate tab opening: reload it at chrome://extensions.',
+			(requestId) => ({ type: 'open_tab', requestId, url }),
+		)
+	}
+
 	async setTabMuted(tabId: number, muted: boolean): Promise<TabMuteResult> {
 		return await this.sendRequest(this.pendingTabMuteRequests, 'Set tab mute request timed out', (requestId) => ({
 			type: 'set_tab_muted',

@@ -75,6 +75,13 @@ export const createControlExtensionSource = (options: CdpSourceBaseOptions): Cdp
 			}
 			return { ok: true, tab: result.tab, watcherId: result.watcherId }
 		},
+		openTab: async (url) => {
+			const result = await controlSession.openTab(url)
+			if (!result.ok) {
+				throw new Error(result.error)
+			}
+			return { ok: true, tab: result.tab }
+		},
 		setTabMuted: async (tabId, muted) => {
 			const result = await controlSession.setTabMuted(tabId, muted)
 			if (!result.ok) {

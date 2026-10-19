@@ -65,6 +65,7 @@ import { route as getTargets } from './getTargets.js'
 import { route as postAttach } from './postAttach.js'
 import { route as postDetach } from './postDetach.js'
 import { route as postExtensionTabMute } from './postExtensionTabMute.js'
+import { route as postExtensionTabOpen } from './postExtensionTabOpen.js'
 
 /**
  * Flat registry of all watcher HTTP routes. Each route file owns its method,
@@ -139,4 +140,5 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	postAttach,
 	postDetach,
 	postExtensionTabMute,
+	postExtensionTabOpen,
 ]
