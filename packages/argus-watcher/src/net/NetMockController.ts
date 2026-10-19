@@ -1,3 +1,4 @@
+import { STATUS_CODES } from 'node:http'
 import type { CdpMethod, CdpParams } from '../cdp/protocol.js'
 import type {
 	NetMockAddRequest,
@@ -91,7 +92,12 @@ export const createNetMockController = (): NetMockController => {
 			return
 		}
 		if (action.kind === 'fulfill') {
-			const fulfillParams: CdpParams<'Fetch.fulfillRequest'> = { requestId: paused.requestId, responseCode: action.status }
+			const fulfillParams: CdpParams<'Fetch.fulfillRequest'> = {
+				requestId: paused.requestId,
+				responseCode: action.status,
+				// Chrome rejects a status without a standard reason phrase (e.g. 299) unless one is given.
+				responsePhrase: STATUS_CODES[action.status] ?? 'Mocked',
+			}
 			if (action.headers && action.headers.length > 0) {
 				fulfillParams.responseHeaders = action.headers
 			}
@@ -119,10 +125,20 @@ export const createNetMockController = (): NetMockController => {
 	/**
 	 * Resolve a paused request. Failures are expected when the request was
 	 * canceled mid-flight (navigation, tab close) — those are swallowed so a
-	 * noisy page cannot poison `lastError`.
+	 * noisy page cannot poison `lastError`. Any other failure (e.g. CDP rejecting
+	 * the mocked response) is recorded in `lastError`, and the request is failed
+	 * instead so the page never hangs on a request that stays paused forever.
 	 */
-	const sendAction = async <M extends CdpMethod>(request: NetMockPausedRequest, cdpMethod: M, params: CdpParams<M>): Promise<void> =>
-		interception.sendRequestCommand(request, cdpMethod, params)
+	const sendAction = async <M extends CdpMethod>(request: NetMockPausedRequest, cdpMethod: M, params: CdpParams<M>): Promise<void> => {
+		if (await interception.sendRequestCommand(request, cdpMethod, params)) {
+			return
+		}
+		const fallback: CdpParams<'Fetch.failRequest'> = { requestId: request.requestId, errorReason: 'Failed' }
+		if (cdpMethod === 'Fetch.failRequest' && (params as CdpParams<'Fetch.failRequest'>).errorReason === fallback.errorReason) {
+			return
+		}
+		await interception.sendRequestCommand(request, 'Fetch.failRequest', fallback)
+	}
 
 	const getStatus = (ctx: { attached: boolean }): NetMockStatusResponse => ({
 		ok: true,

@@ -97,8 +97,9 @@ export class NetMockInterception {
 		return !selectedIsChildFrame || request.frameId === selectedFrameId
 	}
 
-	public async sendRequestCommand<M extends CdpMethod>(request: NetMockPausedRequest, method: M, params: CdpParams<M>): Promise<void> {
-		await this.sendCommand({ key: request.sessionId ? `session:${request.sessionId}` : 'page', sessionId: request.sessionId }, method, params)
+	/** Resolve a paused request; returns `false` when the command failed (non-benign failures are reported via `onError`). */
+	public sendRequestCommand<M extends CdpMethod>(request: NetMockPausedRequest, method: M, params: CdpParams<M>): Promise<boolean> {
+		return this.sendCommand({ key: request.sessionId ? `session:${request.sessionId}` : 'page', sessionId: request.sessionId }, method, params)
 	}
 
 	public reconcile(scopes: ReadonlySet<NetMockScope>, reset = false): Promise<boolean> {

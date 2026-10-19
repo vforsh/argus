@@ -241,6 +241,7 @@ export type CdpCommandMap = {
 		{
 			requestId: string
 			responseCode: number
+			responsePhrase?: string
 			responseHeaders?: Array<{ name: string; value: string }>
 			body?: string
 		},
