@@ -30,4 +30,4 @@ argus ext select app --iframe-title "Game Title" | --iframe auto | --page
 argus ext targets app --tree
 ```
 
-Selection is per watcher and survives reloads; a missing frame fails `extension_frame_not_ready` rather than running on the host. Network needs `--scope selected` to see iframe traffic.
+Selection is per watcher and survives reloads; a missing frame fails `extension_frame_not_ready` rather than running on the host. `net` and `net mock add` default to the selected iframe (`--scope tab|page` opts out).

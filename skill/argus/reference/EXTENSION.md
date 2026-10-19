@@ -19,7 +19,7 @@ The extension id is pinned via a manifest `key`, and the prebuilt extension ship
 
 ## Model
 
-- **Control watcher** (`extension-control`, `extension-control-2`, …): one per browser instance, auto-named in startup order. With one live control, commands use it; with several, commands without `--id <controlWatcherId>` fail with `ambiguous_control` (JSON lists `candidates`).
+- **Control watcher** (`extension-control`, `extension-control-2`, …): one per browser instance, auto-named in startup order. With one live control, commands use it. With several and no `--id <controlWatcherId>` / `--browser <label>`: `ext tabs` lists every browser's tabs grouped by control (JSON `browsers[]`, `viaWatcherId: null`); `ext use` / `ext tabs` with `--url/--title/--tab` use the only browser whose tabs match; everything else (and matches in several browsers) fails with `ambiguous_control` (JSON lists `candidates` or `matches` with `controlId`).
 - **Tab watcher**: created per attached tab, named by `--as <id>` or auto (`extension`, `extension-2`, …). An `--as` name held by another live watcher fails with `watcher_id_taken`; re-attaching the tab that already owns it reuses it. All normal commands (`logs`, `eval`, `click`, …) take this id.
 - **Stable names**: the extension remembers each tab's last watcher id (tab id + origin, until the browser restarts). Re-attaching without `--as` — CLI or popup — reuses it, waiting briefly for the old host to release it; if another live watcher holds it, the tab gets a suffixed id instead of failing. A tab that moved to another origin starts fresh.
 - `argus list` shows control watchers as `[control]`; a tab watcher is `[detached]` only when its own tab detached.
@@ -30,17 +30,19 @@ The extension id is pinned via a manifest `key`, and the prebuilt extension ship
 
 ```bash
 argus ext doctor --json                        # bridge health; add --watcher <id> for target readiness
-argus ext tabs --url portal.example --json     # list; --title <substr>; ambiguous filters fail closed
+argus ext tabs --url portal.example --json     # list; --title <substr>; rows show [attached, active as <id>]
 argus ext use --url portal.example --as app    # attach, or reuse an existing attachment → prints id
 argus ext use --tab 123 --as app
 argus ext use --title "Docs" --show            # lock shown+focused after attaching
+argus ext use --url portal.example --pick newest   # several matches: newest | active | first
+argus ext use --open https://portal.example/admin --as app   # exact-URL tab, else open one via the extension
 argus ext attach --url localhost --as app      # attach only (no reuse), --no-wait returns early
 argus ext detach app                          # by tab watcher id; or --tab 123 | --url … | --title …
 argus ext show app                             # attach if needed + sticky shown+focused lock
 argus ext mute app / unmute --tab 123          # persistent Chrome tab mute; selectors don't attach
 ```
 
-Prefer `ext use`: idempotent, returns the watcher id, accepts iframe selection flags. `--tab/--url/--title` on `mute`, `unmute`, `detach`, and `targets` resolve the tab without attaching it.
+Prefer `ext use`: idempotent, returns the watcher id, accepts iframe selection flags. Several `--url` matches resolve on their own when exactly one tab's URL equals the pattern (scheme, hash and trailing slash ignored); otherwise pass `--tab` or `--pick`. `--open <url>` opens a tab through the extension (no CDP, no `open -a`) when nothing matches — `--url/--title` if given, else that exact URL — waits for load, attaches, and with `--iframe-url` waits up to 15s for the iframe; JSON reports `opened`. With several browsers and no match anywhere, `--open` needs `--id`/`--browser` to know where to open. It needs a native host from this release: reload the extension after upgrading. `--tab/--url/--title` on `mute`, `unmute`, `detach`, and `targets` resolve the tab without attaching it.
 
 With two extension instances, pick a control from the `ambiguous_control` candidates (or `argus list`), then use the same id for discovery and action:
 
@@ -86,7 +88,7 @@ Labels come only from `ext browsers label` or `ext bind --label`; a matching URL
 
 ## Version Skew
 
-Chrome keeps native hosts running until it respawns them, so after upgrading Argus they may still run the old build. `ext doctor` (`versionSkew` in JSON) and `argus list` compare each host's watcher version with the CLI's and say what to do: reload the extension at `chrome://extensions` or restart the browser. Doctor also flags hosts registered without `ownerId` (pre-ownership builds).
+Chrome keeps native hosts running until it respawns them, so after upgrading Argus they may still run the old build. `ext doctor` (`versionSkew` in JSON) and `argus list` compare each host's watcher version with the watcher build this CLI bundles (`@vforsh/argus-watcher` is versioned separately from `argus --version`) and say what to do: reload the extension at `chrome://extensions` or restart the browser. `argus list` marks skewed rows (`[outdated: watcher 0.5.16]`) and prints one summary line after the list; `--quiet` or `ARGUS_NO_VERSION_WARNINGS=1` drops both, and `--json` puts warnings in a `warnings` field instead of stderr. Doctor also flags hosts registered without `ownerId` (pre-ownership builds).
 
 ## Iframe Selection
 
@@ -99,7 +101,7 @@ argus ext select app --iframe auto             # heuristic; fails closed when am
 argus ext select app --page                    # back to the host page
 ```
 
-Prefer `--iframe-url` / `--iframe-title` over `auto`. Once selected, eval, DOM, interaction, and capture run inside the iframe; `net` defaults to the top page unless `--scope selected` ([NET.md](./NET.md)).
+Prefer `--iframe-url` / `--iframe-title` over `auto`. Once selected, eval, DOM, interaction, and capture run inside the iframe; `net` and `net mock add` default to that iframe; `--scope tab|page` opts out ([NET.md](./NET.md)).
 
 **Recovery semantics.** `argus reload <id>` reloads the whole tab. A selected iframe stays selected while it is missing or booting: commands wait up to 3s for readiness, then fail with `extension_frame_not_ready`. They never fall back to the host page. `ext targets --tree` shows the missing frame as `pending` (`attached: true`, `targetReady: false` in JSON). Retry once the iframe loads, or `ext select <id> --page` explicitly. `ext doctor --watcher <id>` separates target readiness from bridge health.
 

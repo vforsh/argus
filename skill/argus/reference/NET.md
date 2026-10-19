@@ -29,10 +29,10 @@ argus net clear app                            # reset buffer
 | `--slow-over <duration>`           | Duration threshold                                                    |
 | `--large-over <size>`              | Size threshold (`100kb`, `2mb`)                                       |
 | `--since <duration>`               | Time window                                                           |
-| `--scope <s>`                      | `selected` (iframe target), `page` (default), or `tab`                |
+| `--scope <s>`                      | `selected` (iframe target), `page`, or `tab` (default; see below)     |
 | `--frame <f>`                      | Explicit frame id, or `selected` / `page`                             |
 
-Extension mode with an iframe selected: `net` still defaults to the **top page**; pass `--scope selected` to see the iframe's traffic. Reload-driven commands (`net watch/export/inspect --reload`) reject `--scope selected`.
+Extension mode with an iframe selected: `net` defaults to `--scope selected` (the iframe's traffic); pass `--scope tab` for the whole tab or `--scope page` for the top frame. Reload-driven commands (`net watch/export/inspect --reload`) reject `--scope selected` and keep `tab` as their default.
 
 ## Fresh Capture Window
 
@@ -93,4 +93,4 @@ argus net mock clear app
 
 - `--url` is a case-insensitive wildcard over the full URL; no `*` means substring. Narrow with `--method`, `--resource-type`.
 - Exactly one primary action: `--block`, `--fail <reason>`, or `--status`/`--body`/`--body-file` (+ `--header`). Without one, the rule passes the request through with optional `--delay`, `--set-header`, `--rewrite-host`.
-- `--times N` limits any rule. `--scope page` (default) vs `--scope selected` (`--frame` alias); selected rules follow target changes and re-arm after reload.
+- `--times N` limits any rule. `--scope page` vs `--scope selected` (`--frame` alias); without one, the watcher picks `selected` when an iframe is selected, else `page`. Selected rules follow target changes and re-arm after reload. A page rule added while an iframe is selected warns (out-of-process iframes never match it); `mock ls` shows each rule's `scope` beside `hits`.

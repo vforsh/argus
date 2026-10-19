@@ -47,10 +47,12 @@ argus ext doctor --json                              # bridge + extension health
 argus ext tabs --url portal.example --json           # pick the tab; ambiguous matches fail closed
 argus ext use --url portal.example --as app --json   # attach (or reuse) → watcher id "app"
 argus ext use --tab <tabId> --as app                 # exact tab when several match
+argus ext use --url portal.example --pick newest     # or --pick active|first; an exact URL match wins on its own
+argus ext use --open https://portal.example/x --as app  # reuse that exact URL, else open a tab and attach
 argus page url app
 ```
 
-If Chrome and Codex @Browser both run Argus, control commands without `--id`/`--browser` fail with `ambiguous_control` and list the candidates; pick one and use it consistently (`--browser <label>` works once labeled): `argus ext tabs --id extension-control-2 --json`, then `argus ext use --id extension-control-2 --tab <tabId> --as app`. `--id` also selects the control instance for `attach`, `detach`, `show`, `targets` (when resolving a tab), `mute`, and `unmute`. `ext doctor --watcher app` finds its owning control; `--id` selects one explicitly. Explicit names are exact: `--as`, `start --id`, and `watcher start --id` fail with `watcher_id_taken` while another live watcher holds the name (no silent `app-2`). Re-attaching a tab without `--as` (CLI or popup) reuses its previous name while the tab keeps its origin. `argus ext detach app` detaches by watcher id. A successful attach means the tab watcher completed bootstrap; `--no-wait` skips only the CLI's final status poll.
+If Chrome and Codex @Browser both run Argus, `ext tabs` without `--id`/`--browser` lists both browsers' tabs grouped by control, and `ext use --url/--title/--tab` uses the one browser whose tabs match; other control commands, and selectors matching in several browsers, fail with `ambiguous_control` and list the candidates. Pick one and use it consistently (`--browser <label>` works once labeled): `argus ext tabs --id extension-control-2 --json`, then `argus ext use --id extension-control-2 --tab <tabId> --as app`. `--id` also selects the control instance for `attach`, `detach`, `show`, `targets` (when resolving a tab), `mute`, and `unmute`. `ext doctor --watcher app` finds its owning control; `--id` selects one explicitly. Explicit names are exact: `--as`, `start --id`, and `watcher start --id` fail with `watcher_id_taken` while another live watcher holds the name (no silent `app-2`). Re-attaching a tab without `--as` (CLI or popup) reuses its previous name while the tab keeps its origin. `argus ext detach app` detaches by watcher id. A successful attach means the tab watcher completed bootstrap; `--no-wait` skips only the CLI's final status poll.
 
 **Agent-opened tab (Codex @Browser, CUA): bind by ticket, never by URL.** Same-URL tabs in other chats or browsers make URL matching unsafe.
 
@@ -126,7 +128,7 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 
 - **Durations**: `500ms`, `5s`, `2m`, `1h`; bare numbers are milliseconds.
 - **`--out` paths** (`screenshot`, `record`, `trace`, `eval --out`) are absolute or relative to _your_ cwd. Response `outFile` is absolute.
-- **Selected iframe** (extension mode) is the target for eval/DOM/interaction/capture. Network defaults to the top page; add `--scope selected`.
+- **Selected iframe** (extension mode) is the target for eval/DOM/interaction/capture. `net` and `net mock add` default to the selected iframe too; `--scope tab|page` opts out.
 - **Keyboard needs focus**: `keydown` activates a hidden page (same sticky lock as `page show`) and reports `activated: true`; release with `argus page hide app`.
 - **Visibility lock**: `argus page show app` keeps timers/rAF unthrottled while covered. `--policy background` does it without stealing OS focus, but screenshots/recordings then return `not_available`.
 - **Extension mode limits**: one debugger per tab, orange "debugging" bar is permanent, tab must stay open.
@@ -182,7 +184,7 @@ Read the error code before retrying or raising a timeout.
 | `not_available`                 | capture under background policy, or old watcher | `page show --policy foreground`; restart watcher on current build                                                   |
 | `watcher_id_taken`              | name held by another live watcher               | `argus watcher stop <id>` or pick another `--id`/`--as`                                                             |
 | `trace_conflict`                | Chrome already tracing (one session/browser)    | message names the holding watcher → `argus trace stop <holder>`; no holder named = DevTools/other client            |
-| `ambiguous_control`             | several browsers run Argus                      | pick from `candidates`: `--id <controlId>` or `--browser <label>`                                                   |
+| `ambiguous_control`             | several browsers run Argus (or match the tab)   | pick from `candidates` / `matches[].controlId`: `--id <controlId>` or `--browser <label>`                                                   |
 | `ambiguous_browser`             | label on several live instances                 | `argus ext browsers`, relabel one or pass an `instanceId`                                                           |
 | `ambiguous_tab`                 | bind ticket open in several tabs                | close extras, or `ext bind prepare` again and open it once                                                          |
 | `bind_ticket_expired` / `_used` | ticket older than ~60s / already bound          | `argus ext bind prepare --to <url>` again                                                                           |
