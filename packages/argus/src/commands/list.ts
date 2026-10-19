@@ -5,24 +5,40 @@ import { formatWatcherLine } from '../output/format.js'
 import { createOutput } from '../output/io.js'
 import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/requestWatcher.js'
 import { discoverChromeInstances, formatChromeInstanceLine } from './chrome.js'
-import { detectHostVersionSkew, formatHostVersionSkew } from '../watchers/versionSkew.js'
+import {
+	detectHostVersionSkew,
+	formatHostVersionSkew,
+	formatHostVersionSkewMarker,
+	NO_VERSION_WARNINGS_ENV,
+	summarizeHostVersionSkews,
+	type HostVersionSkew,
+} from '../watchers/versionSkew.js'
 
 /** Options for the list command. */
 export type ListOptions = {
 	json?: boolean
 	byCwd?: string
+	/** Suppress version-skew row markers and the summary line (also `ARGUS_NO_VERSION_WARNINGS=1`). */
+	quiet?: boolean
 }
+
+type WatcherProbe = { watcher: WatcherRecord; status?: StatusResponse; warning?: string; skew?: HostVersionSkew }
 
 /** Execute the list command. */
 export const runList = async (options: ListOptions): Promise<void> => {
 	const output = createOutput(options)
 
-	const [watcherResults, chromeInstances] = await Promise.all([listWatchers(options, output), discoverChromeInstances()])
+	const [probes, chromeInstances] = await Promise.all([listWatchers(options), discoverChromeInstances()])
+	const skews = probes.flatMap((probe) => probe.skew ?? [])
+	const quiet = options.quiet === true || isTruthyEnv(process.env[NO_VERSION_WARNINGS_ENV])
 
 	if (options.json) {
+		// Warnings ride in the document instead of stderr so `2>&1` captures stay parseable.
+		const warnings = [...probes.flatMap((probe) => probe.warning ?? []), ...(quiet ? [] : skews.map(formatHostVersionSkew))]
 		output.writeJson({
-			watchers: watcherResults.map((entry) => entry.status?.watcher ?? entry.watcher),
+			watchers: probes.map((entry) => entry.status?.watcher ?? entry.watcher),
 			chrome: chromeInstances,
+			warnings,
 		})
 		return
 	}
@@ -38,19 +54,29 @@ export const runList = async (options: ListOptions): Promise<void> => {
 
 	output.writeHuman('')
 	output.writeHuman('Watchers')
-	if (watcherResults.length > 0) {
-		for (const entry of watcherResults) {
-			output.writeHuman(`  ${formatWatcherLine(entry.watcher, entry.status)}`)
+	if (probes.length > 0) {
+		for (const entry of probes) {
+			const marker = entry.skew && !quiet ? ` [${formatHostVersionSkewMarker(entry.skew)}]` : ''
+			output.writeHuman(`  ${formatWatcherLine(entry.watcher, entry.status)}${marker}`)
 		}
 	} else {
 		output.writeHuman('  (none)')
 	}
+
+	// Warnings follow the list so the list itself is the first thing read. Transport and protocol
+	// failures stay one line per watcher; version skew is a row marker plus one summary line.
+	const warnings = probes.flatMap((probe) => probe.warning ?? [])
+	const summary = quiet ? null : summarizeHostVersionSkews(skews)
+	if (summary) warnings.push(summary)
+	if (warnings.length > 0) {
+		output.writeWarn('')
+		for (const warning of warnings) output.writeWarn(warning)
+	}
 }
 
-const listWatchers = async (
-	options: ListOptions,
-	output: ReturnType<typeof createOutput>,
-): Promise<Array<{ watcher: WatcherRecord; status?: StatusResponse }>> => {
+const isTruthyEnv = (value: string | undefined): boolean => value != null && value !== '' && value !== '0' && value.toLowerCase() !== 'false'
+
+const listWatchers = async (options: ListOptions): Promise<WatcherProbe[]> => {
 	const registry = await loadActiveRegistry()
 
 	let watchers = Object.values(registry.watchers)
@@ -63,10 +89,9 @@ const listWatchers = async (
 	if (watchers.length === 0) return []
 
 	// Probed concurrently: these are independent 2s-timeout requests, so a registry with
-	// five dead watchers used to make `argus list` take ten seconds. Warnings are written
-	// after the fact so their order still follows the registry, not completion order.
-	const probes = await Promise.all(
-		watchers.map(async (watcher): Promise<{ watcher: WatcherRecord; status?: StatusResponse; warning?: string }> => {
+	// five dead watchers used to make `argus list` take ten seconds. Results keep registry order.
+	return Promise.all(
+		watchers.map(async (watcher): Promise<WatcherProbe> => {
 			try {
 				const status = await fetchWatcherJson<StatusResponse>(watcher, { path: '/status', timeoutMs: 2_000 })
 				const mismatch = describeProtocolMismatch(status.protocolVersion, status.watcherVersion)
@@ -74,18 +99,10 @@ const listWatchers = async (
 					return { watcher, status, warning: `${watcher.id}: ${mismatch}` }
 				}
 				const skew = detectHostVersionSkew(watcher, status.watcherVersion)
-				return skew ? { watcher, status, warning: formatHostVersionSkew(skew) } : { watcher, status }
+				return skew ? { watcher, status, skew } : { watcher, status }
 			} catch (error) {
 				return { watcher, warning: formatWatcherTransportError(watcher, error) }
 			}
 		}),
 	)
-
-	for (const probe of probes) {
-		if (probe.warning) {
-			output.writeWarn(probe.warning)
-		}
-	}
-
-	return probes.map(({ watcher, status }) => (status ? { watcher, status } : { watcher }))
 }

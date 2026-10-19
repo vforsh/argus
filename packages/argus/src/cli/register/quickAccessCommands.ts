@@ -17,8 +17,12 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 		name: 'list',
 		alias: 'ls',
 		description: 'List watchers and Chrome instances',
-		options: [jsonOption, { flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' }],
-		examples: ['argus list', 'argus ls', 'argus list --json', 'argus list --by-cwd my-project'],
+		options: [
+			jsonOption,
+			{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
+			{ flags: '--quiet', description: 'Omit watcher version-skew markers and summary (also ARGUS_NO_VERSION_WARNINGS=1)' },
+		],
+		examples: ['argus list', 'argus ls', 'argus list --json', 'argus list --by-cwd my-project', 'argus list --quiet'],
 		action: async (options) => {
 			await runList(options)
 		},
