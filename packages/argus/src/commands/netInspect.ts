@@ -4,7 +4,7 @@ import { createOutput } from '../output/io.js'
 import { formatNetworkRequestInspect, renderNetworkBodyText } from '../output/net.js'
 import { resolveWatcherOrExit, writeErrorResponse } from '../watchers/requestWatcher.js'
 import { appendNetCommandParams } from './netShared.js'
-import { captureNetWindow, parseNetCaptureOptions, type NetCaptureOptions } from './netCapture.js'
+import { captureNetWindow, parseNetCaptureOptions, withReloadScopeDefault, type NetCaptureOptions } from './netCapture.js'
 import { fetchNetRequestBody, fetchNetRequestDetail, fetchNetRequestSummaries } from './netRequestClient.js'
 import { formatError } from '../cli/parse.js'
 
@@ -36,7 +36,8 @@ type InspectBodyFetchResult = {
  * Happy-path network inspection:
  * capture a fresh request window, pick the newest URL match, then fetch detail + bodies in one go.
  */
-export const runNetInspect = async (id: string | undefined, pattern: string, options: NetInspectOptions): Promise<void> => {
+export const runNetInspect = async (id: string | undefined, pattern: string, rawOptions: NetInspectOptions): Promise<void> => {
+	const options = withReloadScopeDefault(rawOptions, rawOptions.reload ?? true)
 	const output = createOutput(options)
 	const normalizedPattern = pattern.trim()
 	if (!normalizedPattern) {

@@ -97,6 +97,14 @@ const validateReloadScope = (options: NetCaptureOptions): { error?: string } => 
 	return {}
 }
 
+/**
+ * Pin reload captures to whole-tab scope when no scope was given. Watchers with a selected iframe
+ * default `net` to `selected`, the one scope reload capture refuses, so the implicit default must
+ * stay the stable one these commands always used.
+ */
+export const withReloadScopeDefault = <T extends NetCliFilterOptions>(options: T, reload: boolean): T =>
+	reload && !options.scope && !options.frame ? { ...options, scope: 'tab' } : options
+
 /** Clear/reload if requested, then tail matching requests until the quiet window is reached. */
 export const captureNetWindow = async (
 	watcher: Pick<WatcherRecord, 'id' | 'host' | 'port'>,

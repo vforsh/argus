@@ -41,7 +41,10 @@ const netFilterOptions = (input: { includeSince?: boolean; includeGrep?: boolean
 		},
 		{ flags: '--resource-type <type>', description: 'Only include resource type (repeatable)', parser: collectValues, defaultValue: [] },
 		{ flags: '--mime <mime>', description: 'Only include MIME type prefix (repeatable)', parser: collectValues, defaultValue: [] },
-		{ flags: '--scope <scope>', description: 'Scope requests to selected target, page, or whole tab' },
+		{
+			flags: '--scope <scope>',
+			description: 'selected|page|tab (default: selected when an extension watcher has an iframe selected, else tab)',
+		},
 		{ flags: '--frame <id>', description: 'Only include a frame id, or the special values selected/page' },
 		{ flags: '--first-party', description: 'Only include first-party requests' },
 		{ flags: '--third-party', description: 'Only include third-party requests' },
@@ -77,7 +80,10 @@ const netMockCommand: ArgusCommandDefinition = {
 				{ flags: '--url <pattern>', description: 'URL wildcard pattern; substring match when it contains no *' },
 				{ flags: '--method <method>', description: 'Only match this HTTP method' },
 				{ flags: '--resource-type <type>', description: 'Only match this CDP resource type (Fetch, XHR, Document, ...)' },
-				{ flags: '--scope <scope>', description: 'Intercept the top-level page or currently selected target (page|selected)' },
+				{
+					flags: '--scope <scope>',
+					description: 'page|selected (default: selected when the watcher has an iframe selected, else page)',
+				},
 				{ flags: '--frame <frame>', description: 'Alias for --scope; accepts page or selected' },
 				{ flags: '--block', description: 'Abort matching requests as BlockedByClient' },
 				{ flags: '--fail <reason>', description: 'Abort with a network error (TimedOut, ConnectionRefused, ...)' },

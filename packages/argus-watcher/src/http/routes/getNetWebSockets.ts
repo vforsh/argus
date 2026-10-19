@@ -11,7 +11,7 @@ export const route = defineJsonRoute<undefined, NetWebSocketsResponse>({
 			return respondNetDisabled(res)
 		}
 
-		const filters = readNetFiltersFromUrl(url, ctx, res)
+		const filters = readNetFiltersFromUrl(url, ctx, res, { implicitScope: 'tab' })
 		if (!filters) {
 			return
 		}

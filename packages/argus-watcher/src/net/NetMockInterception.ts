@@ -79,6 +79,23 @@ export class NetMockInterception {
 		return this.enabledTargets.size > 0
 	}
 
+	/**
+	 * Classify the selected target when it is a child iframe: `oopif` has its own CDP session, so
+	 * page-session interception never sees its requests; `same-process` is reached by a `page` rule,
+	 * but so is every other frame. CDP watchers report no `topFrameId`, so a CDP iframe watcher,
+	 * whose page session already is the iframe, is `null`.
+	 */
+	public describeSelectedChildFrame(): 'oopif' | 'same-process' | null {
+		const selected = this.binding?.getSelectedTarget() ?? null
+		if (!selected?.frameId) {
+			return null
+		}
+		if (selected.sessionId != null) {
+			return 'oopif'
+		}
+		return selected.topFrameId != null && selected.frameId !== selected.topFrameId ? 'same-process' : null
+	}
+
 	public matchesScope(scope: NetMockScope, request: NetMockPausedRequest): boolean {
 		if (scope === 'page') {
 			return request.sessionId === null

@@ -1,5 +1,5 @@
 import type { NetResponse } from '@vforsh/argus-core'
-import { captureNetWindow, parseNetCaptureOptions, type NetCaptureOptions } from './netCapture.js'
+import { captureNetWindow, parseNetCaptureOptions, withReloadScopeDefault, type NetCaptureOptions } from './netCapture.js'
 import { formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { createOutput } from '../output/io.js'
 import { formatNetworkRequest } from '../output/net.js'
@@ -8,7 +8,8 @@ export type NetWatchOptions = NetCaptureOptions & {
 	json?: boolean
 }
 
-export const runNetWatch = async (id: string | undefined, options: NetWatchOptions): Promise<void> => {
+export const runNetWatch = async (id: string | undefined, rawOptions: NetWatchOptions): Promise<void> => {
+	const options = withReloadScopeDefault(rawOptions, rawOptions.reload === true)
 	const output = createOutput(options)
 	const resolved = await resolveWatcherOrExit({ id }, output)
 	if (!resolved) {

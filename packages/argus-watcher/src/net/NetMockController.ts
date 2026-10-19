@@ -44,6 +44,12 @@ export type NetMockController = {
 	onDetach: () => void
 }
 
+const PAGE_RULE_ON_IFRAME_WARNINGS = {
+	oopif: 'This watcher has an out-of-process iframe selected, but the rule is page-scoped, so requests from that iframe never match it. Use --scope selected to mock the iframe.',
+	'same-process':
+		'This watcher has an iframe selected, but the rule is page-scoped, so it matches requests from every frame of the page. Use --scope selected to mock only the iframe.',
+} as const
+
 export const createNetMockController = (): NetMockController => {
 	let lastError: ErrorDetail | null = null
 	let nextRuleId = 1
@@ -150,9 +156,14 @@ export const createNetMockController = (): NetMockController => {
 
 	const addRule = async (input: NetMockAddRequest, attached: boolean): Promise<NetMockAddResponse> => {
 		lastError = null
+		// A rule without an explicit scope follows the watcher's selection: an iframe watcher mocks
+		// its iframe, since a page rule never sees requests from an out-of-process frame.
+		const selectedChildFrame = interception.describeSelectedChildFrame()
+		const scope: NetMockScope = input.scope ?? (selectedChildFrame ? 'selected' : 'page')
+		const warning = scope === 'page' && selectedChildFrame ? PAGE_RULE_ON_IFRAME_WARNINGS[selectedChildFrame] : null
 		const rule: InternalRule = {
 			id: nextRuleId++,
-			scope: input.scope ?? 'page',
+			scope,
 			match: input.match,
 			action: input.action,
 			delayMs: input.delayMs,
@@ -164,7 +175,7 @@ export const createNetMockController = (): NetMockController => {
 		rules.push(rule)
 
 		if (!attached) {
-			return { ok: true, attached: false, enabled: false, rule: toPublicRule(rule) }
+			return { ok: true, attached: false, enabled: false, rule: toPublicRule(rule), warning }
 		}
 
 		const applied = await interception.reconcile(getActiveScopes(rules))
@@ -174,6 +185,7 @@ export const createNetMockController = (): NetMockController => {
 			enabled: applied,
 			rule: toPublicRule(rule),
 			error: applied ? null : lastError,
+			warning,
 		}
 	}
 

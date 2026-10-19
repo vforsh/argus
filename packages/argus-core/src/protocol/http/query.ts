@@ -64,7 +64,10 @@ export type NetQuery = {
 	resourceType?: string[]
 	/** Keep only these response MIME types. */
 	mime?: string[]
-	/** Defaults to `tab`. Mutually exclusive with `frame`. */
+	/**
+	 * Defaults to `selected` when an extension watcher has a child iframe selected, else `tab`
+	 * (WebSocket listings always default to `tab`). Mutually exclusive with `frame`.
+	 */
 	scope?: NetScope
 	/** A frame id, or `selected`/`page`. Mutually exclusive with `scope`. */
 	frame?: string

@@ -19,6 +19,11 @@ type ParseNetFilterOptions = {
 	limit: number
 	sinceTs?: number
 	context?: NetFilterContext | null
+	/**
+	 * Scope used when the query names none, instead of the selection-aware default. WebSocket
+	 * records carry no frame id, so a `selected` default would hide every socket.
+	 */
+	implicitScope?: NetScope
 }
 
 type ParseNetFilterResult = {
@@ -59,8 +64,14 @@ export const nextAfterCursor = (page: readonly { id: number }[], after: number):
  * defaults shared by the `/net*` listing routes. Responds 400 `invalid_net_filter`
  * and returns null when the query is invalid.
  */
-export const readNetFiltersFromUrl = (url: URL, ctx: RouteContext, res: http.ServerResponse): ParsedNetFilters | null => {
+export const readNetFiltersFromUrl = (
+	url: URL,
+	ctx: RouteContext,
+	res: http.ServerResponse,
+	options: Pick<ParseNetFilterOptions, 'implicitScope'> = {},
+): ParsedNetFilters | null => {
 	const filters = parseNetRequestFilters(url.searchParams, {
+		...options,
 		after: clampNumber(netParam(url.searchParams, 'after'), 0),
 		limit: clampNumber(netParam(url.searchParams, 'limit'), 500, 1, 5000),
 		sinceTs: optionalNumber(netParam(url.searchParams, 'sinceTs')),
@@ -99,7 +110,7 @@ export const parseNetRequestFilters = (searchParams: URLSearchParams, options: P
 	}
 
 	const context = options.context ?? null
-	const resolvedScope = scope.value ?? DEFAULT_NET_SCOPE
+	const resolvedScope = scope.value ?? (frame.value ? DEFAULT_NET_SCOPE : (options.implicitScope ?? resolveDefaultNetScope(context)))
 	const resolvedFrameId = resolveFrameId({ frame: frame.value ?? null, scope: resolvedScope, context })
 	const partyHost = derivePartyHost(resolvePartyReferenceUrl(resolvedScope, context))
 
@@ -205,8 +216,21 @@ const resolvePartyReferenceUrl = (scope: NetScope, context: NetFilterContext | n
 	return context.pageUrl ?? context.selectedTargetUrl
 }
 
-/** Scope applied when a request does not specify one. */
+/** Scope applied when a request does not specify one and no iframe is selected. */
 const DEFAULT_NET_SCOPE: NetScope = 'tab'
+
+/**
+ * An extension watcher with a selected child iframe defaults to `selected`: whoever picked the
+ * iframe (`ext use --iframe-url ...`) wants that frame's traffic, and the whole-tab view buries it
+ * under host-page requests. CDP watchers keep `tab`, since a CDP iframe watcher already sees only
+ * its own target's traffic. `--scope tab|page` stays the explicit opt-out.
+ */
+const resolveDefaultNetScope = (context: NetFilterContext | null): NetScope =>
+	context?.sourceMode === 'extension' && hasSelectedChildFrame(context) ? 'selected' : DEFAULT_NET_SCOPE
+
+/** Whether the watcher's selected target is an iframe below the top-level page. */
+export const hasSelectedChildFrame = (context: NetFilterContext): boolean =>
+	context.selectedFrameId != null && context.topFrameId != null && context.selectedFrameId !== context.topFrameId
 
 const normalizeScope = (value: string | null): NormalizedValueResult<NetScope> => {
 	return normalizeChoice(value, NET_SCOPES, 'scope filter')

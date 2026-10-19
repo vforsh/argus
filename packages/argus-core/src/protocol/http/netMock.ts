@@ -42,7 +42,10 @@ export type NetMockMatch = {
 	resourceType?: string
 }
 
-/** CDP target scope where a mock rule intercepts requests. Defaults to the top-level page. */
+/**
+ * CDP target scope where a mock rule intercepts requests. When omitted, the watcher picks
+ * `selected` if it has a child iframe selected, otherwise `page`.
+ */
 export type NetMockScope = 'page' | 'selected'
 
 /** One HTTP header entry used in fulfill/continue actions. */
@@ -106,7 +109,7 @@ export type NetMockRule = {
 
 /** POST /net/mock/add request payload. */
 export type NetMockAddRequest = {
-	/** Target scope for this rule. Defaults to `page`. */
+	/** Target scope for this rule. Defaults to `selected` when the watcher has an iframe selected, else `page`. */
 	scope?: NetMockScope
 	match: NetMockMatch
 	action: NetMockAction
@@ -126,6 +129,8 @@ export type NetMockAddResponse = Ok<{
 	rule: NetMockRule
 	/** Optional error details when interception could not be enabled. */
 	error?: ErrorDetail | null
+	/** Set when the rule's scope likely cannot match the watcher's selected target. */
+	warning?: string | null
 }>
 
 /** POST /net/mock/remove request payload. */

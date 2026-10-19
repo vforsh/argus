@@ -57,6 +57,9 @@ export const runNetMockAdd = defineWatcherCommand<NetMockAddOptions, NetMockAddR
 	},
 	formatHuman: (response, { output }) => {
 		const summary = describeRule(response.rule)
+		if (response.warning) {
+			output.writeWarn(`Warning: ${response.warning}`)
+		}
 		if (!response.attached) {
 			output.writeHuman(`Mock rule queued (watcher detached): ${summary}`)
 			return
@@ -128,7 +131,7 @@ const buildAddRequest = async (options: NetMockAddOptions, output: Output): Prom
 		return null
 	}
 	const scope = resolveMockScope(options, output)
-	if (!scope) {
+	if (scope === null) {
 		return null
 	}
 
@@ -143,14 +146,20 @@ const buildAddRequest = async (options: NetMockAddOptions, output: Output): Prom
 	return { scope, match, action, delayMs, times }
 }
 
-const resolveMockScope = (options: Pick<NetMockAddOptions, 'scope' | 'frame'>, output: Output): NetMockScope | null => {
+/** @returns The scope, `undefined` to let the watcher pick, or `null` after writing a usage error. */
+const resolveMockScope = (options: Pick<NetMockAddOptions, 'scope' | 'frame'>, output: Output): NetMockScope | null | undefined => {
 	if (options.scope && options.frame) {
 		output.writeWarn('Cannot combine --scope and --frame. Use one or the other.')
 		process.exitCode = 2
 		return null
 	}
 
-	const value = (options.scope ?? options.frame ?? 'page').trim().toLowerCase()
+	// Omitted on purpose: the watcher defaults to `selected` when it has an iframe selected.
+	const raw = options.scope ?? options.frame
+	if (raw == null) {
+		return undefined
+	}
+	const value = raw.trim().toLowerCase()
 	if (value === 'page' || value === 'selected') {
 		return value
 	}
@@ -417,9 +426,7 @@ const describeRule = (rule: NetMockRule): string => {
 	if (rule.times != null) {
 		extras.push(`times ${Math.min(rule.hits, rule.times)}/${rule.times}`)
 	}
-	if (rule.scope === 'selected') {
-		extras.push('scope selected')
-	}
+	extras.push(`scope ${rule.scope ?? 'page'}`)
 	extras.push(`hits ${rule.hits}`)
 
 	return `#${rule.id}  ${match} → ${describeAction(rule.action)} [${extras.join(', ')}]`

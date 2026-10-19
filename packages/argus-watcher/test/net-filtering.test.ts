@@ -71,21 +71,21 @@ describe('net filters', () => {
 		expect(failed.map((entry) => entry.requestId)).toEqual(['game-fail'])
 	})
 
-	it('defaults to tab scope and still resolves first-party host from the selected target when requested', () => {
-		const parsed = parseNetRequestFilters(new URLSearchParams('party=first'), {
-			after: 0,
-			limit: 50,
-			context: {
-				sourceMode: 'extension',
-				selectedFrameId: 'frame-game',
-				topFrameId: 'frame-root',
-				selectedTargetUrl: 'https://ts-elka2025-vk.stark.games/embed/index.html',
-				pageUrl: 'https://vk.com/app123',
-			},
-		})
+	it('defaults to selected scope when an extension watcher has an iframe selected; scope=tab opts out', () => {
+		const context = {
+			sourceMode: 'extension' as const,
+			selectedFrameId: 'frame-game',
+			topFrameId: 'frame-root',
+			selectedTargetUrl: 'https://ts-elka2025-vk.stark.games/embed/index.html',
+			pageUrl: 'https://vk.com/app123',
+		}
+		const defaulted = parseNetRequestFilters(new URLSearchParams('party=first'), { after: 0, limit: 50, context })
+		expect(defaulted.error).toBeUndefined()
+		expect(defaulted.value).toMatchObject({ scope: 'selected', frameId: 'frame-game', party: 'first' })
 
-		expect(parsed.error).toBeUndefined()
-		expect(parsed.value).toMatchObject({
+		const tab = parseNetRequestFilters(new URLSearchParams('party=first&scope=tab'), { after: 0, limit: 50, context })
+		expect(tab.error).toBeUndefined()
+		expect(tab.value).toMatchObject({
 			scope: 'tab',
 			frameId: undefined,
 			party: 'first',
