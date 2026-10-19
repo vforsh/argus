@@ -1,6 +1,6 @@
 {
 	"name": "@vforsh/argus",
-	"version": "0.5.26",
+	"version": "0.5.27",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/vforsh/argus.git",
@@ -34,9 +34,9 @@
 	},
 	"dependencies": {
 		"@vforsh/argus-client": "^0.5.6",
-		"@vforsh/argus-core": "^0.5.13",
+		"@vforsh/argus-core": "^0.5.14",
 		"@vforsh/argus-plugin-api": "^0.5.2",
-		"@vforsh/argus-watcher": "^0.5.19",
+		"@vforsh/argus-watcher": "^0.5.20",
 		"commander": "14.0.2",
 		"esbuild": "0.25.12",
 		"oxfmt": "0.72.0"
