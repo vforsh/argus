@@ -104,6 +104,13 @@ const netMockCommand: ArgusCommandDefinition = {
 				},
 				{ flags: '--rewrite-host <host>', description: 'Rewrite the request URL host (or origin when the value contains ://)' },
 				{ flags: '--delay <duration>', description: 'Delay before the action executes (e.g. 2s, 500ms)' },
+				{ flags: '--delay-response <duration>', description: 'Forward the request, then hold the real response before delivering it' },
+				{
+					flags: '--fail-after-response <reason>',
+					description: 'Forward the request, then abort toward the page once the server answered (lost response)',
+				},
+				{ flags: '--patch-json <json>', description: 'JSON merge patch (RFC 7396) for the real JSON response body (inline, or - for stdin)' },
+				{ flags: '--patch-json-file <path>', description: 'JSON merge patch for the real response body, from file' },
 				{ flags: '--times <count>', description: 'Apply the rule at most N times, then let requests through' },
 				jsonOption,
 			],
@@ -115,6 +122,9 @@ const netMockCommand: ArgusCommandDefinition = {
 				`argus net mock add app --url "*/game/init" --status 500 --body '{"error":"maintenance"}'`,
 				'argus net mock add app --url "*/api/*" --delay 2s --method POST',
 				'argus net mock add app --url "cdn.prod.com" --rewrite-host localhost:3000',
+				'argus net mock add app --url "*/api/purchase" --fail-after-response ConnectionReset --times 1',
+				'argus net mock add app --url "*/api/state" --delay-response 3s',
+				`argus net mock add app --url "*/api/profile" --patch-json '{"error":{"code":"AUTH_EXPIRED"},"data":null}'`,
 			],
 			action: async (id, options) => {
 				await runNetMockAdd(id, options)

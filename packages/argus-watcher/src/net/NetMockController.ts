@@ -1,11 +1,13 @@
 import { STATUS_CODES } from 'node:http'
 import type { CdpMethod, CdpParams } from '../cdp/protocol.js'
 import type {
+	NetMockAction,
 	NetMockAddRequest,
 	NetMockAddResponse,
 	NetMockClearResponse,
 	NetMockHeader,
 	NetMockRemoveResponse,
+	NetMockResponseAction,
 	NetMockRule,
 	NetMockScope,
 	NetMockStatusResponse,
@@ -21,6 +23,12 @@ type InternalRule = NetMockRule & {
 	urlRegex: RegExp
 }
 
+/** Response-stage actions waiting for their request's response; bounded because canceled requests never resolve. */
+const MAX_PENDING_RESPONSES = 1_000
+
+/** Headers that describe the original wire encoding and become wrong once the body is replaced. */
+const STALE_BODY_HEADERS = new Set(['content-length', 'content-encoding', 'transfer-encoding'])
+
 /**
  * Watcher-side network mocking via the CDP `Fetch` domain.
  *
@@ -28,6 +36,10 @@ type InternalRule = NetMockRule & {
  * reattachment: `onAttach` re-arms interception whenever rules exist.
  * Interception is enabled lazily on the first rule and disabled when the last
  * rule is removed, so an idle watcher adds zero request latency.
+ *
+ * Interception always pauses at the request stage. `response` rules opt their
+ * matched request into a second pause with `interceptResponse: true`, so only
+ * those requests pay the response-stage round trip.
  */
 export type NetMockController = {
 	/** Subscribe to `Fetch.requestPaused` and provide page/selected target routing. Call once at startup. */
@@ -54,6 +66,8 @@ export const createNetMockController = (): NetMockController => {
 	let lastError: ErrorDetail | null = null
 	let nextRuleId = 1
 	const rules: InternalRule[] = []
+	/** Keyed by session + Fetch request id, which CDP keeps across the request and response stages. */
+	const pendingResponses = new Map<string, NetMockResponseAction>()
 
 	const recordError = (error: unknown): void => {
 		lastError = { message: formatError(error) }
@@ -71,6 +85,11 @@ export const createNetMockController = (): NetMockController => {
 	}
 
 	const handleRequestPaused = async (paused: NetMockPausedRequest): Promise<void> => {
+		if (paused.response) {
+			await handleResponsePaused(paused)
+			return
+		}
+
 		const rule = rules.find(
 			(candidate) =>
 				interception.matchesScope(candidate.scope ?? 'page', paused) &&
@@ -114,18 +133,75 @@ export const createNetMockController = (): NetMockController => {
 			return
 		}
 
-		// action.kind === 'continue'
-		const continueParams: CdpParams<'Fetch.continueRequest'> = { requestId: paused.requestId }
-		if (action.rewriteHost) {
-			const rewritten = rewriteUrlHost(paused.url, action.rewriteHost)
-			if (rewritten) {
-				continueParams.url = rewritten
-			}
-		}
-		if (action.setHeaders && action.setHeaders.length > 0) {
-			continueParams.headers = mergeHeaders(paused.headers, action.setHeaders)
+		const continueParams = buildContinueParams(paused, action)
+		if (action.kind === 'response') {
+			rememberPendingResponse(paused, action)
+			continueParams.interceptResponse = true
 		}
 		await sendAction(paused, 'Fetch.continueRequest', continueParams)
+	}
+
+	const rememberPendingResponse = (paused: NetMockPausedRequest, action: NetMockResponseAction): void => {
+		if (pendingResponses.size >= MAX_PENDING_RESPONSES) {
+			const oldest = pendingResponses.keys().next().value
+			if (oldest !== undefined) {
+				pendingResponses.delete(oldest)
+			}
+		}
+		pendingResponses.set(pendingResponseKey(paused), action)
+	}
+
+	/** Apply a `response` rule to the real server response its request was forwarded for. */
+	const handleResponsePaused = async (paused: NetMockPausedRequest): Promise<void> => {
+		const key = pendingResponseKey(paused)
+		const action = pendingResponses.get(key)
+		pendingResponses.delete(key)
+		const response = paused.response
+		if (!action || !response || response.errorReason != null || response.statusCode == null) {
+			await sendAction(paused, 'Fetch.continueRequest', { requestId: paused.requestId })
+			return
+		}
+
+		if (action.delayMs && action.delayMs > 0) {
+			await delay(action.delayMs)
+		}
+
+		if (action.fail) {
+			await sendAction(paused, 'Fetch.failRequest', { requestId: paused.requestId, errorReason: action.fail })
+			return
+		}
+
+		if (action.patchJson !== undefined && !isRedirectStatus(response.statusCode)) {
+			const body = await readPatchedJsonBody(paused, action.patchJson)
+			if (body != null) {
+				await sendAction(paused, 'Fetch.fulfillRequest', {
+					requestId: paused.requestId,
+					responseCode: response.statusCode,
+					responsePhrase: response.statusText || STATUS_CODES[response.statusCode] || 'Mocked',
+					responseHeaders: response.headers.filter((header) => !STALE_BODY_HEADERS.has(header.name.toLowerCase())),
+					body: Buffer.from(body, 'utf8').toString('base64'),
+				})
+				return
+			}
+		}
+
+		await sendAction(paused, 'Fetch.continueRequest', { requestId: paused.requestId })
+	}
+
+	/** Merge-patch the real JSON body; null (with `lastError` set) when the body is unavailable or not JSON. */
+	const readPatchedJsonBody = async (paused: NetMockPausedRequest, patch: unknown): Promise<string | null> => {
+		const raw = await interception.readResponseBody(paused)
+		if (!raw) {
+			return null
+		}
+
+		const text = raw.base64Encoded ? Buffer.from(raw.body, 'base64').toString('utf8') : raw.body
+		try {
+			return JSON.stringify(applyJsonMergePatch(JSON.parse(text), patch))
+		} catch {
+			recordError(new Error(`Cannot apply patchJson: response body of ${paused.url} is not JSON`))
+			return null
+		}
 	}
 
 	/**
@@ -222,11 +298,53 @@ export const createNetMockController = (): NetMockController => {
 	}
 
 	const onDetach = (): void => {
+		pendingResponses.clear()
 		interception.onDetach()
 	}
 
 	return { bind, getStatus, addRule, removeRule, clearRules, onAttach, onTargetChanged, onDetach }
 }
+
+const pendingResponseKey = (request: NetMockPausedRequest): string => `${request.sessionId ?? 'page'}:${request.requestId}`
+
+/** Request-stage continue parameters shared by `continue` and `response` rules. */
+const buildContinueParams = (
+	paused: NetMockPausedRequest,
+	action: Extract<NetMockAction, { kind: 'continue' | 'response' }>,
+): CdpParams<'Fetch.continueRequest'> => {
+	const params: CdpParams<'Fetch.continueRequest'> = { requestId: paused.requestId }
+	if (action.rewriteHost) {
+		const rewritten = rewriteUrlHost(paused.url, action.rewriteHost)
+		if (rewritten) {
+			params.url = rewritten
+		}
+	}
+	if (action.setHeaders && action.setHeaders.length > 0) {
+		params.headers = mergeHeaders(paused.headers, action.setHeaders)
+	}
+	return params
+}
+
+const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400
+
+/** RFC 7396 JSON merge patch: objects merge recursively, `null` deletes a key, anything else replaces. */
+const applyJsonMergePatch = (target: unknown, patch: unknown): unknown => {
+	if (!isJsonObject(patch)) {
+		return patch
+	}
+
+	const result: Record<string, unknown> = isJsonObject(target) ? { ...target } : {}
+	for (const [key, value] of Object.entries(patch)) {
+		if (value === null) {
+			delete result[key]
+		} else {
+			result[key] = applyJsonMergePatch(result[key], value)
+		}
+	}
+	return result
+}
+
+const isJsonObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
 const getActiveScopes = (rules: InternalRule[]): Set<NetMockScope> => new Set(rules.filter(isRuleActive).map((rule) => rule.scope ?? 'page'))
 

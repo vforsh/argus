@@ -74,7 +74,7 @@ argus net export app --reload --settle 3s --first-party --out boot.har --json
 
 ## Mocks
 
-CDP Fetch interception: block, fail, stub, delay, rewrite. Rules persist across reloads/reattach until removed; first match wins.
+CDP Fetch interception: block, fail, stub, delay, rewrite, or act on the real response. Rules persist across reloads/reattach until removed; first match wins.
 
 ```bash
 argus net mock add app --url "*/analytics/*" --block                            # BlockedByClient
@@ -86,6 +86,9 @@ argus net mock add app --url "*/api/*" --method POST --delay 2s                 
 argus net mock add app --url "*/api/*" --set-header "x-debug: 1"               # request header override
 argus net mock add app --url "cdn.prod.com" --rewrite-host localhost:3000      # host, or origin when value has ://
 argus net mock add app --scope selected --url "*/api/config" --status 200 --body-file ./c.json   # selected iframe
+argus net mock add app --url "*/api/buy" --fail-after-response ConnectionReset --times 1   # server applies it, page never sees the answer
+argus net mock add app --url "*/api/state" --delay-response 3s                 # forward, hold the real response
+argus net mock add app --url "*/api/me" --patch-json '{"error":{"code":"AUTH"},"data":null}'   # RFC 7396 merge into real JSON
 argus net mock ls app                                                           # with hit counts
 argus net mock rm 2 app
 argus net mock clear app
@@ -93,4 +96,5 @@ argus net mock clear app
 
 - `--url` is a case-insensitive wildcard over the full URL; no `*` means substring. Narrow with `--method`, `--resource-type`.
 - Exactly one primary action: `--block`, `--fail <reason>`, or `--status`/`--body`/`--body-file` (+ `--header`). Without one, the rule passes the request through with optional `--delay`, `--set-header`, `--rewrite-host`.
+- Response actions (`--delay-response`, `--fail-after-response`, `--patch-json`/`--patch-json-file`) forward the request first and combine with `--set-header`/`--rewrite-host`/`--delay`; `--fail-after-response` and `--patch-json` are exclusive. Only matched requests pause a second time at the response stage. `--patch-json` merges objects, `null` deletes a key, and the patched body drops `content-length`/`content-encoding`; a non-JSON body passes through unchanged and the reason shows as `error:` in `mock ls`. Redirects and network failures pass through.
 - `--times N` limits any rule. `--scope page` vs `--scope selected` (`--frame` alias); without one, the watcher picks `selected` when an iframe is selected, else `page`. Selected rules follow target changes and re-arm after reload. A page rule added while an iframe is selected warns (out-of-process iframes never match it); `mock ls` shows each rule's `scope` beside `hits`.

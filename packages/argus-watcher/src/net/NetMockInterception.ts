@@ -20,6 +20,18 @@ export type NetMockPausedRequest = {
 	frameId: string | null
 	sessionId: string | null
 	headers: Record<string, string>
+	/** Present when the request paused at the response stage (after `interceptResponse: true`). */
+	response: NetMockPausedResponse | null
+}
+
+/** Real server outcome of a request paused at the response stage. */
+export type NetMockPausedResponse = {
+	/** HTTP status; null when the request failed at the network level. */
+	statusCode: number | null
+	statusText: string
+	headers: Array<{ name: string; value: string }>
+	/** Network error reason when the request failed before a response arrived. */
+	errorReason: string | null
 }
 
 /** Stable CDP session and dynamic selected-target lookup used by interception. */
@@ -44,6 +56,10 @@ type FetchRequestPausedParams = {
 	}
 	resourceType?: string
 	frameId?: string
+	responseStatusCode?: number
+	responseStatusText?: string
+	responseHeaders?: Array<{ name: string; value: string }>
+	responseErrorReason?: string
 }
 
 const PAGE_TARGET: InterceptionTarget = { key: 'page', sessionId: null }
@@ -117,6 +133,26 @@ export class NetMockInterception {
 	/** Resolve a paused request; returns `false` when the command failed (non-benign failures are reported via `onError`). */
 	public sendRequestCommand<M extends CdpMethod>(request: NetMockPausedRequest, method: M, params: CdpParams<M>): Promise<boolean> {
 		return this.sendCommand({ key: request.sessionId ? `session:${request.sessionId}` : 'page', sessionId: request.sessionId }, method, params)
+	}
+
+	/** Read the real body of a request paused at the response stage; null when CDP could not provide it. */
+	public async readResponseBody(request: NetMockPausedRequest): Promise<{ body: string; base64Encoded: boolean } | null> {
+		const session = this.binding?.pageSession
+		if (!session?.isAttached()) {
+			return null
+		}
+
+		try {
+			const result = await session.sendAndWait(
+				'Fetch.getResponseBody',
+				{ requestId: request.requestId },
+				request.sessionId ? { sessionId: request.sessionId } : undefined,
+			)
+			return typeof result.body === 'string' ? { body: result.body, base64Encoded: result.base64Encoded === true } : null
+		} catch (error) {
+			this.reportError(error)
+			return null
+		}
 	}
 
 	public reconcile(scopes: ReadonlySet<NetMockScope>, reset = false): Promise<boolean> {
@@ -197,10 +233,15 @@ export class NetMockInterception {
 			await session.sendAndWait(method, params, target.sessionId ? { sessionId: target.sessionId } : undefined)
 			return true
 		} catch (error) {
-			if (!isBenignInterceptionError(error)) {
-				this.onError(error)
-			}
+			this.reportError(error)
 			return false
+		}
+	}
+
+	/** Forward a failed command to `onError` unless it is the expected fallout of navigation or detach. */
+	private reportError(error: unknown): void {
+		if (!isBenignInterceptionError(error)) {
+			this.onError(error)
 		}
 	}
 }
@@ -220,6 +261,20 @@ const parsePausedRequest = (params: unknown, meta: CdpEventMeta): NetMockPausedR
 		frameId: paused.frameId ?? null,
 		sessionId: meta.sessionId ?? null,
 		headers: paused.request?.headers ?? {},
+		response: parsePausedResponse(paused),
+	}
+}
+
+const parsePausedResponse = (paused: FetchRequestPausedParams): NetMockPausedResponse | null => {
+	if (paused.responseStatusCode === undefined && paused.responseErrorReason === undefined) {
+		return null
+	}
+
+	return {
+		statusCode: paused.responseStatusCode ?? null,
+		statusText: paused.responseStatusText ?? '',
+		headers: paused.responseHeaders ?? [],
+		errorReason: paused.responseErrorReason ?? null,
 	}
 }
 

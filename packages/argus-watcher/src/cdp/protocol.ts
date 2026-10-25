@@ -233,10 +233,14 @@ export type CdpCommandMap = {
 	'Emulation.setUserAgentOverride': Command<{ userAgent: string; acceptLanguage?: string; platform?: string }, unknown>
 
 	// --- Fetch (request interception) ---
-	'Fetch.continueRequest': Command<{ requestId: string; url?: string; method?: string; headers?: Array<{ name: string; value: string }> }, unknown>
+	'Fetch.continueRequest': Command<
+		{ requestId: string; url?: string; method?: string; headers?: Array<{ name: string; value: string }>; interceptResponse?: boolean },
+		unknown
+	>
 	'Fetch.disable': Command<NoParams, unknown>
 	'Fetch.enable': Command<{ patterns?: Array<{ urlPattern?: string; requestStage?: string; resourceType?: string }> }, unknown>
 	'Fetch.failRequest': Command<{ requestId: string; errorReason: string }, unknown>
+	'Fetch.getResponseBody': Command<{ requestId: string }, { body?: string; base64Encoded?: boolean }>
 	'Fetch.fulfillRequest': Command<
 		{
 			requestId: string

@@ -18,7 +18,7 @@ import { formatError } from '../cli/parse.js'
 import type { Output } from '../output/io.js'
 import { parseDurationMs } from '@vforsh/argus-core'
 import { resolvePath } from '../utils/paths.js'
-import { readStdin } from './inputSource.js'
+import { readStdin, readTextInput, selectTextInput } from './inputSource.js'
 
 const TIMEOUT_WRITE_MS = 10_000
 const TIMEOUT_READ_MS = 5_000
@@ -42,6 +42,10 @@ export type NetMockAddOptions = {
 	setHeader?: string[]
 	rewriteHost?: string
 	delay?: string
+	delayResponse?: string
+	failAfterResponse?: string
+	patchJson?: string
+	patchJsonFile?: string
 	times?: string
 	json?: boolean
 }
@@ -98,13 +102,16 @@ const buildAddRequest = async (options: NetMockAddOptions, output: Output): Prom
 	}
 
 	const wantsFulfill = options.status != null || options.body != null || options.bodyFile != null || responseHeaders.length > 0
-	const primaryCount = [options.block === true, options.fail != null, wantsFulfill].filter(Boolean).length
+	const wantsResponse = hasResponseFlags(options)
+	const primaryCount = [options.block === true, options.fail != null, wantsFulfill, wantsResponse].filter(Boolean).length
 	if (primaryCount > 1) {
-		return invalid('Provide only one primary action: --block, --fail <reason>, or --status/--body/--body-file/--header')
-	}
-	if (primaryCount > 0 && (requestHeaders.length > 0 || options.rewriteHost != null)) {
 		return invalid(
-			'--set-header and --rewrite-host only apply to pass-through rules; they cannot combine with --block, --fail, or a stubbed response',
+			'Provide only one primary action: --block, --fail <reason>, --status/--body/--body-file/--header, or --delay-response/--fail-after-response/--patch-json',
+		)
+	}
+	if (primaryCount > 0 && !wantsResponse && (requestHeaders.length > 0 || options.rewriteHost != null)) {
+		return invalid(
+			'--set-header and --rewrite-host only apply to rules that forward the request; they cannot combine with --block, --fail, or a stubbed response',
 		)
 	}
 
@@ -187,11 +194,11 @@ const buildAction = async (
 	}
 
 	if (options.fail != null) {
-		const reason = NET_MOCK_FAIL_REASONS.find((candidate) => candidate.toLowerCase() === options.fail!.toLowerCase())
+		const reason = parseFailReason(options.fail)
 		if (!reason) {
 			return invalid(`Invalid --fail reason: ${options.fail}. Valid reasons: ${NET_MOCK_FAIL_REASONS.join(', ')}`)
 		}
-		return { kind: 'fail', reason: reason as NetMockFailReason }
+		return { kind: 'fail', reason }
 	}
 
 	const wantsFulfill = options.status != null || options.body != null || options.bodyFile != null || responseHeaders.length > 0
@@ -224,6 +231,10 @@ const buildAction = async (
 		return action
 	}
 
+	if (hasResponseFlags(options)) {
+		return buildResponseAction(options, requestHeaders, output)
+	}
+
 	if (requestHeaders.length > 0 || options.rewriteHost != null || delayMs != null) {
 		const action: NetMockAction = { kind: 'continue' }
 		if (requestHeaders.length > 0) {
@@ -236,8 +247,86 @@ const buildAction = async (
 	}
 
 	return invalid(
-		'Provide an action: --block, --fail <reason>, --status/--body (stub response), or --delay/--set-header/--rewrite-host (pass through)',
+		'Provide an action: --block, --fail <reason>, --status/--body (stub response), --delay-response/--fail-after-response/--patch-json (act on the real response), or --delay/--set-header/--rewrite-host (pass through)',
 	)
+}
+
+const hasResponseFlags = (options: NetMockAddOptions): boolean =>
+	options.delayResponse != null || options.failAfterResponse != null || options.patchJson != null || options.patchJsonFile != null
+
+/** Forward the request, then act on the real response: hold it, fail it, or merge-patch its JSON. */
+const buildResponseAction = async (options: NetMockAddOptions, requestHeaders: NetMockHeader[], output: Output): Promise<NetMockAction | null> => {
+	const invalid = (message: string): null => {
+		output.writeWarn(message)
+		process.exitCode = 2
+		return null
+	}
+
+	const wantsPatch = options.patchJson != null || options.patchJsonFile != null
+	if (options.failAfterResponse != null && wantsPatch) {
+		return invalid('Provide only one of: --fail-after-response, --patch-json/--patch-json-file')
+	}
+
+	const action: NetMockAction = { kind: 'response' }
+	if (requestHeaders.length > 0) {
+		action.setHeaders = requestHeaders
+	}
+	if (options.rewriteHost != null) {
+		action.rewriteHost = options.rewriteHost
+	}
+
+	if (options.delayResponse != null) {
+		const parsed = parseDurationMs(options.delayResponse)
+		if (parsed == null || parsed < 0) {
+			return invalid(`Invalid --delay-response value: ${options.delayResponse} (use e.g. 500ms, 2s, 1m)`)
+		}
+		action.delayMs = parsed
+	}
+
+	if (options.failAfterResponse != null) {
+		const reason = parseFailReason(options.failAfterResponse)
+		if (!reason) {
+			return invalid(`Invalid --fail-after-response reason: ${options.failAfterResponse}. Valid reasons: ${NET_MOCK_FAIL_REASONS.join(', ')}`)
+		}
+		action.fail = reason
+	}
+
+	if (wantsPatch) {
+		const patch = await resolvePatchJson(options, output)
+		if (patch === INVALID_BODY) {
+			return null
+		}
+		action.patchJson = patch
+	}
+
+	return action
+}
+
+const parseFailReason = (raw: string): NetMockFailReason | undefined =>
+	NET_MOCK_FAIL_REASONS.find((candidate) => candidate.toLowerCase() === raw.toLowerCase())
+
+/** Resolve the merge patch from --patch-json (inline or `-` for stdin) or --patch-json-file. */
+const resolvePatchJson = async (options: NetMockAddOptions, output: Output): Promise<unknown> => {
+	const names = {
+		inline: '--patch-json',
+		file: '--patch-json-file',
+		stdin: '--patch-json -',
+		missing: 'Provide --patch-json <json> or --patch-json-file <path>',
+	}
+	const selection = selectTextInput({ inline: options.patchJson, file: options.patchJsonFile }, names, output)
+	const text = selection ? await readTextInput(selection, names, output, 'JSON patch') : null
+	if (text == null) {
+		process.exitCode = 2
+		return INVALID_BODY
+	}
+
+	try {
+		return JSON.parse(text)
+	} catch (error) {
+		output.writeWarn(`Invalid JSON patch: ${formatError(error)}`)
+		process.exitCode = 2
+		return INVALID_BODY
+	}
 }
 
 const INVALID_BODY = Symbol('invalid-body')
@@ -449,6 +538,17 @@ const describeAction = (action: NetMockAction): string => {
 	}
 	if (action.rewriteHost) {
 		parts.push(`host → ${action.rewriteHost}`)
+	}
+	if (action.kind === 'response') {
+		if (action.delayMs) {
+			parts.push(`hold response ${formatDuration(action.delayMs)}`)
+		}
+		if (action.fail) {
+			parts.push(`fail ${action.fail} after response`)
+		}
+		if (action.patchJson !== undefined) {
+			parts.push('patch json')
+		}
 	}
 	return parts.length > 0 ? `continue (${parts.join('; ')})` : 'continue'
 }

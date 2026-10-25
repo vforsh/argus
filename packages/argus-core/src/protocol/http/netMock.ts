@@ -82,12 +82,31 @@ export type NetMockFailReason = (typeof NET_MOCK_FAIL_REASONS)[number]
  * - `fail` aborts with the given network error reason, so page `fetch()` calls reject.
  * - `fulfill` answers with a synthetic response; the request never reaches the network.
  * - `continue` forwards the request, optionally overriding headers or the URL host/origin.
+ * - `response` forwards the request (with the same optional rewrites as `continue`), then acts on
+ *   the real server response: hold it, abort it toward the page, or merge-patch its JSON body.
  */
 export type NetMockAction =
 	| { kind: 'block' }
 	| { kind: 'fail'; reason: NetMockFailReason }
 	| { kind: 'fulfill'; status: number; headers?: NetMockHeader[]; bodyBase64?: string }
 	| { kind: 'continue'; setHeaders?: NetMockHeader[]; rewriteHost?: string }
+	| NetMockResponseAction
+
+/**
+ * Response-stage action: the request reaches the server, the page sees the altered outcome.
+ * At least one of `delayMs`, `fail`, `patchJson` is set; `fail` and `patchJson` are exclusive.
+ */
+export type NetMockResponseAction = {
+	kind: 'response'
+	setHeaders?: NetMockHeader[]
+	rewriteHost?: string
+	/** Hold the real response this long before delivering (or failing) it. */
+	delayMs?: number
+	/** Abort toward the page after the server answered ("lost response"). */
+	fail?: NetMockFailReason
+	/** RFC 7396 JSON merge patch applied to the real JSON body. */
+	patchJson?: unknown
+}
 
 /** One installed mock rule, including hit accounting. */
 export type NetMockRule = {
@@ -217,7 +236,7 @@ const parseNetMockMatch = (value: unknown): NetMockMatch | FieldError => {
  */
 const parseNetMockAction = (value: unknown, delayMs: number | undefined): NetMockAction | FieldError => {
 	if (!isProtocolObject(value) || typeof value.kind !== 'string') {
-		return fieldError('action.kind must be one of: block, fail, fulfill, continue')
+		return fieldError(`action.kind must be one of: ${NET_MOCK_ACTION_KINDS.join(', ')}`)
 	}
 
 	if (value.kind === 'block') {
@@ -261,7 +280,36 @@ const parseNetMockAction = (value: unknown, delayMs: number | undefined): NetMoc
 		return compact({ kind: 'continue' as const, setHeaders, rewriteHost })
 	}
 
-	return fieldError('action.kind must be one of: block, fail, fulfill, continue')
+	if (value.kind === 'response') {
+		return parseNetMockResponseAction(value)
+	}
+
+	return fieldError(`action.kind must be one of: ${NET_MOCK_ACTION_KINDS.join(', ')}`)
+}
+
+const NET_MOCK_ACTION_KINDS = ['block', 'fail', 'fulfill', 'continue', 'response'] as const
+
+const parseNetMockResponseAction = (value: Record<string, unknown>): NetMockResponseAction | FieldError => {
+	const setHeaders = optionalHeaders(value, 'setHeaders')
+	if (isFieldError(setHeaders)) return fieldError(setHeaders.__fieldError.replace(/^setHeaders/, 'action.setHeaders'))
+	const rewriteHost = optionalNonEmptyString(value, 'rewriteHost')
+	if (isFieldError(rewriteHost) || (value.rewriteHost !== undefined && rewriteHost == null)) {
+		return fieldError('action.rewriteHost must be a non-empty string')
+	}
+	const delayMs = optionalNumber(value, 'delayMs', { min: 0 })
+	if (isFieldError(delayMs)) return fieldError('action.delayMs must be a finite number >= 0')
+	const fail = optionalEnum(value, 'fail', NET_MOCK_FAIL_REASONS)
+	if (isFieldError(fail)) return fieldError(`action.fail must be one of: ${NET_MOCK_FAIL_REASONS.join(', ')}`)
+	const patchJson = value.patchJson
+
+	if (delayMs === undefined && fail == null && patchJson === undefined) {
+		return fieldError('response action requires at least one of: delayMs, fail, patchJson')
+	}
+	if (fail != null && patchJson !== undefined) {
+		return fieldError('response action cannot combine fail and patchJson')
+	}
+
+	return compact({ kind: 'response' as const, setHeaders, rewriteHost, delayMs, fail, patchJson })
 }
 
 /** Schema for POST /net/mock/add request payloads. */
