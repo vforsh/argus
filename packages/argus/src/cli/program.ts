@@ -38,12 +38,13 @@ const throwOnExit = (error: CommanderError): never => {
 	throw error
 }
 
+/**
+ * Commander has already written the help, version, or error text through `configureOutput`, so only
+ * the exit code is left. Printing `error.message` again duplicated errors and leaked the
+ * `(outputHelp)` placeholder after `argus help <cmd>`.
+ */
 const exitProcess = (error: CommanderError): never => {
-	if (error.code === 'commander.helpDisplayed' || error.code === 'commander.version') {
-		process.exit(0)
-	}
-	console.error(error.message)
-	process.exit(2)
+	process.exit(error.exitCode === 0 ? 0 : 2)
 }
 
 const collectPluginOption = (value: string, previous: string[]): string[] => [...previous, value]
