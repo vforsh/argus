@@ -313,5 +313,6 @@ for (const code of ['watcher_id_taken', 'tab_owned_by_other_debugger']) {
 		}
 		expect((await f.bind('--as', 'bound')).json).toEqual({ ok: false, error: { code, message: 'Attach refused' } })
 		expect(f.target.calls).toHaveLength(0)
-	})
+		// Six sequential CLI processes: ~1s idle, but past bun's 5s default on a loaded machine.
+	}, 30_000)
 }
