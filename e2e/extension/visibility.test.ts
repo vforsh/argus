@@ -1,15 +1,14 @@
 /** Live extension coverage for the visibility policy and page-scoped routes. */
-import { afterAll, beforeAll, expect, test } from 'bun:test'
-import type { DomKeydownResponse, EvalResponse, VisibilityResponse } from '@vforsh/argus-core'
-import { readForegroundApp, restoreForegroundApp } from './helpers/foreground.js'
-import { delay } from '@vforsh/argus-core'
-import { resolveTestChromeBin, startExtensionHarness, type ExtensionHarness } from './helpers/extensionHarness.js'
+import { afterAll, beforeAll, expect, setDefaultTimeout } from 'bun:test'
+import { delay, type DomKeydownResponse, type EvalResponse, type VisibilityResponse } from '@vforsh/argus-core'
+import { liveExtensionTest, resolveTestChromeBin, startExtensionHarness, type ExtensionHarness } from '../helpers/extensionHarness.js'
+import { readForegroundApp, restoreForegroundApp } from '../helpers/foreground.js'
+import { waitFor } from '../helpers/poll.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const chromeBin = resolveTestChromeBin()
-const liveTest = chromeBin ? test : test.skip
-if (!chromeBin) {
-	console.warn('[visibility-extension] No Chromium/Chrome for Testing binary found; skipping. Set ARGUS_E2E_CHROME_BIN to enable.')
-}
+setDefaultTimeout(TIMEOUTS.extension)
+
+const liveTest = liveExtensionTest('visibility-extension')
 
 const WATCHER_ID = 'visibility-extension'
 
@@ -17,38 +16,25 @@ let harness: ExtensionHarness
 let foregroundApp: string | null = null
 
 beforeAll(async () => {
-	if (!chromeBin) return
+	if (!resolveTestChromeBin()) return
 	foregroundApp = await readForegroundApp()
 	harness = await startExtensionHarness()
 	const attached = await harness.cli('ext', 'use', '--url', harness.pageUrlSubstring, '--as', WATCHER_ID, '--json')
 	expect(attached.code).toBe(0)
-}, 120_000)
+})
 
 afterAll(async () => {
 	await harness?.close()
 })
 
-type VisibilityStatus = VisibilityResponse
-
 const evalExtension = <T = unknown>(expression: string): Promise<T> => harness.evaluateInExtension<T>(`(async () => (${expression}))()`)
 
-const readVisibility = (): Promise<VisibilityStatus> => harness.cliJson<VisibilityStatus>('page', 'visibility', WATCHER_ID, '--json')
+const readVisibility = (): Promise<VisibilityResponse> => harness.cliJson<VisibilityResponse>('page', 'visibility', WATCHER_ID, '--json')
 
 const evalPage = async <T>(expression: string): Promise<T> => {
 	const response = await harness.cliJson<EvalResponse>('eval', WATCHER_ID, expression, '--json')
 	expect(response.ok).toBe(true)
 	return response.result as T
-}
-
-const waitFor = async <T>(read: () => Promise<T>, predicate: (value: T) => boolean, timeoutMs = 30_000): Promise<T> => {
-	const deadline = Date.now() + timeoutMs
-	let value: T
-	do {
-		value = await read()
-		if (predicate(value)) return value
-		await delay(250)
-	} while (Date.now() < deadline)
-	throw new Error(`Timed out after ${timeoutMs}ms; last value: ${JSON.stringify(value!)}`)
 }
 
 liveTest(
@@ -76,7 +62,7 @@ liveTest(
 			const initial = await readVisibility()
 			expect(initial).toMatchObject({ ok: true, attached: true, state: 'default', policy: 'foreground' })
 
-			const shown = await harness.cliJson<VisibilityStatus>('page', 'show', WATCHER_ID, '--policy', 'background', '--json')
+			const shown = await harness.cliJson<VisibilityResponse>('page', 'show', WATCHER_ID, '--policy', 'background', '--json')
 			expect(shown).toMatchObject({ ok: true, attached: true, state: 'shown', policy: 'background' })
 			expect(await evalExtension<number>(`(await chrome.tabs.query({active: true, lastFocusedWindow: true}))[0]?.id`)).toBe(decoyTabId)
 
@@ -129,12 +115,13 @@ liveTest(
 			await waitFor(
 				() => evalPage<string>('document.readyState'),
 				(state) => state === 'complete',
+				{ timeoutMs: 30_000, intervalMs: 250 },
 			)
 			expect(await readVisibility()).toMatchObject({ ok: true, attached: true, state: 'shown', policy: 'background' })
 			expect(await evalPage<boolean>('new Promise(resolve => requestAnimationFrame(() => resolve(document.hasFocus())))')).toBe(true)
 			await assertBackground('reload')
 
-			const hidden = await harness.cliJson<VisibilityStatus>('page', 'hide', WATCHER_ID, '--json')
+			const hidden = await harness.cliJson<VisibilityResponse>('page', 'hide', WATCHER_ID, '--json')
 			expect(hidden).toMatchObject({ ok: true, attached: true, state: 'default', policy: 'background' })
 			await harness.cli('page', 'show', WATCHER_ID, '--policy', 'foreground', '--no-activate', '--json')
 			await assertBackground('restore-shown-without-activation')
@@ -146,5 +133,4 @@ liveTest(
 			await restoreForegroundApp(foregroundApp)
 		}
 	},
-	120_000,
 )

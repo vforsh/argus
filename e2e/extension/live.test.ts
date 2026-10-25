@@ -9,29 +9,29 @@
  * Skips itself when no Chromium/Chrome for Testing binary is available (branded Chrome
  * 137+ ignores --load-extension).
  */
-import http from 'node:http'
 import path from 'node:path'
-import { readActiveRegistry, type LogsResponse } from '@vforsh/argus-core'
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { delay, readActiveRegistry, type LogsResponse } from '@vforsh/argus-core'
+import { afterAll, beforeAll, expect, setDefaultTimeout } from 'bun:test'
 import type { ApiResult, EvalResponse, NavigateHistoryResponse, NavigateResponse, StatusResponse } from '@vforsh/argus-core'
-import { resolveTestChromeBin, startExtensionHarness, type ExtensionHarness } from './helpers/extensionHarness.js'
-import { startSession } from './helpers/session.js'
+import { liveExtensionTest, resolveTestChromeBin, startExtensionHarness, type ExtensionHarness } from '../helpers/extensionHarness.js'
+import { BIN_PATH } from '../helpers/paths.js'
+import { waitFor } from '../helpers/poll.js'
+import { startSession } from '../helpers/session.js'
+import { startSite } from '../helpers/site.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const chromeBin = resolveTestChromeBin()
-const liveTest = chromeBin ? test : test.skip
-if (!chromeBin) {
-	console.warn('[extension-live] No Chromium/Chrome for Testing binary found; skipping. Set ARGUS_E2E_CHROME_BIN to enable.')
-}
+setDefaultTimeout(TIMEOUTS.extension)
+
+const liveTest = liveExtensionTest('extension-live')
 
 const WATCHER_ID = 'ext-live'
-const STEP_TIMEOUT_MS = 90_000
 
 let harness: ExtensionHarness
 
 beforeAll(async () => {
-	if (!chromeBin) return
+	if (!resolveTestChromeBin()) return
 	harness = await startExtensionHarness()
-}, 120_000)
+})
 
 afterAll(async () => {
 	await harness?.close()
@@ -45,25 +45,8 @@ const evalInSelectedTarget = async (expression: string): Promise<unknown> => {
 }
 
 /** Poll an eval until the predicate holds; navigations make single-shot evals racy by design. */
-const waitForEval = async (expression: string, predicate: (value: unknown) => boolean, timeoutMs = 30_000): Promise<unknown> => {
-	const deadline = Date.now() + timeoutMs
-	let lastValue: unknown
-	let lastError: unknown
-	while (Date.now() < deadline) {
-		try {
-			lastValue = await evalInSelectedTarget(expression)
-			if (predicate(lastValue)) {
-				return lastValue
-			}
-		} catch (error) {
-			lastError = error
-		}
-		await sleep(500)
-	}
-	throw new Error(
-		`waitForEval timed out for ${expression}.\nlast value: ${JSON.stringify(lastValue)}\nlast error: ${lastError instanceof Error ? lastError.message : String(lastError ?? 'none')}`,
-	)
-}
+const waitForEval = (expression: string, predicate: (value: unknown) => boolean, timeoutMs = 30_000): Promise<unknown> =>
+	waitFor(() => evalInSelectedTarget(expression), predicate, { timeoutMs, intervalMs: 500, ignoreErrors: true })
 
 const pageNavigations = async (): Promise<number> => {
 	const status = await harness.cliJson<StatusResponse>('watcher', 'status', WATCHER_ID, '--json')
@@ -75,8 +58,6 @@ const selectIframeByUrl = async (urlSubstring: string): Promise<void> => {
 	const result = await harness.cli('ext', 'select', WATCHER_ID, '--iframe-url', urlSubstring, '--json')
 	expect(result.code).toBe(0)
 }
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const assertTextSelectionInFrame = async (): Promise<void> => {
 	await evalInSelectedTarget(`(() => {
@@ -117,7 +98,6 @@ liveTest(
 		await waitForEval('location.href', (value) => typeof value === 'string' && value.includes(harness.pageUrlSubstring))
 		// Subsequent cases verify that existing same-origin and OOPIF frames were rediscovered.
 	},
-	STEP_TIMEOUT_MS,
 )
 
 liveTest(
@@ -129,7 +109,6 @@ liveTest(
 		const href = await waitForEval('location.href', (value) => typeof value === 'string' && value.includes(harness.pageUrlSubstring))
 		expect(String(href)).not.toContain('iframe.html')
 	},
-	STEP_TIMEOUT_MS,
 )
 
 liveTest(
@@ -139,7 +118,6 @@ liveTest(
 		await waitForEval('location.href', (value) => typeof value === 'string' && value.includes(`${harness.pageUrlSubstring}/iframe.html`))
 		await assertTextSelectionInFrame()
 	},
-	STEP_TIMEOUT_MS,
 )
 
 liveTest(
@@ -164,7 +142,6 @@ liveTest(
 		// re-rotating logs and dropping sourcemap caches for a navigation that never happened.
 		expect(delta).toBe(1)
 	},
-	STEP_TIMEOUT_MS,
 )
 
 liveTest(
@@ -175,7 +152,6 @@ liveTest(
 		await waitForEval('location.href', (value) => typeof value === 'string' && value.includes(`${crossOriginSubstring}/iframe.html`))
 		await assertTextSelectionInFrame()
 	},
-	STEP_TIMEOUT_MS,
 )
 
 liveTest(
@@ -194,7 +170,6 @@ liveTest(
 		// Exactly one, same contract as scenario C (pre-C2 a reload also counted twice).
 		expect(delta).toBe(1)
 	},
-	STEP_TIMEOUT_MS,
 )
 
 liveTest(
@@ -216,7 +191,7 @@ liveTest(
 			if (targets.code === 0 && !targetsJson.includes(`${crossOriginSubstring}/iframe.html`)) {
 				break
 			}
-			await sleep(500)
+			await delay(500)
 		}
 		expect(targetsJson).not.toContain(`${crossOriginSubstring}/iframe.html`)
 
@@ -225,7 +200,6 @@ liveTest(
 		expect(status.ok).toBe(true)
 		expect(status.attached).toBe(true)
 	},
-	STEP_TIMEOUT_MS,
 )
 
 liveTest(
@@ -256,7 +230,6 @@ liveTest(
 		// Two real top-frame navigations, one each — the same one-per-navigation contract as C and E.
 		expect((await pageNavigations()) - navigationsBefore).toBe(2)
 	},
-	STEP_TIMEOUT_MS,
 )
 
 liveTest(
@@ -281,12 +254,11 @@ liveTest(
 		expect(unmute).toMatchObject({ ok: true, muted: false, tab: { tabId } })
 		expect(await harness.evaluateInExtension<boolean>(`(async () => (await chrome.tabs.get(${tabId})).mutedInfo.muted)()`)).toBe(false)
 	},
-	STEP_TIMEOUT_MS,
 )
 
 
 liveTest('I: raw/final ingestion through the real extension bridge preserves order and cursors under a cold map', async () => {
-	const server = http.createServer((req, res) => {
+	const site = await startSite((req, res) => {
 		if (req.url === '/slow.map') {
 			setTimeout(() => res.end(JSON.stringify({ version: 3, sources: ['original.ts'], names: [], mappings: 'AAAA' })), 250)
 		} else if (req.url === '/bundle.js') {
@@ -296,9 +268,8 @@ liveTest('I: raw/final ingestion through the real extension bridge preserves ord
 			res.end('<script src="/bundle.js"></script>')
 		}
 	})
-	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
 	try {
-		const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+		const url = site.origin
 		expect((await harness.cli('ext', 'select', WATCHER_ID, '--page', '--json')).code).toBe(0)
 		expect((await harness.cli('goto', WATCHER_ID, url, '--json')).code).toBe(0)
 		await waitForEval('typeof window.emit', (value) => value === 'function')
@@ -321,16 +292,15 @@ liveTest('I: raw/final ingestion through the real extension bridge preserves ord
 			.toEqual(['extension-first', 'extension-second'])
 		expect((await json<LogsResponse>(`/logs?after=${all.nextCursor}`)).events).toHaveLength(0)
 	} finally {
-		server.closeAllConnections()
-		await new Promise<void>((resolve) => server.close(() => resolve()))
+		await site.close()
 	}
-}, STEP_TIMEOUT_MS)
+})
 
 liveTest(
 	'J: session dialog controls overtake the in-flight eval that opened the dialog',
 	async () => {
 		const env = { ...process.env, ARGUS_HOME: path.dirname(harness.registryPath), ARGUS_REGISTRY_PATH: harness.registryPath }
-		const session = startSession(path.resolve('packages/argus/dist/bin.js'), [WATCHER_ID, '--request-timeout', '20s'], { env, cwd: process.cwd() })
+		const session = startSession(BIN_PATH, [WATCHER_ID, '--request-timeout', '20s'], { env, cwd: process.cwd() })
 		try {
 			expect(await session.next()).toMatchObject({ type: 'ready', watcher: { id: WATCHER_ID } })
 			session.send({ id: 'eval', cmd: 'eval', args: { expression: "window.confirm('extension-confirm')" } })
@@ -346,5 +316,4 @@ liveTest(
 			await session.close(5_000)
 		}
 	},
-	STEP_TIMEOUT_MS,
 )

@@ -11,7 +11,7 @@ Argus: terminal-first debugging for Chromium apps (CLI + watcher over CDP or the
 - **`packages/argus-plugin-api`**: versioned types for CLI plugins (`ArgusPluginHostV1`, `ARGUS_PLUGIN_API_VERSION`).
 - **`packages/argus-extension`**: Chrome extension (esbuild bundle, own tsconfig). Frame table in `src/background/frame-table.ts`.
 - **`skill/argus/`**: AI-facing CLI cheat sheet (`SKILL.md`) plus advanced topics in `reference/`. Copied into the CLI build.
-- **Tests**: `e2e/*.test.ts` (integration), `packages/*/test` (existing package tests), `playground/` (manual harness + suite helpers).
+- **Tests**: `e2e/` integration suites, foldered by what they need: `internal/` (in-process modules), `cli/` (built CLI/SDK/session against stub watchers), `browser/` (Playwright Chromium), `extension/` (live extension). Shared setup in `e2e/helpers/` (`createCli`, `startCdpFixture`, `startStubWatcher`, temp dirs, polling). `packages/*/test` (existing package tests), `playground/` (manual harness + suite helpers).
 
 ---
 
@@ -71,9 +71,10 @@ Root `package.json` and `packages/*/package.json` are authoritative.
 - **No new unit tests**: don't add unit tests or unit-test targets. Existing package tests (`npm run test:unit`) may be run. Verify with typecheck, integration/e2e, and playground smoke checks.
 - **After package changes**: rebuild the affected package(s) serially, then typecheck, before testing.
 - **Quick**: `npm run typecheck`.
-- **Focused**: `npm run test:playground` (builds packages, runs `e2e/playground-*.test.ts` in a real browser) or `npm run test:unit` (`packages/*/test`, no browser).
+- **Focused**: `npm run test:playground` (builds packages, runs `e2e/browser/playground-smoke.test.ts` in a real browser) or `npm run test:unit` (`packages/*/test`, no browser).
 - **Extension**: `npm run test:e2e:extension` for any change to `packages/argus-extension` or the extension source in `argus-watcher`. Runs real Chromium with the unpacked extension and real native hosts in a temp profile. Needs Chrome for Testing/Chromium (branded Chrome 137+ ignores `--load-extension`): found in the Playwright cache or via `ARGUS_E2E_CHROME_BIN`. **Without a binary it skips itself; a green run with a skip warning proves nothing.** `ARGUS_E2E_HEADED=1` to watch.
-- **Full**: `npm run test:e2e` builds packages + extension, runs `test:unit`, then each `e2e/*.test.ts` serially (`scripts/test-e2e.mjs`). Slow; run when the change warrants it.
+- **Full**: `npm run test:e2e` builds packages + extension, runs `test:unit`, then each e2e suite serially, cheapest folder first (`scripts/test-e2e.mjs`; stops at the first failing file). Slow; run when the change warrants it.
+- **Timeouts**: a suite that spawns processes or launches a browser calls `setDefaultTimeout(TIMEOUTS.<tier>)` from `e2e/helpers/timeouts.ts` (covers hooks too). Pass a per-test timeout only when it exceeds the tier.
 
 ### Playground
 

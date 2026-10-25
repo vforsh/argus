@@ -5,14 +5,17 @@
  * The extension service worker stands in for the agent's browser API: it opens the bindUrl in a
  * background tab, the way Codex's browser would, and the test then binds by ticket alone.
  */
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, setDefaultTimeout } from 'bun:test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { delay, type RegistryV1 } from '@vforsh/argus-core'
-import { resolveTestChromeBin, startExtensionHarness, type ExtensionHarness } from './helpers/extensionHarness.js'
+import { liveExtensionTest, resolveTestChromeBin, startExtensionHarness, type ExtensionHarness } from '../helpers/extensionHarness.js'
+import { waitFor } from '../helpers/poll.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const liveTest = resolveTestChromeBin() ? test : test.skip
-if (!resolveTestChromeBin()) console.warn('[extension-bind] No Chromium binary; skipping real-browser check.')
+setDefaultTimeout(TIMEOUTS.extension)
+
+const liveTest = liveExtensionTest('extension-bind')
 
 type Prepared = { ticket: string; bindUrl: string; destination: string; expiresAt: number }
 type BindResult = {
@@ -34,7 +37,7 @@ let harness: ExtensionHarness
 
 beforeAll(async () => {
 	if (resolveTestChromeBin()) harness = await startExtensionHarness()
-}, 90_000)
+})
 
 afterAll(async () => {
 	await harness?.close()
@@ -50,13 +53,10 @@ const closeTab = (tabId: number) => harness.evaluateInExtension(`chrome.tabs.rem
 
 /** Wait until the extension reports the tab at a URL containing `substring` (tab URLs settle after load). */
 const waitForTabUrl = async (tabId: number, substring: string): Promise<void> => {
-	const deadline = Date.now() + 10_000
-	while (Date.now() < deadline) {
-		const url = await harness.evaluateInExtension<string>(`chrome.tabs.get(${tabId}).then(tab => tab.url ?? '')`)
-		if (url.includes(substring)) return
-		await delay(100)
-	}
-	throw new Error(`Tab ${tabId} never reached ${substring}`)
+	await waitFor(
+		() => harness.evaluateInExtension<string>(`chrome.tabs.get(${tabId}).then(tab => tab.url ?? '')`),
+		(url) => url.includes(substring),
+	)
 }
 
 const bindJson = async <T>(...args: string[]): Promise<{ code: number | null; json: T }> => {
@@ -142,7 +142,6 @@ liveTest(
 		expect(readRegistryFile().watchers.bound).toBeUndefined()
 		await closeTab(decoy)
 	},
-	120_000,
 )
 
 liveTest(
@@ -194,7 +193,6 @@ liveTest(
 			await closeTab(tabId)
 		}
 	},
-	60_000,
 )
 
 liveTest(
@@ -211,5 +209,4 @@ liveTest(
 		expect(after.browsers.map((row) => row.instanceId)).toEqual([instance.instanceId])
 		expect(after.browsers[0].label).toBe('codex')
 	},
-	120_000,
 )

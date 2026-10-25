@@ -1,12 +1,15 @@
-import { expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import os from 'node:os'
+/** Two browsers on one registry: distinct stable controls, explicit selection, and crash recovery that spares the other. */
+import { expect, setDefaultTimeout } from 'bun:test'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { delay, type RegistryV1, type StatusResponse, type WatcherRecord } from '@vforsh/argus-core'
-import { resolveTestChromeBin, startExtensionHarness, type ExtensionHarness } from './helpers/extensionHarness.js'
+import { liveExtensionTest, startExtensionHarness, type ExtensionHarness } from '../helpers/extensionHarness.js'
+import { makeTempDir, removeDir } from '../helpers/tempDir.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const liveTest = resolveTestChromeBin() ? test : test.skip
-if (!resolveTestChromeBin()) console.warn('[extension-multi-instance] No Chromium binary; skipping real-browser check.')
+setDefaultTimeout(TIMEOUTS.extension)
+
+const liveTest = liveExtensionTest('extension-multi-instance')
 
 const readRegistryFile = async (registryPath: string): Promise<RegistryV1> => JSON.parse(await readFile(registryPath, 'utf8')) as RegistryV1
 
@@ -18,7 +21,7 @@ liveTest(
 	async () => {
 		let first: ExtensionHarness | undefined
 		let second: ExtensionHarness | undefined
-		const sharedHome = await mkdtemp(path.join(os.tmpdir(), 'argus-ext-multi-'))
+		const sharedHome = await makeTempDir('argus-ext-multi')
 		try {
 			// Launched together: both control hosts race for `extension-control`.
 			const started = await Promise.allSettled([
@@ -126,10 +129,7 @@ liveTest(
 			expect((await second.cli('ext', 'mute', '--id', second.controlWatcherId, '--tab', String(tabIds[0]), '--json')).code).toBe(0)
 			expect((await second.cli('ext', 'unmute', '--id', second.controlWatcherId, '--tab', String(tabIds[0]), '--json')).code).toBe(0)
 
-			const registry = JSON.parse(await readFile(second.registryPath, 'utf8')) as {
-				watchers: Record<string, { host: string; port: number }>
-			}
-			const control = registry.watchers[second.controlWatcherId]
+			const control = (await readRegistryFile(second.registryPath)).watchers[second.controlWatcherId]
 			const failedAttach = await fetch(`http://${control.host}:${control.port}/attach`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
@@ -185,8 +185,9 @@ liveTest(
 		} finally {
 			await second?.close()
 			await first?.close()
-			await rm(sharedHome, { recursive: true, force: true })
+			await removeDir(sharedHome)
 		}
 	},
+	// Two browsers starting together, a 16s heartbeat wait and up to 45s for a respawn.
 	240_000,
 )
