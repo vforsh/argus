@@ -33,7 +33,15 @@ beforeAll(async () => {
 			mapRequests++
 			activeMaps++
 			maxActiveMaps = Math.max(maxActiveMaps, activeMaps)
-			res.on('close', () => activeMaps--)
+			// Node emits `close` on the response when the client aborts; Bun's node:http only on the
+			// request. Count whichever comes first, once, or an aborted map stays "active" forever.
+			let open = true
+			const settle = () => {
+				if (open) activeMaps--
+				open = false
+			}
+			res.on('close', settle)
+			req.on('close', settle)
 			if (stallBody) {
 				res.writeHead(200, { 'content-type': 'application/json' })
 				res.write('{') // Headers arrive, but the body never finishes.
