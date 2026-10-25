@@ -1,68 +1,35 @@
 import { test, expect } from 'bun:test'
 import path from 'node:path'
-import os from 'node:os'
 import fs from 'node:fs/promises'
+import type { LogLevel } from '@vforsh/argus-core'
 import { WatcherFileLogger } from '@vforsh/argus-watcher/internal'
+import { withTempDir } from '../helpers/tempDir.js'
 
 test('WatcherFileLogger creates files lazily and rotates on navigation', async () => {
-	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-file-logs-'))
-	const logsDir = path.join(tempDir, 'logs')
-	const startedAt = Date.parse('2026-01-11T12:00:00.000Z')
-	const logger = new WatcherFileLogger({
-		watcherId: 'test-watcher',
-		startedAt,
-		logsDir,
-		chrome: { host: '127.0.0.1', port: 9222 },
-		match: { url: 'example.com' },
-		maxFiles: 2,
-		includeTimestamps: false,
-	})
+	await withTempDir('argus-file-logs', async (tempDir) => {
+		const logsDir = path.join(tempDir, 'logs')
+		const startedAt = Date.parse('2026-01-11T12:00:00.000Z')
+		const logger = new WatcherFileLogger({
+			watcherId: 'test-watcher',
+			startedAt,
+			logsDir,
+			chrome: { host: '127.0.0.1', port: 9222 },
+			match: { url: 'example.com' },
+			maxFiles: 2,
+			includeTimestamps: false,
+		})
 
-	try {
 		expect(await pathExists(logsDir)).toBe(false)
 
-		logger.writeEvent({
-			ts: startedAt + 1000,
-			level: 'log',
-			text: 'first log',
-			args: [],
-			file: null,
-			line: null,
-			column: null,
-			pageUrl: 'https://example.com/?q=1',
-			pageTitle: 'Example',
-			source: 'console',
-		})
+		logger.writeEvent(consoleEvent(startedAt + 1000, 'log', 'first log', { url: 'https://example.com/?q=1', title: 'Example' }))
 
 		logger.rotate({ url: 'https://example.com/next?x=1', title: 'Next' })
 
-		logger.writeEvent({
-			ts: startedAt + 2000,
-			level: 'warning',
-			text: 'second log',
-			args: [],
-			file: null,
-			line: null,
-			column: null,
-			pageUrl: 'https://example.com/next?x=1',
-			pageTitle: 'Next',
-			source: 'console',
-		})
+		logger.writeEvent(consoleEvent(startedAt + 2000, 'warning', 'second log', { url: 'https://example.com/next?x=1', title: 'Next' }))
 
 		logger.rotate({ url: 'https://example.com/final?y=1', title: 'Final' })
 
-		logger.writeEvent({
-			ts: startedAt + 3000,
-			level: 'info',
-			text: 'third log',
-			args: [],
-			file: null,
-			line: null,
-			column: null,
-			pageUrl: 'https://example.com/final?y=1',
-			pageTitle: 'Final',
-			source: 'console',
-		})
+		logger.writeEvent(consoleEvent(startedAt + 3000, 'info', 'third log', { url: 'https://example.com/final?y=1', title: 'Final' }))
 
 		await logger.close()
 
@@ -91,9 +58,21 @@ test('WatcherFileLogger creates files lazily and rotates on navigation', async (
 		expect(isBefore(thirdContents, 'pageSearchParams: y=1', 'pageTitle: Final')).toBe(true)
 		expect(countOccurrences(thirdContents, 'watcherId:')).toBe(1)
 		expect(thirdContents).toContain('third log')
-	} finally {
-		await fs.rm(tempDir, { recursive: true, force: true })
-	}
+	})
+})
+
+/** A console event with no source location, as the watcher hands it to the file logger. */
+const consoleEvent = (ts: number, level: LogLevel, text: string, page: { url: string; title: string }) => ({
+	ts,
+	level,
+	text,
+	args: [],
+	file: null,
+	line: null,
+	column: null,
+	pageUrl: page.url,
+	pageTitle: page.title,
+	source: 'console' as const,
 })
 
 const pathExists = async (target: string): Promise<boolean> => {

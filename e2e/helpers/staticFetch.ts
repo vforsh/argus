@@ -14,14 +14,28 @@ export type RangeBehavior = 'ignore' | 'clamp' | 'reject-oversized-suffix' | 're
 export type RecordedRequest = { url: string; range: string | null }
 
 /**
- * Replace `globalThis.fetch` with a lookup over an in-memory URL → body map.
+ * Run `fn` with `globalThis.fetch` replaced by a lookup over an in-memory URL → body map, restoring
+ * the real fetch afterwards even when `fn` throws, so one test cannot leak into the next.
  *
  * @param files - Absolute URL to response body. A missing URL answers 404.
+ * @param fn - Receives `requests`, the requests served so far in order — enough to assert on cache
+ * hits, misses, and range use.
  * @param options.ranges - How `Range` headers are honoured. Defaults to `ignore`.
- * @returns `restore` (call it in a `finally` so one test cannot leak into the next) and `requests`,
- * the requests served so far in order — enough to assert on cache hits, misses, and range use.
  */
-export const mockStaticFetch = (
+export const withStaticFetch = async <T>(
+	files: Record<string, string>,
+	fn: (requests: RecordedRequest[]) => Promise<T>,
+	options: { ranges?: RangeBehavior } = {},
+): Promise<T> => {
+	const { restore, requests } = mockStaticFetch(files, options)
+	try {
+		return await fn(requests)
+	} finally {
+		restore()
+	}
+}
+
+const mockStaticFetch = (
 	files: Record<string, string>,
 	options: { ranges?: RangeBehavior } = {},
 ): { restore: () => void; requests: RecordedRequest[] } => {

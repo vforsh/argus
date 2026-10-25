@@ -1,10 +1,8 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs/promises'
-import os from 'node:os'
 import path from 'node:path'
 import { createRecorder, createVisualCapturePlan, toPageClip } from '@vforsh/argus-watcher/internal'
-import { createFakeCdpSession } from './helpers/fakeCdpSession.js'
 import {
 	inferRecordFormatFromOutFile,
 	parseRecordClipValue,
@@ -15,15 +13,30 @@ import {
 	resolveCaptureBounds,
 	validateRecordOutFile,
 	validateRecordOutFileForFormat,
-} from '../packages/argus/src/commands/record.js'
+} from '../../packages/argus/src/commands/record.js'
+import { createFakeCdpSession } from '../helpers/fakeCdpSession.js'
+import { useTempDirs } from '../helpers/tempDir.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
+
+// The recorder encodes through a real ffmpeg process.
+setDefaultTimeout(TIMEOUTS.process)
+
+const makeTempDir = useTempDirs('argus-record-test')
 
 const PNG_8X8 =
 	'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAhklEQVR4nBXOQREAQQjEwJWCFKQgBSmIGAFIwclc7tlVeeS9J8eT88n15MaDFx9+L+QIOUOukBsPXnzxBylHyplypdx48OLLPyg5Ss6Sq+TGgxdf/UHz0Dw0D80DHrz4+g+Gh+FheBge8ODFN3+wPCwPy8PygAcvvv2D4+F4OB6OBzx48eEPqHqkwUku9gIAAAAASUVORK5CYII='
 
-/** Screencast-capable session: answers layout metrics and pushes one frame when recording starts. */
-const createScreencastSession = () =>
+/**
+ * Screencast-capable session: answers layout metrics and pushes one frame when recording starts.
+ * `respond` answers anything else first (e.g. the `until` expression's `Runtime.evaluate`).
+ */
+const createScreencastSession = (respond?: (method: string) => unknown) =>
 	createFakeCdpSession({
 		respond: (method, _params, session) => {
+			const answer = respond?.(method)
+			if (answer !== undefined) {
+				return answer
+			}
 			if (method === 'Page.getLayoutMetrics') {
 				return { cssVisualViewport: { pageX: 0, pageY: 0, scale: 1, clientWidth: 8, clientHeight: 8 } }
 			}
@@ -35,6 +48,8 @@ const createScreencastSession = () =>
 			return undefined
 		},
 	})
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 describe('record command parsing', () => {
 	test('parses viewport clip values', () => {
@@ -89,100 +104,46 @@ const testWithWebm = hasFfmpegEncoder('libvpx-vp9') ? test : test.skip
 const testWithGif = hasFfmpegEncoder('gif') ? test : test.skip
 
 describe('recorder', () => {
-	let tempDirs: string[] = []
+	for (const { title, run, format } of [
+		{ title: 'records fake screencast frames to MP4 by default', run: testWithMp4, format: 'mp4' },
+		{ title: 'records fake screencast frames to WebM when requested', run: testWithWebm, format: 'webm' },
+	] as const) {
+		run(title, async () => {
+			const tempDir = await makeTempDir()
+			const session = createScreencastSession()
+			const recordingStates: boolean[] = []
+			const recorder = createRecorder({
+				session,
+				artifactsDir: tempDir,
+				onRecordingStateChange: (recording) => {
+					recordingStates.push(recording)
+				},
+			})
 
-	afterEach(async () => {
-		for (const dir of tempDirs) {
-			await fs.rm(dir, { recursive: true, force: true })
-		}
-		tempDirs = []
-	})
+			const started = await recorder.start({
+				outFile: `clip.${format}`,
+				clip: { x: 0, y: 0, width: 4, height: 4 },
+				fps: 5,
+			})
+			expect(started.format).toBe(format)
+			expect(started.clipped).toBe(true)
 
-	testWithMp4('records fake screencast frames to MP4 by default', async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-record-test-'))
-		tempDirs.push(tempDir)
-		const session = createScreencastSession()
-		const recordingStates: boolean[] = []
-		const recorder = createRecorder({
-			session,
-			artifactsDir: tempDir,
-			onRecordingStateChange: (recording) => {
-				recordingStates.push(recording)
-			},
+			await sleep(250)
+			const stopped = await recorder.stop({})
+			const stat = await fs.stat(path.join(tempDir, `clip.${format}`))
+
+			expect(stopped.format).toBe(format)
+			expect(stopped.frameCount).toBeGreaterThan(0)
+			expect(stat.size).toBeGreaterThan(0)
+			expect(recordingStates).toEqual([true, false])
+			expect(session.methods).toContain('Page.startScreencast')
+			expect(session.methods).toContain('Page.screencastFrameAck')
+			expect(session.methods).toContain('Page.stopScreencast')
 		})
-
-		const started = await recorder.start({
-			outFile: 'clip.mp4',
-			clip: { x: 0, y: 0, width: 4, height: 4 },
-			fps: 5,
-		})
-		expect(started.format).toBe('mp4')
-		expect(started.clipped).toBe(true)
-
-		await new Promise((resolve) => setTimeout(resolve, 250))
-		const stopped = await recorder.stop({})
-		const stat = await fs.stat(path.join(tempDir, 'clip.mp4'))
-
-		expect(stopped.format).toBe('mp4')
-		expect(stopped.frameCount).toBeGreaterThan(0)
-		expect(stat.size).toBeGreaterThan(0)
-		expect(recordingStates).toEqual([true, false])
-		expect(session.methods).toContain('Page.startScreencast')
-		expect(session.methods).toContain('Page.screencastFrameAck')
-		expect(session.methods).toContain('Page.stopScreencast')
-	})
-
-	testWithWebm('records fake screencast frames to WebM when requested', async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-record-test-'))
-		tempDirs.push(tempDir)
-		const session = createScreencastSession()
-		const recordingStates: boolean[] = []
-		const recorder = createRecorder({
-			session,
-			artifactsDir: tempDir,
-			onRecordingStateChange: (recording) => {
-				recordingStates.push(recording)
-			},
-		})
-
-		const started = await recorder.start({
-			outFile: 'clip.webm',
-			clip: { x: 0, y: 0, width: 4, height: 4 },
-			fps: 5,
-		})
-		expect(started.format).toBe('webm')
-		expect(started.clipped).toBe(true)
-
-		await new Promise((resolve) => setTimeout(resolve, 250))
-		const stopped = await recorder.stop({})
-		const stat = await fs.stat(path.join(tempDir, 'clip.webm'))
-
-		expect(stopped.format).toBe('webm')
-		expect(stopped.frameCount).toBeGreaterThan(0)
-		expect(stat.size).toBeGreaterThan(0)
-		expect(recordingStates).toEqual([true, false])
-		expect(session.methods).toContain('Page.startScreencast')
-		expect(session.methods).toContain('Page.screencastFrameAck')
-		expect(session.methods).toContain('Page.stopScreencast')
-	})
+	}
 })
 
 describe('recorder controls', () => {
-	let tempDirs: string[] = []
-
-	const makeTempDir = async (): Promise<string> => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-record-test-'))
-		tempDirs.push(tempDir)
-		return tempDir
-	}
-
-	afterEach(async () => {
-		for (const dir of tempDirs) {
-			await fs.rm(dir, { recursive: true, force: true })
-		}
-		tempDirs = []
-	})
-
 	testWithGif('encodes GIF output and clamps its frame rate', async () => {
 		const tempDir = await makeTempDir()
 		const recorder = createRecorder({ session: createScreencastSession(), artifactsDir: tempDir })
@@ -192,7 +153,7 @@ describe('recorder controls', () => {
 		// GIF frame delays are centiseconds, so anything past the cap is wasted bytes.
 		expect(started.fps).toBe(20)
 
-		await new Promise((resolve) => setTimeout(resolve, 150))
+		await sleep(150)
 		const stopped = await recorder.stop({})
 
 		expect(stopped.format).toBe('gif')
@@ -215,7 +176,7 @@ describe('recorder controls', () => {
 		expect(session.methods.filter((method) => method === 'Page.startScreencast').length).toBe(armedAtStart)
 
 		session.emit('Page.frameNavigated', { frame: { id: 'root', url: 'https://example.test/next' } })
-		await new Promise((resolve) => setTimeout(resolve, 50))
+		await sleep(50)
 
 		const stopped = await recorder.stop({})
 		expect(session.methods.filter((method) => method === 'Page.startScreencast').length).toBe(armedAtStart + 1)
@@ -244,9 +205,9 @@ describe('recorder controls', () => {
 		})
 
 		await recorder.start({ outFile: 'clip.mp4', fps: 5 })
-		await new Promise((resolve) => setTimeout(resolve, 150))
+		await sleep(150)
 		recorder.onDetached('target_closed')
-		await new Promise((resolve) => setTimeout(resolve, 250))
+		await sleep(250)
 
 		const stopped = await recorder.stop({})
 		expect(stopped.stopReason).toBe('detached')
@@ -259,20 +220,7 @@ describe('recorder controls', () => {
 	testWithMp4('stops a capture when the until expression turns truthy', async () => {
 		const tempDir = await makeTempDir()
 		let done = false
-		const session = createFakeCdpSession({
-			respond: (method, _params, fake) => {
-				if (method === 'Page.getLayoutMetrics') {
-					return { cssVisualViewport: { pageX: 0, pageY: 0, scale: 1, clientWidth: 8, clientHeight: 8 } }
-				}
-				if (method === 'Page.startScreencast') {
-					queueMicrotask(() => fake.emit('Page.screencastFrame', { data: PNG_8X8, sessionId: 1 }))
-				}
-				if (method === 'Runtime.evaluate') {
-					return { result: { value: done } }
-				}
-				return undefined
-			},
-		})
+		const session = createScreencastSession((method) => (method === 'Runtime.evaluate' ? { result: { value: done } } : undefined))
 		const recorder = createRecorder({ session, artifactsDir: tempDir })
 
 		setTimeout(() => {
@@ -294,7 +242,7 @@ describe('recorder controls', () => {
 		const started = await recorder.start({ outFile: 'clip.mp4', fps: 5, maxDurationMs: 150 })
 		expect(started.maxDurationMs).toBe(150)
 
-		await new Promise((resolve) => setTimeout(resolve, 500))
+		await sleep(500)
 		expect(recorder.status()).toBeNull()
 
 		const stopped = await recorder.stop({})
@@ -309,7 +257,7 @@ describe('recorder controls', () => {
 		expect(recorder.status()).toBeNull()
 		const started = await recorder.start({ outFile: 'clip.mp4', fps: 5 })
 
-		await new Promise((resolve) => setTimeout(resolve, 120))
+		await sleep(120)
 		const active = recorder.status()
 		expect(active?.recordId).toBe(started.recordId)
 		expect(active?.elapsedMs).toBeGreaterThan(0)
@@ -334,7 +282,7 @@ describe('recorder controls', () => {
 		const recorder = createRecorder({ session: createScreencastSession(), artifactsDir: tempDir })
 
 		await recorder.start({ outFile: 'clip.mp4', fps: 10 })
-		await new Promise((resolve) => setTimeout(resolve, 400))
+		await sleep(400)
 		const stopped = await recorder.stop({})
 
 		// The file has to cover the capture window: frames ≈ fps × seconds, not "one per tick".
@@ -395,22 +343,12 @@ describe('visual capture coordinates', () => {
 })
 
 describe('recorder shutdown races', () => {
-	let tempDirs: string[] = []
-
-	afterEach(async () => {
-		for (const dir of tempDirs) {
-			await fs.rm(dir, { recursive: true, force: true })
-		}
-		tempDirs = []
-	})
-
 	testWithMp4('two concurrent stops finalize once and agree on the result', async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-record-test-'))
-		tempDirs.push(tempDir)
+		const tempDir = await makeTempDir()
 		const recorder = createRecorder({ session: createScreencastSession(), artifactsDir: tempDir })
 
 		await recorder.start({ outFile: 'clip.mp4', fps: 5 })
-		await new Promise((resolve) => setTimeout(resolve, 120))
+		await sleep(120)
 
 		// The loser of the race must await the same encode, not move the file out from under ffmpeg.
 		const [first, second] = await Promise.allSettled([recorder.stop({}), recorder.stop({})])
@@ -426,12 +364,11 @@ describe('recorder shutdown races', () => {
 	})
 
 	testWithMp4('a stop racing the max-duration timer still writes a complete file', async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-record-test-'))
-		tempDirs.push(tempDir)
+		const tempDir = await makeTempDir()
 		const recorder = createRecorder({ session: createScreencastSession(), artifactsDir: tempDir })
 
 		await recorder.start({ outFile: 'clip.mp4', fps: 5, maxDurationMs: 150 })
-		await new Promise((resolve) => setTimeout(resolve, 150))
+		await sleep(150)
 
 		const stopped = await recorder.stop({ outFile: path.join(tempDir, 'final.mp4') })
 		expect(stopped.stopReason).toBe('max-duration')
