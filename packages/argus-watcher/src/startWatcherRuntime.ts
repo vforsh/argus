@@ -36,6 +36,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		throttleController,
 		visibilityController,
 		netMockController,
+		initScriptController,
 	} = setup
 	const shutdown = createShutdownLatch()
 	let cdpStatus: CdpSourceStatus = { attached: false, target: null }
@@ -126,6 +127,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		await networkCapture?.onAttached()
 		indicator.onAttach(session, target)
 		await injectOnAttach(session, target)
+		await initScriptController.onAttach()
 	}
 
 	const handleTargetChanged = (
@@ -159,6 +161,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		runtimeEditor?.rebind()
 		networkCapture?.onDetached()
 		netMockController.onDetach()
+		initScriptController.onDetach()
 		indicator.onDetach()
 		recorder.onDetached(reason)
 		if (reason != null) {
@@ -180,6 +183,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		},
 	})
 
+	initScriptController.bind(getPageSession())
 	netMockController.bind({
 		pageSession: getPageSession(),
 		getSelectedTarget: () => {
@@ -239,6 +243,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		throttleController,
 		visibilityController,
 		netMockController,
+		initScriptController,
 		diagnoseCdp,
 		getNetFilterContext: sourceHandle.getNetFilterContext,
 		readBrowserCookies: sourceHandle.readBrowserCookies,

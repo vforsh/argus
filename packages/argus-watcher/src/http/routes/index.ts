@@ -16,6 +16,7 @@ import { route as getNetWebSocketConnection } from './getNetWebSocketConnection.
 import { route as getNetSse } from './getNetSse.js'
 import { route as postNetClear } from './postNetClear.js'
 import { netMockRoutes } from './netMock.js'
+import { initScriptRoutes } from './initScript.js'
 import { route as getAuthCookies } from './getAuthCookies.js'
 import { route as getAuthState } from './getAuthState.js'
 import { cookieClearRoute, cookieDeleteRoute, cookieGetRoute, cookieSetRoute } from './authCookies.js'
@@ -88,6 +89,7 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	getNetSse,
 	postNetClear,
 	...netMockRoutes,
+	...initScriptRoutes,
 	getAuthCookies,
 	cookieGetRoute,
 	cookieSetRoute,

@@ -19,6 +19,10 @@ const runPageUrl = lazyAction(() => import('../../commands/pageUrl.js').then((mo
 const runPageShow = lazyAction(() => import('../../commands/pageVisibility.js').then((mod) => mod.runPageShow))
 const runPageHide = lazyAction(() => import('../../commands/pageVisibility.js').then((mod) => mod.runPageHide))
 const runPageVisibilityStatus = lazyAction(() => import('../../commands/pageVisibility.js').then((mod) => mod.runPageVisibilityStatus))
+const runPageInitScriptAdd = lazyAction(() => import('../../commands/pageInitScript.js').then((mod) => mod.runPageInitScriptAdd))
+const runPageInitScriptList = lazyAction(() => import('../../commands/pageInitScript.js').then((mod) => mod.runPageInitScriptList))
+const runPageInitScriptRemove = lazyAction(() => import('../../commands/pageInitScript.js').then((mod) => mod.runPageInitScriptRemove))
+const runPageInitScriptClear = lazyAction(() => import('../../commands/pageInitScript.js').then((mod) => mod.runPageInitScriptClear))
 
 const cdpTargetOptions = [
 	{ flags: '--cdp <host:port>', description: 'CDP host:port' },
@@ -72,6 +76,72 @@ export const gotoCommand: ArgusCommandDefinition = {
 	action: async (id, url, options) => {
 		await runPageGoto(id, url, options)
 	},
+}
+
+const initScriptCommand: ArgusCommandDefinition = {
+	name: 'init-script',
+	description: 'Scripts that run before page scripts in every new document; kept across reloads and reattach until removed',
+	subcommands: [
+		{
+			name: 'add',
+			description: 'Add an init script (runs in registration order on every navigation)',
+			arguments: [
+				{ flags: '[id]', description: 'Watcher ID' },
+				{ flags: '[code]', description: 'Inline JS code (or use --file / --stdin)' },
+			],
+			options: [
+				{ flags: '-f, --file <path>', description: 'Read JS from file' },
+				{ flags: '--stdin', description: 'Read JS from stdin (also triggered by - as code arg)' },
+				{ flags: '--name <label>', description: 'Label shown in `init-script ls` (default: file name)' },
+				{ flags: '--run-now', description: 'Also run it in the already loaded document (only for this add, not on reattach)' },
+				jsonOption,
+			],
+			examples: [
+				'argus page init-script add app --file ./fixtures/spy-fetch.js',
+				`argus page init-script add app "localStorage.setItem('debug', '1')"`,
+				'argus page init-script add app --file ./hooks.js --run-now',
+				'cat hooks.js | argus page init-script add app --stdin',
+			],
+			action: async (id, code, options) => {
+				await runPageInitScriptAdd(id, code, options)
+			},
+		},
+		{
+			name: 'ls',
+			alias: 'list',
+			description: 'List init scripts',
+			arguments: [{ flags: '[id]', description: 'Watcher ID' }],
+			options: [jsonOption],
+			examples: ['argus page init-script ls app', 'argus page init-script ls app --json'],
+			action: async (id, options) => {
+				await runPageInitScriptList(id, options)
+			},
+		},
+		{
+			name: 'rm',
+			alias: 'remove',
+			description: 'Remove one init script (affects future documents only)',
+			arguments: [
+				{ flags: '<script>', description: 'Script id (see `argus page init-script ls`)' },
+				{ flags: '[id]', description: 'Watcher ID' },
+			],
+			options: [jsonOption],
+			examples: ['argus page init-script rm 1 app'],
+			action: async (script, id, options) => {
+				await runPageInitScriptRemove(id, script, options)
+			},
+		},
+		{
+			name: 'clear',
+			description: 'Remove all init scripts',
+			arguments: [{ flags: '[id]', description: 'Watcher ID' }],
+			options: [jsonOption],
+			examples: ['argus page init-script clear app'],
+			action: async (id, options) => {
+				await runPageInitScriptClear(id, options)
+			},
+		},
+	],
 }
 
 const emulationCommand: ArgusCommandDefinition = {
@@ -310,6 +380,7 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 				},
 			},
 			emulationCommand,
+			initScriptCommand,
 		],
 	},
 ]

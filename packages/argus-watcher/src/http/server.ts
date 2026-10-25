@@ -14,6 +14,7 @@ import type { CdpSourceCookieQuery, CdpSourceHandle, CdpSourceStatus } from '../
 import type { EmulationController } from '../emulation/EmulationController.js'
 import type { ThrottleController } from '../throttle/ThrottleController.js'
 import type { NetMockController } from '../net/NetMockController.js'
+import type { InitScriptController } from '../initScripts/InitScriptController.js'
 import type { VisibilityController } from '../visibility/VisibilityController.js'
 import type { NetFilterContext } from '../net/filtering.js'
 import type { WatcherEndpoint, WatcherRequestQuery } from './endpoints.js'
@@ -55,6 +56,8 @@ export type HttpServerOptions = {
 	throttleController: ThrottleController
 	/** Network mock controller for /net/mock endpoints. */
 	netMockController: NetMockController
+	/** Init-script controller for /page/init-script endpoints. */
+	initScriptController: InitScriptController
 	/** Visibility controller for GET/POST /visibility endpoints. */
 	visibilityController: VisibilityController
 	/** Source handle for extension mode (enables /targets, /attach, /detach endpoints). */

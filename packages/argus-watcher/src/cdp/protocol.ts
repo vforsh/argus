@@ -268,6 +268,7 @@ export type CdpCommandMap = {
 
 	// --- Page ---
 	'Page.addScriptToEvaluateOnNewDocument': Command<{ source: string; worldName?: string; runImmediately?: boolean }, { identifier?: string }>
+	'Page.removeScriptToEvaluateOnNewDocument': Command<{ identifier: string }, unknown>
 	'Page.bringToFront': Command<NoParams, unknown>
 	'Page.captureScreenshot': Command<
 		{

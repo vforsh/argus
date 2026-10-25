@@ -84,3 +84,7 @@ argus dialog prompt app --text "value"    # accept a prompt with text; dialog_no
 ```
 
 A click or eval that opens a dialog does not return until the dialog closes. In `argus session`, queue the dialog command right behind it; it runs as soon as the dialog appears ([SESSION.md](./SESSION.md#semantics)).
+
+## Init Scripts
+
+`argus page init-script add/ls/rm/clear` registers scripts that run before page code in every new document and survive reloads/reattach. See [INJECT.md](./INJECT.md#init-scripts).

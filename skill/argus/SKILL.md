@@ -153,7 +153,7 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 | Network            | `net`, `net watch/inspect/show/body/summary/export/ws/sse/mock`                                    | [NET.md](./reference/NET.md)             |
 | Auth & storage     | `auth cookies/export-cookies/export-state/load-state/clone`, `storage local/session`               | [STATE.md](./reference/STATE.md)         |
 | Runtime code       | `code ls/read/grep/deminify/edit/strings`                                                          | [CODE.md](./reference/CODE.md)           |
-| Startup injection  | `--inject`, config `inject`, `window.__ARGUS__`                                                    | [INJECT.md](./reference/INJECT.md)       |
+| Injection          | `page init-script add/ls/rm/clear`, `--inject`, config `inject`, `window.__ARGUS__`                | [INJECT.md](./reference/INJECT.md)       |
 | Session transport  | `session` JSONL protocol                                                                           | [SESSION.md](./reference/SESSION.md)     |
 | Plugins            | `plugin list/add/remove`, `plugin list --discovery`, `--plugin`, plugin contract                                              | [PLUGINS.md](./reference/PLUGINS.md)     |
 
