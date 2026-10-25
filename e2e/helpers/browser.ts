@@ -2,14 +2,12 @@
  * Real-browser setup shared by the CDP suites: Playwright's Chromium with a debugging port, a watcher
  * started through the SDK fixture, and an isolated `ARGUS_HOME` for the CLI that drives it.
  */
-import type { ChildProcess } from 'node:child_process'
 import { chromium, type Browser, type BrowserContext, type LaunchOptions, type Page } from 'playwright'
 import { argusEnv, createCli, type Cli } from './cli.js'
-import { FIXTURE_WATCHER_PATH } from './paths.js'
 import { getFreePort } from './ports.js'
-import { spawnAndWait, stopProcess } from './process.js'
+import { stopProcess } from './process.js'
 import { makeTempDir, removeDir } from './tempDir.js'
-import { waitForWatcherPortAttached } from './watcher.js'
+import { startFixtureWatcher, type FixtureWatcher } from './watcher.js'
 
 export type DebuggableBrowser = {
 	browser: Browser
@@ -26,29 +24,6 @@ export const launchDebuggableBrowser = async (options: LaunchOptions = {}): Prom
 		args: ['--remote-debugging-address=127.0.0.1', `--remote-debugging-port=${debugPort}`, ...(options.args ?? [])],
 	})
 	return { browser, debugPort, cdpAddress: `127.0.0.1:${debugPort}` }
-}
-
-export type FixtureWatcher = { id: string; host: string; port: number; proc: ChildProcess }
-
-/**
- * Start a watcher in a child process through `fixtures/start-watcher.ts`, passing `config` verbatim.
- *
- * The fixture prints its record before it has attached, so this waits for attachment unless
- * `waitForAttach` is false (registry suites point at a closed CDP port on purpose).
- */
-export const startFixtureWatcher = async (
-	config: Record<string, unknown>,
-	{ env, waitForAttach = true }: { env: NodeJS.ProcessEnv; waitForAttach?: boolean },
-): Promise<FixtureWatcher> => {
-	const { proc, stdout } = await spawnAndWait('bun', [FIXTURE_WATCHER_PATH, JSON.stringify(config)], { env }, /\{"id":/)
-	const record = JSON.parse(stdout.trim().split('\n')[0]!) as Omit<FixtureWatcher, 'proc'>
-	try {
-		if (waitForAttach) await waitForWatcherPortAttached(record.port)
-	} catch (error) {
-		await stopProcess(proc)
-		throw error
-	}
-	return { ...record, proc }
 }
 
 export type CdpFixture = DebuggableBrowser & {

@@ -1,4 +1,6 @@
-import { runCommandWithExit, type CommandOptions } from './process.js'
+import type { ChildProcess } from 'node:child_process'
+import { FIXTURE_WATCHER_PATH } from './paths.js'
+import { runCommandWithExit, spawnAndWait, stopProcess, type CommandOptions } from './process.js'
 
 /**
  * Wait until a watcher reports it is attached to a CDP target.
@@ -62,4 +64,27 @@ export async function waitForWatcherPortAttached(port: number, options: { timeou
 	}
 
 	throw new Error(`Watcher on port ${port} did not attach within ${timeoutMs}ms`)
+}
+
+export type FixtureWatcher = { id: string; host: string; port: number; proc: ChildProcess }
+
+/**
+ * Start a watcher in a child process through `fixtures/start-watcher.ts`, passing `config` verbatim.
+ *
+ * The fixture prints its record before it has attached, so this waits for attachment unless
+ * `waitForAttach` is false (registry suites point at a closed CDP port on purpose).
+ */
+export const startFixtureWatcher = async (
+	config: Record<string, unknown>,
+	{ env, waitForAttach = true }: { env: NodeJS.ProcessEnv; waitForAttach?: boolean },
+): Promise<FixtureWatcher> => {
+	const { proc, stdout } = await spawnAndWait('bun', [FIXTURE_WATCHER_PATH, JSON.stringify(config)], { env }, /\{"id":/)
+	const record = JSON.parse(stdout.trim().split('\n')[0]!) as Omit<FixtureWatcher, 'proc'>
+	try {
+		if (waitForAttach) await waitForWatcherPortAttached(record.port)
+	} catch (error) {
+		await stopProcess(proc)
+		throw error
+	}
+	return { ...record, proc }
 }

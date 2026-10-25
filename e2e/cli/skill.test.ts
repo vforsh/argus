@@ -1,15 +1,20 @@
-import { test, expect } from 'bun:test'
+import { test, expect, setDefaultTimeout } from 'bun:test'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { runCommand } from './helpers/process.js'
+import { createCli } from '../helpers/cli.js'
+import { REPO_ROOT } from '../helpers/paths.js'
+import { runCommand } from '../helpers/process.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
-const PACKAGE_DIR = path.resolve('packages/argus')
-const SOURCE_SKILL_DIR = path.resolve('skill/argus')
+setDefaultTimeout(TIMEOUTS.process)
+
+const PACKAGE_DIR = path.join(REPO_ROOT, 'packages', 'argus')
+const SOURCE_SKILL_DIR = path.join(REPO_ROOT, 'skill', 'argus')
 const PACKAGED_SKILL_PATH = path.join(PACKAGE_DIR, 'dist', 'skill', 'argus', 'SKILL.md')
+const cli = createCli()
 
 test('skill command prints the absolute packaged skill path', async () => {
-	const result = await runCommand('bun', [BIN_PATH, 'skill'])
+	const result = await cli.run(['skill'])
 	const skillPath = result.stdout.trim()
 
 	expect(skillPath).toBe(PACKAGED_SKILL_PATH)
@@ -19,7 +24,7 @@ test('skill command prints the absolute packaged skill path', async () => {
 })
 
 test('skill command supports json output', async () => {
-	const result = await runCommand('bun', [BIN_PATH, 'skill', '--json'])
+	const result = await cli.run(['skill', '--json'])
 	const payload = JSON.parse(result.stdout) as { ok?: boolean; path?: string }
 
 	expect(payload.ok).toBe(true)

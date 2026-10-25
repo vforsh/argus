@@ -1,10 +1,15 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
+import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { CodeResourceType } from '@vforsh/argus-core'
-import { runCommand } from './helpers/process.js'
-import { startStubWatcher, type StubWatcher } from './helpers/stubWatcher.js'
+import { argusEnv } from '../helpers/cli.js'
+import { BIN_PATH, BUNDLE_PATH, SOURCE_BIN_PATH } from '../helpers/paths.js'
+import { runCommand } from '../helpers/process.js'
+import { startStubWatcher, type StubWatcher } from '../helpers/stubWatcher.js'
+import { makeTempDir, removeDir } from '../helpers/tempDir.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
+
+setDefaultTimeout(TIMEOUTS.process)
 
 const fixtures: Record<string, { type: CodeResourceType; source: string; formatted?: string }> = {
 	'script.js': { type: 'script', source: 'const needle={value:1}', formatted: 'const needle = { value: 1 };\n' },
@@ -17,10 +22,10 @@ const fixtures: Record<string, { type: CodeResourceType; source: string; formatt
 }
 
 const entries = [
-	{ name: 'Node bundle', command: 'node', bin: 'packages/argus/dist/argus.js' },
-	{ name: 'Node unbundled', command: 'node', bin: 'packages/argus/dist/bin.js' },
-	{ name: 'Bun bundle', command: 'bun', bin: 'packages/argus/dist/argus.js' },
-	{ name: 'Bun source', command: 'bun', bin: 'packages/argus/src/bin.ts' },
+	{ name: 'Node bundle', command: 'node', bin: BUNDLE_PATH },
+	{ name: 'Node unbundled', command: 'node', bin: BIN_PATH },
+	{ name: 'Bun bundle', command: 'bun', bin: BUNDLE_PATH },
+	{ name: 'Bun source', command: 'bun', bin: SOURCE_BIN_PATH },
 ]
 
 let watcher: StubWatcher
@@ -29,7 +34,7 @@ let loaderPath: string
 let env: NodeJS.ProcessEnv
 
 beforeAll(async () => {
-	tempDir = await mkdtemp(path.join(os.tmpdir(), 'argus-code-formatting-'))
+	tempDir = await makeTempDir('argus-code-formatting')
 	loaderPath = path.join(tempDir, 'trace-oxfmt.mjs')
 	await writeFile(loaderPath, `export async function resolve(specifier, context, nextResolve) {
 	if (specifier === 'oxfmt' || specifier.startsWith('@oxfmt/')) {
@@ -63,19 +68,20 @@ beforeAll(async () => {
 			skippedResources: [],
 		} }),
 	})
-	env = { ...process.env, ARGUS_HOME: tempDir, ARGUS_REGISTRY_PATH: watcher.registryPath }
+	env = argusEnv(tempDir, { ARGUS_REGISTRY_PATH: watcher.registryPath })
 })
 
 afterAll(async () => {
 	await watcher?.close()
-	if (tempDir) await rm(tempDir, { recursive: true, force: true })
+	await removeDir(tempDir)
 })
 
 for (const entry of entries) {
 	describe(`runtime formatting: ${entry.name}`, () => {
+		// Node runs carry the tracing loader ahead of the entry, which `createCli` cannot express.
 		const runCli = (args: string[], extraEnv: NodeJS.ProcessEnv = {}) => runCommand(entry.command, [
 			...(entry.command === 'node' ? ['--no-warnings', '--experimental-loader', loaderPath] : []),
-			path.resolve(entry.bin), ...args,
+			entry.bin, ...args,
 		], { env: { ...env, ...extraEnv }, cwd: tempDir })
 
 		const importsFrom = (stderr: string): string[] => stderr.split('\n')

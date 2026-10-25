@@ -1,11 +1,14 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { runCommand } from './helpers/process.js'
-import { startSession, type SessionHarness } from './helpers/session.js'
-import { startStubWatcher, type StubRoutes, type StubWatcher } from './helpers/stubWatcher.js'
+import { useCleanup } from '../helpers/cleanup.js'
+import { argusEnv, createCli } from '../helpers/cli.js'
+import { BIN_PATH } from '../helpers/paths.js'
+import { startSession, type SessionHarness } from '../helpers/session.js'
+import { startStubWatcher, type StubRoutes, type StubWatcher } from '../helpers/stubWatcher.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
+setDefaultTimeout(TIMEOUTS.process)
 
 const STATUS_REPLY = { payload: { ok: true, attached: true, protocolVersion: 2, watcherVersion: '0.0.0-test' } }
 
@@ -15,28 +18,28 @@ const routes = (): StubRoutes => ({
 	'POST /dom/click': { payload: { ok: true, clicked: 1, matches: 1 } },
 })
 
+const defer = useCleanup()
+
+/** Session against a stub watcher; deferred teardown closes the session before its stub. */
+const track = (session: SessionHarness, stub: StubWatcher): void => {
+	defer(async () => {
+		await session.close(5_000)
+		await stub.close()
+	})
+}
+
 const open = async (args: string[] = []): Promise<{ stub: StubWatcher; session: SessionHarness; env: NodeJS.ProcessEnv; cwd: string }> => {
 	const stub = await startStubWatcher(routes(), 'app')
-	const cwd = path.dirname(stub.registryPath)
-	const env = { ...process.env, ARGUS_HOME: cwd }
+	const cwd = stub.home
+	const env = argusEnv(cwd)
 	const session = startSession(BIN_PATH, ['app', ...args], { env, cwd })
 
 	const ready = await session.next()
 	expect(ready).toMatchObject({ type: 'ready', watcher: { id: 'app' } })
 
-	open.cleanup.push(async () => {
-		await session.close(5_000)
-		await stub.close()
-	})
+	track(session, stub)
 	return { stub, session, env, cwd }
 }
-open.cleanup = [] as (() => Promise<void>)[]
-
-afterEach(async () => {
-	for (const cleanup of open.cleanup.splice(0)) {
-		await cleanup()
-	}
-})
 
 describe('argus session', () => {
 	test('answers requests with the same payload the one-shot CLI prints', async () => {
@@ -45,7 +48,7 @@ describe('argus session', () => {
 		session.send({ id: 1, cmd: 'eval', args: { expression: 'location.href' } })
 		const response = await session.next()
 
-		const oneShot = await runCommand('bun', [BIN_PATH, 'eval', 'app', 'location.href', '--json'], { env, cwd })
+		const oneShot = await createCli({ env, cwd }).run(['eval', 'app', 'location.href', '--json'])
 		expect(response).toMatchObject({ id: 1, ok: true })
 		expect(response.result).toEqual(JSON.parse(oneShot.stdout))
 	})
@@ -129,7 +132,7 @@ describe('argus session', () => {
 
 	test('keeps console chatter off stdout', async () => {
 		const stub = await startStubWatcher(routes(), 'app')
-		const cwd = path.dirname(stub.registryPath)
+		const cwd = stub.home
 		const pluginPath = path.join(cwd, 'noisy-plugin.mjs')
 		await writeFile(
 			pluginPath,
@@ -149,12 +152,9 @@ export default {
 			'utf8',
 		)
 
-		const env = { ...process.env, ARGUS_HOME: cwd, ARGUS_PLUGINS: pluginPath }
+		const env = argusEnv(cwd, { ARGUS_PLUGINS: pluginPath })
 		const session = startSession(BIN_PATH, ['app'], { env, cwd })
-		open.cleanup.push(async () => {
-			await session.close(5_000)
-			await stub.close()
-		})
+		track(session, stub)
 
 		expect(await session.next()).toMatchObject({ type: 'ready' })
 		session.send({ id: 1, cmd: 'noisy' })

@@ -18,19 +18,19 @@
  * A watcher started before `jsonValue` existed ignores the flag; the SDK detects that and
  * raises an actionable "restart the watcher" error rather than degrading silently.
  */
-import { afterEach, describe, expect, test } from 'bun:test'
+import { describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { ArgusEvalError, createArgusClient } from '@vforsh/argus-client'
-import { evalJsonResponse, startStubWatcher, type StubRoutes, type StubWatcher } from './helpers/stubWatcher.js'
+import { useCleanup } from '../helpers/cleanup.js'
+import { evalJsonResponse, startStubWatcher, type StubRoutes } from '../helpers/stubWatcher.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-let stub: StubWatcher | undefined
+setDefaultTimeout(TIMEOUTS.process)
 
-afterEach(async () => {
-	await stub?.close()
-	stub = undefined
-})
+const defer = useCleanup()
 
 const withStub = async (routes: StubRoutes) => {
-	stub = await startStubWatcher(routes)
+	const stub = await startStubWatcher(routes)
+	defer(() => stub.close())
 	const client = createArgusClient({ registryPath: stub.registryPath })
 	return { client, page: client.watcher(stub.watcherId), stub }
 }

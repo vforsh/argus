@@ -1,44 +1,41 @@
 /** CLI -> registry -> HTTP integration regressions for bind identity, retry, capabilities, and errors. */
-import { afterEach, expect, test } from 'bun:test'
+import { expect, setDefaultTimeout, test } from 'bun:test'
 import fs from 'node:fs'
 import path from 'node:path'
-import { delay, type RegistryV1, type WatcherRecord } from '@vforsh/argus-core'
-import { runCommandWithExit } from './helpers/process.js'
-import { startStubWatcher, type StubRoutes, type StubWatcher } from './helpers/stubWatcher.js'
+import { delay, type WatcherRecord } from '@vforsh/argus-core'
+import { useCleanup } from '../helpers/cleanup.js'
+import { argusEnv, createCli } from '../helpers/cli.js'
+import { asExtensionRecord, startStubWatcher, type StubRoutes, type StubWatcher } from '../helpers/stubWatcher.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const bin = path.resolve('packages/argus/dist/bin.js')
-const stubs: StubWatcher[] = []
-afterEach(async () => {
-	await Promise.all(stubs.splice(0).map((stub) => stub.close()))
-})
+setDefaultTimeout(TIMEOUTS.process)
+
+const defer = useCleanup()
 
 const stub = async (id: string): Promise<StubWatcher> => {
 	const watcher = await startStubWatcher({}, id)
-	stubs.push(watcher)
+	defer(watcher.close)
 	return watcher
 }
 
-const extensionRecord = (watcher: StubWatcher, registry: RegistryV1, role: 'control' | 'tab'): WatcherRecord => ({
-	...registry.watchers[watcher.watcherId],
-	source: 'extension',
-	extensionRole: role,
-	ownerId: `${watcher.watcherId}-owner`,
-})
+/** The stub's own registry record, re-registered as an extension host with owner `<id>-owner`. */
+const extensionRecord = async (watcher: StubWatcher, role: 'control' | 'tab'): Promise<WatcherRecord> =>
+	asExtensionRecord((await watcher.readRegistry()).watchers[watcher.watcherId], role, `${watcher.watcherId}-owner`)
 
 const makeFixture = async (attached = true) => {
 	const control = await stub('control')
 	const target = await stub('bound')
 	const registry = await control.readRegistry()
-	const controlRecord = extensionRecord(control, registry, 'control')
-	const targetRecord = extensionRecord(target, await target.readRegistry(), 'tab')
+	const controlRecord = await extensionRecord(control, 'control')
+	const targetRecord = await extensionRecord(target, 'tab')
 	registry.watchers = { control: controlRecord, bound: targetRecord }
+	// Synchronous on purpose: route handlers swap the registry before their reply reaches the CLI.
 	const writeRegistry = () => fs.writeFileSync(control.registryPath, JSON.stringify(registry))
 	writeRegistry()
-	const home = path.dirname(control.registryPath)
+	const home = control.home
+	const runner = createCli({ runtime: 'node', env: argusEnv(home, { ARGUS_REGISTRY_PATH: control.registryPath }) })
 	const cli = async (...args: string[]) => {
-		const result = await runCommandWithExit('node', [bin, ...args, '--json'], {
-			env: { ...process.env, ARGUS_HOME: home, ARGUS_REGISTRY_PATH: control.registryPath },
-		})
+		const result = await runner.exec([...args, '--json'])
 		return { code: result.code, json: JSON.parse(result.stdout) }
 	}
 	const tab = { tabId: 7, url: '', title: 'Ticket tab', attached, watcherId: attached ? targetRecord.id : undefined }
@@ -135,7 +132,7 @@ test('refuses a control owner replacement after ticket discovery without attachi
 test('refuses a tab watcher replacement even when its status and watcher name match the selected tab', async () => {
 	const f = await makeFixture()
 	const replacement = await stub('bound')
-	const foreign = extensionRecord(replacement, await replacement.readRegistry(), 'tab')
+	const foreign = await extensionRecord(replacement, 'tab')
 	foreign.ownerId = 'foreign-tab-owner'
 	replacement.setRoutes({
 		'GET /status': { payload: { ...f.targetStatus(), ownerId: foreign.ownerId } },
@@ -280,7 +277,7 @@ test('prepare probes the real bind endpoint and selects a capable control among 
 	f.control.setRoutes(oldRoutes)
 	expect((await f.cli('ext', 'bind', 'prepare', '--to', 'https://destination.test/')).json.error.code).toBe('not_available')
 	const capable = await stub('capable')
-	const record = extensionRecord(capable, await capable.readRegistry(), 'control')
+	const record = await extensionRecord(capable, 'control')
 	delete record.ownerId // Endpoint support is independent of ownership metadata in either direction.
 	f.registry.watchers.capable = record
 	f.writeRegistry()
@@ -313,6 +310,5 @@ for (const code of ['watcher_id_taken', 'tab_owned_by_other_debugger']) {
 		}
 		expect((await f.bind('--as', 'bound')).json).toEqual({ ok: false, error: { code, message: 'Attach refused' } })
 		expect(f.target.calls).toHaveLength(0)
-		// Six sequential CLI processes: ~1s idle, but past bun's 5s default on a loaded machine.
-	}, 30_000)
+	})
 }
