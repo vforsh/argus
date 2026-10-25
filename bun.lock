@@ -16,15 +16,15 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.5.27",
+      "version": "0.5.28",
       "bin": {
         "argus": "dist/argus.js",
       },
       "dependencies": {
-        "@vforsh/argus-client": "^0.5.3",
-        "@vforsh/argus-core": "^0.5.9",
-        "@vforsh/argus-plugin-api": "^0.5.1",
-        "@vforsh/argus-watcher": "^0.5.14",
+        "@vforsh/argus-client": "^0.5.6",
+        "@vforsh/argus-core": "^0.5.15",
+        "@vforsh/argus-plugin-api": "^0.5.2",
+        "@vforsh/argus-watcher": "^0.5.21",
         "commander": "14.0.2",
         "esbuild": "0.25.12",
         "oxfmt": "0.72.0",
@@ -34,19 +34,19 @@
       "name": "@vforsh/argus-client",
       "version": "0.5.6",
       "dependencies": {
-        "@vforsh/argus-core": "^0.5.5",
+        "@vforsh/argus-core": "^0.5.13",
       },
     },
     "packages/argus-core": {
       "name": "@vforsh/argus-core",
-      "version": "0.5.14",
+      "version": "0.5.15",
     },
     "packages/argus-extension": {
       "name": "@vforsh/argus-extension",
       "version": "0.2.7",
       "devDependencies": {
         "@types/chrome": "^0.0.287",
-        "@vforsh/argus-core": "^0.5.7",
+        "@vforsh/argus-core": "^0.5.14",
         "esbuild": "0.25.12",
       },
     },
@@ -54,7 +54,7 @@
       "name": "@vforsh/argus-plugin-api",
       "version": "0.5.2",
       "dependencies": {
-        "@vforsh/argus-core": "^0.5.0",
+        "@vforsh/argus-core": "^0.5.11",
       },
       "devDependencies": {
         "commander": "14.0.2",
@@ -65,10 +65,10 @@
     },
     "packages/argus-watcher": {
       "name": "@vforsh/argus-watcher",
-      "version": "0.5.20",
+      "version": "0.5.21",
       "dependencies": {
         "@jridgewell/trace-mapping": "^0.3.31",
-        "@vforsh/argus-core": "^0.5.9",
+        "@vforsh/argus-core": "^0.5.15",
         "emittery": "^1.2.0",
       },
     },
