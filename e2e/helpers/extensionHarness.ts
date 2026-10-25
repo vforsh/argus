@@ -16,6 +16,7 @@
  * - `--use-mock-keychain` is mandatory on macOS: without it Chrome for Testing blocks on
  *   a Keychain prompt before the profile is even created.
  */
+import { test } from 'bun:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -23,11 +24,11 @@ import { execSync, spawn, type ChildProcess } from 'node:child_process'
 import { delay, type RegistryV1 } from '@vforsh/argus-core'
 import { ARGUS_EXTENSION_ID, installNativeHostsTo } from '@vforsh/argus/internal'
 import { startPlaygroundServers } from '../../playground/harness.ts'
+import { parseJson } from './cli.js'
+import { BIN_PATH, REPO_ROOT } from './paths.js'
 import { getFreePort } from './ports.js'
 import { runCommandWithExit, type CommandResultWithExit } from './process.js'
 
-const REPO_ROOT = path.resolve(import.meta.dirname!, '..', '..')
-const BIN_PATH = path.join(REPO_ROOT, 'packages', 'argus', 'dist', 'bin.js')
 const EXTENSION_DIR = path.join(REPO_ROOT, 'packages', 'argus-extension')
 
 const STARTUP_TIMEOUT_MS = 60_000
@@ -96,6 +97,16 @@ export const resolveTestChromeBin = (): string | null => {
 }
 
 /**
+ * `test` when a usable Chromium exists, else `test.skip` plus a warning naming `suite`, so a green
+ * run without a browser is visibly not a pass.
+ */
+export const liveExtensionTest = (suite: string): typeof test => {
+	if (resolveTestChromeBin()) return test
+	console.warn(`[${suite}] No Chromium/Chrome for Testing binary found; skipping. Set ARGUS_E2E_CHROME_BIN to enable.`)
+	return test.skip
+}
+
+/**
  * Launch one isolated browser. Pass a shared `registryPath` to run several browsers against one
  * registry; they may be started concurrently. Each harness discovers its own control watcher by the
  * tab it opened, since concurrent controls register as `extension-control`/`-2` in either order.
@@ -133,13 +144,7 @@ export const startExtensionHarness = async (options: { registryPath?: string } =
 
 	const cliJson = async <T>(...args: string[]): Promise<T> => {
 		const result = await cli(...args)
-		try {
-			return JSON.parse(result.stdout) as T
-		} catch {
-			throw new Error(
-				`CLI output is not JSON for \`argus ${args.join(' ')}\` (exit ${result.code}):\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
-			)
-		}
+		return parseJson<T>(result.stdout, `argus ${args.join(' ')} (exit ${result.code}, stderr: ${result.stderr})`)
 	}
 
 	const stopChrome = async (): Promise<void> => {

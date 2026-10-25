@@ -2,7 +2,7 @@ import http from 'node:http'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import type { RegistryV1 } from '@vforsh/argus-core'
+import type { RegistryV1, WatcherRecord } from '@vforsh/argus-core'
 
 /** One request captured by the stub watcher. */
 export type StubCall = {
@@ -21,6 +21,8 @@ export type StubRoutes = Record<string, StubReply | ((call: StubCall) => StubRep
 export type StubWatcher = {
 	/** Registry path to pass as `createArgusClient({ registryPath })`. */
 	registryPath: string
+	/** Temp dir holding the registry; doubles as `ARGUS_HOME` for CLI runs against the stub. */
+	home: string
 	/** Watcher id registered in that registry. */
 	watcherId: string
 	/** Every request the stub received, in order. */
@@ -29,6 +31,8 @@ export type StubWatcher = {
 	setRoutes: (routes: StubRoutes) => void
 	/** Read the registry back, to assert on pruning behavior. */
 	readRegistry: () => Promise<RegistryV1>
+	/** Replace the registry file, e.g. to add records that point at this stub. */
+	writeRegistry: (registry: RegistryV1) => Promise<void>
 	/** Stop only the HTTP server, so the next request fails at the transport layer. */
 	stopServer: () => Promise<void>
 	/** Stop the server and remove the temp registry. Safe to call twice. */
@@ -105,12 +109,14 @@ export const startStubWatcher = async (routes: StubRoutes, watcherId = 'stub'): 
 
 	return {
 		registryPath,
+		home: dir,
 		watcherId,
 		calls,
 		setRoutes: (next: StubRoutes) => {
 			routeTable = next
 		},
 		readRegistry: async () => JSON.parse(await fs.readFile(registryPath, 'utf8')) as RegistryV1,
+		writeRegistry: (next) => fs.writeFile(registryPath, JSON.stringify(next)),
 		stopServer,
 		close: async () => {
 			await stopServer()
@@ -119,10 +125,15 @@ export const startStubWatcher = async (routes: StubRoutes, watcherId = 'stub'): 
 	}
 }
 
-/** Build the `{"v":…}` envelope the watcher returns in `jsonValue` mode. */
-export const jsonValueEnvelope = (value: unknown): string => JSON.stringify({ v: value })
-
-/** Build a successful `/eval` reply carrying a `jsonValue` envelope. */
+/** Build a successful `/eval` reply carrying the `{"v":…}` envelope the watcher returns in `jsonValue` mode. */
 export const evalJsonResponse = (value: unknown, type = 'object'): StubReply => ({
-	payload: { ok: true, result: jsonValueEnvelope(value), type, exception: null },
+	payload: { ok: true, result: JSON.stringify({ v: value }), type, exception: null },
+})
+
+/** A copy of `record` registered the way extension hosts write it: source, role and owner token. */
+export const asExtensionRecord = (record: WatcherRecord, role: 'control' | 'tab', ownerId: string): WatcherRecord => ({
+	...record,
+	source: 'extension',
+	extensionRole: role,
+	ownerId,
 })

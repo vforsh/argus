@@ -35,17 +35,14 @@ export async function runCommandWithExit(cmd: string, args: string[], options: C
 	})
 }
 
-export interface SpawnedProcess {
+interface SpawnedProcess {
 	proc: ChildProcess
 	stdout: string
 	stderr: string
 }
 
-export interface ExtendedSpawnOptions extends CommandOptions {
-	debug?: boolean
-}
-
-export async function spawnAndWait(cmd: string, args: string[], options: ExtendedSpawnOptions = {}, readyRegex: RegExp): Promise<SpawnedProcess> {
+/** Spawn and resolve once stdout matches `readyRegex`, keeping the process running. */
+export async function spawnAndWait(cmd: string, args: string[], options: CommandOptions, readyRegex: RegExp): Promise<SpawnedProcess> {
 	return new Promise((resolve, reject) => {
 		const { proc, output } = spawnWithOutput(cmd, args, options)
 		let resolved = false
@@ -85,7 +82,7 @@ export async function spawnAndWait(cmd: string, args: string[], options: Extende
 	})
 }
 
-export interface StopProcessOptions {
+interface StopProcessOptions {
 	signal?: NodeJS.Signals | number
 	timeoutMs?: number
 	forceSignal?: NodeJS.Signals | number

@@ -5,7 +5,18 @@ import { fileURLToPath } from 'node:url'
 
 const rootDir = fileURLToPath(new URL('../', import.meta.url))
 const e2eDir = path.join(rootDir, 'e2e')
-const testFiles = (await readdir(e2eDir)).filter((file) => file.endsWith('.test.ts')).sort()
+
+// Cheapest tier first, so a broken build fails in seconds rather than after the browser suites.
+// Anything outside these folders (e.g. a suite left at the top level) runs last.
+const TIER_ORDER = ['internal', 'cli', 'browser', 'extension']
+const tierOf = (file) => {
+	const index = TIER_ORDER.indexOf(file.split(path.sep)[0])
+	return index === -1 ? TIER_ORDER.length : index
+}
+
+const testFiles = (await readdir(e2eDir, { recursive: true }))
+	.filter((file) => file.endsWith('.test.ts'))
+	.sort((a, b) => tierOf(a) - tierOf(b) || a.localeCompare(b))
 
 if (testFiles.length === 0) {
 	throw new Error('No e2e test files found.')
@@ -19,7 +30,8 @@ for (const file of testFiles) {
 
 function runTestFile(testPath) {
 	return new Promise((resolve, reject) => {
-		const child = spawn(process.execPath, ['test', testPath], {
+		// `./` keeps Bun from treating the path as a name filter.
+		const child = spawn(process.execPath, ['test', `./${testPath}`], {
 			cwd: rootDir,
 			stdio: 'inherit',
 		})
