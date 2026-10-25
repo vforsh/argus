@@ -1,19 +1,15 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import http from 'node:http'
-import os from 'node:os'
-import path from 'node:path'
-import fs from 'node:fs/promises'
-import type { ChildProcess } from 'node:child_process'
-import { chromium, type Browser, type Page } from 'playwright'
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
+import type { Page } from 'playwright'
 import type { DomKeydownResponse, EvalResponse, VisibilityResponse } from '@vforsh/argus-core'
-import { readForegroundApp, restoreForegroundApp } from './helpers/foreground.js'
 import { delay } from '@vforsh/argus-core'
-import { getFreePort } from './helpers/ports.js'
-import { runCommand, runCommandWithExit, spawnAndWait, stopProcess } from './helpers/process.js'
-import { waitForWatcherPortAttached } from './helpers/watcher.js'
+import { startCdpFixture, type CdpFixture } from '../helpers/browser.js'
+import { readForegroundApp, restoreForegroundApp } from '../helpers/foreground.js'
+import { waitFor } from '../helpers/poll.js'
+import { htmlPage, startSite, type Site } from '../helpers/site.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
-const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
+setDefaultTimeout(TIMEOUTS.browser)
+
 const WATCHER_ID = 'visibility-cdp'
 
 type VisibilityStatus = VisibilityResponse
@@ -31,24 +27,13 @@ const pageHtml = `<!doctype html>
 </html>`
 
 describe('visibility over the CDP watcher', () => {
-	let tempDir: string
-	let env: Record<string, string | undefined>
-	let browser: Browser
-	let context: Awaited<ReturnType<Browser['newContext']>>
+	let fx: CdpFixture
 	let browserPage: Page
 	let decoyPage: Page
 	let foregroundApp: string | null = null
-	let watcherProc: ChildProcess
-	let watcherPort: number
-	let site: http.Server
-	let origin: string
+	let site: Site
 
-	const runArgus = (...args: string[]) => runCommand('node', [BIN_PATH, ...args], { env })
-
-	const cliJson = async <T = Record<string, unknown>>(...args: string[]): Promise<T> => {
-		const { stdout } = await runArgus(...args, '--json')
-		return JSON.parse(stdout) as T
-	}
+	const cliJson = <T = Record<string, unknown>>(...args: string[]): Promise<T> => fx.cli.json<T>([...args, '--json'])
 
 	const evalValue = async <T = unknown>(expression: string): Promise<T> => {
 		const response = await cliJson<EvalResponse>('eval', WATCHER_ID, expression)
@@ -58,17 +43,6 @@ describe('visibility over the CDP watcher', () => {
 
 	const readVisibility = (): Promise<VisibilityStatus> => cliJson<VisibilityStatus>('page', 'visibility', WATCHER_ID)
 
-	const waitFor = async <T>(read: () => Promise<T>, predicate: (value: T) => boolean, timeoutMs = 10_000): Promise<T> => {
-		const deadline = Date.now() + timeoutMs
-		let value: T
-		do {
-			value = await read()
-			if (predicate(value)) return value
-			await delay(150)
-		} while (Date.now() < deadline)
-		throw new Error(`Timed out after ${timeoutMs}ms; last value: ${JSON.stringify(value!)}`)
-	}
-
 	const assertBackground = async (phase: string): Promise<void> => {
 		const app = await readForegroundApp()
 		if (foregroundApp) expect(app).toBe(foregroundApp)
@@ -77,51 +51,26 @@ describe('visibility over the CDP watcher', () => {
 	}
 
 	beforeAll(async () => {
-		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-visibility-e2e-'))
-		env = { ...process.env, ARGUS_HOME: tempDir }
-		const sitePort = await getFreePort()
-		origin = `http://127.0.0.1:${sitePort}`
-		site = http.createServer((_request, response) => {
-			response.writeHead(200, { 'content-type': 'text/html' })
-			response.end(pageHtml)
-		})
-		await new Promise<void>((resolve) => site.listen(sitePort, '127.0.0.1', resolve))
+		site = await startSite(htmlPage(pageHtml))
 
-		const debugPort = await getFreePort()
 		foregroundApp = await readForegroundApp()
-		browser = await chromium.launch({
-			headless: process.env.ARGUS_E2E_HEADED !== '1',
-			args: [`--remote-debugging-address=127.0.0.1`, `--remote-debugging-port=${debugPort}`],
+		fx = await startCdpFixture({
+			prefix: 'argus-visibility-e2e',
+			watcher: { id: WATCHER_ID, match: { origin: `127.0.0.1:${site.port}` } },
+			preparePage: (page) => page.goto(site.origin),
+			runtime: 'node',
+			launch: { headless: process.env.ARGUS_E2E_HEADED !== '1' },
 		})
-		context = await browser.newContext()
-		browserPage = await context.newPage()
-		await browserPage.goto(origin)
-
-		const watcherConfig = {
-			id: WATCHER_ID,
-			chrome: { host: '127.0.0.1', port: debugPort },
-			match: { origin: `127.0.0.1:${sitePort}` },
-			host: '127.0.0.1',
-			port: 0,
-		}
-		const { proc, stdout } = await spawnAndWait('bun', [FIXTURE_WATCHER, JSON.stringify(watcherConfig)], { env }, /\{"id":"visibility-cdp"/)
-		watcherProc = proc
-		watcherPort = (JSON.parse(stdout) as { port: number }).port
-		await waitForWatcherPortAttached(watcherPort)
-		decoyPage = await context.newPage()
+		browserPage = fx.page
+		decoyPage = await fx.context.newPage()
 		await decoyPage.goto('about:blank')
 		await decoyPage.bringToFront()
 		await restoreForegroundApp(foregroundApp)
 	})
 
 	afterAll(async () => {
-		if (watcherProc) await stopProcess(watcherProc)
-		await browser?.close()
-		await new Promise<void>((resolve) => {
-			if (!site) return resolve()
-			site.close(() => resolve())
-		})
-		if (tempDir) await fs.rm(tempDir, { recursive: true, force: true })
+		await fx?.close()
+		await site?.close()
 	})
 
 	test('reads status without changing the lock and runs rAF/input in background policy', async () => {
@@ -176,7 +125,7 @@ describe('visibility over the CDP watcher', () => {
 		})
 		await assertBackground('click-and-drag')
 		for (const command of [['screenshot'], ['record', 'start']]) {
-			const result = await runCommandWithExit('node', [BIN_PATH, ...command, WATCHER_ID, '--json'], { env })
+			const result = await fx.cli.exec([...command, WATCHER_ID, '--json'])
 			expect(result.code).not.toBe(0)
 			expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: { code: 'not_available' } })
 			await assertBackground(command.join(' '))
@@ -189,21 +138,21 @@ describe('visibility over the CDP watcher', () => {
 		expect(foreground).toMatchObject({ ok: true, attached: true, state: 'shown', policy: 'foreground' })
 		await cliJson<VisibilityStatus>('page', 'hide', WATCHER_ID, '--no-activate')
 		await assertBackground('restore')
-	}, 30_000)
+	})
 
 	test('keeps the desired background policy readable while detached and reapplies it after reattach', async () => {
 		const shown = await cliJson<VisibilityStatus>('page', 'show', WATCHER_ID, '--policy', 'background')
 		expect(shown).toMatchObject({ attached: true, state: 'shown', policy: 'background' })
 
 		await browserPage.close()
-		const detached = await waitFor(readVisibility, (status) => status.attached === false)
+		const detached = await waitFor(readVisibility, (status) => status.attached === false, { timeoutMs: 10_000, intervalMs: 150 })
 		expect(detached).toMatchObject({ ok: true, attached: false, state: 'shown', policy: 'background' })
 
-		browserPage = await context.newPage()
-		await browserPage.goto(origin)
+		browserPage = await fx.context.newPage()
+		await browserPage.goto(site.origin)
 		await decoyPage.bringToFront()
 		await restoreForegroundApp(foregroundApp)
-		const reattached = await waitFor(readVisibility, (status) => status.attached === true)
+		const reattached = await waitFor(readVisibility, (status) => status.attached === true, { timeoutMs: 10_000, intervalMs: 150 })
 		expect(reattached).toMatchObject({ ok: true, attached: true, state: 'shown', policy: 'background' })
 
 		await browserPage.evaluate(() => {
@@ -220,5 +169,5 @@ describe('visibility over the CDP watcher', () => {
 
 		await assertBackground('reattach')
 		await cliJson<VisibilityStatus>('page', 'hide', WATCHER_ID, '--policy', 'foreground', '--no-activate')
-	}, 30_000)
+	})
 })

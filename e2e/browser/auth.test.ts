@@ -1,17 +1,15 @@
-import { waitForWatcherAttached, waitForWatcherPortAttached } from './helpers/watcher.js'
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import type { ChildProcess } from 'node:child_process'
-import http from 'node:http'
-import fs from 'node:fs/promises'
-import os from 'node:os'
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import path from 'node:path'
-import { chromium, type Browser } from 'playwright'
 import type { AuthCookiesResponse, AuthStateSnapshot } from '@vforsh/argus-core'
-import { getFreePort } from './helpers/ports.js'
-import { runCommand, runCommandWithExit, spawnAndWait, stopProcess } from './helpers/process.js'
+import { startCdpFixture, type CdpFixture } from '../helpers/browser.js'
+import type { Cli } from '../helpers/cli.js'
+import { BIN_PATH } from '../helpers/paths.js'
+import { spawnAndWait, stopProcess } from '../helpers/process.js'
+import { startSite, type Site } from '../helpers/site.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
+import { waitForWatcherAttached } from '../helpers/watcher.js'
 
-const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
-const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
+setDefaultTimeout(TIMEOUTS.browser)
 
 const TEST_HTML = `
 <!DOCTYPE html>
@@ -26,26 +24,17 @@ const TEST_HTML = `
 `
 
 describe('auth e2e', () => {
-	let tempDir: string
-	let env: Record<string, string | undefined>
-	let browser: Browser
-	let watcherProc: ChildProcess
+	let fx: CdpFixture
+	let cli: Cli
 	let watcherId: string
-	let httpServer: http.Server
-	let httpPort: number
+	let site: Site
 	let fixtureUrl: string
 	let blankUrl: string
 
 	beforeAll(async () => {
-		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-auth-e2e-'))
-		env = { ...process.env, ARGUS_HOME: tempDir }
-		const debugPort = await getFreePort()
-		httpPort = await getFreePort()
 		watcherId = `auth-e2e-${Date.now()}`
-		fixtureUrl = `http://app.localhost:${httpPort}/`
-		blankUrl = `http://app.localhost:${httpPort}/blank`
 
-		httpServer = http.createServer((req, res) => {
+		site = await startSite((req, res) => {
 			if (req.url === '/blank') {
 				res.writeHead(200, {
 					'Content-Type': 'text/html',
@@ -72,49 +61,34 @@ describe('auth e2e', () => {
 			})
 			res.end(TEST_HTML)
 		})
-		await new Promise<void>((resolve) => httpServer.listen(httpPort, '127.0.0.1', resolve))
+		fixtureUrl = `http://app.localhost:${site.port}/`
+		blankUrl = `http://app.localhost:${site.port}/blank`
 
-		browser = await chromium.launch({
-			args: [`--remote-debugging-address=127.0.0.1`, `--remote-debugging-port=${debugPort}`],
+		fx = await startCdpFixture({
+			prefix: 'argus-auth-e2e',
+			watcher: { id: watcherId, match: { title: 'auth-e2e' } },
+			preparePage: async (page) => {
+				await page.goto(`http://auth.localhost:${site.port}/auth-seed`)
+				await page.goto(fixtureUrl)
+				await page.evaluate(() => {
+					localStorage.setItem('accessToken', 'storage-access-secret')
+					sessionStorage.setItem('csrfToken', 'session-csrf-secret')
+				})
+			},
 		})
-
-		const context = await browser.newContext()
-		const page = await context.newPage()
-		await page.goto(`http://auth.localhost:${httpPort}/auth-seed`)
-		await page.goto(fixtureUrl)
-		await page.evaluate(() => {
-			localStorage.setItem('accessToken', 'storage-access-secret')
-			sessionStorage.setItem('csrfToken', 'session-csrf-secret')
-		})
-
-		const watcherConfig = {
-			id: watcherId,
-			chrome: { host: '127.0.0.1', port: debugPort },
-			match: { title: 'auth-e2e' },
-			host: '127.0.0.1',
-			port: 0,
-		}
-
-		const { proc, stdout } = await spawnAndWait('bun', [FIXTURE_WATCHER, JSON.stringify(watcherConfig)], { env }, /\{"id":"auth-e2e-/)
-		watcherProc = proc
-
-		const watcherInfo = JSON.parse(stdout)
-
-		await waitForWatcherPortAttached(watcherInfo.port)
+		cli = fx.cli
 	})
 
 	afterAll(async () => {
-		await stopProcess(watcherProc)
-		await browser?.close()
-		await new Promise<void>((resolve) => httpServer?.close(() => resolve()))
-		await fs.rm(tempDir, { recursive: true, force: true })
+		await fx?.close()
+		await site?.close()
 	})
 
 	const startFreshWatchedSession = async (url: string, watcherIdPrefix: string) => {
 		const { proc: chromeProc, stdout } = await spawnAndWait(
 			'bun',
 			[BIN_PATH, 'chrome', 'start', '--url', url, '--headless', '--json'],
-			{ env },
+			{ env: fx.env },
 			/\{"chromePid":/,
 		)
 		const info = JSON.parse(stdout.trim()) as { cdpHost: string; cdpPort: number }
@@ -135,13 +109,13 @@ describe('auth e2e', () => {
 				String(info.cdpPort),
 				'--json',
 			],
-			{ env },
+			{ env: fx.env },
 			new RegExp(`\\{"id":"${freshWatcherId}"`),
 		)
 
 		// The watcher prints its id before it has attached, so a command issued right after
 		// this returns can fail with "Watcher not attached to a CDP target".
-		await waitForWatcherAttached(BIN_PATH, freshWatcherId, { env })
+		await waitForWatcherAttached(BIN_PATH, freshWatcherId, { env: fx.env })
 
 		return {
 			chromeProc,
@@ -173,7 +147,7 @@ describe('auth e2e', () => {
 	}
 
 	test('auth cookies lists cookies without exposing raw values by default', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'auth', 'cookies', watcherId], { env })
+		const { stdout } = await cli.run(['auth', 'cookies', watcherId])
 
 		expect(stdout).toContain('starkuser')
 		expect(stdout).toContain('csrftoken')
@@ -181,8 +155,7 @@ describe('auth e2e', () => {
 	})
 
 	test('auth cookies --json --show-values returns raw cookie values', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'auth', 'cookies', watcherId, '--json', '--show-values'], { env })
-		const response = JSON.parse(stdout) as AuthCookiesResponse
+		const response = await cli.json<AuthCookiesResponse>(['auth', 'cookies', watcherId, '--json', '--show-values'])
 		const sessionCookie = response.cookies.find((cookie) => cookie.name === 'starkuser')
 
 		expect(response.ok).toBe(true)
@@ -190,7 +163,7 @@ describe('auth e2e', () => {
 	})
 
 	test('auth export-cookies emits Netscape format', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'auth', 'export-cookies', watcherId, '--format', 'netscape'], { env })
+		const { stdout } = await cli.run(['auth', 'export-cookies', watcherId, '--format', 'netscape'])
 
 		expect(stdout).toContain('# Netscape HTTP Cookie File')
 		expect(stdout).toContain('#HttpOnly_app.localhost')
@@ -198,15 +171,14 @@ describe('auth e2e', () => {
 	})
 
 	test('auth cookies --exclude-tracking hides analytics cookies', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'auth', 'cookies', watcherId, '--exclude-tracking'], { env })
+		const { stdout } = await cli.run(['auth', 'cookies', watcherId, '--exclude-tracking'])
 
 		expect(stdout).toContain('starkuser')
 		expect(stdout).not.toContain('_ga')
 	})
 
 	test('auth export-state includes cookies and storage for the active page', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'auth', 'export-state', watcherId], { env })
-		const snapshot = JSON.parse(stdout) as AuthStateSnapshot
+		const snapshot = await cli.json<AuthStateSnapshot>(['auth', 'export-state', watcherId])
 
 		expect(snapshot.ok).toBe(true)
 		expect(snapshot.url).toBe(fixtureUrl)
@@ -220,13 +192,13 @@ describe('auth e2e', () => {
 	})
 
 	test('chrome start --auth-state hydrates a fresh browser session', async () => {
-		const authStatePath = path.join(tempDir, 'auth-state.json')
-		await runCommand('bun', [BIN_PATH, 'auth', 'export-state', watcherId, '--out', authStatePath], { env })
+		const authStatePath = path.join(fx.home, 'auth-state.json')
+		await cli.run(['auth', 'export-state', watcherId, '--out', authStatePath])
 
 		const { proc: chromeProc, stdout } = await spawnAndWait(
 			'bun',
 			[BIN_PATH, 'chrome', 'start', '--auth-state', authStatePath, '--headless', '--json'],
-			{ env },
+			{ env: fx.env },
 			/\{"chromePid":/,
 		)
 
@@ -249,13 +221,12 @@ describe('auth e2e', () => {
 					String(info.cdpPort),
 					'--json',
 				],
-				{ env },
+				{ env: fx.env },
 				new RegExp(`\\{"id":"${hydratedWatcherId}"`),
 			)
 
 			try {
-				const { stdout: hydratedStateStdout } = await runCommand('bun', [BIN_PATH, 'auth', 'export-state', hydratedWatcherId], { env })
-				const hydratedState = JSON.parse(hydratedStateStdout) as AuthStateSnapshot
+				const hydratedState = await cli.json<AuthStateSnapshot>(['auth', 'export-state', hydratedWatcherId])
 
 				expectHydratedFixtureState(hydratedState)
 				expect(hydratedState.cookies.some((cookie) => cookie.name === 'csrftoken' && cookie.value === 'csrf-cookie-secret')).toBe(true)
@@ -266,21 +237,18 @@ describe('auth e2e', () => {
 		} finally {
 			await stopProcess(chromeProc)
 		}
-	}, 20_000)
+	})
 
 	test('auth load-state hydrates an already running watcher tab', async () => {
-		const authStatePath = path.join(tempDir, 'live-auth-state.json')
-		await runCommand('bun', [BIN_PATH, 'auth', 'export-state', watcherId, '--out', authStatePath], { env })
+		const authStatePath = path.join(fx.home, 'live-auth-state.json')
+		await cli.run(['auth', 'export-state', watcherId, '--out', authStatePath])
 
 		const { chromeProc, watcherProc, watcherId: hydratedWatcherId } = await startFreshWatchedSession(blankUrl, 'live-auth')
 		try {
-			const { stdout: loadStdout } = await runCommand('bun', [BIN_PATH, 'auth', 'load-state', hydratedWatcherId, '--in', authStatePath], {
-				env,
-			})
+			const { stdout: loadStdout } = await cli.run(['auth', 'load-state', hydratedWatcherId, '--in', authStatePath])
 			expect(loadStdout).toContain(`loaded auth state into ${hydratedWatcherId}`)
 
-			const { stdout: hydratedStateStdout } = await runCommand('bun', [BIN_PATH, 'auth', 'export-state', hydratedWatcherId], { env })
-			const hydratedState = JSON.parse(hydratedStateStdout) as AuthStateSnapshot
+			const hydratedState = await cli.json<AuthStateSnapshot>(['auth', 'export-state', hydratedWatcherId])
 
 			expectHydratedFixtureState(hydratedState)
 			expectSnapshotMetadata(hydratedState, hydratedWatcherId)
@@ -288,21 +256,17 @@ describe('auth e2e', () => {
 			await stopProcess(watcherProc)
 			await stopProcess(chromeProc)
 		}
-	}, 20_000)
+	})
 
 	test('auth load-state accepts snapshots from stdin', async () => {
-		const { stdout: exportedState } = await runCommand('bun', [BIN_PATH, 'auth', 'export-state', watcherId], { env })
+		const { stdout: exportedState } = await cli.run(['auth', 'export-state', watcherId])
 		const { chromeProc, watcherProc, watcherId: hydratedWatcherId } = await startFreshWatchedSession(blankUrl, 'stdin-auth')
 
 		try {
-			const { stdout: loadStdout } = await runCommand('bun', [BIN_PATH, 'auth', 'load-state', hydratedWatcherId, '--in', '-'], {
-				env,
-				input: exportedState,
-			})
+			const { stdout: loadStdout } = await cli.run(['auth', 'load-state', hydratedWatcherId, '--in', '-'], { input: exportedState })
 			expect(loadStdout).toContain(`loaded auth state into ${hydratedWatcherId}`)
 
-			const { stdout: hydratedStateStdout } = await runCommand('bun', [BIN_PATH, 'auth', 'export-state', hydratedWatcherId], { env })
-			const hydratedState = JSON.parse(hydratedStateStdout) as AuthStateSnapshot
+			const hydratedState = await cli.json<AuthStateSnapshot>(['auth', 'export-state', hydratedWatcherId])
 
 			expectHydratedFixtureState(hydratedState)
 			expectSnapshotMetadata(hydratedState, hydratedWatcherId)
@@ -310,17 +274,16 @@ describe('auth e2e', () => {
 			await stopProcess(watcherProc)
 			await stopProcess(chromeProc)
 		}
-	}, 20_000)
+	})
 
 	test('auth clone copies auth state directly between watchers', async () => {
 		const { chromeProc, watcherProc, watcherId: clonedWatcherId } = await startFreshWatchedSession(blankUrl, 'clone-auth')
 
 		try {
-			const { stdout: cloneStdout } = await runCommand('bun', [BIN_PATH, 'auth', 'clone', watcherId, '--to', clonedWatcherId], { env })
+			const { stdout: cloneStdout } = await cli.run(['auth', 'clone', watcherId, '--to', clonedWatcherId])
 			expect(cloneStdout).toContain(`cloned auth state from ${watcherId} to ${clonedWatcherId}`)
 
-			const { stdout: hydratedStateStdout } = await runCommand('bun', [BIN_PATH, 'auth', 'export-state', clonedWatcherId], { env })
-			const hydratedState = JSON.parse(hydratedStateStdout) as AuthStateSnapshot
+			const hydratedState = await cli.json<AuthStateSnapshot>(['auth', 'export-state', clonedWatcherId])
 
 			expectHydratedFixtureState(hydratedState)
 			expectSnapshotMetadata(hydratedState, clonedWatcherId)
@@ -328,14 +291,14 @@ describe('auth e2e', () => {
 			await stopProcess(watcherProc)
 			await stopProcess(chromeProc)
 		}
-	}, 20_000)
+	})
 
 	test('start --auth-from launches a fresh watcher with cloned auth state', async () => {
 		const startedWatcherId = `start-auth-${Date.now()}`
 		const { proc: startProc, stdout } = await spawnAndWait(
 			'bun',
 			[BIN_PATH, 'start', '--id', startedWatcherId, '--auth-from', watcherId, '--headless', '--json'],
-			{ env },
+			{ env: fx.env },
 			new RegExp(`\\{"id":"${startedWatcherId}"`),
 		)
 
@@ -343,25 +306,20 @@ describe('auth e2e', () => {
 			const startInfo = JSON.parse(stdout.trim()) as { id: string }
 			expect(startInfo.id).toBe(startedWatcherId)
 
-			const { stdout: hydratedStateStdout } = await runCommand('bun', [BIN_PATH, 'auth', 'export-state', startedWatcherId], { env })
-			const hydratedState = JSON.parse(hydratedStateStdout) as AuthStateSnapshot
+			const hydratedState = await cli.json<AuthStateSnapshot>(['auth', 'export-state', startedWatcherId])
 
 			expectHydratedFixtureState(hydratedState)
 			expectSnapshotMetadata(hydratedState, startedWatcherId)
 		} finally {
 			await stopProcess(startProc)
 		}
-	}, 20_000)
+	})
 
 	test('chrome start rejects auth-state with copied profiles', async () => {
-		const authStatePath = path.join(tempDir, 'invalid-combo-auth-state.json')
-		await runCommand('bun', [BIN_PATH, 'auth', 'export-state', watcherId, '--out', authStatePath], { env })
+		const authStatePath = path.join(fx.home, 'invalid-combo-auth-state.json')
+		await cli.run(['auth', 'export-state', watcherId, '--out', authStatePath])
 
-		const result = await runCommandWithExit(
-			'bun',
-			[BIN_PATH, 'chrome', 'start', '--auth-state', authStatePath, '--profile', 'default-lite', '--json'],
-			{ env },
-		)
+		const result = await cli.exec(['chrome', 'start', '--auth-state', authStatePath, '--profile', 'default-lite', '--json'])
 
 		expect(result.code).toBe(2)
 		expect(result.stderr).toContain('Cannot combine --auth-state with a copied Chrome profile')

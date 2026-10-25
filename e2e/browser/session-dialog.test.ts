@@ -1,16 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import type { ChildProcess } from 'node:child_process'
-import fs from 'node:fs/promises'
-import os from 'node:os'
-import path from 'node:path'
-import { chromium, type Browser, type Page } from 'playwright'
-import { getFreePort } from './helpers/ports.js'
-import { spawnAndWait, stopProcess } from './helpers/process.js'
-import { startSession, type SessionHarness } from './helpers/session.js'
-import { waitForWatcherPortAttached } from './helpers/watcher.js'
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
+import { startCdpFixture, type CdpFixture } from '../helpers/browser.js'
+import { BIN_PATH } from '../helpers/paths.js'
+import { startSession, type SessionHarness } from '../helpers/session.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
-const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
+setDefaultTimeout(TIMEOUTS.browser)
 
 /** Short enough that a dialog parked behind its own trigger would fail the test, not just slow it. */
 const REQUEST_TIMEOUT_MS = 15_000
@@ -28,11 +22,7 @@ const TEST_HTML = `
 type Line = Awaited<ReturnType<SessionHarness['next']>>
 
 describe('dialog controls over the persistent session transport', () => {
-	let tempDir: string
-	let env: NodeJS.ProcessEnv
-	let browser: Browser
-	let page: Page
-	let watcherProc: ChildProcess
+	let fx: CdpFixture
 	let session: SessionHarness
 	const watcherId = `session-dialog-${Date.now()}`
 
@@ -49,32 +39,24 @@ describe('dialog controls over the persistent session transport', () => {
 	}
 
 	beforeAll(async () => {
-		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-session-dialog-e2e-'))
-		env = { ...process.env, ARGUS_HOME: tempDir }
-		const debugPort = await getFreePort()
+		fx = await startCdpFixture({
+			prefix: 'argus-session-dialog-e2e',
+			watcher: { id: watcherId, match: { title: 'session-dialog-e2e' } },
+			preparePage: async (page) => {
+				// Playwright auto-dismisses dialogs nobody listens for; a no-op listener leaves them to Argus.
+				page.on('dialog', () => {})
+				await page.setContent(TEST_HTML)
+			},
+		})
 
-		browser = await chromium.launch({ args: ['--remote-debugging-address=127.0.0.1', `--remote-debugging-port=${debugPort}`] })
-		page = await (await browser.newContext()).newPage()
-		// Playwright auto-dismisses dialogs nobody listens for; a no-op listener leaves them to Argus.
-		page.on('dialog', () => {})
-		await page.setContent(TEST_HTML)
-
-		const watcherConfig = { id: watcherId, chrome: { host: '127.0.0.1', port: debugPort }, match: { title: 'session-dialog-e2e' }, host: '127.0.0.1', port: 0 }
-		const { proc, stdout } = await spawnAndWait('bun', [FIXTURE_WATCHER, JSON.stringify(watcherConfig)], { env }, /\{"id":"session-dialog-/)
-		watcherProc = proc
-		await waitForWatcherPortAttached(JSON.parse(stdout).port)
-
-		session = startSession(BIN_PATH, [watcherId, '--request-timeout', `${REQUEST_TIMEOUT_MS}ms`], { env, cwd: tempDir })
+		session = startSession(BIN_PATH, [watcherId, '--request-timeout', `${REQUEST_TIMEOUT_MS}ms`], { env: fx.env, cwd: fx.home })
 		expect(await session.next()).toMatchObject({ type: 'ready', watcher: { id: watcherId } })
 	})
 
 	afterAll(async () => {
 		await session?.close(5_000)
-		await stopProcess(watcherProc)
-		await browser?.close()
-		await fs.rm(tempDir, { recursive: true, force: true })
+		await fx?.close()
 	})
-
 	test('status and accept reach a confirm opened by an in-flight eval', async () => {
 		session.send({ id: 'eval', cmd: 'eval', args: { expression: "window.confirm('eval-confirm')" } })
 		session.send({ id: 'status', cmd: 'dialog status' })

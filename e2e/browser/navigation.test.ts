@@ -1,17 +1,10 @@
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import path from 'node:path'
-import os from 'node:os'
-import fs from 'node:fs/promises'
-import http from 'node:http'
-import type { ChildProcess } from 'node:child_process'
-import { chromium, type Browser, type Page } from 'playwright'
-import { getFreePort } from './helpers/ports.js'
-import { runCommand, runCommandWithExit, spawnAndWait, stopProcess } from './helpers/process.js'
-import { waitForWatcherPortAttached } from './helpers/watcher.js'
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import type { DomClickResponse, ErrorResponse, EvalResponse, NavigateHistoryResponse, NavigateResponse, StatusResponse } from '@vforsh/argus-core'
+import { startCdpFixture, type CdpFixture } from '../helpers/browser.js'
+import { startSite, type Site } from '../helpers/site.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
-const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
+setDefaultTimeout(TIMEOUTS.browser)
 
 /** How long `/slow` withholds its blocking subresource, so `load` lands well after DOMContentLoaded. */
 const SLOW_LOAD_MS = 1_500
@@ -20,9 +13,8 @@ const page = (title: string, body: string): string =>
 	`<!DOCTYPE html><html><head><title>${title}</title></head><body>${body}<script>console.log('loaded:${title}')</script></body></html>`
 
 /** Fixture site: two linked pages, one that loads slowly, and one that redirects. */
-const createSite = async (): Promise<{ port: number; close: () => Promise<void> }> => {
-	const port = await getFreePort()
-	const server = http.createServer((req, res) => {
+const createSite = (): Promise<Site> =>
+	startSite((req, res) => {
 		const url = new URL(req.url ?? '/', 'http://127.0.0.1')
 
 		if (url.pathname === '/slow-image') {
@@ -52,71 +44,37 @@ const createSite = async (): Promise<{ port: number; close: () => Promise<void> 
 		res.end(page('nav-a', '<h1>A</h1><a id="to-b" href="/b">to B</a><button id="noop">Nothing</button>'))
 	})
 
-	await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve))
-	return { port, close: () => new Promise<void>((resolve) => server.close(() => resolve())) }
-}
-
 describe('page navigation e2e', () => {
-	let tempDir: string
-	let env: Record<string, string | undefined>
-	let browser: Browser
-	let browserPage: Page
-	let watcherProc: ChildProcess
+	let fx: CdpFixture
 	let watcherId: string
-	let watcherPort: number
-	let site: { port: number; close: () => Promise<void> }
+	let site: Site
 	let origin: string
 
-	const runArgus = (args: string[]) => runCommand('node', [BIN_PATH, ...args], { env })
-	const runArgusWithExit = (args: string[]) => runCommandWithExit('node', [BIN_PATH, ...args], { env })
+	const goto = async (target: string, extra: string[] = []): Promise<NavigateResponse> =>
+		fx.cli.json<NavigateResponse>(['page', 'goto', watcherId, target, '--json', ...extra])
 
-	const goto = async (target: string, extra: string[] = []): Promise<NavigateResponse> => {
-		const { stdout } = await runArgus(['page', 'goto', watcherId, target, '--json', ...extra])
-		return JSON.parse(stdout) as NavigateResponse
-	}
+	const readStatus = async (): Promise<StatusResponse> =>
+		(await fetch(`http://127.0.0.1:${fx.watcher.port}/status`)).json() as Promise<StatusResponse>
 
-	const readStatus = async (): Promise<StatusResponse> => (await fetch(`http://127.0.0.1:${watcherPort}/status`)).json() as Promise<StatusResponse>
-
-	const evalValue = async (expression: string): Promise<unknown> => {
-		const { stdout } = await runArgus(['eval', watcherId, expression, '--json'])
-		return (JSON.parse(stdout) as EvalResponse).result
-	}
+	const evalValue = async (expression: string): Promise<unknown> =>
+		(await fx.cli.json<EvalResponse>(['eval', watcherId, expression, '--json'])).result
 
 	beforeAll(async () => {
-		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-nav-e2e-'))
-		env = { ...process.env, ARGUS_HOME: tempDir }
 		site = await createSite()
-		origin = `http://127.0.0.1:${site.port}`
-
-		const debugPort = await getFreePort()
+		origin = site.origin
 		watcherId = `nav-e2e-${Date.now()}`
 
-		browser = await chromium.launch({
-			args: [`--remote-debugging-address=127.0.0.1`, `--remote-debugging-port=${debugPort}`],
+		fx = await startCdpFixture({
+			prefix: 'argus-nav-e2e',
+			runtime: 'node',
+			watcher: { id: watcherId, match: { origin: `127.0.0.1:${site.port}` } },
+			preparePage: (page) => page.goto(`${origin}/a`),
 		})
-		const context = await browser.newContext()
-		browserPage = await context.newPage()
-		await browserPage.goto(`${origin}/a`)
-
-		const watcherConfig = {
-			id: watcherId,
-			chrome: { host: '127.0.0.1', port: debugPort },
-			match: { origin: `127.0.0.1:${site.port}` },
-			host: '127.0.0.1',
-			port: 0,
-		}
-
-		const { proc, stdout } = await spawnAndWait('bun', [FIXTURE_WATCHER, JSON.stringify(watcherConfig)], { env }, /\{"id":"nav-e2e-/)
-		watcherProc = proc
-		watcherPort = (JSON.parse(stdout) as { port: number }).port
-		await waitForWatcherPortAttached(watcherPort)
 	})
 
 	afterAll(async () => {
-		await stopProcess(watcherProc)
-		await browser?.close()
+		await fx?.close()
 		await site?.close()
-		await fs.rm(tempDir, { recursive: true, force: true })
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -217,7 +175,7 @@ describe('page navigation e2e', () => {
 	})
 
 	test('goto to an unresolvable host fails with navigation_failed', async () => {
-		const { stdout, code } = await runArgusWithExit(['page', 'goto', watcherId, 'http://argus-nav-e2e.invalid/', '--json'])
+		const { stdout, code } = await fx.cli.exec(['page', 'goto', watcherId, 'http://argus-nav-e2e.invalid/', '--json'])
 		expect(code).not.toBe(0)
 		const response = JSON.parse(stdout) as ErrorResponse
 		expect(response.ok).toBe(false)
@@ -229,7 +187,7 @@ describe('page navigation e2e', () => {
 	test('goto times out with navigation_timeout when the load outlasts the budget', async () => {
 		await goto(`${origin}/a`)
 
-		const { stdout, code } = await runArgusWithExit(['page', 'goto', watcherId, '/slow', '--timeout', '100', '--json'])
+		const { stdout, code } = await fx.cli.exec(['page', 'goto', watcherId, '/slow', '--timeout', '100', '--json'])
 		expect(code).not.toBe(0)
 		const response = JSON.parse(stdout) as ErrorResponse
 		expect(response.ok).toBe(false)
@@ -240,7 +198,7 @@ describe('page navigation e2e', () => {
 		await goto(`${origin}/a`)
 
 		const response = await goto('/b')
-		const { stdout } = await runArgus(['logs', watcherId, '--since-epoch', response.epoch, '--json-full'])
+		const { stdout } = await fx.cli.run(['logs', watcherId, '--since-epoch', response.epoch, '--json-full'])
 		const messages = JSON.stringify(JSON.parse(stdout))
 		expect(messages).toContain('loaded:nav-b')
 		expect(messages).not.toContain('loaded:nav-a')
@@ -259,10 +217,10 @@ describe('page navigation e2e', () => {
 	test('the top-level goto alias and the page nav alias reach the same command', async () => {
 		await goto(`${origin}/b`)
 
-		const { stdout: topLevel } = await runArgus(['goto', watcherId, '/a', '--json'])
+		const { stdout: topLevel } = await fx.cli.run(['goto', watcherId, '/a', '--json'])
 		expect((JSON.parse(topLevel) as NavigateResponse).url).toBe(`${origin}/a`)
 
-		const { stdout: aliased } = await runArgus(['page', 'nav', watcherId, '/b', '--json'])
+		const { stdout: aliased } = await fx.cli.run(['page', 'nav', watcherId, '/b', '--json'])
 		expect((JSON.parse(aliased) as NavigateResponse).url).toBe(`${origin}/b`)
 	})
 
@@ -273,10 +231,10 @@ describe('page navigation e2e', () => {
 	test('page url prints the bare URL', async () => {
 		await goto(`${origin}/b`)
 
-		const { stdout } = await runArgus(['page', 'url', watcherId])
+		const { stdout } = await fx.cli.run(['page', 'url', watcherId])
 		expect(stdout.trim()).toBe(`${origin}/b`)
 
-		const { stdout: jsonOut } = await runArgus(['page', 'url', watcherId, '--json'])
+		const { stdout: jsonOut } = await fx.cli.run(['page', 'url', watcherId, '--json'])
 		const parsed = JSON.parse(jsonOut) as { url: string; title: string; attached: boolean }
 		expect(parsed.url).toBe(`${origin}/b`)
 		expect(parsed.title).toBe('nav-b')
@@ -291,14 +249,14 @@ describe('page navigation e2e', () => {
 		await goto(`${origin}/a`)
 		await goto('/b')
 
-		const { stdout: backOut } = await runArgus(['page', 'back', watcherId, '--json'])
+		const { stdout: backOut } = await fx.cli.run(['page', 'back', watcherId, '--json'])
 		const back = JSON.parse(backOut) as NavigateHistoryResponse
 		expect(back.ok).toBe(true)
 		expect(back.url).toBe(`${origin}/a`)
 		expect(back.length).toBeGreaterThan(1)
 		expect(back.index).toBe(back.length - 2)
 
-		const { stdout: forwardOut } = await runArgus(['page', 'forward', watcherId, '--json'])
+		const { stdout: forwardOut } = await fx.cli.run(['page', 'forward', watcherId, '--json'])
 		const forward = JSON.parse(forwardOut) as NavigateHistoryResponse
 		expect(forward.url).toBe(`${origin}/b`)
 		expect(forward.index).toBe(back.index + 1)
@@ -307,7 +265,7 @@ describe('page navigation e2e', () => {
 	test('forward past the newest entry fails with no_history', async () => {
 		await goto(`${origin}/a`)
 
-		const { stdout, code } = await runArgusWithExit(['page', 'forward', watcherId, '--json'])
+		const { stdout, code } = await fx.cli.exec(['page', 'forward', watcherId, '--json'])
 		expect(code).not.toBe(0)
 		const response = JSON.parse(stdout) as ErrorResponse
 		expect(response.ok).toBe(false)
@@ -317,7 +275,7 @@ describe('page navigation e2e', () => {
 	test('back past the oldest entry fails with no_history', async () => {
 		await goto(`${origin}/a`)
 
-		const { stdout, code } = await runArgusWithExit(['page', 'back', watcherId, '-n', '999', '--json'])
+		const { stdout, code } = await fx.cli.exec(['page', 'back', watcherId, '-n', '999', '--json'])
 		expect(code).not.toBe(0)
 		const response = JSON.parse(stdout) as ErrorResponse
 		expect(response.error.code).toBe('no_history')
@@ -330,7 +288,7 @@ describe('page navigation e2e', () => {
 	test('click --wait-nav reports the navigation a link caused', async () => {
 		await goto(`${origin}/a`)
 
-		const { stdout } = await runArgus(['click', watcherId, '--selector', '#to-b', '--wait-nav', '--json'])
+		const { stdout } = await fx.cli.run(['click', watcherId, '--selector', '#to-b', '--wait-nav', '--json'])
 		const response = JSON.parse(stdout) as DomClickResponse
 		expect(response.clicked).toBe(1)
 		expect(response.navigation?.navigated).toBe(true)
@@ -341,7 +299,7 @@ describe('page navigation e2e', () => {
 	test('click --wait-nav on a button reports no navigation without failing', async () => {
 		await goto(`${origin}/a`)
 
-		const { stdout } = await runArgus(['click', watcherId, '--selector', '#noop', '--wait-nav', '--nav-timeout', '1s', '--json'])
+		const { stdout } = await fx.cli.run(['click', watcherId, '--selector', '#noop', '--wait-nav', '--nav-timeout', '1s', '--json'])
 		const response = JSON.parse(stdout) as DomClickResponse
 		expect(response.clicked).toBe(1)
 		expect(response.navigation?.navigated).toBe(false)

@@ -1,12 +1,5 @@
-import { waitForWatcherPortAttached } from './helpers/watcher.js'
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import path from 'node:path'
-import os from 'node:os'
-import fs from 'node:fs/promises'
-import { chromium, type Browser, type Page } from 'playwright'
-import { getFreePort } from './helpers/ports.js'
-import { runCommand, spawnAndWait, stopProcess } from './helpers/process.js'
-import type { ChildProcess } from 'node:child_process'
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
+import type { Page } from 'playwright'
 import type {
 	DomTreeResponse,
 	DomInfoResponse,
@@ -18,6 +11,12 @@ import type {
 	LocateResponse,
 	SnapshotResponse,
 } from '@vforsh/argus-core'
+import { startCdpFixture, type CdpFixture } from '../helpers/browser.js'
+import type { Cli } from '../helpers/cli.js'
+import type { CommandResult } from '../helpers/process.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
+
+setDefaultTimeout(TIMEOUTS.browser)
 
 type DragCanvasEvent = {
 	type: string
@@ -51,8 +50,18 @@ const expectPointNear = (actual: { x: number; y: number } | null, expected: { x:
 	expect(Math.abs(actual!.y - expected.y)).toBeLessThanOrEqual(tolerance)
 }
 
-const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
-const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
+/** A failed `--json` command: asserts it rejected with an error envelope on stdout, and returns that envelope. */
+const expectFailureJson = async (command: Promise<CommandResult>): Promise<ErrorResponse> => {
+	const result = await command.catch((e) => e)
+	expect(result).toBeInstanceOf(Error)
+	// Extract JSON from stdout in error message (format: "Stdout: {...}")
+	const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
+	expect(stdoutMatch).toBeTruthy()
+	return JSON.parse(stdoutMatch![1]) as ErrorResponse
+}
+
+const flattenSnapshot = (nodes: SnapshotResponse['roots']): Array<{ ref?: string; role: string; name: string }> =>
+	nodes.flatMap((node) => [node, ...(node.children ? flattenSnapshot(node.children) : [])])
 
 // HTML fixture with known structure for testing
 const TEST_HTML = `
@@ -179,14 +188,16 @@ const TEST_HTML = `
 `
 
 describe('dom tree and dom info e2e', () => {
-	let tempDir: string
-	let env: Record<string, string | undefined>
-	let browser: Browser
+	let fx: CdpFixture
 	let page: Page
-	let watcherProc: ChildProcess
+	let cli: Cli
 	let watcherId: string
 
-	const runArgus = (args: string[]) => runCommand('node', [BIN_PATH, ...args], { env })
+	const resetEvents = () =>
+		page.evaluate(() => {
+			;(globalThis as { __events?: string[] }).__events = []
+		})
+	const readEvents = () => page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
 	const resetKeyEvents = () =>
 		page.evaluate(() => {
 			const state = globalThis as { __events?: string[]; __keyEvents?: KeyEventSnapshot[] }
@@ -196,51 +207,23 @@ describe('dom tree and dom info e2e', () => {
 	const readKeyEvents = () => page.evaluate(() => (globalThis as { __keyEvents?: KeyEventSnapshot[] }).__keyEvents ?? [])
 
 	beforeAll(async () => {
-		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-dom-e2e-'))
-		env = { ...process.env, ARGUS_HOME: tempDir }
-		const debugPort = await getFreePort()
 		watcherId = `dom-e2e-${Date.now()}`
-
-		// 1. Launch browser
-		browser = await chromium.launch({
-			args: [`--remote-debugging-address=127.0.0.1`, `--remote-debugging-port=${debugPort}`],
+		fx = await startCdpFixture({
+			prefix: 'argus-dom-e2e',
+			runtime: 'node',
+			watcher: { id: watcherId, match: { title: 'dom-e2e' } },
+			preparePage: async (page) => {
+				await page.setContent(TEST_HTML)
+				// Verify page loaded
+				expect(await page.title()).toBe('dom-e2e')
+			},
 		})
-
-		const context = await browser.newContext()
-		page = await context.newPage()
-		await page.setContent(TEST_HTML)
-
-		// Verify page loaded
-		const title = await page.title()
-		expect(title).toBe('dom-e2e')
-
-		// 2. Start watcher
-		const watcherConfig = {
-			id: watcherId,
-			chrome: { host: '127.0.0.1', port: debugPort },
-			match: { title: 'dom-e2e' },
-			host: '127.0.0.1',
-			port: 0,
-		}
-
-		const { proc, stdout: watcherStdout } = await spawnAndWait(
-			'bun',
-			[FIXTURE_WATCHER, JSON.stringify(watcherConfig)],
-			{ env },
-			/\{"id":"dom-e2e-/,
-		)
-		watcherProc = proc
-
-		const watcherInfo = JSON.parse(watcherStdout)
-
-		// 3. Wait for attachment
-		await waitForWatcherPortAttached(watcherInfo.port)
+		page = fx.page
+		cli = fx.cli
 	})
 
 	afterAll(async () => {
-		await stopProcess(watcherProc)
-		await browser?.close()
-		await fs.rm(tempDir, { recursive: true, force: true })
+		await fx?.close()
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -248,8 +231,7 @@ describe('dom tree and dom info e2e', () => {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('dom tree --selector returns tree for unique selector', async () => {
-		const { stdout } = await runArgus(['dom', 'tree', watcherId, '--selector', '#root', '--json'])
-		const response = JSON.parse(stdout) as DomTreeResponse
+		const response = await cli.json<DomTreeResponse>(['dom', 'tree', watcherId, '--selector', '#root', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
 		expect(response.roots.length).toBe(1)
@@ -259,7 +241,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom tree human output format', async () => {
-		const { stdout } = await runArgus(['dom', 'tree', watcherId, '--selector', '#header'])
+		const { stdout } = await cli.run(['dom', 'tree', watcherId, '--selector', '#header'])
 		expect(stdout).toMatch(/<header#header\.header-style>/)
 		expect(stdout).toMatch(/<h1#title>/)
 		expect(stdout).toMatch(/<nav\.nav>/)
@@ -267,15 +249,13 @@ describe('dom tree and dom info e2e', () => {
 
 	test('dom tree --depth controls traversal depth', async () => {
 		// depth=0 should return only the root node without children details
-		const { stdout: depth0 } = await runArgus(['dom', 'tree', watcherId, '--selector', '#root', '--depth', '0', '--json'])
-		const resp0 = JSON.parse(depth0) as DomTreeResponse
+		const resp0 = await cli.json<DomTreeResponse>(['dom', 'tree', watcherId, '--selector', '#root', '--depth', '0', '--json'])
 		expect(resp0.roots[0].tag).toBe('div')
 		// With depth=0, children should be truncated
 		expect(resp0.roots[0].truncated).toBe(true)
 
 		// depth=1 should include immediate children
-		const { stdout: depth1 } = await runArgus(['dom', 'tree', watcherId, '--selector', '#root', '--depth', '1', '--json'])
-		const resp1 = JSON.parse(depth1) as DomTreeResponse
+		const resp1 = await cli.json<DomTreeResponse>(['dom', 'tree', watcherId, '--selector', '#root', '--depth', '1', '--json'])
 		expect(resp1.roots[0].children && resp1.roots[0].children.length > 0).toBe(true)
 		const headerChild = resp1.roots[0].children?.find((c) => c.tag === 'header')
 		expect(headerChild).toBeTruthy()
@@ -284,21 +264,13 @@ describe('dom tree and dom info e2e', () => {
 
 	test('dom tree errors on multiple matches without --all', async () => {
 		// .paragraph matches multiple elements
-		const result = await runArgus(['dom', 'tree', watcherId, '--selector', '.paragraph', '--json']).catch((e) => e)
-
-		// The command exits with error code 1
-		expect(result).toBeInstanceOf(Error)
-		// Extract JSON from stdout in error message (format: "Stdout: {...}")
-		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
-		expect(stdoutMatch).toBeTruthy()
-		const response = JSON.parse(stdoutMatch![1]) as ErrorResponse
+		const response = await expectFailureJson(cli.run(['dom', 'tree', watcherId, '--selector', '.paragraph', '--json']))
 		expect(response.ok).toBe(false)
 		expect(response.error.message).toMatch(/matched.*elements/)
 	})
 
 	test('dom tree --all returns all matches', async () => {
-		const { stdout } = await runArgus(['dom', 'tree', watcherId, '--selector', '.paragraph', '--all', '--json'])
-		const response = JSON.parse(stdout) as DomTreeResponse
+		const response = await cli.json<DomTreeResponse>(['dom', 'tree', watcherId, '--selector', '.paragraph', '--all', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(3)
 		expect(response.roots.length).toBe(3)
@@ -309,7 +281,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom tree errors on no matches', async () => {
-		const result = await runArgus(['dom', 'tree', watcherId, '--selector', '#nonexistent']).catch((e) => e)
+		const result = await cli.run(['dom', 'tree', watcherId, '--selector', '#nonexistent']).catch((e) => e)
 		expect(result).toBeInstanceOf(Error)
 		expect(result.message).toMatch(/No element found/)
 	})
@@ -319,8 +291,7 @@ describe('dom tree and dom info e2e', () => {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('dom info --selector returns element info', async () => {
-		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '#title', '--json'])
-		const response = JSON.parse(stdout) as DomInfoResponse
+		const response = await cli.json<DomInfoResponse>(['dom', 'info', watcherId, '--selector', '#title', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
 		expect(response.elements.length).toBe(1)
@@ -333,7 +304,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom info human output format', async () => {
-		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '#header'])
+		const { stdout } = await cli.run(['dom', 'info', watcherId, '--selector', '#header'])
 		expect(stdout).toMatch(/<header#header\.header-style>/)
 		expect(stdout).toMatch(/Attributes:/)
 		expect(stdout).toMatch(/id="header"/)
@@ -343,8 +314,7 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom info --outer-html-max truncates outerHTML', async () => {
-		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '#root', '--outer-html-max', '50', '--json'])
-		const response = JSON.parse(stdout) as DomInfoResponse
+		const response = await cli.json<DomInfoResponse>(['dom', 'info', watcherId, '--selector', '#root', '--outer-html-max', '50', '--json'])
 		expect(response.ok).toBe(true)
 		const el = response.elements[0]
 		expect(el.outerHTML).toBeTruthy()
@@ -353,19 +323,13 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom info errors on multiple matches without --all', async () => {
-		const result = await runArgus(['dom', 'info', watcherId, '--selector', '.article', '--json']).catch((e) => e)
-		expect(result).toBeInstanceOf(Error)
-		// Extract JSON from stdout in error message
-		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
-		expect(stdoutMatch).toBeTruthy()
-		const response = JSON.parse(stdoutMatch![1]) as ErrorResponse
+		const response = await expectFailureJson(cli.run(['dom', 'info', watcherId, '--selector', '.article', '--json']))
 		expect(response.ok).toBe(false)
 		expect(response.error.message).toMatch(/matched.*elements/)
 	})
 
 	test('dom info --all returns all matches', async () => {
-		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '.nav-link', '--all', '--json'])
-		const response = JSON.parse(stdout) as DomInfoResponse
+		const response = await cli.json<DomInfoResponse>(['dom', 'info', watcherId, '--selector', '.nav-link', '--all', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(2)
 		expect(response.elements.length).toBe(2)
@@ -376,19 +340,16 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom info includes data attributes', async () => {
-		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'])
-		const response = JSON.parse(stdout) as DomInfoResponse
+		const response = await cli.json<DomInfoResponse>(['dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.elements[0].attributes['data-testid']).toBe('article-1')
 	})
 
 	test('dom info reports correct childElementCount', async () => {
-		const { stdout } = await runArgus(['dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'])
-		const response = JSON.parse(stdout) as DomInfoResponse
+		const response = await cli.json<DomInfoResponse>(['dom', 'info', watcherId, '--selector', '[data-testid="article-1"]', '--json'])
 		expect(response.elements[0].childElementCount).toBe(2)
 
-		const { stdout: stdout2 } = await runArgus(['dom', 'info', watcherId, '--selector', '[data-testid="article-2"]', '--json'])
-		const response2 = JSON.parse(stdout2) as DomInfoResponse
+		const response2 = await cli.json<DomInfoResponse>(['dom', 'info', watcherId, '--selector', '[data-testid="article-2"]', '--json'])
 		expect(response2.elements[0].childElementCount).toBe(1)
 	})
 
@@ -397,71 +358,54 @@ describe('dom tree and dom info e2e', () => {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('dom hover triggers mouseover events', async () => {
-		await page.evaluate(() => {
-			;(globalThis as { __events?: string[] }).__events = []
-		})
+		await resetEvents()
 
-		const { stdout } = await runArgus(['hover', watcherId, '--selector', '#btn', '--json'])
-		const response = JSON.parse(stdout) as DomHoverResponse
+		const response = await cli.json<DomHoverResponse>(['hover', watcherId, '--selector', '#btn', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
 		expect(response.hovered).toBe(1)
 
-		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		const events = await readEvents()
 		expect(events).toContain('hover:btn')
 	})
 
 	test('dom click triggers click events', async () => {
-		await page.evaluate(() => {
-			;(globalThis as { __events?: string[] }).__events = []
-		})
+		await resetEvents()
 
-		const { stdout } = await runArgus(['click', watcherId, '--selector', '#btn', '--json'])
-		const response = JSON.parse(stdout) as DomClickResponse
+		const response = await cli.json<DomClickResponse>(['click', watcherId, '--selector', '#btn', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
 		expect(response.clicked).toBe(1)
 
-		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		const events = await readEvents()
 		expect(events).toContain('click:btn')
 	})
 
 	test('snapshot emits stable element refs for actionable nodes', async () => {
-		const { stdout } = await runArgus(['snapshot', watcherId, '--interactive', '--json'])
-		const response = JSON.parse(stdout) as SnapshotResponse
+		const response = await cli.json<SnapshotResponse>(['snapshot', watcherId, '--interactive', '--json'])
 		expect(response.ok).toBe(true)
 
-		const flatten = (nodes: SnapshotResponse['roots']): Array<{ ref?: string; role: string; name: string }> =>
-			nodes.flatMap((node) => [node, ...(node.children ? flatten(node.children) : [])])
-
-		const button = flatten(response.roots).find((node) => node.role === 'button' && node.name === 'Click me')
+		const button = flattenSnapshot(response.roots).find((node) => node.role === 'button' && node.name === 'Click me')
 		expect(button?.ref).toMatch(/^e\d+$/)
 	})
 
 	test('dom click accepts --ref from snapshot output', async () => {
-		await page.evaluate(() => {
-			;(globalThis as { __events?: string[] }).__events = []
-		})
+		await resetEvents()
 
-		const { stdout: snapshotStdout } = await runArgus(['snapshot', watcherId, '--interactive', '--json'])
-		const snapshot = JSON.parse(snapshotStdout) as SnapshotResponse
-		const flatten = (nodes: SnapshotResponse['roots']): Array<{ ref?: string; role: string; name: string }> =>
-			nodes.flatMap((node) => [node, ...(node.children ? flatten(node.children) : [])])
-		const buttonRef = flatten(snapshot.roots).find((node) => node.role === 'button' && node.name === 'Click me')?.ref
+		const snapshot = await cli.json<SnapshotResponse>(['snapshot', watcherId, '--interactive', '--json'])
+		const buttonRef = flattenSnapshot(snapshot.roots).find((node) => node.role === 'button' && node.name === 'Click me')?.ref
 		expect(buttonRef).toMatch(/^e\d+$/)
 
-		const { stdout } = await runArgus(['click', watcherId, '--ref', buttonRef!, '--json'])
-		const response = JSON.parse(stdout) as DomClickResponse
+		const response = await cli.json<DomClickResponse>(['click', watcherId, '--ref', buttonRef!, '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.clicked).toBe(1)
 
-		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		const events = await readEvents()
 		expect(events).toContain('click:btn')
 	})
 
 	test('locate role finds semantic matches and returns refs', async () => {
-		const { stdout } = await runArgus(['locate', 'role', watcherId, 'button', '--name', 'Click me', '--json'])
-		const response = JSON.parse(stdout) as LocateResponse
+		const response = await cli.json<LocateResponse>(['locate', 'role', watcherId, 'button', '--name', 'Click me', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
 		expect(response.elements[0]?.ref).toMatch(/^e\d+$/)
@@ -472,7 +416,7 @@ describe('dom tree and dom info e2e', () => {
 	test('locate label can fill a control via --action fill', async () => {
 		await page.locator('#input').fill('')
 
-		await runArgus(['locate', 'label', watcherId, 'Email', '--action', 'fill', '--value', 'agent@example.com'])
+		await cli.run(['locate', 'label', watcherId, 'Email', '--action', 'fill', '--value', 'agent@example.com'])
 
 		const value = await page.locator('#input').inputValue()
 		expect(value).toBe('agent@example.com')
@@ -480,11 +424,9 @@ describe('dom tree and dom info e2e', () => {
 
 	test('dom fill focuses ordinary inputs before dispatching value events', async () => {
 		await page.locator('#btn').focus()
-		await page.evaluate(() => {
-			;(globalThis as { __events?: string[] }).__events = []
-		})
+		await resetEvents()
 
-		await runArgus(['fill', watcherId, '--value', 'focused@example.com', '--selector', '#input'])
+		await cli.run(['fill', watcherId, '--value', 'focused@example.com', '--selector', '#input'])
 
 		const state = await page.evaluate(() => ({
 			activeId: document.activeElement?.id,
@@ -495,41 +437,31 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('eval accepts --expression as an alternative input form', async () => {
-		const { stdout } = await runArgus(['eval', watcherId, '--expression', 'document.title', '--json'])
-		const response = JSON.parse(stdout) as { result: string }
+		const response = await cli.json<{ result: string }>(['eval', watcherId, '--expression', 'document.title', '--json'])
 		expect(response.result).toBe('dom-e2e')
 	})
 
 	test('locate label prefers a native control over its matching ARIA wrapper', async () => {
-		const { stdout } = await runArgus(['locate', 'label', watcherId, 'Composite choice', '--exact', '--json'])
-		const response = JSON.parse(stdout) as LocateResponse
+		const response = await cli.json<LocateResponse>(['locate', 'label', watcherId, 'Composite choice', '--exact', '--json'])
 		expect(response.matches).toBe(1)
 		expect(response.elements[0]?.tag).toBe('input')
 	})
 
 	test('dom click errors on multiple matches without --all', async () => {
-		const result = await runArgus(['click', watcherId, '--selector', '.multi', '--json']).catch((e) => e)
-
-		expect(result).toBeInstanceOf(Error)
-		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
-		expect(stdoutMatch).toBeTruthy()
-		const response = JSON.parse(stdoutMatch![1]) as ErrorResponse
+		const response = await expectFailureJson(cli.run(['click', watcherId, '--selector', '.multi', '--json']))
 		expect(response.ok).toBe(false)
 		expect(response.error.message).toMatch(/matched.*elements/)
 	})
 
 	test('dom click --all clicks all matches', async () => {
-		await page.evaluate(() => {
-			;(globalThis as { __events?: string[] }).__events = []
-		})
+		await resetEvents()
 
-		const { stdout } = await runArgus(['click', watcherId, '--selector', '.multi', '--all', '--json'])
-		const response = JSON.parse(stdout) as DomClickResponse
+		const response = await cli.json<DomClickResponse>(['click', watcherId, '--selector', '.multi', '--all', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(2)
 		expect(response.clicked).toBe(2)
 
-		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		const events = await readEvents()
 		expect(events).toContain('click:multi-1')
 		expect(events).toContain('click:multi-2')
 	})
@@ -545,7 +477,7 @@ describe('dom tree and dom info e2e', () => {
 			state.events = []
 		})
 
-		const { stdout } = await runArgus([
+		const response = await cli.json<DomDragResponse>([
 			'drag',
 			watcherId,
 			'--selector',
@@ -560,7 +492,6 @@ describe('dom tree and dom info e2e', () => {
 			'5',
 			'--json',
 		])
-		const response = JSON.parse(stdout) as DomDragResponse
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
 		expect(response.dragged).toBe(1)
@@ -570,15 +501,7 @@ describe('dom tree and dom info e2e', () => {
 		expectPointNear(state.start, { x: 40, y: 50 })
 		expectPointNear(state.current, { x: 160, y: 80 })
 		expect(state.moves).toBeGreaterThanOrEqual(5)
-		expect(state.events.map((event) => event.type)).toEqual([
-			'mousedown',
-			'mousemove',
-			'mousemove',
-			'mousemove',
-			'mousemove',
-			'mousemove',
-			'mouseup',
-		])
+		expect(state.events.map((event) => event.type)).toEqual(['mousedown', 'mousemove', 'mousemove', 'mousemove', 'mousemove', 'mousemove', 'mouseup'])
 		expect(state.events.every((event) => event.trusted)).toBe(true)
 		expect(state.events.filter((event) => event.type === 'mousemove').every((event) => event.buttons === 1)).toBe(true)
 	})
@@ -590,8 +513,7 @@ describe('dom tree and dom info e2e', () => {
 	test('dom keydown dispatches Enter', async () => {
 		await resetKeyEvents()
 
-		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'Enter', '--json'])
-		const response = JSON.parse(stdout) as DomKeydownResponse
+		const response = await cli.json<DomKeydownResponse>(['keydown', watcherId, '--key', 'Enter', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('Enter')
 		expect(response.code).toBe('Enter')
@@ -599,21 +521,20 @@ describe('dom tree and dom info e2e', () => {
 		expect(response.focused).toBe(false)
 		expect(response.event).toMatchObject({ key: 'Enter', code: 'Enter', keyCode: 13, shiftKey: false })
 
-		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		const events = await readEvents()
 		expect(events).toContain('keydown:Enter')
 	})
 
 	test('dom keydown with --selector focuses element', async () => {
 		await resetKeyEvents()
 
-		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'])
-		const response = JSON.parse(stdout) as DomKeydownResponse
+		const response = await cli.json<DomKeydownResponse>(['keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('a')
 		expect(response.code).toBe('KeyA')
 		expect(response.focused).toBe(true)
 
-		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		const events = await readEvents()
 		expect(events).toContain('input-keydown:a')
 	})
 
@@ -626,7 +547,7 @@ describe('dom tree and dom info e2e', () => {
 			input.value = ''
 		})
 
-		await runArgus(['keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'])
+		await cli.run(['keydown', watcherId, '--key', 'a', '--selector', '#input', '--json'])
 
 		const value = await page.evaluate(() => (document.getElementById('input') as HTMLInputElement).value)
 		expect(value).toBe('a')
@@ -637,9 +558,9 @@ describe('dom tree and dom info e2e', () => {
 		// text action — the page saw the key but the form never submitted.
 		await resetKeyEvents()
 
-		await runArgus(['keydown', watcherId, '--key', 'Enter', '--selector', '#enter-input', '--json'])
+		await cli.run(['keydown', watcherId, '--key', 'Enter', '--selector', '#enter-input', '--json'])
 
-		const events = await page.evaluate(() => (globalThis as { __events?: string[] }).__events ?? [])
+		const events = await readEvents()
 		expect(events).toContain('submit:enter-form')
 	})
 
@@ -649,7 +570,7 @@ describe('dom tree and dom info e2e', () => {
 			;(document.getElementById('enter-textarea') as HTMLTextAreaElement).value = ''
 		})
 
-		await runArgus(['keydown', watcherId, '--key', 'Enter', '--selector', '#enter-textarea', '--json'])
+		await cli.run(['keydown', watcherId, '--key', 'Enter', '--selector', '#enter-textarea', '--json'])
 
 		const value = await page.evaluate(() => (document.getElementById('enter-textarea') as HTMLTextAreaElement).value)
 		expect(value).toBe('\n')
@@ -663,8 +584,7 @@ describe('dom tree and dom info e2e', () => {
 		await otherPage.bringToFront()
 
 		try {
-			const { stdout } = await runArgus(['keydown', watcherId, '--key', 'ArrowUp', '--json'])
-			const response = JSON.parse(stdout) as DomKeydownResponse
+			const response = await cli.json<DomKeydownResponse>(['keydown', watcherId, '--key', 'ArrowUp', '--json'])
 			expect(response.ok).toBe(true)
 			expect(typeof response.activated).toBe('boolean')
 
@@ -674,13 +594,12 @@ describe('dom tree and dom info e2e', () => {
 			await otherPage.close()
 			await page.bringToFront()
 			// Activation is sticky by design; drop it so later tests see the original state.
-			await runArgus(['page', 'hide', watcherId, '--json'])
+			await cli.run(['page', 'hide', watcherId, '--json'])
 		}
 	})
 
 	test('dom keydown with --modifiers sets bitmask', async () => {
-		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'a', '--modifiers', 'shift', '--json'])
-		const response = JSON.parse(stdout) as DomKeydownResponse
+		const response = await cli.json<DomKeydownResponse>(['keydown', watcherId, '--key', 'a', '--modifiers', 'shift', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.modifiers).toBe(8)
 		expect(response.event.shiftKey).toBe(true)
@@ -689,8 +608,7 @@ describe('dom tree and dom info e2e', () => {
 	test('dom keydown infers physical code for uppercase key input', async () => {
 		await resetKeyEvents()
 
-		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'G', '--json'])
-		const response = JSON.parse(stdout) as DomKeydownResponse
+		const response = await cli.json<DomKeydownResponse>(['keydown', watcherId, '--key', 'G', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('g')
 		expect(response.code).toBe('KeyG')
@@ -703,8 +621,7 @@ describe('dom tree and dom info e2e', () => {
 	test('dom keydown supports explicit --code without --key', async () => {
 		await resetKeyEvents()
 
-		const { stdout } = await runArgus(['keydown', watcherId, '--code', 'KeyG', '--json'])
-		const response = JSON.parse(stdout) as DomKeydownResponse
+		const response = await cli.json<DomKeydownResponse>(['keydown', watcherId, '--code', 'KeyG', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('g')
 		expect(response.code).toBe('KeyG')
@@ -716,8 +633,7 @@ describe('dom tree and dom info e2e', () => {
 	test('dom keydown modifier flags affect resolved event', async () => {
 		await resetKeyEvents()
 
-		const { stdout } = await runArgus(['keydown', watcherId, '--code', 'KeyG', '--shift', '--json'])
-		const response = JSON.parse(stdout) as DomKeydownResponse
+		const response = await cli.json<DomKeydownResponse>(['keydown', watcherId, '--code', 'KeyG', '--shift', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('G')
 		expect(response.code).toBe('KeyG')
@@ -731,8 +647,7 @@ describe('dom tree and dom info e2e', () => {
 	test('dom keydown dispatches Backquote', async () => {
 		await resetKeyEvents()
 
-		const { stdout } = await runArgus(['keydown', watcherId, '--code', 'Backquote', '--json'])
-		const response = JSON.parse(stdout) as DomKeydownResponse
+		const response = await cli.json<DomKeydownResponse>(['keydown', watcherId, '--code', 'Backquote', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('`')
 		expect(response.code).toBe('Backquote')
@@ -745,8 +660,7 @@ describe('dom tree and dom info e2e', () => {
 	test('dom keydown dispatches shifted Backquote as tilde', async () => {
 		await resetKeyEvents()
 
-		const { stdout } = await runArgus(['keydown', watcherId, '--code', 'Backquote', '--shift', '--json'])
-		const response = JSON.parse(stdout) as DomKeydownResponse
+		const response = await cli.json<DomKeydownResponse>(['keydown', watcherId, '--code', 'Backquote', '--shift', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.key).toBe('~')
 		expect(response.code).toBe('Backquote')
@@ -757,23 +671,18 @@ describe('dom tree and dom info e2e', () => {
 	})
 
 	test('dom keydown unknown key returns error', async () => {
-		const result = await runArgus(['keydown', watcherId, '--key', 'NoSuchKey', '--json']).catch((e) => e)
-
-		expect(result).toBeInstanceOf(Error)
-		const stdoutMatch = result.message.match(/Stdout:\s*(\{.*\})/)
-		expect(stdoutMatch).toBeTruthy()
-		const response = JSON.parse(stdoutMatch![1]) as ErrorResponse
+		const response = await expectFailureJson(cli.run(['keydown', watcherId, '--key', 'NoSuchKey', '--json']))
 		expect(response.ok).toBe(false)
 		expect(response.error.message).toMatch(/Unknown key/)
 	})
 
 	test('dom keydown human output format', async () => {
-		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'Enter'])
+		const { stdout } = await cli.run(['keydown', watcherId, '--key', 'Enter'])
 		expect(stdout).toMatch(/Dispatched keydown: Enter \(code=Enter\)/)
 	})
 
 	test('dom keydown --print-event human output includes resolved code', async () => {
-		const { stdout } = await runArgus(['keydown', watcherId, '--key', 'G', '--print-event'])
+		const { stdout } = await cli.run(['keydown', watcherId, '--key', 'G', '--print-event'])
 		expect(stdout).toMatch(/Dispatched keydown event:/)
 		expect(stdout).toMatch(/"key":"g"/)
 		expect(stdout).toMatch(/"code":"KeyG"/)
@@ -784,16 +693,14 @@ describe('dom tree and dom info e2e', () => {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('html tree alias works like dom tree', async () => {
-		const { stdout } = await runArgus(['html', 'tree', watcherId, '--selector', '#root', '--json'])
-		const response = JSON.parse(stdout) as DomTreeResponse
+		const response = await cli.json<DomTreeResponse>(['html', 'tree', watcherId, '--selector', '#root', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.roots[0].tag).toBe('div')
 		expect(response.roots[0].attributes.id).toBe('root')
 	})
 
 	test('html info alias works like dom info', async () => {
-		const { stdout } = await runArgus(['html', 'info', watcherId, '--selector', '#title', '--json'])
-		const response = JSON.parse(stdout) as DomInfoResponse
+		const response = await cli.json<DomInfoResponse>(['html', 'info', watcherId, '--selector', '#title', '--json'])
 		expect(response.ok).toBe(true)
 		expect(response.elements[0].tag).toBe('h1')
 		expect(response.elements[0].attributes.id).toBe('title')

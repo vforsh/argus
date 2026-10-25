@@ -1,16 +1,12 @@
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { once } from 'node:events'
-import path from 'node:path'
-import os from 'node:os'
 import fs from 'node:fs/promises'
-import { chromium, type Browser } from 'playwright'
-import { getFreePort } from './helpers/ports.js'
-import { runCommand, spawnAndWait, stopProcess } from './helpers/process.js'
-import type { ChildProcess } from 'node:child_process'
+import type * as http from 'node:http'
+import path from 'node:path'
+import type { Page } from 'playwright'
 import type {
 	CodeListResponse,
 	DialogHandleResponse,
-	DialogStatusResponse,
 	DomInfoResponse,
 	DomTreeResponse,
 	EvalResponse,
@@ -18,25 +14,25 @@ import type {
 	StorageListResponse,
 	VisibilityResponse,
 } from '@vforsh/argus-core'
-import type { Page } from 'playwright'
-import type * as http from 'node:http'
-import { startPlaygroundServers, waitForWatcherReady } from '../playground/harness.ts'
-import { delay } from '@vforsh/argus-core'
+import { startPlaygroundServers, waitForWatcherReady } from '../../playground/harness.ts'
+import { startCdpFixture, type CdpFixture } from '../helpers/browser.js'
+import type { Cli } from '../helpers/cli.js'
+import { createDialogProbe, holdNextDialog } from '../helpers/dialogs.js'
+import { waitFor } from '../helpers/poll.js'
+import { getFreePort } from '../helpers/ports.js'
+import { TIMEOUTS } from '../helpers/timeouts.js'
 
-const BIN_PATH = path.resolve('packages/argus/dist/bin.js')
-const FIXTURE_WATCHER = path.resolve('e2e/fixtures/start-watcher.ts')
+setDefaultTimeout(TIMEOUTS.browser)
 
 describe('playground smoke tests', () => {
-	let tempDir: string
-	let env: Record<string, string | undefined>
-	let browser: Browser
+	let fx: CdpFixture
+	let cli: Cli
 	let page: Page
-	let watcherProc: ChildProcess
 	let mainServer: http.Server
 	let crossOriginServer: http.Server
 
 	const findResourceUrl = async (needle: string): Promise<string> => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'code', 'ls', 'playground', '--json'], { env })
+		const { stdout } = await cli.run(['code', 'ls', 'playground', '--json'])
 		const response = JSON.parse(stdout) as CodeListResponse
 		const resource = response.resources.find((entry) => entry.url.includes(needle))
 		expect(resource).toBeTruthy()
@@ -44,10 +40,6 @@ describe('playground smoke tests', () => {
 	}
 
 	beforeAll(async () => {
-		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'argus-playground-smoke-'))
-		env = { ...process.env, ARGUS_HOME: tempDir }
-
-		const debugPort = await getFreePort()
 		const mainPort = await getFreePort()
 		const crossOriginPort = await getFreePort()
 
@@ -58,45 +50,27 @@ describe('playground smoke tests', () => {
 		// The servers start listening synchronously inside startPlaygroundServers; one may already be up.
 		await Promise.all([mainServer, crossOriginServer].map((server) => (server.listening ? undefined : once(server, 'listening'))))
 
-		// 2. Launch browser
-		browser = await chromium.launch({
-			args: [`--remote-debugging-address=127.0.0.1`, `--remote-debugging-port=${debugPort}`],
+		// 2. Launch browser, 3. start watcher
+		fx = await startCdpFixture({
+			prefix: 'argus-playground-smoke',
+			watcher: { id: 'playground', match: { url: `127.0.0.1:${mainPort}` } },
+			preparePage: async (page) => {
+				await page.goto(`http://127.0.0.1:${mainPort}/`)
+
+				const title = await page.title()
+				expect(title).toBe('Argus Playground')
+			},
 		})
-
-		const context = await browser.newContext()
-		page = await context.newPage()
-		await page.goto(`http://127.0.0.1:${mainPort}/`)
-
-		const title = await page.title()
-		expect(title).toBe('Argus Playground')
-
-		// 3. Start watcher
-		const watcherConfig = {
-			id: 'playground',
-			chrome: { host: '127.0.0.1', port: debugPort },
-			match: { url: `127.0.0.1:${mainPort}` },
-			host: '127.0.0.1',
-			port: 0,
-		}
-
-		const { proc, stdout: watcherStdout } = await spawnAndWait(
-			'bun',
-			[FIXTURE_WATCHER, JSON.stringify(watcherConfig)],
-			{ env },
-			/\{"id":"playground"/,
-		)
-		watcherProc = proc
-
-		const watcherInfo = JSON.parse(watcherStdout)
+		cli = fx.cli
+		page = fx.page
 
 		// 4. Wait for attachment
-		const attached = await waitForWatcherReady(watcherInfo.port)
+		const attached = await waitForWatcherReady(fx.watcher.port)
 		expect(attached).toBe(true)
 	})
 
 	afterAll(async () => {
-		await stopProcess(watcherProc)
-		await browser?.close()
+		await fx?.close()
 		await new Promise<void>((resolve) => {
 			if (!mainServer) return resolve()
 			mainServer.close(() => resolve())
@@ -105,7 +79,6 @@ describe('playground smoke tests', () => {
 			if (!crossOriginServer) return resolve()
 			crossOriginServer.close(() => resolve())
 		})
-		await fs.rm(tempDir, { recursive: true, force: true })
 	})
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -113,28 +86,24 @@ describe('playground smoke tests', () => {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('eval-until waits for playground.ready', async () => {
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'eval-until', 'playground', 'window.playground.ready', '--json', '--total-timeout', '10000'],
-			{ env },
-		)
+		const { stdout } = await cli.run(['eval-until', 'playground', 'window.playground.ready', '--json', '--total-timeout', '10000'])
 		const response = JSON.parse(stdout) as EvalResponse
 		expect(response.ok).toBe(true)
 		expect(response.result).toBe(true)
 	})
 
 	test('eval supports native top-level await', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'eval', 'playground', 'await Promise.resolve(42)', '--json'], { env })
+		const { stdout } = await cli.run(['eval', 'playground', 'await Promise.resolve(42)', '--json'])
 		const response = JSON.parse(stdout) as EvalResponse
 		expect(response.ok).toBe(true)
 		expect(response.result).toBe(42)
 	})
 
 	test('eval supports top-level await from --file', async () => {
-		const scriptPath = path.join(tempDir, 'top-level-await.js')
+		const scriptPath = path.join(fx.home, 'top-level-await.js')
 		await fs.writeFile(scriptPath, 'const value = await Promise.resolve(41)\nvalue + 1\n', 'utf8')
 
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'eval', 'playground', '--file', scriptPath, '--json'], { env })
+		const { stdout } = await cli.run(['eval', 'playground', '--file', scriptPath, '--json'])
 		const response = JSON.parse(stdout) as EvalResponse
 		expect(response.ok).toBe(true)
 		expect(response.result).toBe(42)
@@ -143,7 +112,7 @@ describe('playground smoke tests', () => {
 	test('default-exported TypeScript scenarios can capture artifacts and scoped logs', async () => {
 		const token = `scenario-log-${Date.now()}`
 		const checkpointName = `playground-${Date.now()}`
-		const scriptPath = path.join(tempDir, 'scenario.ts')
+		const scriptPath = path.join(fx.home, 'scenario.ts')
 		await fs.writeFile(
 			scriptPath,
 			`import type { ArgusScenarioContext } from '@vforsh/argus'
@@ -159,9 +128,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 			'utf8',
 		)
 
-		const { stdout, stderr } = await runCommand('bun', [BIN_PATH, 'eval', 'playground', '--file', scriptPath, '--arg', 'mode=smoke', '--json'], {
-			env,
-		})
+		const { stdout, stderr } = await cli.run(['eval', 'playground', '--file', scriptPath, '--arg', 'mode=smoke', '--json'])
 		const response = JSON.parse(stdout) as EvalResponse & {
 			result: { mode: string; checkpoint: ScreenshotResponse; logs: string[] }
 		}
@@ -183,7 +150,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 
 		// `logs --json` emits the previewed event array itself, not the wrapped LogsResponse.
 		const read = async (match: string) => {
-			const { stdout } = await runCommand('bun', [BIN_PATH, 'logs', 'playground', '--json', '--match', match], { env })
+			const { stdout } = await cli.run(['logs', 'playground', '--json', '--match', match])
 			const events = JSON.parse(stdout) as Array<{ text: string; file: string | null; line: number | null }>
 			expect(events.length).toBeGreaterThan(0)
 			return events.at(-1)!
@@ -202,7 +169,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	})
 
 	test('eval bundles local imports from --file', async () => {
-		const scriptDir = path.join(tempDir, 'bundle-fixture')
+		const scriptDir = path.join(fx.home, 'bundle-fixture')
 		await fs.mkdir(scriptDir, { recursive: true })
 		await fs.writeFile(path.join(scriptDir, 'helper.js'), 'export const value = 41\n', 'utf8')
 		await fs.writeFile(
@@ -211,49 +178,37 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 			'utf8',
 		)
 
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'eval', 'playground', '--file', path.join(scriptDir, 'main.js'), '--bundle', '--json'],
-			{ env },
-		)
+		const { stdout } = await cli.run(['eval', 'playground', '--file', path.join(scriptDir, 'main.js'), '--bundle', '--json'])
 		const response = JSON.parse(stdout) as EvalResponse
 		expect(response.ok).toBe(true)
 		expect(response.result).toBe(42)
 	})
 
 	test('eval exposes --arg values to file scripts', async () => {
-		const scriptPath = path.join(tempDir, 'args.js')
+		const scriptPath = path.join(fx.home, 'args.js')
 		await fs.writeFile(scriptPath, 'const level = await Promise.resolve(Number(args.level));\n`${args.mode}:${level + 1}`\n', 'utf8')
 
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'eval', 'playground', '--file', scriptPath, '--arg', 'level=41', '--arg', 'mode=fast', '--json'],
-			{ env },
-		)
+		const { stdout } = await cli.run(['eval', 'playground', '--file', scriptPath, '--arg', 'level=41', '--arg', 'mode=fast', '--json'])
 		const response = JSON.parse(stdout) as EvalResponse
 		expect(response.ok).toBe(true)
 		expect(response.result).toBe('fast:42')
 	})
 
 	test('eval loads --args JSON and allows --arg overrides', async () => {
-		const scriptPath = path.join(tempDir, 'args-file.js')
-		const argsPath = path.join(tempDir, 'args.json')
+		const scriptPath = path.join(fx.home, 'args-file.js')
+		const argsPath = path.join(fx.home, 'args.json')
 		await fs.writeFile(scriptPath, '`${args.mode}:${Number(args.level) + 1}`', 'utf8')
 		await fs.writeFile(argsPath, JSON.stringify({ level: 40, mode: 'slow' }), 'utf8')
 
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'eval', 'playground', '--file', scriptPath, '--args', argsPath, '--arg', 'mode=fast', '--json'],
-			{ env },
-		)
+		const { stdout } = await cli.run(['eval', 'playground', '--file', scriptPath, '--args', argsPath, '--arg', 'mode=fast', '--json'])
 		const response = JSON.parse(stdout) as EvalResponse
 		expect(response.ok).toBe(true)
 		expect(response.result).toBe('fast:41')
 	})
 
 	test('eval writes --out result files', async () => {
-		const outPath = path.join(tempDir, 'result.json')
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'eval', 'playground', '41 + 1', '--json', '--out', outPath], { env })
+		const outPath = path.join(fx.home, 'result.json')
+		const { stdout } = await cli.run(['eval', 'playground', '41 + 1', '--json', '--out', outPath])
 		const response = JSON.parse(stdout) as EvalResponse
 		expect(response.ok).toBe(true)
 		expect(response.result).toBe(42)
@@ -261,25 +216,20 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	})
 
 	test('eval appends NDJSON while polling with --out', async () => {
-		const outPath = path.join(tempDir, 'poll.ndjson')
-		await runCommand(
-			'bun',
-			[
-				BIN_PATH,
-				'eval',
-				'playground',
-				'window.__argusPollCount = (window.__argusPollCount ?? 0) + 1',
-				'--interval',
-				'50',
-				'--count',
-				'2',
-				'--json',
-				'--silent',
-				'--out',
-				outPath,
-			],
-			{ env },
-		)
+		const outPath = path.join(fx.home, 'poll.ndjson')
+		await cli.run([
+			'eval',
+			'playground',
+			'window.__argusPollCount = (window.__argusPollCount ?? 0) + 1',
+			'--interval',
+			'50',
+			'--count',
+			'2',
+			'--json',
+			'--silent',
+			'--out',
+			outPath,
+		])
 
 		const lines = (await fs.readFile(outPath, 'utf8')).trim().split('\n')
 		expect(lines.length).toBeGreaterThanOrEqual(2)
@@ -287,35 +237,28 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	})
 
 	test('eval runs injected setup before the expression', async () => {
-		const injectPath = path.join(tempDir, 'inject.js')
+		const injectPath = path.join(fx.home, 'inject.js')
 		await fs.writeFile(injectPath, 'window.__argusInjectedValue = Number(args.base) + 1', 'utf8')
 
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'eval', 'playground', 'window.__argusInjectedValue + 1', '--inject', injectPath, '--arg', 'base=40', '--json'],
-			{ env },
-		)
+		const { stdout } = await cli.run([
+			'eval', 'playground', 'window.__argusInjectedValue + 1', '--inject', injectPath, '--arg', 'base=40', '--json',
+		])
 		const response = JSON.parse(stdout) as EvalResponse
 		expect(response.ok).toBe(true)
 		expect(response.result).toBe(42)
 	})
 
 	test('eval interval polling stops on --until', async () => {
-		const { stdout } = await runCommand(
-			'bun',
-			[
-				BIN_PATH,
-				'eval',
-				'playground',
-				'window.__argusPollUntilCount = (window.__argusPollUntilCount ?? 0) + 1',
-				'--interval',
-				'50',
-				'--until',
-				'result >= 2',
-				'--json',
-			],
-			{ env },
-		)
+		const { stdout } = await cli.run([
+			'eval',
+			'playground',
+			'window.__argusPollUntilCount = (window.__argusPollUntilCount ?? 0) + 1',
+			'--interval',
+			'50',
+			'--until',
+			'result >= 2',
+			'--json',
+		])
 		const responses = stdout
 			.trim()
 			.split('\n')
@@ -327,22 +270,14 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	})
 
 	test('eval-until exposes --arg values', async () => {
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'wait', 'playground', 'args.ready === "yes"', '--arg', 'ready=yes', '--json', '--total-timeout', '10000'],
-			{ env },
-		)
+		const { stdout } = await cli.run(['wait', 'playground', 'args.ready === "yes"', '--arg', 'ready=yes', '--json', '--total-timeout', '10000'])
 		const response = JSON.parse(stdout) as EvalResponse
 		expect(response.ok).toBe(true)
 		expect(response.result).toBe(true)
 	})
 
 	test('eval preserves promise-resolved object values', async () => {
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'eval', 'playground', 'Promise.resolve({ answer: 42, nested: { ok: true }, list: [1, 2] })', '--json'],
-			{ env },
-		)
+		const { stdout } = await cli.run(['eval', 'playground', 'Promise.resolve({ answer: 42, nested: { ok: true }, list: [1, 2] })', '--json'])
 		const response = JSON.parse(stdout) as EvalResponse
 		expect(response.ok).toBe(true)
 		expect(response.result).toEqual({
@@ -357,9 +292,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('dom tree returns body subtree', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'tree', 'playground', '--selector', 'body', '--depth', '2', '--json'], {
-			env,
-		})
+		const { stdout } = await cli.run(['dom', 'tree', 'playground', '--selector', 'body', '--depth', '2', '--json'])
 		const response = JSON.parse(stdout) as DomTreeResponse
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
@@ -372,9 +305,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('dom info returns article-1 details', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'dom', 'info', 'playground', '--selector', '[data-testid="article-1"]', '--json'], {
-			env,
-		})
+		const { stdout } = await cli.run(['dom', 'info', 'playground', '--selector', '[data-testid="article-1"]', '--json'])
 		const response = JSON.parse(stdout) as DomInfoResponse
 		expect(response.ok).toBe(true)
 		expect(response.matches).toBe(1)
@@ -388,7 +319,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('storage local list returns seeded keys', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'storage', 'local', 'list', 'playground', '--json'], { env })
+		const { stdout } = await cli.run(['storage', 'local', 'list', 'playground', '--json'])
 		const response = JSON.parse(stdout) as StorageListResponse
 		expect(response.ok).toBe(true)
 		expect(response.keys).toContain('playground:name')
@@ -397,7 +328,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	})
 
 	test('storage session list returns seeded keys', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'storage', 'session', 'list', 'playground', '--json'], { env })
+		const { stdout } = await cli.run(['storage', 'session', 'list', 'playground', '--json'])
 		const response = JSON.parse(stdout) as StorageListResponse
 		expect(response.ok).toBe(true)
 		expect(response.keys).toContain('playground:session-token')
@@ -410,7 +341,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 
 	test('code deminify formats minified runtime resources', async () => {
 		const resourceUrl = await findResourceUrl('/minified-app.js')
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'code', 'deminify', resourceUrl, '--id', 'playground', '--json'], { env })
+		const { stdout } = await cli.run(['code', 'deminify', resourceUrl, '--id', 'playground', '--json'])
 		const response = JSON.parse(stdout) as { ok: boolean; changed: boolean; source: string; formatError: string | null }
 		expect(response.ok).toBe(true)
 		expect(response.changed).toBe(true)
@@ -420,7 +351,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	})
 
 	test('code strings extracts high-signal runtime strings', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'code', 'strings', 'playground', '--url', 'minified-app.js', '--json'], { env })
+		const { stdout } = await cli.run(['code', 'strings', 'playground', '--url', 'minified-app.js', '--json'])
 		const response = JSON.parse(stdout) as {
 			ok: boolean
 			matches: Array<{ value: string; kind: string }>
@@ -434,11 +365,9 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	})
 
 	test('code strings supports kind and match filters', async () => {
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'code', 'strings', 'playground', '--url', 'minified-app.js', '--kind', 'identifier', '--match', 'showLogs', '--json'],
-			{ env },
-		)
+		const { stdout } = await cli.run([
+			'code', 'strings', 'playground', '--url', 'minified-app.js', '--kind', 'identifier', '--match', 'showLogs', '--json',
+		])
 		const response = JSON.parse(stdout) as {
 			ok: boolean
 			matches: Array<{ value: string; kind: string }>
@@ -450,49 +379,19 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	})
 
 	test('code grep pretty shows clipped context around matches', async () => {
-		const { stdout } = await runCommand(
-			'bun',
-			[BIN_PATH, 'code', 'grep', 'showLogsByHost', '--id', 'playground', '--url', 'minified-app.js', '--pretty'],
-			{ env },
-		)
+		const { stdout } = await cli.run(['code', 'grep', 'showLogsByHost', '--id', 'playground', '--url', 'minified-app.js', '--pretty'])
 		expect(stdout).toContain('minified-app.js')
 		expect(stdout).toContain('[[showLogsByHost]]')
 		expect(stdout).toContain('/admin/api/showLogsByHost')
 	})
 
-	test(
-		'dialog commands work against playground dialogs',
-		async () => {
-			const fetchDialogStatus = async (): Promise<DialogStatusResponse> => {
-				const { stdout } = await runCommand('bun', [BIN_PATH, 'dialog', 'status', 'playground', '--json'], { env })
-				return JSON.parse(stdout) as DialogStatusResponse
-			}
+	test('dialog commands work against playground dialogs', async () => {
+		const { waitForDialog, waitForNoDialog } = createDialogProbe(cli, 'playground')
 
-			const waitForDialog = async (type: NonNullable<DialogStatusResponse['dialog']>['type']) => {
-				for (let i = 0; i < 40; i += 1) {
-					const status = await fetchDialogStatus()
-					if (status.dialog?.type === type) {
-						return status.dialog
-					}
-					await delay(100)
-				}
-				throw new Error(`Timed out waiting for ${type} dialog`)
-			}
-
-			const waitForNoDialog = async (): Promise<void> => {
-				for (let i = 0; i < 40; i += 1) {
-					const status = await fetchDialogStatus()
-					if (!status.dialog) {
-						return
-					}
-					await delay(100)
-				}
-				throw new Error('Timed out waiting for dialog to close')
-			}
-
-			const waitForPlaygroundDialogResult = async () => {
-				for (let i = 0; i < 40; i += 1) {
-					const result = await page.evaluate(() => {
+		const waitForPlaygroundDialogResult = () =>
+			waitFor(
+				() =>
+					page.evaluate(() => {
 						const state = window as Window & {
 							__dialogResults?: Array<{ state?: string; result?: string | boolean | null }>
 						}
@@ -501,89 +400,59 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 							return null
 						}
 						return entry.result ?? null
-					})
-					if (result !== null) {
-						return result
-					}
-					await delay(100)
-				}
-				throw new Error('Timed out waiting for playground dialog result')
-			}
-
-			const openPlaygroundDialog = async (buttonTestId: string) => {
-				let releaseDialog: (() => void) | null = null
-				const holdDialog = new Promise<void>((resolve) => {
-					releaseDialog = resolve
-				})
-
-				const browserDialog = new Promise<{ type: string; message: string; defaultValue: string }>((resolve) => {
-					page.once('dialog', async (dialog) => {
-						resolve({
-							type: dialog.type(),
-							message: dialog.message(),
-							defaultValue: dialog.defaultValue(),
-						})
-						await holdDialog
-					})
-				})
-
-				await page.getByTestId(buttonTestId).evaluate((element: HTMLElement) => {
-					element.click()
-				})
-
-				return {
-					dialog: await browserDialog,
-					release: () => releaseDialog?.(),
-				}
-			}
-
-			const alertOpen = await openPlaygroundDialog('btn-dialog-alert')
-			expect(alertOpen.dialog.type).toBe('alert')
-			expect(alertOpen.dialog.message).toBe('playground alert message')
-			const alertStatus = await waitForDialog('alert')
-			expect(alertStatus.message).toBe('playground alert message')
-			await runCommand('bun', [BIN_PATH, 'dialog', 'accept', 'playground'], { env })
-			alertOpen.release()
-			await waitForNoDialog()
-			expect(await waitForPlaygroundDialogResult()).toBe('accepted')
-
-			const confirmOpen = await openPlaygroundDialog('btn-dialog-confirm')
-			expect(confirmOpen.dialog.type).toBe('confirm')
-			const confirmStatus = await waitForDialog('confirm')
-			expect(confirmStatus.message).toBe('playground confirm message')
-			await runCommand('bun', [BIN_PATH, 'dialog', 'dismiss', 'playground'], { env })
-			confirmOpen.release()
-			await waitForNoDialog()
-			expect(await waitForPlaygroundDialogResult()).toBe(false)
-
-			const promptOpen = await openPlaygroundDialog('btn-dialog-prompt')
-			expect(promptOpen.dialog.type).toBe('prompt')
-			expect(promptOpen.dialog.defaultValue).toBe('seed value')
-			const promptStatus = await waitForDialog('prompt')
-			expect(promptStatus.message).toBe('playground prompt message')
-			expect(promptStatus.defaultPrompt).toBe('seed value')
-
-			const { stdout: promptHandleOut } = await runCommand(
-				'bun',
-				[BIN_PATH, 'dialog', 'prompt', 'playground', '--text', 'playground override', '--json'],
-				{ env },
+					}),
+				(result) => result !== null,
+				{ timeoutMs: 4_000 },
 			)
-			const promptHandle = JSON.parse(promptHandleOut) as DialogHandleResponse
-			expect(promptHandle.action).toBe('accept')
-			expect(promptHandle.dialog.type).toBe('prompt')
-			promptOpen.release()
-			await waitForNoDialog()
-			expect(await waitForPlaygroundDialogResult()).toBe('playground override')
-		},
-		{ timeout: 15_000 },
-	)
+
+		const openPlaygroundDialog = (buttonTestId: string) =>
+			holdNextDialog(page, () =>
+				page.getByTestId(buttonTestId).evaluate((element: HTMLElement) => {
+					element.click()
+				}),
+			)
+
+		const alertOpen = await openPlaygroundDialog('btn-dialog-alert')
+		expect(alertOpen.dialog.type).toBe('alert')
+		expect(alertOpen.dialog.message).toBe('playground alert message')
+		const alertStatus = await waitForDialog('alert')
+		expect(alertStatus.message).toBe('playground alert message')
+		await cli.run(['dialog', 'accept', 'playground'])
+		alertOpen.release()
+		await waitForNoDialog()
+		expect(await waitForPlaygroundDialogResult()).toBe('accepted')
+
+		const confirmOpen = await openPlaygroundDialog('btn-dialog-confirm')
+		expect(confirmOpen.dialog.type).toBe('confirm')
+		const confirmStatus = await waitForDialog('confirm')
+		expect(confirmStatus.message).toBe('playground confirm message')
+		await cli.run(['dialog', 'dismiss', 'playground'])
+		confirmOpen.release()
+		await waitForNoDialog()
+		expect(await waitForPlaygroundDialogResult()).toBe(false)
+
+		const promptOpen = await openPlaygroundDialog('btn-dialog-prompt')
+		expect(promptOpen.dialog.type).toBe('prompt')
+		expect(promptOpen.dialog.defaultValue).toBe('seed value')
+		const promptStatus = await waitForDialog('prompt')
+		expect(promptStatus.message).toBe('playground prompt message')
+		expect(promptStatus.defaultPrompt).toBe('seed value')
+
+		const { stdout: promptHandleOut } = await cli.run(['dialog', 'prompt', 'playground', '--text', 'playground override', '--json'])
+		const promptHandle = JSON.parse(promptHandleOut) as DialogHandleResponse
+		expect(promptHandle.action).toBe('accept')
+		expect(promptHandle.dialog.type).toBe('prompt')
+		promptOpen.release()
+		await waitForNoDialog()
+		expect(await waitForPlaygroundDialogResult()).toBe('playground override')
+	})
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// screenshot
 	// ─────────────────────────────────────────────────────────────────────────
 
 	test('screenshot saves a file', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'screenshot', 'playground', '--json'], { env })
+		const { stdout } = await cli.run(['screenshot', 'playground', '--json'])
 		const response = JSON.parse(stdout) as ScreenshotResponse
 		expect(response.ok).toBe(true)
 		expect(response.outFile).toBeTruthy()
@@ -597,7 +466,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 
 	test('page show locks hasFocus; page hide releases it', async () => {
 		const evalHasFocus = async (): Promise<boolean> => {
-			const { stdout } = await runCommand('bun', [BIN_PATH, 'eval', 'playground', 'document.hasFocus()', '--json'], { env })
+			const { stdout } = await cli.run(['eval', 'playground', 'document.hasFocus()', '--json'])
 			const response = JSON.parse(stdout) as EvalResponse
 			expect(response.ok).toBe(true)
 			return response.result === true
@@ -608,7 +477,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 		// opening a new blank tab; that's the baseline we exercise against.
 		await page.evaluate(() => window.dispatchEvent(new Event('blur')))
 
-		const { stdout: showOut } = await runCommand('bun', [BIN_PATH, 'page', 'show', 'playground', '--json'], { env })
+		const { stdout: showOut } = await cli.run(['page', 'show', 'playground', '--json'])
 		const showResponse = JSON.parse(showOut) as VisibilityResponse
 		expect(showResponse.ok).toBe(true)
 		expect(showResponse.state).toBe('shown')
@@ -617,7 +486,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 		// With focus emulation enabled, document.hasFocus() must be true regardless of real window focus.
 		expect(await evalHasFocus()).toBe(true)
 
-		const { stdout: hideOut } = await runCommand('bun', [BIN_PATH, 'page', 'hide', 'playground', '--json'], { env })
+		const { stdout: hideOut } = await cli.run(['page', 'hide', 'playground', '--json'])
 		const hideResponse = JSON.parse(hideOut) as VisibilityResponse
 		expect(hideResponse.ok).toBe(true)
 		expect(hideResponse.state).toBe('default')
@@ -625,7 +494,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	})
 
 	test('screenshot supports viewport-relative clip rectangles', async () => {
-		const { stdout } = await runCommand('bun', [BIN_PATH, 'screenshot', 'playground', '--clip', '20,30,160,90', '--json'], { env })
+		const { stdout } = await cli.run(['screenshot', 'playground', '--clip', '20,30,160,90', '--json'])
 		const response = JSON.parse(stdout) as ScreenshotResponse
 		expect(response.ok).toBe(true)
 		expect(response.clipped).toBe(true)
