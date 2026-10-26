@@ -107,7 +107,13 @@ export const removeWatcherEntry = (registry: RegistryV1, id: string, now = Date.
 	}
 }
 
-/** Remove watchers whose updatedAt exceeds TTL, and reservations older than TTL. */
+/**
+ * Remove watchers whose updatedAt exceeds TTL or whose process is gone, and reservations older than TTL.
+ *
+ * The pid check closes the TTL window: a watcher that crashed (or a native host Chrome killed) kept
+ * its record for up to a minute, and every reader in that minute probed it, timed out, and listed it
+ * as `[unknown]`. The registry is per-machine and records always carry the owning process's pid.
+ */
 export const pruneStaleWatchers = (
 	registry: RegistryV1,
 	now = Date.now(),
@@ -117,7 +123,7 @@ export const pruneStaleWatchers = (
 	const watchers: Record<string, WatcherRecord> = {}
 
 	for (const [id, watcher] of Object.entries(registry.watchers)) {
-		if (now - watcher.updatedAt > ttlMs) {
+		if (now - watcher.updatedAt > ttlMs || !isProcessAlive(watcher.pid)) {
 			removedIds.push(id)
 			continue
 		}
@@ -137,6 +143,17 @@ export const pruneStaleWatchers = (
 			reservations,
 		},
 		removedIds,
+	}
+}
+
+/** `kill(pid, 0)` probes without signalling; EPERM means the process exists under another user. */
+const isProcessAlive = (pid: number): boolean => {
+	if (!Number.isInteger(pid) || pid <= 0) return true
+	try {
+		process.kill(pid, 0)
+		return true
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === 'EPERM'
 	}
 }
 

@@ -72,8 +72,27 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 	let diagnostics: ExtensionDiagnosticsResponse | null = null
 	let controlRequest: DiagnosticTrace | null = null
 	let watcherDiagnostics: WatcherDiagnostics | null = null
+	// Several browsers and nothing to pick between them: doctor is read-only, so diagnose each one
+	// instead of failing closed with `ambiguous_control` (which hid every browser's health).
+	const controls = selection.ambiguous
+		? await Promise.all(
+				selection.ambiguous.candidates.map(async (watcher) => {
+					const result = controlResults.find((entry) => entry.watcher.id === watcher.id)?.result ?? (await fetchExtensionDiagnostics(watcher))
+					return result.ok ? { watcher, diagnostics: result.diagnostics, error: null } : { watcher, diagnostics: null, error: result.error }
+				}),
+			)
+		: []
+	for (const entry of controls) {
+		if (!entry.diagnostics) issues.push(`${entry.watcher.id}: ${entry.error}`)
+		else if (!entry.diagnostics.control.connected) issues.push(`${entry.watcher.id}: Extension control bridge is disconnected.`)
+		else if (configuredExtensionId && entry.diagnostics.extension.id && configuredExtensionId !== entry.diagnostics.extension.id) {
+			issues.push(`${entry.watcher.id}: native host is configured for ${configuredExtensionId}, but the connected extension is ${entry.diagnostics.extension.id}.`)
+		}
+	}
 
-	if (!control.ok) {
+	if (selection.ambiguous) {
+		// Covered per control above.
+	} else if (!control.ok) {
 		issues.push(control.error)
 	} else {
 		const result =
@@ -105,9 +124,8 @@ export const collectExtensionDoctor = async (options: ExtensionDoctorOptions = {
 	const ok = issues.length === 0
 	return {
 		ok,
-		/** Set when doctor could not pick a control watcher on its own; `candidates` lists the choices. */
-		error: selection.ambiguous ? { message: selection.ambiguous.message, code: 'ambiguous_control' as const } : null,
-		candidates: selection.ambiguous?.candidates.map(({ id, pid, host, port }) => ({ id, pid, host, port })) ?? [],
+		/** Every live control's diagnostics when several browsers run Argus and none was selected (`--id`/`--browser`/`--watcher`). */
+		controls,
 		/** Hosts running a different watcher build than this CLI (respawn them to upgrade). */
 		versionSkew,
 		configured,
@@ -197,7 +215,15 @@ export const runExtensionDoctor = async (options: ExtensionDoctorOptions): Promi
 	}
 
 	output.writeHuman('')
-	if (control.ok) {
+	if (result.controls.length > 0) {
+		output.writeHuman(`Control watchers: ${result.controls.length} live browsers (pass --id <controlId> for one)`)
+		for (const entry of result.controls) {
+			const state = entry.diagnostics
+				? `extension ${entry.diagnostics.extension.version ?? '?'} bridge ${entry.diagnostics.control.connected ? 'connected' : 'disconnected'} tabWatchers=${entry.diagnostics.tabWatchers.length}`
+				: `unavailable: ${entry.error}`
+			output.writeHuman(`  ${entry.watcher.id} pid=${entry.watcher.pid} ${state}`)
+		}
+	} else if (control.ok) {
 		output.writeHuman(`Control watcher: ${formatWatcherLine(control.watcher)}`)
 	} else {
 		output.writeHuman(`Control watcher: ${control.error}`)

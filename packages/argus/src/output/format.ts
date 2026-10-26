@@ -1,29 +1,37 @@
 import type { LogEvent, WatcherRecord } from '@vforsh/argus-core'
 import { formatLogLevelTag } from '@vforsh/argus-core'
 
-/** Format a watcher line for human output. */
-export const formatWatcherLine = (
-	watcher: WatcherRecord,
-	status?: { attached: boolean; target?: { title: string | null; url: string | null } | null },
-): string => {
+type WatcherLineStatus = { attached: boolean; target?: { title: string | null; url: string | null } | null }
+
+/**
+ * Format a watcher line for human output.
+ *
+ * @param status The probed `/status`, `'unreachable'` when the probe failed, or omitted when the
+ *   caller never probed (candidate lists). Omitted prints no state: these lines used to say
+ *   `[unknown]` for every candidate, which read as a broken watcher rather than "not checked".
+ */
+export const formatWatcherLine = (watcher: WatcherRecord, status?: WatcherLineStatus | 'unreachable'): string => {
 	const base = `${watcher.id} ${watcher.host}:${watcher.port}`
 	const match = formatMatch(watcher)
 	const cwd = formatCwd(watcher)
 	const state = formatWatcherState(watcher, status)
-	const target = status?.target
+	const target = typeof status === 'object' ? status.target : null
 	const targetLabel = target?.title || target?.url ? `${target?.title ?? ''}${target?.title && target?.url ? ' • ' : ''}${target?.url ?? ''}` : ''
 	const targetSuffix = targetLabel ? ` (${targetLabel})` : ''
 
-	return `${base} ${match} ${cwd} [${state}]${targetSuffix}`.trim()
+	return [base, match, cwd, state ? `[${state}]` : ''].filter(Boolean).join(' ') + targetSuffix
 }
 
 /** A control watcher brokers tabs and never attaches to one, so "detached" would misreport it. */
-const formatWatcherState = (watcher: WatcherRecord, status: { attached: boolean } | undefined): string => {
+const formatWatcherState = (watcher: WatcherRecord, status: WatcherLineStatus | 'unreachable' | undefined): string | null => {
+	if (status === 'unreachable') {
+		return 'unreachable'
+	}
 	if (watcher.extensionRole === 'control') {
 		return 'control'
 	}
 	if (!status) {
-		return 'unknown'
+		return null
 	}
 	return status.attached ? 'attached' : 'detached'
 }

@@ -27,7 +27,7 @@ export type HostVersionSkew = {
 export const NO_VERSION_WARNINGS_ENV = 'ARGUS_NO_VERSION_WARNINGS'
 
 const EXTENSION_ACTION = 'Reload the extension at chrome://extensions or restart the browser to respawn native hosts.'
-const CLI_ACTION = 'Restart the watcher to pick up the installed version.'
+const CLI_ACTION = 'Restart it to pick up the installed version: `argus watcher stop <id>`, then rerun the command that started it.'
 
 /** `argus <cli> bundles watcher <watcher>`: the one place both version numbers are spelled out. */
 export const describeBundledWatcher = (): string => `argus ${packageJson.version} bundles watcher ${WATCHER_VERSION}`
@@ -66,11 +66,16 @@ export const summarizeHostVersionSkews = (skews: readonly HostVersionSkew[]): st
 	const versions = [...new Set(skews.map((skew) => skew.hostVersion))].sort(compareVersions)
 	const range = versions.length === 1 ? versions[0] : `${versions[0]}–${versions[versions.length - 1]}`
 	const subject = skews.length === 1 ? `1 watcher runs another watcher build` : `${skews.length} watchers run other watcher builds`
+	const cliIds = skews.filter((skew) => skew.source === 'cli').map((skew) => skew.watcherId)
 	const hasExtension = skews.some((skew) => skew.source === 'extension')
-	const hasCli = skews.some((skew) => skew.source === 'cli')
-	const action = [hasCli ? 'restart CLI watchers' : null, hasExtension ? 'reload the extension' : null].filter(Boolean).join(' or ')
-	const details = hasExtension ? ' Details: argus ext doctor.' : ''
-	return `${subject} (${range}; ${describeBundledWatcher()}): ${action}.${details} Silence: --quiet or ${NO_VERSION_WARNINGS_ENV}=1`
+	// Name the ids and the exact command: "restart CLI watchers" left agents guessing which ones and how.
+	const action = [
+		cliIds.length > 0 ? `restart ${cliIds.join(', ')} (\`argus watcher stop <id>\`, then rerun the command that started it)` : null,
+		hasExtension ? 'reload the extension at chrome://extensions (details: `argus ext doctor`)' : null,
+	]
+		.filter(Boolean)
+		.join('; ')
+	return `${subject} (${range}; ${describeBundledWatcher()}): ${action}. Silence: --quiet or ${NO_VERSION_WARNINGS_ENV}=1`
 }
 
 /** Numeric dotted-version compare; non-numeric parts sort as 0. Good enough for ordering a warning range. */

@@ -7,7 +7,7 @@ import { cdpCommandError } from '../errors.js'
 import { createNotAttachedError } from '../errors.js'
 import type { CdpEvent, CdpEventPayload } from '../cdp/protocol.js'
 import type { NativeMessagingHandler } from './messaging.js'
-import { createPendingRequestTable, createRequestIdAllocator } from './pendingRequests.js'
+import { createPendingRequestTable, createRequestIdAllocator, type PendingRequestOptions } from './pendingRequests.js'
 import type {
 	CdpEventHandler,
 	CdpEventMeta,
@@ -64,9 +64,12 @@ export class SessionManager {
 	private messaging: NativeMessagingHandler<ExtensionToTabHost, TabHostToExtension>
 	private sessions = new Map<number, ExtensionSession>()
 	private readonly nextRequestId = createRequestIdAllocator()
+	/** Epoch ms of the last message from the extension; timeouts use it to tell a silent channel from one unanswered request. */
+	private lastInboundAt: number | null = null
 	private readonly pendingRequests = createPendingRequestTable<unknown>({
 		timeoutMs: 30_000,
 		timeoutMessage: 'Bridge request timed out',
+		lastInboundAt: () => this.lastInboundAt,
 	})
 	private eventHandlers = new Map<number, Map<string, Set<CdpEventHandler<never>>>>()
 	private events: SessionManagerEvents
@@ -90,6 +93,7 @@ export class SessionManager {
 	 * Handle a message from the extension.
 	 */
 	private handleMessage(message: ExtensionToTabHost): void {
+		this.lastInboundAt = Date.now()
 		switch (message.type) {
 			case 'tab_attached':
 				this.handleTabAttached(message)
@@ -232,6 +236,7 @@ export class SessionManager {
 							sessionId: options?.sessionId,
 						}) satisfies TabHostToExtension,
 					options?.timeoutMs ?? 30000,
+					{ label: `cdp_command ${method}`, journal: false },
 				)
 			},
 
@@ -278,6 +283,7 @@ export class SessionManager {
 							refresh: options?.refresh,
 						}) satisfies TabHostToExtension,
 					options?.timeoutMs ?? 10_000,
+					{ label: 'frame_snapshot_request' },
 				)
 			},
 		}
@@ -304,6 +310,7 @@ export class SessionManager {
 					url: query?.url,
 				}) satisfies TabHostToExtension,
 			timeoutMs,
+			{ label: 'cookie_query' },
 		)
 	}
 
@@ -318,9 +325,13 @@ export class SessionManager {
 		this.messaging.send(message)
 	}
 
-	private sendBridgeRequest<T>(buildMessage: (requestId: number) => TabHostToExtension, timeoutMs: number): Promise<T> {
+	private sendBridgeRequest<T>(
+		buildMessage: (requestId: number) => TabHostToExtension,
+		timeoutMs: number,
+		options: Pick<PendingRequestOptions, 'label' | 'journal'> = {},
+	): Promise<T> {
 		const requestId = this.nextRequestId()
-		const result = this.pendingRequests.open(requestId, { timeoutMs, timeoutMessage: `Bridge request timed out after ${timeoutMs}ms` })
+		const result = this.pendingRequests.open(requestId, { ...options, timeoutMs, timeoutMessage: `Bridge request timed out after ${timeoutMs}ms` })
 		this.messaging.send(buildMessage(requestId))
 		return result as Promise<T>
 	}

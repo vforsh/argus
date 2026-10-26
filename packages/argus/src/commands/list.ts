@@ -34,7 +34,12 @@ export const runList = async (options: ListOptions): Promise<void> => {
 
 	if (options.json) {
 		// Warnings ride in the document instead of stderr so `2>&1` captures stay parseable.
-		const warnings = [...probes.flatMap((probe) => probe.warning ?? []), ...(quiet ? [] : skews.map(formatHostVersionSkew))]
+		const unreachableHint = describeAllUnreachable(probes)
+		const warnings = [
+			...probes.flatMap((probe) => probe.warning ?? []),
+			...(unreachableHint ? [unreachableHint] : []),
+			...(quiet ? [] : skews.map(formatHostVersionSkew)),
+		]
 		output.writeJson({
 			watchers: probes.map((entry) => entry.status?.watcher ?? entry.watcher),
 			chrome: chromeInstances,
@@ -57,7 +62,7 @@ export const runList = async (options: ListOptions): Promise<void> => {
 	if (probes.length > 0) {
 		for (const entry of probes) {
 			const marker = entry.skew && !quiet ? ` [${formatHostVersionSkewMarker(entry.skew)}]` : ''
-			output.writeHuman(`  ${formatWatcherLine(entry.watcher, entry.status)}${marker}`)
+			output.writeHuman(`  ${formatWatcherLine(entry.watcher, entry.status ?? 'unreachable')}${marker}`)
 		}
 	} else {
 		output.writeHuman('  (none)')
@@ -66,12 +71,24 @@ export const runList = async (options: ListOptions): Promise<void> => {
 	// Warnings follow the list so the list itself is the first thing read. Transport and protocol
 	// failures stay one line per watcher; version skew is a row marker plus one summary line.
 	const warnings = probes.flatMap((probe) => probe.warning ?? [])
+	const unreachableHint = describeAllUnreachable(probes)
+	if (unreachableHint) warnings.push(unreachableHint)
 	const summary = quiet ? null : summarizeHostVersionSkews(skews)
 	if (summary) warnings.push(summary)
 	if (warnings.length > 0) {
 		output.writeWarn('')
 		for (const warning of warnings) output.writeWarn(warning)
 	}
+}
+
+/**
+ * Dead processes never reach this point (the registry read drops records whose pid is gone), so an
+ * unreachable row is a live process that did not answer. When every watcher is like that, the
+ * likely cause is this shell, not the watchers: agent sandboxes commonly block localhost sockets.
+ */
+const describeAllUnreachable = (probes: WatcherProbe[]): string | null => {
+	if (probes.length < 2 || probes.some((probe) => probe.status)) return null
+	return 'No watcher answered although their processes are alive. If this shell is sandboxed, allow localhost network access (or run outside the sandbox) and retry.'
 }
 
 const isTruthyEnv = (value: string | undefined): boolean => value != null && value !== '' && value !== '0' && value.toLowerCase() !== 'false'

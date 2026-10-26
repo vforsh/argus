@@ -4,6 +4,7 @@ import { SessionManager, type ExtensionSession } from '../native-messaging/sessi
 import type { ExtensionToTabHost, TabHostToExtension } from '../native-messaging/types.js'
 import type { CdpSourceHandle, CdpSourceTarget, CdpSourceBaseOptions } from './types.js'
 import type { CdpTargetContext } from '../cdp/connection.js'
+import { CDP_HEALTH_PROBE_TIMEOUT_MS, type CdpTransportCheck } from '../cdp/health.js'
 import {
 	buildFrameTargetContext,
 	buildPageTarget,
@@ -227,6 +228,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 	return {
 		session: proxySession,
 		pageSession,
+		healthChecks: { checkTransport: () => pingExtensionBridge(currentSession) },
 		readBrowserCookies: async ({ domain, url }) => {
 			const session = getCurrentExtensionSession()
 			return await sessionManager.getCookies(session.tabId, {
@@ -492,3 +494,19 @@ const sessionToBrowserTab = (session: ExtensionSession) => ({
 	faviconUrl: session.faviconUrl,
 	attached: true,
 })
+
+/**
+ * Round-trip the extension without touching the page: an unrefreshed frame-snapshot request is
+ * answered from the worker's cached frame table. The renderer probe alone cannot separate a wedged
+ * page from a stalled extension worker or native channel — both just time out through the same
+ * bridge — and only the page case is fixed by reloading it.
+ */
+const pingExtensionBridge = async (session: ExtensionSession | null): Promise<CdpTransportCheck> => {
+	if (!session) return { state: 'ok' }
+	try {
+		await session.requestFrameSnapshot({ timeoutMs: CDP_HEALTH_PROBE_TIMEOUT_MS })
+		return { state: 'ok' }
+	} catch {
+		return { state: 'bridge_unresponsive', detail: `no reply within ${CDP_HEALTH_PROBE_TIMEOUT_MS}ms` }
+	}
+}

@@ -5,7 +5,7 @@ import packageJson from '../../../package.json' with { type: 'json' }
 export const assertPluginCompatibility = (plugin: { apiVersion: unknown; name: string; minArgusVersion?: string }): void => {
 	if (plugin.apiVersion !== ARGUS_PLUGIN_API_VERSION) {
 		throw new Error(
-			`Plugin "${plugin.name}" requires API ${String(plugin.apiVersion)}; Argus ${packageJson.version} supports API ${ARGUS_PLUGIN_API_VERSION}. Update Argus or install a compatible plugin.`,
+			`Plugin "${plugin.name}" requires API ${String(plugin.apiVersion)}; Argus ${packageJson.version} supports API ${ARGUS_PLUGIN_API_VERSION}. Fix: update Argus (\`npm i -g @vforsh/argus@latest\`) or install a plugin built for API ${ARGUS_PLUGIN_API_VERSION}.`,
 		)
 	}
 	if (!plugin.minArgusVersion) return

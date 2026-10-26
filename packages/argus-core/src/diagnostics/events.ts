@@ -62,11 +62,17 @@ export function messageEvidence(message: unknown): Record<string, string | numbe
 }
 
 /**
- * Keep requests and handshakes, excluding high-volume unsolicited CDP/page traffic and journal mirrors.
+ * Keep requests and handshakes, excluding high-volume CDP/page traffic and journal mirrors.
+ *
+ * Successful `cdp_command`/`cdp_response` pairs are excluded even though they carry a `requestId`:
+ * an active page issues several per second, which rotated the bounded per-host journals (and the
+ * control host's mirror of the worker journal) within minutes and erased the evidence for the rare
+ * request that actually stalled. Stalls are journaled by the host as `request.timeout` instead.
  * @param metadata Output of messageEvidence.
  * @returns Whether this message belongs in the bounded lifecycle journal.
  */
 export function shouldJournalMessage(metadata: ReturnType<typeof messageEvidence>): boolean {
+	if (metadata.type === 'cdp_command' || (metadata.type === 'cdp_response' && metadata.outcome !== 'error')) return false
 	return (typeof metadata.requestId === 'number' && metadata.requestId !== 0) || metadata.type === 'host_info' || metadata.type === 'host_ready'
 }
 
@@ -111,6 +117,7 @@ export function normalizeLifecycleEvent(value: unknown): LifecycleEvent | null {
 			if (key === 'outcome' && ['error', 'success'].includes(item)) detail[key] = item
 			if (key === 'type' && /^[a-z_]{1,64}$/.test(item)) detail[key] = item
 			if (key === 'reason' && ['install', 'update', 'chrome_update', 'shared_module_update'].includes(item)) detail[key] = item
+			if (key === 'phase' && ['extension_silent', 'extension_active', 'unknown'].includes(item)) detail[key] = item
 		}
 	}
 	return { ts: event.ts, session: event.session, operation: event.operation, detail }

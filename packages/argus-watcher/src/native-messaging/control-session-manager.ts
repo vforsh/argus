@@ -20,12 +20,15 @@ const CONTROL_REQUEST_DEFAULTS = { timeoutMs: 5_000, timeoutMessage: 'Control re
 
 export class ControlSessionManager {
 	private readonly messaging: NativeMessagingHandler<ExtensionToControlHost, ControlHostToExtension>
+	/** Epoch ms of the last extension message; lets a timeout tell a silent channel from one unanswered request. */
+	private lastInboundAt: number | null = null
+	private readonly requestDefaults = { ...CONTROL_REQUEST_DEFAULTS, lastInboundAt: () => this.lastInboundAt }
 	// One id space across all three tables: the extension only sees `requestId` on the wire.
 	private readonly nextRequestId = createRequestIdAllocator()
-	private readonly pendingTabsRequests = createPendingRequestTable<TabInfo[]>(CONTROL_REQUEST_DEFAULTS)
-	private readonly pendingTabActionRequests = createPendingRequestTable<TabActionResult>({ ...CONTROL_REQUEST_DEFAULTS, timeoutMs: 16_000 })
-	private readonly pendingTabMuteRequests = createPendingRequestTable<TabMuteResult>(CONTROL_REQUEST_DEFAULTS)
-	private readonly pendingStatusRequests = createPendingRequestTable<ControlDiagnostics>(CONTROL_REQUEST_DEFAULTS)
+	private readonly pendingTabsRequests = createPendingRequestTable<TabInfo[]>(this.requestDefaults)
+	private readonly pendingTabActionRequests = createPendingRequestTable<TabActionResult>({ ...this.requestDefaults, timeoutMs: 16_000 })
+	private readonly pendingTabMuteRequests = createPendingRequestTable<TabMuteResult>(this.requestDefaults)
+	private readonly pendingStatusRequests = createPendingRequestTable<ControlDiagnostics>(this.requestDefaults)
 
 	constructor(messaging: NativeMessagingHandler<ExtensionToControlHost, ControlHostToExtension>) {
 		this.messaging = messaging
@@ -86,6 +89,7 @@ export class ControlSessionManager {
 	}
 
 	private handleMessage(message: ExtensionToControlHost): void {
+		this.lastInboundAt = Date.now()
 		switch (message.type) {
 			case 'list_tabs_response':
 				this.handleListTabsResponse(message)
@@ -132,8 +136,9 @@ export class ControlSessionManager {
 		buildMessage: (requestId: number) => ControlHostToExtension,
 	): Promise<T> {
 		const requestId = this.nextRequestId()
-		const result = requests.open(requestId, { timeoutMessage })
-		this.messaging.send(buildMessage(requestId))
+		const message = buildMessage(requestId)
+		const result = requests.open(requestId, { timeoutMessage, label: message.type })
+		this.messaging.send(message)
 		return await result
 	}
 }

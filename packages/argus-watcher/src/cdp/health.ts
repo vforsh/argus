@@ -19,7 +19,12 @@ export type CdpHealthDiagnosis = {
 }
 
 /** Transport-level verdict for the connection carrying CDP commands. */
-export type CdpTransportCheck = { state: 'ok' } | { state: 'unreachable'; detail: string } | { state: 'target_gone'; detail: string }
+export type CdpTransportCheck =
+	| { state: 'ok' }
+	| { state: 'unreachable'; detail: string }
+	| { state: 'target_gone'; detail: string }
+	/** Extension mode: the worker-only bridge ping went unanswered, so the extension, not the page, is stuck. */
+	| { state: 'bridge_unresponsive'; detail: string }
 
 /** The per-layer checks {@link diagnoseCdpHealth} runs, supplied by whichever source is attached. */
 export type CdpHealthProbe = {
@@ -66,6 +71,15 @@ export const diagnoseCdpHealth = async (probe: CdpHealthProbe): Promise<CdpHealt
 			message: `Chrome's CDP endpoint did not answer (${transport.detail}). Restart the browser, then \`argus doctor\`.`,
 		}
 	}
+	if (transport.state === 'bridge_unresponsive') {
+		return {
+			code: 'extension_bridge_unresponsive',
+			message:
+				`The Argus extension did not answer a bridge ping that never touches the page (${transport.detail}) — its service worker ` +
+				`or native channel is stalled, so a longer timeout will not help. Next: \`argus ext doctor --watcher ${id}\`; if it ` +
+				'persists, reload the extension at chrome://extensions.',
+		}
+	}
 	if (transport.state === 'target_gone') {
 		probe.onTargetGone?.()
 		return {
@@ -98,7 +112,9 @@ export const diagnoseCdpHealth = async (probe: CdpHealthProbe): Promise<CdpHealt
 
 	return {
 		code: 'cdp_timeout',
-		message: 'The watcher, target, and renderer all answered, so the expression itself exceeded its deadline. Pass a longer timeout.',
+		message:
+			'The watcher, target, and renderer all answered, so the command itself was still running at its deadline. ' +
+			`Next: rerun with a longer timeout (\`--timeout 60s\`), or poll instead of awaiting inside the expression: \`argus eval-until ${id} '<condition>'\`.`,
 	}
 }
 

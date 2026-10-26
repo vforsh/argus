@@ -57,14 +57,14 @@ liveTest(
 			const groupedTabs = await first.cliJson<{ viaWatcherId: string | null; browsers: Array<{ controlId: string }> }>('ext', 'tabs', '--json')
 			expect(groupedTabs.viaWatcherId).toBeNull()
 			expect(groupedTabs.browsers.map((browser) => browser.controlId).sort()).toEqual(['extension-control', 'extension-control-2'])
-			const ambiguousDoctor = await first.cliJson<{ ok: boolean; error: { code: string } | null; candidates: unknown[] }>(
+			// Doctor is read-only: with two live controls and no selector it diagnoses both instead of failing closed.
+			const allDoctor = await first.cliJson<{ controls: Array<{ watcher: { id: string }; diagnostics: { control: { connected: boolean } } | null }> }>(
 				'ext',
 				'doctor',
 				'--json',
 			)
-			expect(ambiguousDoctor.ok).toBe(false)
-			expect(ambiguousDoctor.error?.code).toBe('ambiguous_control')
-			expect(ambiguousDoctor.candidates).toHaveLength(2)
+			expect(allDoctor.controls.map((entry) => entry.watcher.id).sort()).toEqual(['extension-control', 'extension-control-2'])
+			expect(allDoctor.controls.every((entry) => entry.diagnostics?.control.connected === true)).toBe(true)
 
 			const firstTabs = await first.cliJson<{ tabs: Array<{ url: string }> }>('ext', 'tabs', '--id', first.controlWatcherId, '--json')
 			const secondTabs = await second.cliJson<{ tabs: Array<{ url: string }> }>('ext', 'tabs', '--id', second.controlWatcherId, '--json')

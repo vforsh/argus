@@ -13,6 +13,7 @@ import { BUILTIN_PLUGIN_ALIASES, resolvePluginAlias } from './pluginAliases.js'
 import { resolvePluginModuleUrl } from './resolvePlugin.js'
 import { inspectPluginManifest, type PluginManifestInspection } from './pluginManifest.js'
 import { formatError } from '../parse.js'
+import packageJson from '../../../package.json' with { type: 'json' }
 
 type PluginSource = 'global-config' | 'config' | 'env' | 'cli'
 
@@ -168,8 +169,17 @@ const warnPluginLoad = (source: PluginSource, spec: string, message: string): vo
 
 const recordPluginFailure = (entries: PluginLoadEntry[], entry: PluginInput, error: string, discovery: PluginDiscovery, url?: string): void => {
 	entries.push({ ...entry, provenance: [entry], discovery, status: 'failed', url, error })
-	warnPluginLoad(entry.source, entry.spec, error)
 }
+
+/**
+ * Whether a failed plugin can explain what this invocation sees. Failures used to print on every
+ * command, so one stale plugin prefixed `argus list`, `eval`, … with a warning about an unrelated
+ * module (and corrupted `2>&1` captures). Now they surface where they matter: help and plugin
+ * listings, a command the plugin advertises, or a root nothing registered (the plugin's own command,
+ * most likely). `argus plugin list` always reports them.
+ */
+const isFailureRelevant = (root: string, rootKnown: boolean, advertised: readonly string[]): boolean =>
+	!root || root === 'help' || root === 'plugin' || root === 'plugins' || !rootKnown || advertised.includes(root)
 
 const createLoadedEntry = (
 	entry: PluginInput,
@@ -272,8 +282,10 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 			const plugin = extractPlugin(mod)
 			if (!plugin) throw new Error('Invalid plugin export (expected default export with { apiVersion: 1, name, register() }).')
 			claimName(plugin.name, url)
-			host ??= (await import('./pluginHost.js')).createPluginHost()
-			const ctx = { ...ctxBase, configDir: entry.configDir ?? ctxBase.configDir, host, program }
+			const hostModule = await import('./pluginHost.js')
+			host ??= hostModule.createPluginHost()
+			const pluginHost = hostModule.guardPluginHost(host, plugin, packageJson.version, ARGUS_PLUGIN_API_VERSION)
+			const ctx = { ...ctxBase, configDir: entry.configDir ?? ctxBase.configDir, host: pluginHost, program }
 			const registerStarted = performance.now()
 			try {
 				if (manifest?.eager === false) await registerIndependentPlugin(plugin, manifest, ctx)
@@ -283,11 +295,11 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 			}
 			return createLoadedEntry(entry, plugin, url, discovery)
 		} catch (error) {
-			const message = formatError(error)
-			warnPluginLoad(entry.source, entry.spec, message)
-			return { ...entry, discovery, status: 'failed', url, error: message }
+			return { ...entry, discovery, status: 'failed', url, error: formatError(error) }
 		}
 	}
+	const warned = new Set<PluginLoadEntry>()
+	const advertisedBy = new Map<PluginLoadEntry, string[]>()
 
 	const byUrl = new Map<string, (typeof pending)[number]>()
 	for (const entry of all) {
@@ -337,6 +349,7 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 			discovery.registration = 'blocked'
 			discovery.reason = inspection.compatibility === 'incompatible' ? 'incompatible-manifest' : 'name-conflict'
 			recordPluginFailure(entries, entry, formatError(error), discovery, resolved.url)
+			advertisedBy.set(entries[entries.length - 1], manifest?.commands ?? [])
 		}
 	}
 
@@ -358,7 +371,15 @@ export const createPluginLoader = async (program: Command, argv: readonly string
 				const loaded = await item.loading
 				loaded.provenance = item.report.provenance
 				entries[entries.indexOf(item.report)] = loaded
+				if (loaded.status === 'failed') advertisedBy.set(loaded, item.manifest?.commands ?? [])
 				item.report = loaded
+			}
+			const rootKnown = program.commands.some((command) => command.name() === root || command.aliases().includes(root))
+			for (const entry of entries) {
+				if (entry.status !== 'failed' || warned.has(entry)) continue
+				if (!isFailureRelevant(root, rootKnown, advertisedBy.get(entry) ?? [])) continue
+				warned.add(entry)
+				warnPluginLoad(entry.source, entry.spec, entry.error)
 			}
 		},
 	}
