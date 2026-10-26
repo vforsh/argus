@@ -1,7 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { listPresetNames } from '../../emulation/devices.js'
 import { collectParam } from '../validation.js'
-import { jsonOption } from './sharedOptions.js'
+import { actionOptions, jsonOption } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
 const runChromeTargets = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeTargets))
@@ -36,6 +36,7 @@ const presetList = listPresetNames().join(', ')
 const navigationWaitOptions = [
 	{ flags: '--wait <mode>', description: 'Wait for: load (default), domcontentloaded, none' },
 	{ flags: '--timeout <duration>', description: 'Wait budget (e.g. 30s, 5000). Default: 30s' },
+	...actionOptions,
 	jsonOption,
 ] as const
 

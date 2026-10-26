@@ -1,6 +1,6 @@
 import type { EvalResponse, WatcherRecord } from '@vforsh/argus-core'
 import { classifyWatcherFailure } from '@vforsh/argus-core'
-import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/requestWatcher.js'
+import { fetchWatcherJson, formatWatcherTransportError, watcherFailureCode } from '../watchers/requestWatcher.js'
 import { formatError } from '../cli/parse.js'
 
 /** Page-side deadline used when `--timeout` is absent. */
@@ -32,11 +32,16 @@ export type EvalWithRetriesInput = EvalOnceInput & {
 /** `timeout`: a scenario missed its deadline; `response.result` holds its last `ctx.progress()` value. */
 export type EvalFailureKind = 'transport' | 'exception' | 'timeout'
 
-export type EvalOutcome = { ok: true; response: EvalResponse } | { ok: false; kind: EvalFailureKind; error: string; response?: EvalResponse }
+/** `code` is set for transport failures: the watcher's own error code when it answered, else the transport's. */
+export type EvalOutcome =
+	| { ok: true; response: EvalResponse }
+	| { ok: false; kind: EvalFailureKind; error: string; code?: EvalTransportCode; response?: EvalResponse }
+
+type EvalTransportCode = ReturnType<typeof watcherFailureCode>
 
 export type EvalAttemptResult =
 	| { ok: true; response: EvalResponse; attempt: number }
-	| { ok: false; kind: EvalFailureKind; error: string; response?: EvalResponse; attempt: number }
+	| { ok: false; kind: EvalFailureKind; error: string; code?: EvalTransportCode; response?: EvalResponse; attempt: number }
 
 export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 	// Always name the page-side deadline. The watcher can say *which layer* stalled — dead browser,
@@ -67,6 +72,7 @@ export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 			ok: false,
 			kind: 'transport',
 			error: formatEvalTransportError(input.watcher, error, input.timeoutMs),
+			code: watcherFailureCode(error),
 		}
 	}
 

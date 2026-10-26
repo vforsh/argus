@@ -3,7 +3,7 @@ import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { gotoCommand } from './pageCommands.js'
 import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
-import { jsonOption } from './sharedOptions.js'
+import { actionOptions, jsonOption } from './sharedOptions.js'
 import { usageError } from '../validation.js'
 import { lazyAction } from '../lazyAction.js'
 
@@ -105,8 +105,13 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 		name: 'reload',
 		description: 'Reload the page attached to a watcher',
 		arguments: [{ flags: '[id]', description: 'Watcher id to reload' }],
-		options: [{ flags: '--ignore-cache', description: 'Bypass browser cache' }, jsonOption],
-		examples: ['argus reload app', 'argus reload app --ignore-cache', 'argus reload app --json'],
+		options: [{ flags: '--ignore-cache', description: 'Bypass browser cache' }, ...actionOptions, jsonOption],
+		examples: [
+			'argus reload app',
+			'argus reload app --ignore-cache',
+			'argus reload app --json',
+			'argus reload app --until "typeof window.app !== \'undefined\'" --until-timeout 60s',
+		],
 		action: async (id, options) => {
 			await runReload(id, options)
 		},

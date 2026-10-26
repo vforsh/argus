@@ -1,6 +1,6 @@
 import type { DomClickRequest, DomClickResponse } from '@vforsh/argus-core'
 import { DEFAULT_INTERACTION_NAV_TIMEOUT_MS, domClickRequestSchema } from '@vforsh/argus-core'
-import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import { defineActionCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
 import {
 	describeElementTarget,
@@ -31,7 +31,7 @@ type ClickMeta = {
 	xy: { x: number; y: number } | undefined
 }
 
-export const runDomClick = defineWatcherCommand<DomClickOptions, DomClickResponse, DomClickRequest, [], ClickMeta>({
+export const runDomClick = defineActionCommand<DomClickOptions, DomClickResponse, DomClickRequest, [], ClickMeta>({
 	schema: domClickRequestSchema,
 	build: (_args, options, output) => buildClickPlan(options, output),
 	formatHuman: (response, { output, meta: { target, xy } }) => {

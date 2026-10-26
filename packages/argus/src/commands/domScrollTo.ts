@@ -1,5 +1,5 @@
 import type { DomScrollToResponse } from '@vforsh/argus-core'
-import { defineWatcherCommand, type WatcherCommandContext, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import { defineActionCommand, type WatcherCommandContext, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
 import { parseXY, writeNoElementFound } from './dom/shared.js'
 
@@ -14,7 +14,7 @@ export type DomScrollToOptions = {
 }
 
 /** Execute the dom scroll-to command for a watcher id. */
-export const runDomScrollTo = defineWatcherCommand<DomScrollToOptions, DomScrollToResponse>({
+export const runDomScrollTo = defineActionCommand<DomScrollToOptions, DomScrollToResponse>({
 	build: (_args, options, output) => buildDomScrollToPlan(options, output),
 	formatHuman: formatDomScrollToHuman,
 })

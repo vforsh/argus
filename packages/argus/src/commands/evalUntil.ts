@@ -1,6 +1,8 @@
-import { createOutput } from '../output/io.js'
+import { isTruthyEvalResult } from '@vforsh/argus-core'
+import { createOutput, type Output } from '../output/io.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
-import { pollEval } from './evalPolling.js'
+import { describeConditionReply, formatSeconds, summarizeConditionReply } from './conditionWait.js'
+import { pollEval, type EvalPollOutcome } from './evalPolling.js'
 import { createEvalEmitter, writeEvalSuccess } from './evalEmit.js'
 import { parseDurationFlagMs, parseEvalCommonFlags, prepareEvalExpression, type EvalCommonOptions } from './evalShared.js'
 import { validateEvalResultFileOptions } from './evalResultOutput.js'
@@ -38,7 +40,7 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		return
 	}
 
-	const emitter = createEvalEmitter(options, output)
+	const emitter = createEvalEmitter(options, output, flags.shaping)
 
 	const resolved = await resolveWatcherOrExit({ id }, output)
 	if (!resolved) return
@@ -60,10 +62,10 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		totalTimeoutMs: totalTimeoutMs.value,
 		onResult: (response) => {
 			if (!response.result && options.verbose) {
-				writeEvalSuccess(response, options, output, true)
+				writeEvalSuccess(response, options, output, true, flags.shaping)
 			}
 		},
-		shouldStop: ({ response }) => ({ ok: true, matched: Boolean(response.result) }),
+		shouldStop: ({ response }) => ({ ok: true, matched: isTruthyEvalResult(response) }),
 	})
 
 	if (pollResult.kind === 'matched') {
@@ -77,20 +79,18 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		return
 	}
 
-	if (pollResult.kind === 'timeout') {
-		output.writeWarn(`Total timeout exceeded (${options.totalTimeout})`)
-		process.exitCode = 1
-		return
-	}
-
-	if (pollResult.kind === 'exhausted') {
-		output.writeWarn(`Exhausted after ${pollResult.iterations} iterations without a truthy result`)
+	if (pollResult.kind === 'timeout' || pollResult.kind === 'exhausted') {
+		writeUntilMiss(pollResult, options, output)
 		process.exitCode = 1
 		return
 	}
 
 	if (pollResult.kind === 'condition-error') {
-		output.writeWarn(pollResult.error)
+		if (output.json) {
+			output.writeJson({ ok: false, error: { message: pollResult.error } })
+		} else {
+			output.writeWarn(pollResult.error)
+		}
 		process.exitCode = 1
 		return
 	}
@@ -98,4 +98,34 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 	if (pollResult.kind === 'interrupted') {
 		process.exitCode = 130
 	}
+}
+
+/**
+ * Report a wait that ran out, with what the expression last returned or threw.
+ *
+ * The bare "Total timeout exceeded" this replaces sent every caller back for a second eval just to
+ * learn why; observed agent sessions lost ~45 minutes in a week to those timeouts.
+ */
+const writeUntilMiss = (
+	outcome: Extract<EvalPollOutcome, { kind: 'timeout' } | { kind: 'exhausted' }>,
+	options: EvalUntilOptions,
+	output: Output,
+): void => {
+	const last = outcome.last ? summarizeConditionReply(outcome.last) : undefined
+	const message =
+		outcome.kind === 'timeout'
+			? `Total timeout exceeded (${options.totalTimeout}) after ${outcome.iterations} polls`
+			: `Exhausted after ${outcome.iterations} iterations (${formatSeconds(outcome.elapsedMs)}) without a truthy result`
+
+	if (output.json) {
+		output.writeJson({
+			ok: false,
+			error: { message, code: outcome.kind === 'timeout' ? 'wait_timeout' : 'wait_exhausted' },
+			iterations: outcome.iterations,
+			elapsedMs: outcome.elapsedMs,
+			...(last ? { last } : {}),
+		})
+		return
+	}
+	output.writeWarn(last ? `${message}; last: ${describeConditionReply(last)}` : message)
 }

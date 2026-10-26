@@ -1,4 +1,4 @@
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 
 export type ArgusCommandOption = {
 	flags: string
@@ -7,6 +7,11 @@ export type ArgusCommandOption = {
 	required?: boolean
 	/** Custom Commander argParser, e.g. accumulating repeatable flags into an array. */
 	parser?: (value: string, previous: any) => any
+	/**
+	 * Accept the flag but leave it out of `--help`: for spellings agents keep guessing
+	 * (`logs --level` for `--levels`) whose action folds them into the documented flag.
+	 */
+	hidden?: boolean
 }
 
 export type ArgusCommandDefinition = {
@@ -172,6 +177,13 @@ const addRequiredOption = (command: Command, option: ArgusCommandOption): void =
 }
 
 const addOption = (command: Command, option: ArgusCommandOption): void => {
+	if (option.hidden) {
+		const hidden = new Option(option.flags, option.description).hideHelp()
+		if (option.parser) hidden.argParser(option.parser)
+		if (option.defaultValue !== undefined) hidden.default(option.defaultValue)
+		command.addOption(hidden)
+		return
+	}
 	if (option.parser) {
 		command.option(option.flags, option.description, option.parser, option.defaultValue)
 		return

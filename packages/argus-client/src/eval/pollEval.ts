@@ -46,8 +46,9 @@ export type EvalPollInput<TResponse, TFailure> = {
 /** Terminal state of a poll loop. */
 export type EvalPollOutcome<TResponse, TFailure> =
 	| { kind: 'matched'; response: TResponse; iteration: number; attempt: number }
-	| { kind: 'exhausted'; iterations: number }
-	| { kind: 'timeout'; elapsedMs: number }
+	| { kind: 'exhausted'; iterations: number; elapsedMs: number; last?: TResponse }
+	// `last` is the final non-matching reply: what the page actually said when the budget ran out.
+	| { kind: 'timeout'; elapsedMs: number; iterations: number; last?: TResponse }
 	| { kind: 'interrupted' }
 	| { kind: 'eval-error'; failure: TFailure }
 	| { kind: 'condition-error'; error: string }
@@ -61,12 +62,13 @@ export type EvalPollOutcome<TResponse, TFailure> =
 export const pollEval = async <TResponse, TFailure>(input: EvalPollInput<TResponse, TFailure>): Promise<EvalPollOutcome<TResponse, TFailure>> => {
 	const startTime = Date.now()
 	let iteration = 0
+	let last: TResponse | undefined
 
 	while (!input.signal?.aborted) {
 		if (input.totalTimeoutMs != null) {
 			const elapsedMs = Date.now() - startTime
 			if (elapsedMs >= input.totalTimeoutMs) {
-				return { kind: 'timeout', elapsedMs }
+				return { kind: 'timeout', elapsedMs, iterations: iteration, last }
 			}
 		}
 
@@ -76,6 +78,7 @@ export const pollEval = async <TResponse, TFailure>(input: EvalPollInput<TRespon
 			return { kind: 'eval-error', failure: result.failure }
 		}
 
+		last = result.response
 		const context: EvalPollContext<TResponse> = { response: result.response, iteration, attempt: result.attempt }
 		// Streaming callers print the matched iteration too, so emit before checking stop conditions.
 		await input.onResult?.(result.response, context)
@@ -91,7 +94,7 @@ export const pollEval = async <TResponse, TFailure>(input: EvalPollInput<TRespon
 		}
 
 		if (input.count != null && iteration >= input.count) {
-			return { kind: 'exhausted', iterations: iteration }
+			return { kind: 'exhausted', iterations: iteration, elapsedMs: Date.now() - startTime, last }
 		}
 
 		await sleep(input.intervalMs, input.signal)

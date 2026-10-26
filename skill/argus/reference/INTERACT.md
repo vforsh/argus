@@ -14,7 +14,22 @@ argus click app --selector ".item" --all
 argus click app --selector "#btn" --button right    # left|middle|right
 argus click app --selector ".delayed" --wait 5s     # poll for selector first
 argus hover app --selector ".menu-item"
+argus hover app --pos 520,300                       # bare viewport point (canvas apps)
 ```
+
+## Wait For The Result (`--until`)
+
+Every action (`click`, `hover`, `drag`, `fill`, `keydown`, `scroll-to`, `reload`, `goto`, `page back/forward`) takes `--until <expr>`: after the action, poll that page expression every 250ms until it is truthy. Throws count as "not yet", so `reload --until "appctl.ready()"` works while the app is still booting. Budget: `--until-timeout <duration>` (default 15s). Use it instead of `sleep`.
+
+```bash
+argus click app --testid open-settings --until "document.querySelector('.settings-panel')" --json
+argus reload app --until "typeof window.appctl !== 'undefined'" --until-timeout 60s
+argus keydown app Escape --until "!document.querySelector('.modal')"
+```
+
+- JSON success adds `until: { matched: true, value, iterations, elapsedMs }`.
+- A miss exits 1 with `{ ok: false, error: { code: "wait_timeout" }, action, until: { matched: false, last, lastError? } }`. The action **did** run, so inspect `last` before repeating it.
+- `-q`/`--quiet` prints nothing on success.
 
 ## Drag
 
@@ -44,6 +59,7 @@ Targets `input`, `textarea`, and `contenteditable`; fires `input`/`change` like 
 
 ```bash
 argus keydown app --key Enter
+argus keydown app Escape                             # positional key = --key
 argus keydown app --key a --selector "#input"        # focus first
 argus keydown app --code KeyG --selector "canvas"   # canvas-owned key handler; canvas must be focusable
 argus keydown app --code KeyG --print-event          # show resolved key/code/keyCode

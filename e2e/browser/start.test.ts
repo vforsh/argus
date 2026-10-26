@@ -161,7 +161,8 @@ describe('combined Chrome + watcher lifecycle', () => {
 			'--json',
 		])
 		expect(duplicate.code).toBe(1)
-		expect(duplicate.stdout).toBe('')
+		// `--json` failures always end with one `ok: false` document on stdout.
+		expect(JSON.parse(duplicate.stdout)).toMatchObject({ ok: false, error: { message: expect.stringContaining('already in use') } })
 		expect(duplicate.stderr).toContain('already in use')
 		const invalid = await cli.exec([
 			'start',

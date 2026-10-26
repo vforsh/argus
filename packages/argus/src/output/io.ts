@@ -7,9 +7,32 @@ const ensureTrailingNewline = (value: string): string => (value.endsWith('\n') ?
 
 /** Route incidental console progress to stderr before JSON-mode plugins are loaded. */
 export const configureMachineSafeConsole = (argv: readonly string[]): void => {
-	if (argv.includes('--json') || argv.includes('--json-full') || isMachineOnlyCommand(argv)) {
+	if (isJsonRequested(argv) || isMachineOnlyCommand(argv)) {
 		routeConsoleToStderr()
 	}
+}
+
+/** Whether a one-shot invocation asked for machine output. */
+export const isJsonRequested = (argv: readonly string[]): boolean => argv.includes('--json') || argv.includes('--json-full')
+
+// Process-wide, because the backstop below runs after the command's own `Output` is gone.
+let machineOutputWritten = false
+let lastWarning: string | undefined
+
+/**
+ * Backstop for the `--json` failure contract: a failed one-shot command that wrote only prose
+ * still owes its caller one `ok: false` document on stdout.
+ *
+ * Over a hundred validators report through `writeWarn` + exit code 2; converting each would
+ * leave the next new one to regress. The runner calls this once the command settles (and
+ * Commander's own parse errors call it before exiting), so the guarantee holds for all of them.
+ * Exit code 2 is a usage error, hence `invalid_request`.
+ */
+export const writeJsonFailureFallback = (exitCode: number, message?: string): void => {
+	if (exitCode === 0 || machineOutputWritten) return
+	machineOutputWritten = true
+	const detail = { message: message ?? lastWarning ?? 'Command failed.', ...(exitCode === 2 ? { code: 'invalid_request' } : {}) }
+	process.stdout.write(JSON.stringify({ ok: false, error: detail }) + '\n')
 }
 
 /**
@@ -52,6 +75,7 @@ export const createOutput = (options: OutputOptions): Output => {
 	let wroteJsonDocument = false
 
 	const writeJsonLine = (value: unknown): void => {
+		machineOutputWritten = true
 		process.stdout.write(JSON.stringify(value) + '\n')
 	}
 
@@ -73,6 +97,7 @@ export const createOutput = (options: OutputOptions): Output => {
 	}
 
 	const writeWarn = (text: string): void => {
+		lastWarning = text.trim().split('\n')[0] || lastWarning
 		process.stderr.write(ensureTrailingNewline(text))
 	}
 
@@ -82,5 +107,6 @@ export const createOutput = (options: OutputOptions): Output => {
 		writeJsonLine,
 		writeHuman,
 		writeWarn,
+		hasWrittenJson: () => wroteJsonDocument,
 	}
 }

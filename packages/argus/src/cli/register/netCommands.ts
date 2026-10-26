@@ -1,6 +1,6 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
 import { collectValues } from '../validation.js'
-import { jsonOption } from './sharedOptions.js'
+import { jsonOption, outputShapingOptions } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
 const runNetClear = lazyAction(() => import('../../commands/netClear.js').then((mod) => mod.runNetClear))
@@ -179,8 +179,15 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--limit <count>', description: 'Maximum number of requests' },
 			...netFilterOptions({ includeSince: true }),
 			jsonOption,
+			...outputShapingOptions,
 		],
-		examples: ['argus net app --since 5m', 'argus net app --grep api', 'argus net app --ignore-host mc.yandex.ru', 'argus net app --json'],
+		examples: [
+			'argus net app --since 5m',
+			'argus net app --grep api',
+			'argus net app --ignore-host mc.yandex.ru',
+			'argus net app --json',
+			'argus net app --json --fields id,method,url,status --max-chars 4000',
+		],
 		action: async (id, options) => {
 			await runNet(id, options)
 		},

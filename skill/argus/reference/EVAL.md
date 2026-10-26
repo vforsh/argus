@@ -31,8 +31,16 @@ argus eval app "document.title" --json --out ./result.json
 | `--bundle` / `--no-bundle`   | Force / skip bundling of `--file` (auto when the file has `import`/`export`)             |
 | `--arg k=v`, `--args <json>` | Frozen string `args` object visible to the script                                        |
 | `-o, --out <path>`           | Write result to file (polling appends NDJSON; `--rotate` writes one file per iteration)  |
+| `--fields <a,b.c>`           | Project an object/array `result` to these dot paths (arrays: each element); stdout only  |
+| `--max-chars <n>`            | Cap stdout; see below                                                                    |
 
-Timeouts name their layer. Only `cdp_timeout` (the expression itself was too slow) is fixed by a longer `--timeout`; `chrome_unreachable`, `cdp_target_replaced`, `cdp_renderer_unresponsive`, and `dialog_blocking` need their own recovery ([SKILL.md](../SKILL.md#error--next-command)).
+`--fields` / `--max-chars` shape stdout only (also on `eval-until`); `--out` keeps the full result. Human mode prints the projected value and cuts it at `n` chars with a final `… [truncated N chars; raise --max-chars]` line. `--json` keeps one valid object: if the serialized `result` exceeds `n`, `result` becomes that serialized prefix (a string) and the reply adds `truncated: true, totalChars: <full length>`. Primitive results ignore `--fields`.
+
+```bash
+argus eval app "window.store.getState()" --json --fields user.id,cart.items.sku --max-chars 2000
+```
+
+Timeouts name their layer. Only `cdp_timeout` (the expression itself was too slow) is fixed by a longer `--timeout`; `chrome_unreachable`, `cdp_target_replaced`, `cdp_renderer_unresponsive`, `extension_bridge_unresponsive`, and `dialog_blocking` need their own recovery ([SKILL.md](../SKILL.md#error--next-command)). Extension-mode timeouts also name the stalled phase (`phase: … extension silent since` = worker/native channel stuck; `extension still active … this request is unanswered` = the command was still running).
 
 Default eval uses Chrome's REPL semantics: statement-list completion values, top-level `await`, and repeated REPL `const`/`let` declarations work. Declarations share the page's global scope; bindings created by the page itself follow normal JavaScript redeclaration rules. Use `--body` for isolated locals and scripts containing `return`, or wrap the input in an async IIFE. `--body` works with inline/file/stdin input and `--arg`; bundled scenarios return from their default export instead. Successful output preserves the full serialized value, including nested objects, arrays, and long strings; `--no-return-by-value` explicitly requests a preview.
 
@@ -57,7 +65,7 @@ argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rota
 
 ## `eval-until` / `wait`
 
-Poll until `Boolean(result)` is true. Default interval 250ms, intermediate results silent.
+Poll until the value is truthy in JS terms (`undefined`, `NaN`, `-0`, `0n` count as falsy). Default interval 250ms, intermediate results silent. After an action, prefer the action's own `--until` ([INTERACT.md](./INTERACT.md#wait-for-the-result---until)) over a separate `wait`.
 
 ```bash
 argus wait app "document.querySelector('#loaded')"
@@ -68,6 +76,8 @@ argus wait app "window.data" --verbose --count 20
 ```
 
 Flags: `--interval`, `--count`, `--total-timeout` (wall clock), `--verbose` (print falsy iterations), plus every `eval` behavior flag. Exit codes: 0 truthy, 1 error/exhausted, 2 invalid args, 130 interrupted.
+
+A miss reports what the expression last returned or threw: human `Total timeout exceeded (10s) after 40 polls; last: false`; JSON `{ ok: false, error: { code: "wait_timeout" | "wait_exhausted" }, iterations, elapsedMs, last: { result, type } | { exception } }`.
 
 ## TypeScript Scenarios
 

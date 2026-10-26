@@ -45,6 +45,10 @@ export const hoverDomNodes = async (session: CdpSessionHandle, handles: DomNodeH
 }
 
 
+export const hoverAtPoint = async (session: CdpSessionHandle, x: number, y: number): Promise<void> => {
+	await dispatchMouseEvent(session, { type: 'mouseMoved', x, y })
+}
+
 export const clickAtPoint = async (session: CdpSessionHandle, x: number, y: number, button: MouseButton = 'left'): Promise<void> => {
 	const mask = BUTTON_MASK[button] ?? 1
 	await dispatchMouseEvent(session, { type: 'mouseMoved', x, y })

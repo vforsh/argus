@@ -11,6 +11,14 @@ import type { Output } from '../output/io.js'
 import { createOutput } from '../output/io.js'
 import { setExitCode } from '../output/exitCode.js'
 import {
+	describeConditionReply,
+	describeUntilMiss,
+	formatSeconds,
+	parseUntilFlags,
+	waitForCondition,
+	type UntilFlags,
+} from '../commands/conditionWait.js'
+import {
 	requestWatcherAction,
 	requestWatcherJson,
 	writeRequestError,
@@ -95,6 +103,7 @@ export type WatcherCommandRunner<TArgs extends readonly unknown[], TOptions> = A
  *     Returning `null` cleanly aborts.
  *  3. Optional `spec.schema.parse(plan.body)` — protocol validation.
  *  4. `requestWatcherAction(...)` — resolve watcher + transport + ErrorResponse.
+ *     Action commands ({@link defineActionCommand}) then poll `--until`.
  *  5. JSON path: write `formatJson?.(...) ?? response`.
  *  6. Human path: call `formatHuman` (or pretty-print JSON as fallback).
  *
@@ -105,45 +114,100 @@ export const defineWatcherCommand: ArgusDefineWatcherCommand =
 	<TOptions extends { json?: boolean }, TResponse extends { ok: true }, TBody = unknown, TArgs extends readonly unknown[] = [], TMeta = undefined>(
 		spec: WatcherCommandSpec<TArgs, TOptions, TBody, TResponse, TMeta>,
 	): WatcherCommandRunner<TArgs, TOptions> =>
-	async (id, ...rest) => {
-		// `rest` ends with the options object; everything before it is positional CLI args.
-		const tail = rest.length - 1
-		const options = rest[tail] as TOptions
-		const args = rest.slice(0, tail) as unknown as TArgs
+	(id, ...rest) =>
+		runWatcherCommand(spec, id, rest, false)
 
-		const output = createOutput({ ...options, json: options.json === true || spec.isJson?.(options) === true })
+/**
+ * {@link defineWatcherCommand} for page actions (`click`, `reload`, `goto`, …): adds the shared
+ * `--until <expr>` post-action wait and `-q/--quiet`.
+ *
+ * Internal on purpose — not on the plugin contract. Reading `options.until` in every command
+ * would collide with commands that already own an `--until` flag with other semantics
+ * (`record --until`, `eval --until`), so actions opt in by name.
+ */
+export const defineActionCommand: ArgusDefineWatcherCommand =
+	<TOptions extends { json?: boolean }, TResponse extends { ok: true }, TBody = unknown, TArgs extends readonly unknown[] = [], TMeta = undefined>(
+		spec: WatcherCommandSpec<TArgs, TOptions, TBody, TResponse, TMeta>,
+	): WatcherCommandRunner<TArgs, TOptions> =>
+	(id, ...rest) =>
+		runWatcherCommand(spec, id, rest, true)
 
-		const plan = await spec.build(args, options, output)
-		if (plan == null) return
+type ActionFlags = UntilFlags & { quiet?: boolean }
 
-		const body = validateBody(plan, spec.schema, output)
-		if (body === SCHEMA_REJECTED) return
+const runWatcherCommand = async <
+	TOptions extends { json?: boolean },
+	TResponse extends { ok: true },
+	TBody,
+	TArgs extends readonly unknown[],
+	TMeta,
+>(
+	spec: WatcherCommandSpec<TArgs, TOptions, TBody, TResponse, TMeta>,
+	id: string | undefined,
+	rest: unknown[],
+	isAction: boolean,
+): Promise<void> => {
+	// `rest` ends with the options object; everything before it is positional CLI args.
+	const tail = rest.length - 1
+	const options = rest[tail] as TOptions
+	const args = rest.slice(0, tail) as unknown as TArgs
 
-		const result = await requestWatcherAction<TResponse>(
-			{
-				id,
-				path: plan.path,
-				method: plan.method ?? (plan.body !== undefined ? 'POST' : 'GET'),
-				body,
-				query: plan.query,
-				timeoutMs: plan.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-			},
-			output,
-		)
-		if (!result) return
+	const output = createOutput({ ...options, json: options.json === true || spec.isJson?.(options) === true })
 
-		const ctx: WatcherCommandContext<TArgs, TOptions, TMeta> = { output, watcher: result.watcher, args, options, meta: plan.meta as TMeta }
+	const actionFlags: ActionFlags = isAction ? (options as ActionFlags) : {}
+	const until = parseUntilFlags(actionFlags, output)
+	if (until === null) return
 
-		if (output.json) {
-			output.writeJson(spec.formatJson ? spec.formatJson(result.data, ctx) : result.data)
-			return
+	const plan = await spec.build(args, options, output)
+	if (plan == null) return
+
+	const body = validateBody(plan, spec.schema, output)
+	if (body === SCHEMA_REJECTED) return
+
+	const result = await requestWatcherAction<TResponse>(
+		{
+			id,
+			path: plan.path,
+			method: plan.method ?? (plan.body !== undefined ? 'POST' : 'GET'),
+			body,
+			query: plan.query,
+			timeoutMs: plan.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		},
+		output,
+	)
+	if (!result) return
+
+	// `--quiet` mutes success lines only. Formatters also detect failures (a click that matched
+	// nothing warns and exits 1), so they still run — against an output whose human lines go nowhere.
+	const renderOutput: Output = actionFlags.quiet && !output.json ? { ...output, writeHuman: () => {} } : output
+	const ctx: WatcherCommandContext<TArgs, TOptions, TMeta> = { output: renderOutput, watcher: result.watcher, args, options, meta: plan.meta as TMeta }
+
+	const outcome = until ? await waitForCondition(result.watcher, until) : undefined
+	// A missed condition still reports the action: it did happen, so a retry would repeat it.
+	const missed = until && outcome && !outcome.matched ? describeUntilMiss(until, outcome) : undefined
+	if (missed) setExitCode(1)
+
+	if (output.json) {
+		const document = spec.formatJson ? spec.formatJson(result.data, ctx) : result.data
+		if (missed) {
+			output.writeJson({ ok: false, error: { message: missed, code: 'wait_timeout' }, action: document, until: outcome })
+		} else {
+			output.writeJson(outcome && isPlainObject(document) ? { ...document, until: outcome } : document)
 		}
-		if (spec.formatHuman) {
-			spec.formatHuman(result.data, ctx)
-			return
-		}
-		output.writeHuman(JSON.stringify(result.data, null, 2))
+		return
 	}
+
+	if (spec.formatHuman) {
+		spec.formatHuman(result.data, ctx)
+	} else {
+		renderOutput.writeHuman(JSON.stringify(result.data, null, 2))
+	}
+	if (outcome?.matched) {
+		renderOutput.writeHuman(`--until met after ${formatSeconds(outcome.elapsedMs)}: ${describeConditionReply({ result: outcome.value })}`)
+	}
+	if (missed) output.writeWarn(missed)
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => value != null && typeof value === 'object' && !Array.isArray(value)
 
 /** Sentinel returned by {@link validateBody} when schema validation failed. */
 const SCHEMA_REJECTED = Symbol('schema-rejected')

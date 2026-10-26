@@ -12,7 +12,7 @@ export type ResolveWatcherInput = {
 
 export type ResolveWatcherResult =
 	| { ok: true; watcher: WatcherRecord; registry: RegistryV1 }
-	| { ok: false; error: string; exitCode: 1 | 2; candidates?: WatcherRecord[] }
+	| { ok: false; error: string; exitCode: 1 | 2; code?: 'watcher_not_found' | 'watcher_id_required'; candidates?: WatcherRecord[] }
 
 const sessionResolver = new AsyncLocalStorage<WatcherResolver>()
 
@@ -35,13 +35,13 @@ export const resolveWatcher = async (input: ResolveWatcherInput): Promise<Resolv
 	if (input.id) {
 		const watcher = registry.watchers[input.id]
 		if (!watcher) {
-			return { ok: false, error: `Watcher not found: ${input.id}`, exitCode: 2, candidates: watchers }
+			return { ok: false, error: `Watcher not found: ${input.id}`, exitCode: 2, code: 'watcher_not_found', candidates: watchers }
 		}
 		return { ok: true, watcher, registry }
 	}
 
 	if (watchers.length === 0) {
-		return { ok: false, error: 'Watcher id required.', exitCode: 2 }
+		return { ok: false, error: 'Watcher id required.', exitCode: 2, code: 'watcher_id_required' }
 	}
 
 	const cwd = process.cwd()
@@ -50,7 +50,7 @@ export const resolveWatcher = async (input: ResolveWatcherInput): Promise<Resolv
 		return { ok: true, watcher: cwdMatches[0], registry }
 	}
 	if (cwdMatches.length > 1) {
-		return { ok: false, error: 'Watcher id required.', exitCode: 2, candidates: cwdMatches }
+		return { ok: false, error: 'Watcher id required.', exitCode: 2, code: 'watcher_id_required', candidates: cwdMatches }
 	}
 
 	const reachability = await Promise.all(
@@ -65,7 +65,7 @@ export const resolveWatcher = async (input: ResolveWatcherInput): Promise<Resolv
 		return { ok: true, watcher: reachable[0].watcher, registry }
 	}
 
-	return { ok: false, error: 'Watcher id required.', exitCode: 2, candidates: watchers }
+	return { ok: false, error: 'Watcher id required.', exitCode: 2, code: 'watcher_id_required', candidates: watchers }
 }
 
 const checkWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; status: StatusResponse } | { ok: false; error: string }> => {

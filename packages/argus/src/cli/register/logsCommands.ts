@@ -1,6 +1,7 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
 import { collectMatch, usageError, validateCaseFlags, validateMatchOptions } from '../validation.js'
 import { lazyAction } from '../lazyAction.js'
+import { outputShapingOptions } from './sharedOptions.js'
 
 const runLogCursor = lazyAction(() => import('../../commands/logs.js').then((mod) => mod.runLogCursor))
 const runLogEpoch = lazyAction(() => import('../../commands/logs.js').then((mod) => mod.runLogEpoch))
@@ -14,7 +15,16 @@ const sharedFilterOptions: readonly ArgusCommandOption[] = [
 	{ flags: '--ignore-case', description: 'Use case-insensitive regex matching' },
 	{ flags: '--case-sensitive', description: 'Use case-sensitive regex matching' },
 	{ flags: '--source <pattern>', description: 'Filter by source substring' },
+	// Spellings agents guessed often enough to cost a retry each time; folded in by normalizeLogsAliases.
+	{ flags: '--level <levels>', description: 'Alias for --levels', hidden: true },
+	{ flags: '--grep <regex>', description: 'Alias for --match', hidden: true, parser: collectMatch, defaultValue: [] },
 ]
+
+/** Fold the hidden alias spellings into the documented flags before validation reads them. */
+const normalizeLogsAliases = (options: { levels?: string; level?: string; match?: string[]; grep?: string[] }): void => {
+	if (options.levels == null && options.level != null) options.levels = options.level
+	if (options.grep && options.grep.length > 0) options.match = [...(options.match ?? []), ...options.grep]
+}
 
 const validateLogsOptions = (options: {
 	json?: boolean
@@ -43,9 +53,17 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--limit <count>', description: 'Maximum number of events' },
 			{ flags: '--json', description: 'Output bounded JSON preview for automation' },
 			{ flags: '--json-full', description: 'Output full JSON (can be very large)' },
+			...outputShapingOptions,
 		],
-		examples: ['argus logs app', 'argus logs app --since 10m --levels error,warning', 'argus logs app --json', 'argus logs app --json-full'],
+		examples: [
+			'argus logs app',
+			'argus logs app --since 10m --levels error,warning',
+			'argus logs app --json',
+			'argus logs app --json-full',
+			'argus logs app --json --fields level,text,source --max-chars 4000',
+		],
 		action: async (id, options) => {
+			normalizeLogsAliases(options)
 			if (!validateLogsOptions(options)) return
 			await runLogs(id, options)
 		},
@@ -91,6 +109,7 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 				],
 				action: async (id, options) => {
 					const resolvedOptions = options
+					normalizeLogsAliases(resolvedOptions)
 					if (!validateLogsOptions(resolvedOptions)) return
 					await runTail(id, resolvedOptions)
 				},

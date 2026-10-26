@@ -1,6 +1,6 @@
 import type { DomDragRequest, DomDragResponse } from '@vforsh/argus-core'
 import { domDragRequestSchema } from '@vforsh/argus-core'
-import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import { defineActionCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
 import { parseDurationMs } from '@vforsh/argus-core'
 import { describeElementTarget, parseWaitDuration, parseXY, requireElementTarget, writeNoElementFound } from './dom/shared.js'
@@ -27,7 +27,7 @@ type DragMeta = {
 	start: { x: number; y: number } | null
 }
 
-export const runDomDrag = defineWatcherCommand<DomDragOptions, DomDragResponse, DomDragRequest, [], DragMeta>({
+export const runDomDrag = defineActionCommand<DomDragOptions, DomDragResponse, DomDragRequest, [], DragMeta>({
 	schema: domDragRequestSchema,
 	build: (_args, options, output) => buildDragPlan(options, output),
 	formatHuman: (response, { output, options, meta: { target, start } }) => {

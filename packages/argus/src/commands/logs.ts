@@ -3,10 +3,11 @@ import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatc
 import { formatLogEvent } from '../output/format.js'
 import type { Output } from '../output/io.js'
 import { previewLogEvent } from '../output/preview.js'
+import { parseOutputShaping, shapeJsonRecords, writeHumanRecords, type OutputShaping, type OutputShapingOptions } from '../output/projection.js'
 import { appendAfterLimitParams, appendLogFilterParams, appendSinceParam } from '../watchers/queryParams.js'
 
 /** Options for the logs command. */
-export type LogsOptions = {
+export type LogsOptions = OutputShapingOptions & {
 	raw?: boolean
 	json?: boolean
 	jsonFull?: boolean
@@ -40,22 +41,22 @@ export const runLogEpoch = defineWatcherCommand<LogEpochOptions, LogEpochRespons
 })
 
 /** Execute the logs command for a watcher id. */
-export const runLogs = defineWatcherCommand<LogsOptions, LogsResponse>({
+export const runLogs = defineWatcherCommand<LogsOptions, LogsResponse, unknown, [], OutputShaping>({
 	isJson: (options) => options.jsonFull === true,
 	build: (_args, options, output) => buildLogsPlan(options, output),
-	formatJson: (response, { options }) => (options.jsonFull ? response.events : response.events.map((event) => previewLogEvent(event))),
-	formatHuman: (response, { output, watcher }) => {
-		for (const event of response.events) {
-			output.writeHuman(
-				formatLogEvent(event, {
-					includeTimestamps: watcher.includeTimestamps,
-				}),
-			)
-		}
+	formatJson: (response, { options, meta }) => {
+		const events = options.jsonFull ? response.events : response.events.map((event) => previewLogEvent(event))
+		return shapeJsonRecords(events, 'events', meta)
+	},
+	formatHuman: (response, { output, watcher, meta }) => {
+		writeHumanRecords(response.events, meta, (event) => formatLogEvent(event, { includeTimestamps: watcher.includeTimestamps }), output)
 	},
 })
 
-const buildLogsPlan = (options: LogsOptions, output: Output): WatcherRequestPlan | null => {
+const buildLogsPlan = (options: LogsOptions, output: Output): WatcherRequestPlan<OutputShaping> | null => {
+	const shaping = parseOutputShaping(options, output)
+	if (!shaping) return null
+
 	const params = new URLSearchParams()
 	appendAfterLimitParams(params, options)
 	const filters = appendLogFilterParams(params, options)
@@ -75,5 +76,6 @@ const buildLogsPlan = (options: LogsOptions, output: Output): WatcherRequestPlan
 		path: '/logs',
 		query: params,
 		timeoutMs: 5_000,
+		meta: shaping,
 	}
 }

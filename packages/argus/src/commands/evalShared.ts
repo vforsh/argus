@@ -6,6 +6,7 @@ import { type EvalArgMap, type EvalArgSourceOptions, hasEvalArgs, resolveEvalArg
 import { bundleEvalEntry } from './evalBundle.js'
 import { fileUsesModuleSyntax } from './evalModuleSyntax.js'
 import { readTextInput, selectTextInput, type TextInputSelection } from './inputSource.js'
+import { parseOutputShaping, type OutputShaping, type OutputShapingOptions } from '../output/projection.js'
 
 // ---------------------------------------------------------------------------
 // Expression resolution
@@ -262,7 +263,7 @@ export const wrapExpressionWithArgs = (source: string, args: EvalArgMap): string
  * versus `--total-timeout` semantics differ. Declaring the shared half once means a new
  * shared flag is added in one place instead of four.
  */
-export type EvalCommonOptions = {
+export type EvalCommonOptions = OutputShapingOptions & {
 	/** Evaluate an async function body with local declarations and an explicit return value. */
 	body?: boolean
 	json?: boolean
@@ -299,6 +300,8 @@ export type EvalCommonFlags = {
 	intervalMs: number | undefined
 	count: number | undefined
 	timeoutMs: number | undefined
+	/** `--fields` / `--max-chars`, applied to stdout only (`--out` keeps the full result). */
+	shaping: OutputShaping
 }
 
 /**
@@ -323,10 +326,14 @@ export const parseEvalCommonFlags = (options: EvalCommonOptions, output: Output)
 		}
 	}
 
+	const shaping = parseOutputShaping(options, output)
+	if (!shaping) return null
+
 	return {
 		retryCount: retryCount.value,
 		intervalMs: intervalMs.value,
 		count: count.value,
 		timeoutMs: timeoutMs.value,
+		shaping,
 	}
 }

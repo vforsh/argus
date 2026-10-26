@@ -4,24 +4,27 @@ import { appendNetCommandParams } from './netShared.js'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import { formatNetworkRequest } from '../output/net.js'
 import type { Output } from '../output/io.js'
+import { parseOutputShaping, shapeJsonRecords, writeHumanRecords, type OutputShaping, type OutputShapingOptions } from '../output/projection.js'
 
 /** Options for the net command. */
-export type NetOptions = NetCliListOptions & {
-	json?: boolean
-}
+export type NetOptions = NetCliListOptions &
+	OutputShapingOptions & {
+		json?: boolean
+	}
 
 /** Execute the net command for a watcher id. */
-export const runNet = defineWatcherCommand<NetOptions, NetResponse>({
+export const runNet = defineWatcherCommand<NetOptions, NetResponse, unknown, [], OutputShaping>({
 	build: (_args, options, output) => buildNetPlan(options, output),
-	formatJson: (response) => response.requests,
-	formatHuman: (response, { output }) => {
-		for (const request of response.requests) {
-			output.writeHuman(formatNetworkRequest(request))
-		}
+	formatJson: (response, { meta }) => shapeJsonRecords(response.requests, 'requests', meta),
+	formatHuman: (response, { output, meta }) => {
+		writeHumanRecords(response.requests, meta, formatNetworkRequest, output)
 	},
 })
 
-const buildNetPlan = (options: NetOptions, output: Output): WatcherRequestPlan | null => {
+const buildNetPlan = (options: NetOptions, output: Output): WatcherRequestPlan<OutputShaping> | null => {
+	const shaping = parseOutputShaping(options, output)
+	if (!shaping) return null
+
 	const params = new URLSearchParams()
 	const query = appendNetCommandParams(params, options)
 	if (query.error) {
@@ -34,5 +37,6 @@ const buildNetPlan = (options: NetOptions, output: Output): WatcherRequestPlan |
 		path: '/net',
 		query: params,
 		timeoutMs: 5_000,
+		meta: shaping,
 	}
 }

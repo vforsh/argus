@@ -22,6 +22,10 @@ export type DomHoverRequest = DomElementTarget & {
 	all?: boolean
 	/** Filter elements by trimmed textContent. Plain string = exact match. /regex/flags = regex test. */
 	text?: string
+	/** Viewport x-coordinate to hover. Coordinates replace the element target; pass both x and y. */
+	x?: number
+	/** Viewport y-coordinate to hover. */
+	y?: number
 }
 
 /**
@@ -278,4 +282,14 @@ const optionalPoint = (value: Record<string, unknown>, key: string): OptionalPoi
 }
 
 /** Schema for POST /dom/hover request payloads. */
-export const domHoverRequestSchema = defineProtocolSchema<DomHoverRequest>((value) => domTargetPayload<DomHoverRequest>(value))
+export const domHoverRequestSchema = defineProtocolSchema<DomHoverRequest>((value) => {
+	// Canvas apps have no element to target; a bare point mirrors `click --pos`. Anything else
+	// keeps the element-target contract, including its "exactly one target" error.
+	if (isProtocolObject(value) && value.selector == null && value.ref == null && (value.x != null || value.y != null)) {
+		if (!isFiniteNumber(value.x) || !isFiniteNumber(value.y)) {
+			return invalidProtocolPayload('both x and y must be finite numbers')
+		}
+		return validProtocolPayload({ x: value.x, y: value.y })
+	}
+	return domTargetPayload<DomHoverRequest>(value)
+})

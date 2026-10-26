@@ -39,6 +39,12 @@ export type ArgusOutput = {
 	writeJsonLine: (value: unknown) => void
 	writeHuman: (text: string) => void
 	writeWarn: (text: string) => void
+	/**
+	 * Whether this output already wrote its one `writeJson` document. Optional so hand-built
+	 * outputs keep compiling; host error printers check it before writing a failure envelope,
+	 * so a second failure (say, in a `finally` cleanup) degrades to stderr instead of throwing.
+	 */
+	hasWrittenJson?: () => boolean
 }
 
 /** Factory for Argus' standard output helpers. */

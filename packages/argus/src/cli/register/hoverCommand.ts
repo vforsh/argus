@@ -1,6 +1,6 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
-import { jsonOption } from './sharedOptions.js'
+import { actionOptions, jsonOption } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
 const runDomHover = lazyAction(() => import('../../commands/domHover.js').then((mod) => mod.runDomHover))
@@ -13,13 +13,16 @@ export const hoverCommand: ArgusCommandDefinition = {
 		{ flags: '--selector <css>', description: 'CSS selector to match element(s)' },
 		{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
 		{ flags: '--ref <elementRef>', description: 'Stable element ref from snapshot/locate output' },
+		{ flags: '--pos <x,y>', description: 'Hover viewport coordinates instead of an element' },
 		{ flags: '--all', description: 'Allow multiple matches (default: error if >1 match)' },
 		{ flags: '--text <string>', description: 'Filter by textContent (trimmed). Supports /regex/flags syntax' },
+		...actionOptions,
 		jsonOption,
 	],
 	examples: [
 		'argus hover app --selector "#btn"',
 		'argus hover app --ref e5',
+		'argus hover app --pos 520,300',
 		'argus hover app --selector ".item" --all',
 		'argus hover app --selector "#btn" --json',
 	],

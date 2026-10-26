@@ -55,7 +55,7 @@ stdin: one JSON object per line. stdout: one JSON object per line, nothing else 
 {"id": 2, "ok": false, "error": {"message": "Total timeout exceeded (30s)", "code": "session_command_failed"}, "exitCode": 1, "durationMs": 30014}
 ```
 
-- `result` is the command's `--json` document. NDJSON streams (`eval --interval`) come back as an array with `"stream": true`; non-JSON output as a string with `"raw": true`.
+- `result` is the command's `--json` document. On failure, `error` carries its `{ message, code }` and `result` (when the command wrote one) keeps the full `ok: false` document, e.g. `action`/`until` after a missed `--until`. NDJSON streams (`eval --interval`) come back as an array with `"stream": true`; non-JSON output as a string with `"raw": true`.
 - `stderr` is included when the command wrote any (also mirrored live to the session's stderr).
 - Control: `{"cmd": "ping"}` → `{"pong": true, "watcher": "app"}`; `{"cmd": "quit"}` answers then exits 0.
 

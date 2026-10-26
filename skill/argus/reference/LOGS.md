@@ -11,7 +11,10 @@ argus logs app --limit 50 --json                # bounded JSON preview
 argus logs app --raw --json                     # immediate values/previews + generated locations
 argus logs app --json-full                      # full events (can be huge)
 argus logs tail app --levels error --json       # long-poll stream (NDJSON); --timeout <ms> per poll
+argus logs app --json --fields id,level,text --max-chars 4000   # shaped output (logs only, not tail)
 ```
+
+**Output shaping** (`logs`, not `logs tail`): `--fields a,b.c` keeps only those dot paths of each event (`args` arrays project per element). In human mode it prints one compact JSON line per event. `--max-chars <n>` keeps leading events while they fit `n` chars, then stops: human mode ends with `… [truncated K of N records; raise --max-chars]`; `--json`/`--json-full` switch to `{ "events": [...], "truncated": bool, "omitted": K }` whenever `--max-chars` is set (a plain array otherwise).
 
 Levels: `log`, `info`, `warning`, `error`, `debug`, `exception`. `--match` is a JS regex over the event text; repeated patterns match if any hits. `--ignore-case` (default) / `--case-sensitive` apply to all of them. `--source` is a case-insensitive substring of the event source.
 

@@ -2,7 +2,8 @@ import type { CdpAXNode, CdpAXProperty, CdpAXValue } from './protocol.js'
 import type { AXTreeNode, SnapshotResponse } from '@vforsh/argus-core'
 import type { CdpSessionHandle } from './connection.js'
 import type { ElementRefRegistry } from './elementRefs.js'
-import { resolveFirstSelectorNodeId } from './dom/selector.js'
+import { getDomRootId, resolveFirstSelectorNodeId } from './dom/selector.js'
+import { PAGE_INDICATOR_DOM_IDS } from './pageIndicatorScript.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Options
@@ -257,12 +258,53 @@ const fetchAccessibilityNodes = async (session: CdpSessionHandle): Promise<CdpAX
 const resolveAccessibilityNodes = async (session: CdpSessionHandle, selector?: string): Promise<CdpAXNode[]> => {
 	// Always fetch the full tree — getPartialAXTree with fetchRelatives:false
 	// returns only a single node without descendants, which is not useful.
-	const nodes = await fetchAccessibilityNodes(session)
+	const nodes = await excludeArgusUi(session, await fetchAccessibilityNodes(session))
 	if (!selector) {
 		return nodes
 	}
 
 	return filterAccessibilityNodesBySelector(session, nodes, selector)
+}
+
+const ARGUS_UI_SELECTOR = Object.values(PAGE_INDICATOR_DOM_IDS)
+	.map((id) => `#${id}`)
+	.join(', ')
+
+/**
+ * Drop the watcher's own page indicator (buttons + details dialog) from the AX node list.
+ *
+ * Both `snapshot` and `locate` read through here, so agents never see "Argus watcher: copy info" as
+ * page content. Matching is by DOM id (`PAGE_INDICATOR_DOM_IDS`), mapped to AX nodes through
+ * `backendDOMNodeId`; AX names were rejected as the key since they change with recording state.
+ * A failed lookup (e.g. a frame not ready yet) keeps the full list: showing the indicator is
+ * harmless, failing the snapshot is not.
+ */
+const excludeArgusUi = async (session: CdpSessionHandle, nodes: CdpAXNode[]): Promise<CdpAXNode[]> => {
+	const uiBackendIds = await resolveArgusUiBackendIds(session).catch(() => new Set<number>())
+	if (uiBackendIds.size === 0) return nodes
+
+	const nodeMap = new Map(nodes.map((node) => [node.nodeId, node]))
+	const excluded = new Set<string>()
+	const queue = nodes.filter((node) => node.backendDOMNodeId != null && uiBackendIds.has(node.backendDOMNodeId)).map((node) => node.nodeId)
+	while (queue.length > 0) {
+		const id = queue.pop()!
+		if (excluded.has(id)) continue
+		excluded.add(id)
+		queue.push(...(nodeMap.get(id)?.childIds ?? []))
+	}
+
+	return excluded.size === 0 ? nodes : nodes.filter((node) => !excluded.has(node.nodeId))
+}
+
+const resolveArgusUiBackendIds = async (session: CdpSessionHandle): Promise<Set<number>> => {
+	const rootId = await getDomRootId(session)
+	const matched = await session.sendAndWait('DOM.querySelectorAll', { nodeId: rootId, selector: ARGUS_UI_SELECTOR })
+	const backendIds = new Set<number>()
+	for (const nodeId of matched.nodeIds ?? []) {
+		const described = await session.sendAndWait('DOM.describeNode', { nodeId, depth: 0 })
+		if (described.node?.backendNodeId != null) backendIds.add(described.node.backendNodeId)
+	}
+	return backendIds
 }
 
 const filterAccessibilityNodesBySelector = async (session: CdpSessionHandle, nodes: CdpAXNode[], selector: string): Promise<CdpAXNode[]> => {

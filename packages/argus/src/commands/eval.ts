@@ -52,7 +52,7 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		return
 	}
 
-	const emitter = createEvalEmitter(options, output)
+	const emitter = createEvalEmitter(options, output, flags.shaping)
 
 	const resolved = await resolveWatcherOrExit({ id }, output)
 	if (!resolved) return
@@ -120,7 +120,7 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 	}
 
 	if (pollResult.kind === 'condition-error') {
-		await emitter.emitError({ kind: 'until', error: pollResult.error })
+		await emitter.emitError({ kind: 'until', error: pollResult.error }, true)
 		process.exitCode = 1
 		return
 	}

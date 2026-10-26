@@ -1,6 +1,6 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
-import { jsonOption } from './sharedOptions.js'
+import { actionOptions, jsonOption } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
 const runDomScrollTo = lazyAction(() => import('../../commands/domScrollTo.js').then((mod) => mod.runDomScrollTo))
@@ -16,6 +16,7 @@ export const scrollToCommand: ArgusCommandDefinition = {
 		{ flags: '--by <x,y>', description: 'Scroll by delta (viewport or element)' },
 		{ flags: '--all', description: 'Allow multiple matches (default: error if >1 match)' },
 		{ flags: '--text <string>', description: 'Filter by textContent (trimmed). Supports /regex/flags syntax' },
+		...actionOptions,
 		jsonOption,
 	],
 	examples: [

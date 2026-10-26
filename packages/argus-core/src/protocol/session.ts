@@ -82,6 +82,12 @@ export type SessionErrorResponse = SessionResponseBase & {
 	error: ErrorDetail
 	/** The `process.exitCode` the command set, or `1` for transport-level failures. */
 	exitCode: number
+	/**
+	 * The command's own `ok: false` document, when it wrote one. `error` repeats its detail; this
+	 * keeps the rest — the action receipt and `until` outcome of a missed `--until`, an `eval-until`
+	 * miss's `last` value, a thrown eval's `exception`.
+	 */
+	result?: unknown
 }
 
 export type SessionResponse = SessionSuccessResponse | SessionErrorResponse

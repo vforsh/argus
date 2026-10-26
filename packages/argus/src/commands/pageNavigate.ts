@@ -7,7 +7,7 @@ import type {
 	NavigationWait,
 } from '@vforsh/argus-core'
 import { DEFAULT_NAVIGATION_TIMEOUT_MS, DEFAULT_NAVIGATION_WAIT, NAVIGATION_WAITS } from '@vforsh/argus-core'
-import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import { defineActionCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import { parseDurationFlagMs } from './evalShared.js'
 import type { Output } from '../output/io.js'
 
@@ -65,7 +65,7 @@ const navigationPlan = (path: string, body: unknown, timeoutMs: number): Watcher
 })
 
 /** `argus page goto [id] <url>` (also `argus goto`) — navigate the attached page. */
-export const runPageGoto = defineWatcherCommand<PageGotoOptions, NavigateResponse, NavigateRequest, [url: string | undefined]>({
+export const runPageGoto = defineActionCommand<PageGotoOptions, NavigateResponse, NavigateRequest, [url: string | undefined]>({
 	build: ([url], options, output) => {
 		const trimmedUrl = url?.trim()
 		const hasParam = (options.param?.length ?? 0) > 0
@@ -91,7 +91,7 @@ export const runPageGoto = defineWatcherCommand<PageGotoOptions, NavigateRespons
 })
 
 /** Internal runner behind `back` and `forward`; the direction rides as a positional arg. */
-const historyRunner = defineWatcherCommand<PageHistoryOptions, NavigateHistoryResponse, NavigateHistoryRequest, [NavigationDirection]>({
+const historyRunner = defineActionCommand<PageHistoryOptions, NavigateHistoryResponse, NavigateHistoryRequest, [NavigationDirection]>({
 	build: ([direction], options, output) => {
 		const steps = options.steps == null ? 1 : Number(options.steps)
 		if (!Number.isInteger(steps) || steps < 1) {

@@ -82,3 +82,27 @@ export const evalRequestSchema = defineProtocolSchema<EvalRequest>((value) => {
 
 	return validProtocolPayload(compact({ ...fields.value, args: fields.value.args as Record<string, string> | undefined }))
 })
+
+/** Descriptions the watcher sends for falsy values CDP cannot return by value. */
+const FALSY_UNSERIALIZABLE: Readonly<Record<string, readonly string[]>> = {
+	number: ['NaN', '-0'],
+	bigint: ['0n'],
+}
+
+/**
+ * JavaScript truthiness of an eval reply's `result`.
+ *
+ * CDP cannot return `undefined`, `NaN`, `-0` or bigints by value, so the watcher sends their
+ * descriptions as strings ("undefined", "NaN", "-0", "0n") — all of which `Boolean()` calls
+ * truthy. Polling on `Boolean(result)` therefore matched `window.APP_READY` before the app set it.
+ *
+ * @param response - An eval reply; only `result` and `type` are read.
+ * @returns Whether the evaluated value was truthy in the page.
+ */
+export const isTruthyEvalResult = (response: Pick<EvalResponse, 'result' | 'type'>): boolean => {
+	if (response.type === 'undefined') return false
+	if (typeof response.result === 'string' && response.type != null && FALSY_UNSERIALIZABLE[response.type]?.includes(response.result)) {
+		return false
+	}
+	return Boolean(response.result)
+}

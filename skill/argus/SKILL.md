@@ -45,14 +45,14 @@ One-time: `argus extension install` (installs native hosts, opens `chrome://exte
 open -a "Google Chrome" "https://portal.example/app"
 argus ext doctor --json                              # bridge + extension healthy?
 argus ext tabs --url portal.example --json           # pick the tab; ambiguous matches fail closed
-argus ext use --url portal.example --as app --json   # attach (or reuse) → watcher id "app"
+argus ext use --url portal.example --as app --json   # attach (or reuse) → {watcherId, controlId, tab, attached, targetReady}; --verbose for full status
 argus ext use --tab <tabId> --as app                 # exact tab when several match
 argus ext use --url portal.example --pick newest     # or --pick active|first; an exact URL match wins on its own
 argus ext use --open https://portal.example/x --as app  # reuse that exact URL, else open a tab and attach
 argus page url app
 ```
 
-If Chrome and Codex @Browser both run Argus, `ext tabs` without `--id`/`--browser` lists both browsers' tabs grouped by control, and `ext use --url/--title/--tab` uses the one browser whose tabs match; other control commands, and selectors matching in several browsers, fail with `ambiguous_control` and list the candidates. Pick one and use it consistently (`--browser <label>` works once labeled): `argus ext tabs --id extension-control-2 --json`, then `argus ext use --id extension-control-2 --tab <tabId> --as app`. `--id` also selects the control instance for `attach`, `detach`, `show`, `targets` (when resolving a tab), `mute`, and `unmute`. `ext doctor --watcher app` finds its owning control; `--id` selects one explicitly. Explicit names are exact: `--as`, `start --id`, and `watcher start --id` fail with `watcher_id_taken` while another live watcher holds the name (no silent `app-2`). Re-attaching a tab without `--as` (CLI or popup) reuses its previous name while the tab keeps its origin. `argus ext detach app` detaches by watcher id. A successful attach means the tab watcher completed bootstrap; `--no-wait` skips only the CLI's final status poll.
+If Chrome and Codex @Browser both run Argus, `ext tabs` without `--id`/`--browser` lists both browsers' tabs grouped by control, and `ext use --url/--title/--tab` uses the one browser whose tabs match; `ext doctor` and `ext browsers` report every browser; mutating control commands, and selectors matching in several browsers, fail with `ambiguous_control` and list the candidates. Pick one and use it consistently (`--browser <label>` works once labeled): `argus ext tabs --id extension-control-2 --json`, then `argus ext use --id extension-control-2 --tab <tabId> --as app`. `--id` also selects the control instance for `attach`, `detach`, `show`, `targets` (when resolving a tab), `mute`, and `unmute`. `ext doctor --watcher app` finds its owning control; `--id` selects one explicitly. Explicit names are exact: `--as`, `start --id`, and `watcher start --id` fail with `watcher_id_taken` while another live watcher holds the name (no silent `app-2`). Re-attaching a tab without `--as` (CLI or popup) reuses its previous name while the tab keeps its origin. `argus ext detach app` detaches by watcher id. A successful attach means the tab watcher completed bootstrap; `--no-wait` skips only the CLI's final status poll.
 
 **Agent-opened tab (Codex @Browser, CUA): bind by ticket, never by URL.** Same-URL tabs in other chats or browsers make URL matching unsafe.
 
@@ -94,7 +94,7 @@ Headless `start` defaults to a 1280×900 CSS viewport at DPR 1. Override with `-
 ## Core Loop
 
 ```bash
-argus list                                           # watchers + Chrome instances
+argus list                                           # watchers + Chrome instances; dead processes are dropped, [unreachable] = alive but not answering
 argus logs app --since 10m --levels error,warning
 argus screenshot app --out shot.png
 argus snapshot app --interactive                     # a11y tree with refs (e5, e12…)
@@ -116,9 +116,16 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 
 **Navigate**: `argus goto app /checkout` (relative, `?tab=2`, `#top`, `localhost:3000` all resolve in the watcher), `argus page back app`, `argus reload app`. Bare `settings` is a host, write `/settings`.
 
-**Interact**: `click`, `drag`, `hover`, `fill`, `keydown`, `scroll-to`. Target with `--selector`, `--testid`, `--ref eN` (from `snapshot`/`locate`), or `--pos x,y`. `--all` allows multiple matches; `--text /regex/` filters trimmed text in the selected document’s isolated world (plain text is exact, CSS selection does not pierce shadow roots); `--wait 5s` polls for the selector. `argus locate role app button --name Save --action click` finds and acts in one step.
+**Interact**: `click`, `drag`, `hover`, `fill`, `keydown`, `scroll-to`. Target with `--selector`, `--testid`, `--ref eN` (from `snapshot`/`locate`), or `--pos x,y`. `--all` allows multiple matches; `--text /regex/` filters trimmed text in the selected document’s isolated world (plain text is exact, CSS selection does not pierce shadow roots); `--wait 5s` polls for the selector. `argus locate role app button --name Save --action click` finds and acts in one step. `hover --pos x,y` hovers a bare point; `keydown app Escape` takes the key positionally.
 
-**Eval scripts**: `eval --file ./script.js --body` supports local declarations, `await`, and an explicit `return`; also works with inline/stdin input. Default eval keeps REPL completion values and top-level await. Successful output preserves full nested values; `--no-return-by-value` requests a preview. Canvas key handlers need a focusable canvas and `keydown --selector canvas`.
+**Wait for the result, never `sleep`**: every action (`click`, `hover`, `drag`, `fill`, `keydown`, `scroll-to`, `reload`, `goto`, `page back/forward`) takes `--until <expr>` and returns once that page expression is truthy (throws count as "not yet"; `--until-timeout`, default 15s). A miss exits 1 with `wait_timeout` and the last value; the action already ran. `-q` silences success output ([INTERACT.md](./reference/INTERACT.md#wait-for-the-result---until)).
+
+```bash
+argus click app --testid save --until "document.querySelector('.toast-saved')" --json
+argus reload app --until "typeof window.appctl !== 'undefined'" --until-timeout 60s
+```
+
+**Eval scripts**: `eval --file ./script.js --body` supports local declarations, `await`, and an explicit `return`; also works with inline/stdin input. Default eval keeps REPL completion values and top-level await. Successful output preserves full nested values, so return objects directly: wrapping them in `JSON.stringify` makes `--json` emit an escaped string. `--no-return-by-value` requests a preview. Canvas key handlers need a focusable canvas and `keydown --selector canvas`.
 
 **Multi-step suites**: write a bundled TypeScript scenario (`export default async function scenario(ctx)`) and run `argus eval app --file ./scenario.ts --arg level=3 --json`; `ctx` exposes screenshots, checkpoints, recordings, log sessions, and `ctx.progress(value)`, whose last value is returned (with `timedOut`) when the eval hits its timeout. Many sequential commands from a harness: `argus session app` (JSONL over stdin, one process). Session deadlines bound watcher requests; a timed-out dispatched mutation returns an uncertain outcome, so inspect state before retrying.
 
@@ -127,6 +134,8 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 ## Conventions
 
 - **Durations**: `500ms`, `5s`, `2m`, `1h`; bare numbers are milliseconds.
+- **`--json` failures** always put one `{ "ok": false, "error": { "message", "code" } }` document on stdout with a non-zero exit (stderr may carry the same text as prose): branch on `ok`, then `error.code`. Bad flags/arguments exit 2 with `invalid_request`. Unknown watcher ids add `candidates`; a thrown eval adds `exception: { text, description }`.
+- **Shrink output instead of piping to `head`/`cut`**: `eval`, `logs`, and `net` take `--fields a,b.c` (keep only these dot paths per record; arrays project each element) and `--max-chars <n>` (cap with an explicit `… [truncated …; raise --max-chars]` marker; JSON stays valid). `argus net app --json --fields id,url,status --max-chars 4000`. With `--max-chars`, `logs`/`net` `--json` becomes `{ events|requests, truncated, omitted }`; eval sets `truncated: true, totalChars` and a string prefix `result` when cut. `--out` files are never shaped.
 - **`--out` paths** (`screenshot`, `record`, `trace`, `eval --out`) are absolute or relative to _your_ cwd. Response `outFile` is absolute.
 - **Selected iframe** (extension mode) is the target for eval/DOM/interaction/capture. `net` and `net mock add` default to the selected iframe too; `--scope tab|page` opts out.
 - **Keyboard needs focus**: `keydown` activates a hidden page (same sticky lock as `page show`) and reports `activated: true`; release with `argus page hide app`.
@@ -165,13 +174,16 @@ Read the error code before retrying or raising a timeout.
 
 | Code                            | Meaning                                         | Do                                                                                                                  |
 | ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Watcher not found               | id not in registry                              | `argus list`, `argus watcher prune`, reattach                                                                       |
+| `watcher_not_found`             | id not in registry (`candidates` lists live ids) | `argus list`, `argus watcher prune`, reattach                                                                       |
+| `eval_exception`                | the expression threw                            | read `exception.description` (message + stack); fix the expression, don't retry                                      |
+| `wait_timeout`                  | `--until` / `wait` condition never truthy       | read `last`; the action (if any) already ran — don't blindly repeat it                                              |
 | "failed to reach watcher"       | process gone / hung                             | `argus watcher status <id>`, `argus doctor`                                                                         |
 | `chrome_unreachable`            | CDP endpoint down                               | `argus chrome status --cdp 127.0.0.1:9222`; restart Chrome                                                          |
 | `cdp_not_attached`              | watcher has no target yet                       | check `--url/--type` match; `argus page ls --tree`                                                                  |
 | `cdp_target_replaced`           | target swapped, reattaching                     | retry                                                                                                               |
 | `cdp_renderer_unresponsive`     | main thread blocked                             | `argus reload <id>`                                                                                                 |
-| `cdp_timeout`                   | expression exceeded its deadline                | the only case a longer `--timeout` fixes                                                                            |
+| `cdp_timeout`                   | expression exceeded its deadline                | the only case a longer `--timeout` fixes; for waits use `eval-until`                                                |
+| `extension_bridge_unresponsive` | extension worker/native channel stalled         | `argus ext doctor --watcher <id>`; reload the extension at chrome://extensions                                     |
 | `dialog_blocking`               | alert/confirm/prompt open                       | `argus dialog accept <id>` or `dialog dismiss <id>`                                                                 |
 | `extension_frame_not_ready`     | selected iframe missing/booting                 | wait, `argus ext targets <id> --tree`, or `ext select --page`                                                       |
 | `target_not_focused`            | page could not be activated for keyboard        | `argus page show <id>` then retry                                                                                   |

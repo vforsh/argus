@@ -1,5 +1,5 @@
 import type { ReloadResponse } from '@vforsh/argus-core'
-import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
+import { defineActionCommand } from '../cli/defineWatcherCommand.js'
 
 /** Options for the reload command. */
 export type ReloadOptions = {
@@ -8,7 +8,7 @@ export type ReloadOptions = {
 }
 
 /** Execute the reload command for a watcher id. */
-export const runReload = defineWatcherCommand<ReloadOptions, ReloadResponse>({
+export const runReload = defineActionCommand<ReloadOptions, ReloadResponse>({
 	build: (_args, options) => ({
 		path: '/reload',
 		method: 'POST',

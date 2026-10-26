@@ -88,7 +88,8 @@ export const dispatchSessionRequest = async (input: SessionDispatchInput): Promi
 		return fromThrownError(respond, settled.error, stdout, stderr)
 	}
 	if (exitCode !== 0) {
-		return respond.failure(errorDetailFrom(stdout, stderr), exitCode, stderr)
+		const document = decodeStdout(stdout).result
+		return respond.failure(errorDetailFrom(stdout, stderr), exitCode, stderr, isFailureDocument(document) ? document : undefined)
 	}
 
 	return respond.success(stdout, stderr)
@@ -165,8 +166,11 @@ const errorDetailFrom = (stdout: string, stderr: string): ErrorDetail => {
 
 type Responder = {
 	success: (stdout: string, stderr: string) => SessionResponse
-	failure: (error: ErrorDetail, exitCode: number, stderr?: string) => SessionResponse
+	failure: (error: ErrorDetail, exitCode: number, stderr?: string, result?: unknown) => SessionResponse
 }
+
+const isFailureDocument = (document: unknown): document is { ok: false } =>
+	document != null && typeof document === 'object' && (document as { ok?: unknown }).ok === false
 
 /**
  * Bind the fields both response arms share — the correlation id and the elapsed time — so the
@@ -178,7 +182,7 @@ const createResponder = (request: SessionRequest, startedAt: number): Responder 
 
 	return {
 		success: (stdout, stderr) => ({ ...id, ok: true, ...decodeStdout(stdout), ...trailer(stderr) }),
-		failure: (error, exitCode, stderr = '') => ({ ...id, ok: false, error, exitCode, ...trailer(stderr) }),
+		failure: (error, exitCode, stderr = '', result) => ({ ...id, ok: false, error, exitCode, ...(result === undefined ? {} : { result }), ...trailer(stderr) }),
 	}
 }
 

@@ -291,7 +291,7 @@ export const extensionCommands: readonly ArgusCommandDefinition[] = [
 			{
 				name: 'use',
 				description: 'Resolve or attach an extension tab and print its watcher id',
-				options: useTargetOptions,
+				options: [...useTargetOptions, { flags: '--verbose', description: 'With --json, include the full tab, watcher status, and selected target' }],
 				examples: [
 					'argus ext use --url localhost --as app',
 					'argus ext use --url vk.com/app --as vk-game --iframe-url stark.games',

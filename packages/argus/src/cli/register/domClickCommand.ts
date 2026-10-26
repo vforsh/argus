@@ -1,4 +1,5 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
+import { actionOptions, jsonOption } from './sharedOptions.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
 import { lazyAction } from '../lazyAction.js'
 
@@ -20,7 +21,8 @@ export const domClickCommandDefinition: ArgusCommandDefinition = {
 		{ flags: '--wait <duration>', description: 'Wait for selector to appear (e.g. 5s, 500ms)' },
 		{ flags: '--wait-nav [mode]', description: 'Wait for a top-frame navigation after the click: load (default), domcontentloaded, none' },
 		{ flags: '--nav-timeout <duration>', description: 'Budget for --wait-nav (e.g. 10s). Default: 10s' },
-		{ flags: '--json', description: 'Output JSON for automation' },
+		...actionOptions,
+		jsonOption,
 	],
 	examples: [
 		'argus click app --pos 100,200',
@@ -33,6 +35,7 @@ export const domClickCommandDefinition: ArgusCommandDefinition = {
 		'argus click app --pos 100,200 --button middle',
 		'argus click app --selector "a.next" --wait-nav',
 		'argus click app --selector "a.next" --wait-nav domcontentloaded --nav-timeout 5s',
+		'argus click app --selector "#open" --until "document.querySelector(\'.modal\')" --json',
 	],
 	action: async (id, options) => {
 		if (!resolveTestId(options)) return

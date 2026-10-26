@@ -1,5 +1,6 @@
 import { Command, CommanderError } from 'commander'
 import packageJson from '../../package.json' with { type: 'json' }
+import { isJsonRequested, writeJsonFailureFallback } from '../output/io.js'
 
 export type CreateProgramOptions = {
 	/**
@@ -44,6 +45,10 @@ const throwOnExit = (error: CommanderError): never => {
  * `(outputHelp)` placeholder after `argus help <cmd>`.
  */
 const exitProcess = (error: CommanderError): never => {
+	if (error.exitCode !== 0 && isJsonRequested(process.argv.slice(2))) {
+		// Unknown flags and missing arguments are the most common `--json` failures agents hit.
+		writeJsonFailureFallback(2, error.message.replace(/^error:\s*/, '').replace(/\s*\n\s*/g, ' ').trim())
+	}
 	process.exit(error.exitCode === 0 ? 0 : 2)
 }
 

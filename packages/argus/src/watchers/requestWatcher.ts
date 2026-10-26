@@ -21,7 +21,7 @@ import type { Output } from '../output/io.js'
 import { setExitCode } from '../output/exitCode.js'
 import { fetchJson } from '../httpClient.js'
 import { formatWatcherLine } from '../output/format.js'
-import { invalidateWatcher, resolveWatcher } from './resolveWatcher.js'
+import { invalidateWatcher, resolveWatcher, type ResolveWatcherResult } from './resolveWatcher.js'
 
 // ---------------------------------------------------------------------------
 // Request helper
@@ -74,7 +74,7 @@ export async function requestWatcherJson<T>(input: WatcherRequestInput): Promise
 			exitCode: resolved.exitCode,
 			message: resolved.error,
 			candidates: resolved.candidates,
-			code: 'not_found',
+			code: resolved.code ?? 'not_found',
 			failureKind: 'resolve',
 		}
 	}
@@ -140,14 +140,7 @@ export async function resolveWatcherOrExit(input: { id?: string }, output: Outpu
 
 /** Write a request error (including any watcher candidates) to output and report its exit code. */
 export function writeRequestError(result: WatcherRequestError, output: Output): void {
-	output.writeWarn(result.message)
-	if (result.candidates && result.candidates.length > 0) {
-		for (const watcher of result.candidates) {
-			output.writeWarn(formatWatcherLine(watcher))
-		}
-		output.writeWarn('Hint: run `argus list` to see all watchers.')
-	}
-	setExitCode(result.exitCode)
+	writeWatcherFailure(output, { message: result.message, code: result.code, exitCode: result.exitCode, candidates: result.candidates })
 }
 
 /** Write an ErrorResponse using JSON/stdout vs human/stderr conventions. */
@@ -190,16 +183,46 @@ export async function requestWatcherAction<T extends { ok: true }>(
 }
 
 /** Write resolve-watcher error output. */
-function writeResolveError(resolved: { ok: false; error: string; exitCode: number; candidates?: WatcherRecord[] }, output: Output): void {
-	output.writeWarn(resolved.error)
-	if (resolved.candidates && resolved.candidates.length > 0) {
-		for (const watcher of resolved.candidates) {
+function writeResolveError(resolved: Extract<ResolveWatcherResult, { ok: false }>, output: Output): void {
+	writeWatcherFailure(output, { message: resolved.error, code: resolved.code, exitCode: resolved.exitCode, candidates: resolved.candidates })
+}
+
+/**
+ * The one printer for "could not reach a watcher" failures.
+ *
+ * `--json` callers used to get these as prose on stderr and an empty stdout, so every
+ * `argus … --json | jq` pipeline died on a parse error instead of reading the code. JSON mode
+ * writes the standard `ok: false` envelope, with candidates trimmed to what picks the next id.
+ */
+function writeWatcherFailure(
+	output: Output,
+	failure: { message: string; code?: WatcherRequestError['code']; exitCode: number; candidates?: WatcherRecord[] },
+): void {
+	const candidates = failure.candidates ?? []
+	if (output.json && !output.hasWrittenJson?.()) {
+		output.writeJson({
+			ok: false,
+			error: failure.code ? { message: failure.message, code: failure.code } : { message: failure.message },
+			...(candidates.length > 0 ? { candidates: candidates.map(summarizeCandidate) } : {}),
+		})
+	} else {
+		output.writeWarn(failure.message)
+		for (const watcher of candidates) {
 			output.writeWarn(formatWatcherLine(watcher))
 		}
-		output.writeWarn('Hint: run `argus list` to see all watchers.')
+		if (candidates.length > 0) {
+			output.writeWarn('Hint: run `argus list` to see all watchers.')
+		}
 	}
-	setExitCode(resolved.exitCode)
+	setExitCode(failure.exitCode)
 }
+
+const summarizeCandidate = (watcher: WatcherRecord) => ({
+	id: watcher.id,
+	...(watcher.match ? { match: watcher.match } : {}),
+	...(watcher.cwd ? { cwd: watcher.cwd } : {}),
+	...(watcher.source ? { source: watcher.source } : {}),
+})
 
 /** Preserve bounded technical identity without reflecting request payloads or arbitrary cause messages. */
 const technicalCause = (error: unknown): { name: string; code?: string } | undefined => {
@@ -225,7 +248,8 @@ const boundBrowserRequest = (path: string, body: unknown, transportMs: number): 
 	}
 }
 
-const watcherFailureCode = (error: unknown): ArgusWatcherRequestError['code'] => {
+/** Machine-readable code for a failed watcher request; eval runs its own transport and reuses it. */
+export const watcherFailureCode = (error: unknown): ArgusWatcherRequestError['code'] => {
 	if (isHttpRequestAbortedError(error)) return 'request_cancelled'
 	if (isHttpTimeoutError(error)) return 'transport_timeout'
 	if (isHttpResponseError(error)) return isArgusErrorCode(error.code) ? error.code : 'http_error'

@@ -1,6 +1,6 @@
 import type { DomKeydownResponse } from '@vforsh/argus-core'
 import { DEFAULT_INTERACTION_NAV_TIMEOUT_MS } from '@vforsh/argus-core'
-import { defineWatcherCommand } from '../cli/defineWatcherCommand.js'
+import { defineActionCommand } from '../cli/defineWatcherCommand.js'
 import { describeNavigation, parseNavWaitFlags, type NavWaitFlags } from './dom/shared.js'
 
 /** Options for the dom keydown command. */
@@ -42,7 +42,7 @@ const mergeModifierOptions = (options: DomKeydownOptions): string | undefined =>
 }
 
 /** Execute the dom keydown command for a watcher id. */
-export const runDomKeydown = defineWatcherCommand<DomKeydownOptions, DomKeydownResponse>({
+export const runDomKeydown = defineActionCommand<DomKeydownOptions, DomKeydownResponse>({
 	build: (_args, options, output) => {
 		const key = normalizeOptionalString(options.key)
 		const code = normalizeOptionalString(options.code)

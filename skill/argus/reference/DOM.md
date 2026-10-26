@@ -25,7 +25,7 @@ argus locate label app "Email" --action fill --value "me@x.io"   # form control 
 argus locate role app link --all --json
 ```
 
-`locate` errors on >1 match unless `--all`; `--exact` requires exact normalized text. `--action` runs `click`, `fill`, `focus`, or `hover` on the single match. Refs (`e5`) are watcher-local handles on backend node ids: stable for the lifetime of the document, gone after navigation/reload (`invalid_ref`). Re-run `snapshot`/`locate` to mint fresh ones.
+Argus's own page indicator (the "Argus watcher: copy info" / "details" buttons and dialog) is excluded from `snapshot` and `locate`. `locate` errors on >1 match unless `--all`; `--exact` requires exact normalized text. `--action` runs `click`, `fill`, `focus`, or `hover` on the single match. Refs (`e5`) are watcher-local handles on backend node ids: stable for the lifetime of the document, gone after navigation/reload (`invalid_ref`). Re-run `snapshot`/`locate` to mint fresh ones.
 
 ## Inspect
 

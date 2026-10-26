@@ -18,6 +18,9 @@ export type DomTargetRequestBody = {
 	text?: string
 	/** Optional bounded wait (ms) for the selector to match before resolving. */
 	wait?: number
+	/** Viewport point, accepted only by routes that declare `runAtPoint`. */
+	x?: number
+	y?: number
 }
 
 type DomTargetRouteInput<TBody extends DomTargetRequestBody, TExtra extends object> = {
@@ -43,6 +46,11 @@ type DomTargetRouteInput<TBody extends DomTargetRequestBody, TExtra extends obje
 	 * empty arrays) so the route response shape stays consistent.
 	 */
 	run: (input: { handles: DomNodeHandle[]; allHandles: DomNodeHandle[]; payload: TBody; ctx: RouteContext }) => Promise<TExtra> | TExtra
+	/**
+	 * Act on a bare viewport point instead of an element (`hover --pos`). Only consulted when
+	 * the schema let a body through with x/y and no selector/ref; reported as zero matches.
+	 */
+	runAtPoint?: (input: { x: number; y: number; payload: TBody; ctx: RouteContext }) => Promise<TExtra> | TExtra
 }
 
 /**
@@ -62,6 +70,11 @@ export const defineDomTargetRoute = <TBody extends DomTargetRequestBody, TExtra 
 		bodySchema: input.bodySchema,
 		endpoint: input.endpoint,
 		handle: async ({ res, ctx, body: payload }) => {
+			if (input.runAtPoint && payload.selector == null && payload.ref == null && payload.x != null && payload.y != null) {
+				const extra = await input.runAtPoint({ x: payload.x, y: payload.y, payload, ctx })
+				return { ok: true, matches: 0, ...extra }
+			}
+
 			const all = payload.all ?? false
 			const resolved = await resolveElementTargets(ctx.cdpSession, ctx.elementRefs, {
 				selector: payload.selector,

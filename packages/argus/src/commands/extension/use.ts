@@ -26,6 +26,8 @@ export type ExtensionUseOptions = {
 	iframeTitle?: string
 	show?: boolean
 	json?: boolean
+	/** Full tab, status, and target in `--json` output. */
+	verbose?: boolean
 }
 
 export const runExtensionUse = async (options: ExtensionUseOptions): Promise<void> => {
@@ -46,7 +48,7 @@ export const runExtensionUse = async (options: ExtensionUseOptions): Promise<voi
 		return
 	}
 
-	if (options.json) {
+	if (options.json && options.verbose) {
 		output.writeJson({
 			ok: true,
 			watcherId: resolved.watcher.id,
@@ -55,6 +57,21 @@ export const runExtensionUse = async (options: ExtensionUseOptions): Promise<voi
 			tab: resolved.tab,
 			status: resolved.status,
 			selectedTarget,
+		})
+		return
+	}
+	if (options.json) {
+		// Essentials only: the full status/tab dump was most of the output and agents cut it with `head`.
+		const { tabId, url, title } = resolved.tab
+		output.writeJson({
+			ok: true,
+			watcherId: resolved.watcher.id,
+			controlId: resolved.controlWatcher.id,
+			tab: { tabId, url, title },
+			attached: resolved.status?.attached ?? true,
+			targetReady: resolved.status?.targetReady ?? null,
+			...(resolved.opened ? { opened: true } : {}),
+			...(selectedTarget ? { selectedTarget: { id: selectedTarget.id, type: selectedTarget.type, url: selectedTarget.url } } : {}),
 		})
 		return
 	}

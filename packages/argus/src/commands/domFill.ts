@@ -1,5 +1,5 @@
 import type { DomFillResponse } from '@vforsh/argus-core'
-import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import { defineActionCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
 import { describeElementTarget, parseWaitDuration, requireElementTarget, writeNoElementFound } from './dom/shared.js'
 import { readTextInput, selectTextInput } from './inputSource.js'
@@ -19,7 +19,7 @@ export type DomFillOptions = {
 }
 
 /** Execute the dom fill command for a watcher id. The first positional arg is the inline value. */
-export const runDomFill = defineWatcherCommand<DomFillOptions, DomFillResponse, unknown, [value: string | undefined]>({
+export const runDomFill = defineActionCommand<DomFillOptions, DomFillResponse, unknown, [value: string | undefined]>({
 	build: async ([value], options, output) => buildFillPlan(value, options, output),
 	formatHuman: (response, { output, options }) => {
 		const target = { selector: resolveFillSelector(options), ref: options.ref }

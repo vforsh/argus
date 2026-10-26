@@ -11,7 +11,10 @@ argus net app --after 42 --limit 100          # paginate by Argus request id
 argus net summary app                          # counts by host/type/status
 argus net tail app --grep api --json           # long-poll stream (NDJSON); --timeout <ms>
 argus net clear app                            # reset buffer
+argus net app --json --fields id,method,url,status,durationMs --max-chars 4000
 ```
+
+**Output shaping** (`net` list only): `--fields a,b.c` keeps only those dot paths of each request; human mode then prints one compact JSON line per request. `--max-chars <n>` keeps leading requests while they fit `n` chars: human mode ends with `… [truncated K of N records; raise --max-chars]`; `--json` switches to `{ "requests": [...], "truncated": bool, "omitted": K }` whenever `--max-chars` is set (a plain array otherwise).
 
 ## Filters (all list/summary/watch/export/inspect commands)
 

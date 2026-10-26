@@ -1,5 +1,5 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
-import { jsonOption } from './sharedOptions.js'
+import { jsonOption, outputShapingOptions } from './sharedOptions.js'
 import { usageError } from '../validation.js'
 import { lazyAction } from '../lazyAction.js'
 
@@ -17,6 +17,7 @@ const sharedEvalHeadOptions = (timeoutDescription: string): readonly ArgusComman
 	{ flags: '--no-fail-on-exception', description: 'Do not exit with code 1 when the evaluation throws' },
 	{ flags: '--retry <n>', description: 'Retry failed evaluations up to N times' },
 	{ flags: '-q, --silent', description: 'Suppress success output; only emit output on error' },
+	...outputShapingOptions,
 ]
 
 /** Trailing input/args options shared verbatim between `eval` and `eval-until`. */
@@ -67,6 +68,7 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			'argus eval app "document.title" --no-fail-on-exception',
 			'argus eval app "1+1" --retry 3',
 			'argus eval app "1+1" --silent',
+			'argus eval app "window.store.getState()" --fields user.id,cart.items --max-chars 2000',
 			'argus eval app "Date.now()" --interval 500 --count 10',
 			'argus eval app "document.title" --interval 250 --until \'result === "ready"\'',
 		],

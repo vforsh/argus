@@ -20,6 +20,15 @@ const ICONS = {
 	error: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
 } as const
 
+/**
+ * DOM ids of the indicator's page UI (the floating buttons and the details dialog).
+ *
+ * `cdp/accessibility.ts` drops these subtrees from `snapshot`/`locate` so agents don't see Argus's own
+ * "copy info"/"details" buttons as page content. The ids are the stable contract; hiding the UI from
+ * assistive tech (aria-hidden) was rejected because humans using screen readers still need it.
+ */
+export const PAGE_INDICATOR_DOM_IDS = { indicator: 'argus-watcher-indicator', dialog: 'argus-watcher-indicator-dialog' } as const
+
 const COPY_ICON_SIZE = 15
 const INFO_REVEAL_DELAY_MS = 1500
 const INFO_REVEAL_DURATION_MS = 100
@@ -42,9 +51,9 @@ export const buildInstallExpression = (params: InstallExpressionParams): string 
 
 	return `
 (function() {
-  var INDICATOR_ID = 'argus-watcher-indicator';
+  var INDICATOR_ID = '${PAGE_INDICATOR_DOM_IDS.indicator}';
   var STYLE_ID = 'argus-watcher-indicator-style';
-  var DIALOG_ID = 'argus-watcher-indicator-dialog';
+  var DIALOG_ID = '${PAGE_INDICATOR_DOM_IDS.dialog}';
   var STATE_KEY = '__ARGUS_WATCHER_INDICATOR__';
   var INFO_VISIBLE_CLASS = '${INFO_VISIBLE_CLASS}';
   var ICONS = ${iconJson};
@@ -360,7 +369,7 @@ export const buildHeartbeatExpression = (info: PageIndicatorInfo, state: PageInd
 
 	return `
 (function() {
-  var INDICATOR_ID = 'argus-watcher-indicator';
+  var INDICATOR_ID = '${PAGE_INDICATOR_DOM_IDS.indicator}';
   var STATE_KEY = '__ARGUS_WATCHER_INDICATOR__';
   var nextState = ${stateJson};
   var state = window[STATE_KEY];
@@ -390,9 +399,9 @@ export const buildHeartbeatExpression = (info: PageIndicatorInfo, state: PageInd
 export const buildRemoveExpression = (): string => {
 	return `
 (function() {
-  var INDICATOR_ID = 'argus-watcher-indicator';
+  var INDICATOR_ID = '${PAGE_INDICATOR_DOM_IDS.indicator}';
   var STYLE_ID = 'argus-watcher-indicator-style';
-  var DIALOG_ID = 'argus-watcher-indicator-dialog';
+  var DIALOG_ID = '${PAGE_INDICATOR_DOM_IDS.dialog}';
   var STATE_KEY = '__ARGUS_WATCHER_INDICATOR__';
   var state = window[STATE_KEY];
   if (state && state.timerId) {
