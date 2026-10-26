@@ -99,7 +99,7 @@ argus logs app --since 10m --levels error,warning
 argus screenshot app --out shot.png
 argus snapshot app --interactive                     # a11y tree with refs (e5, e12…)
 argus eval app "({ title: document.title, href: location.href })" --json
-argus wait app "document.readyState === 'complete'" --total-timeout 30s
+argus wait app "document.readyState === 'complete'" --total-timeout 30s   # throws = not yet; --fail-on-exception to stop
 ```
 
 **Race-free verification**: take a cursor, act, read only what followed.

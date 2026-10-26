@@ -8,13 +8,13 @@ const runEvalUntil = lazyAction(() => import('../../commands/evalUntil.js').then
 
 const collectValue = (value: string, previous: string[] = []): string[] => [...previous, value]
 
-/** Leading options shared verbatim between `eval` and `eval-until` (help order matters). */
-const sharedEvalHeadOptions = (timeoutDescription: string): readonly ArgusCommandOption[] => [
+/** Leading options shared between `eval` and `eval-until` (help order matters). */
+const sharedEvalHeadOptions = (timeoutDescription: string, exceptionOptions: readonly ArgusCommandOption[]): readonly ArgusCommandOption[] => [
 	{ flags: '--no-await', description: 'Do not await promises' },
 	{ flags: '--timeout <duration>', description: timeoutDescription },
 	jsonOption,
 	{ flags: '--no-return-by-value', description: 'Disable returnByValue (use preview)' },
-	{ flags: '--no-fail-on-exception', description: 'Do not exit with code 1 when the evaluation throws' },
+	...exceptionOptions,
 	{ flags: '--retry <n>', description: 'Retry failed evaluations up to N times' },
 	{ flags: '-q, --silent', description: 'Suppress success output; only emit output on error' },
 	...outputShapingOptions,
@@ -43,7 +43,9 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '[expression]', description: 'JS expression to evaluate (or use --file / --stdin)' },
 		],
 		options: [
-			...sharedEvalHeadOptions('Eval timeout in milliseconds or duration syntax (e.g. 60000, 60s, 2m)'),
+			...sharedEvalHeadOptions('Eval timeout in milliseconds or duration syntax (e.g. 60000, 60s, 2m)', [
+				{ flags: '--no-fail-on-exception', description: 'Do not exit with code 1 when the evaluation throws' },
+			]),
 			{ flags: '--interval <ms|duration>', description: 'Re-evaluate every interval (e.g. 500, 3s)' },
 			{ flags: '--count <n>', description: 'Stop after N iterations (requires --interval)' },
 			{ flags: '--until <condition>', description: 'Stop when local condition becomes truthy (requires --interval)' },
@@ -87,7 +89,12 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '[expression]', description: 'JS expression to poll until truthy (or use --file / --stdin)' },
 		],
 		options: [
-			...sharedEvalHeadOptions('Per-eval timeout in milliseconds or duration syntax (e.g. 60000, 60s, 2m)'),
+			// eval-until polls through throws by default (the app is still booting), so the opt-in is the
+			// reverse of eval's. `--no-fail-on-exception` stays accepted, hidden, as the old spelling of the default.
+			...sharedEvalHeadOptions('Per-eval timeout in milliseconds or duration syntax (e.g. 60000, 60s, 2m)', [
+				{ flags: '--fail-on-exception', description: 'Stop and exit 1 on the first throw (default: a throw counts as "not yet")' },
+				{ flags: '--no-fail-on-exception', description: 'Keep polling through throws (default)', hidden: true },
+			]),
 			{ flags: '--interval <ms|duration>', description: 'Polling interval (default: 250ms)' },
 			{ flags: '--count <n>', description: 'Stop after N iterations' },
 			{ flags: '--total-timeout <duration>', description: 'Max wall-clock time (e.g. 30s, 2m)' },
@@ -99,6 +106,7 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			'argus eval-until app "document.querySelector(\'#loaded\')"',
 			'argus eval-until app "await window.appReadyPromise"',
 			'argus eval-until app "window.APP_READY" --interval 500',
+			'argus eval-until app "appctl.ready()" --total-timeout 60s',
 			'argus eval-until app "document.title === \'Ready\'" --total-timeout 30s',
 			'argus eval-until app "window.data" --verbose',
 			'argus eval-until app "window.data" --count 20 --interval 1s',

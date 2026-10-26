@@ -1,4 +1,4 @@
-import { isTruthyEvalResult } from '@vforsh/argus-core'
+import { isTruthyEvalResult, type EvalResponse } from '@vforsh/argus-core'
 import { createOutput, type Output } from '../output/io.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { describeConditionReply, formatSeconds, summarizeConditionReply } from './conditionWait.js'
@@ -54,18 +54,21 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		awaitPromise: options.await ?? true,
 		returnByValue: options.returnByValue ?? true,
 		timeoutMs: flags.timeoutMs,
-		failOnException: options.failOnException ?? true,
+		// A throw is "not yet" unless `--fail-on-exception` asks otherwise: `eval-until app "appctl.ready()"`
+		// runs while the app boots, when the ReferenceError is the expected answer. Matches `--until`
+		// (`waitForCondition`); the miss report still names the last exception.
+		failOnException: options.failOnException ?? false,
 		retryCount: flags.retryCount,
 		scenario: prepared.scenario,
 		intervalMs: pollIntervalMs,
 		count: flags.count,
 		totalTimeoutMs: totalTimeoutMs.value,
 		onResult: (response) => {
-			if (!response.result && options.verbose) {
+			if (options.verbose && !isMatch(response)) {
 				writeEvalSuccess(response, options, output, true, flags.shaping)
 			}
 		},
-		shouldStop: ({ response }) => ({ ok: true, matched: isTruthyEvalResult(response) }),
+		shouldStop: ({ response }) => ({ ok: true, matched: isMatch(response) }),
 	})
 
 	if (pollResult.kind === 'matched') {
@@ -99,6 +102,8 @@ export const runEvalUntil = async (id: string | undefined, rawExpression: string
 		process.exitCode = 130
 	}
 }
+
+const isMatch = (response: EvalResponse): boolean => !response.exception && isTruthyEvalResult(response)
 
 /**
  * Report a wait that ran out, with what the expression last returned or threw.

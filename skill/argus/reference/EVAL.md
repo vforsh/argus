@@ -24,7 +24,7 @@ argus eval app "document.title" --json --out ./result.json
 | `--no-await`                 | Do not await returned promises                                                           |
 | `--no-return-by-value`       | Return a preview instead of a serialized value                                           |
 | `--body`                     | Treat input as an async function body; use an explicit `return`, declarations stay local |
-| `--no-fail-on-exception`     | Exit 0 even when the expression throws                                                   |
+| `--no-fail-on-exception`     | `eval`: exit 0 even when the expression throws (`eval-until` polls through throws already) |
 | `--retry <n>`                | Retry failed evaluations                                                                 |
 | `-q, --silent`               | Print only on error                                                                      |
 | `--inject <file>`            | Run this file before the expression                                                      |
@@ -65,7 +65,7 @@ argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rota
 
 ## `eval-until` / `wait`
 
-Poll until the value is truthy in JS terms (`undefined`, `NaN`, `-0`, `0n` count as falsy). Default interval 250ms, intermediate results silent. After an action, prefer the action's own `--until` ([INTERACT.md](./INTERACT.md#wait-for-the-result---until)) over a separate `wait`.
+Poll until the value is truthy in JS terms (`undefined`, `NaN`, `-0`, `0n` count as falsy). A throw counts as "not yet" (same as action `--until`), so `argus wait app "appctl.ready()"` works while the app is still booting; `--fail-on-exception` stops on the first throw instead (exit 1). Default interval 250ms, intermediate results silent. After an action, prefer the action's own `--until` ([INTERACT.md](./INTERACT.md#wait-for-the-result---until)) over a separate `wait`.
 
 ```bash
 argus wait app "document.querySelector('#loaded')"
@@ -75,7 +75,7 @@ argus wait app --file ./ready.js --arg level=10 --total-timeout 20s --out ./read
 argus wait app "window.data" --verbose --count 20
 ```
 
-Flags: `--interval`, `--count`, `--total-timeout` (wall clock), `--verbose` (print falsy iterations), plus every `eval` behavior flag. Exit codes: 0 truthy, 1 error/exhausted, 2 invalid args, 130 interrupted.
+Flags: `--interval`, `--count`, `--total-timeout` (wall clock), `--verbose` (print falsy and throwing iterations), `--fail-on-exception`, plus every other `eval` behavior flag. Without `--total-timeout`/`--count` a throwing expression polls forever. Exit codes: 0 truthy, 1 error/exhausted, 2 invalid args, 130 interrupted.
 
 A miss reports what the expression last returned or threw: human `Total timeout exceeded (10s) after 40 polls; last: false`; JSON `{ ok: false, error: { code: "wait_timeout" | "wait_exhausted" }, iterations, elapsedMs, last: { result, type } | { exception } }`.
 
