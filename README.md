@@ -294,8 +294,8 @@ Once an iframe is the watcher's target, `eval`, `dom`, interaction, and `screens
 
 ```bash
 argus code ls app
-argus code grep showLogsByHost --id app --pretty
-argus code deminify http://127.0.0.1:3000/app.js --id app
+argus code grep app showLogsByHost --pretty
+argus code deminify app http://127.0.0.1:3000/app.js
 argus code strings app --url app.js
 argus code strings app --url app.js --kind url,identifier --match '/admin\\/api/'
 ```

@@ -379,7 +379,7 @@ export default async function scenario(ctx: ArgusScenarioContext) {
 	})
 
 	test('code grep pretty shows clipped context around matches', async () => {
-		const { stdout } = await cli.run(['code', 'grep', 'showLogsByHost', '--id', 'playground', '--url', 'minified-app.js', '--pretty'])
+		const { stdout } = await cli.run(['code', 'grep', 'playground', 'showLogsByHost', '--url', 'minified-app.js', '--pretty'])
 		expect(stdout).toContain('minified-app.js')
 		expect(stdout).toContain('[[showLogsByHost]]')
 		expect(stdout).toContain('/admin/api/showLogsByHost')

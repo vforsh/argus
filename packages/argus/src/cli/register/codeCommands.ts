@@ -1,6 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { jsonOption } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
+import { usageError } from '../validation.js'
 
 const runCodeDeminify = lazyAction(() => import('../../commands/code.js').then((mod) => mod.runCodeDeminify))
 const runCodeGrep = lazyAction(() => import('../../commands/code.js').then((mod) => mod.runCodeGrep))
@@ -29,26 +30,34 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 			},
 			{
 				name: 'read',
-				arguments: [{ flags: '<url>', description: 'Runtime resource URL from `argus code ls`' }],
+				arguments: [
+					{ flags: '[id]', description: 'Watcher id to query (or --id)' },
+					{ flags: '[url]', description: 'Runtime resource URL from `argus code ls` (required)' },
+				],
 				options: [
-					{ flags: '--id <watcherId>', description: 'Watcher id to query' },
+					{ flags: '--id <watcherId>', description: 'Watcher id to query (same as the positional id)' },
 					{ flags: '--offset <n>', description: 'Zero-based line offset' },
 					{ flags: '--limit <n>', description: 'Max number of lines to return' },
 					jsonOption,
 				],
 				examples: [
-					'argus code read http://127.0.0.1:3333/ --id playground',
-					'argus code read inline://123 --id playground --offset 50 --limit 80',
+					'argus code read playground http://127.0.0.1:3333/',
+					'argus code read playground inline://123 --offset 50 --limit 80',
 				],
-				action: async (url, options) => {
-					await runCodeRead(options.id, url, options)
+				action: async (first, second, options) => {
+					const target = resolveWatcherAndTarget(first, second, options, 'read', 'url')
+					if (!target) return
+					await runCodeRead(target.id, target.value, options)
 				},
 			},
 			{
 				name: 'grep',
-				arguments: [{ flags: '<pattern>', description: 'Plain string or /regex/flags pattern' }],
+				arguments: [
+					{ flags: '[id]', description: 'Watcher id to query (or --id)' },
+					{ flags: '[pattern]', description: 'Plain string or /regex/flags pattern (required)' },
+				],
 				options: [
-					{ flags: '--id <watcherId>', description: 'Watcher id to query' },
+					{ flags: '--id <watcherId>', description: 'Watcher id to query (same as the positional id)' },
 					{ flags: '--url <substring>', description: 'Limit search to resource URLs containing this substring' },
 					{ flags: '--pretty', description: 'Render compact context snippets for human output' },
 					{
@@ -59,35 +68,45 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 					jsonOption,
 				],
 				examples: [
-					'argus code grep playground --id playground',
-					'argus code grep fetchBoard --id app --url bundle --around 80',
-					"argus code grep '/window\\\\.playground/' --id playground --url index",
-					'argus code grep showLogsByHost --id playground --pretty',
+					'argus code grep playground playground',
+					'argus code grep app fetchBoard --url bundle --around 80',
+					"argus code grep playground '/window\\\\.playground/' --url index",
+					'argus code grep playground showLogsByHost --pretty',
 				],
-				action: async (pattern, options) => {
-					await runCodeGrep(options.id, pattern, options)
+				action: async (first, second, options) => {
+					const target = resolveWatcherAndTarget(first, second, options, 'grep', 'pattern')
+					if (!target) return
+					await runCodeGrep(target.id, target.value, options)
 				},
 			},
 			{
 				name: 'deminify',
-				arguments: [{ flags: '<url>', description: 'Runtime resource URL from `argus code ls`' }],
+				arguments: [
+					{ flags: '[id]', description: 'Watcher id to query (or --id)' },
+					{ flags: '[url]', description: 'Runtime resource URL from `argus code ls` (required)' },
+				],
 				options: [
-					{ flags: '--id <watcherId>', description: 'Watcher id to query' },
+					{ flags: '--id <watcherId>', description: 'Watcher id to query (same as the positional id)' },
 					jsonOption,
 				],
 				examples: [
-					'argus code deminify http://127.0.0.1:3333/app.js --id playground',
-					'argus code deminify inline://42 --id playground --json',
+					'argus code deminify playground http://127.0.0.1:3333/app.js',
+					'argus code deminify playground inline://42 --json',
 				],
-				action: async (url, options) => {
-					await runCodeDeminify(options.id, url, options)
+				action: async (first, second, options) => {
+					const target = resolveWatcherAndTarget(first, second, options, 'deminify', 'url')
+					if (!target) return
+					await runCodeDeminify(target.id, target.value, options)
 				},
 			},
 			{
 				name: 'edit',
-				arguments: [{ flags: '<url>', description: 'Runtime resource URL from `argus code ls`' }],
+				arguments: [
+					{ flags: '[id]', description: 'Watcher id to query (or --id)' },
+					{ flags: '[url]', description: 'Runtime resource URL from `argus code ls` (required)' },
+				],
 				options: [
-					{ flags: '--id <watcherId>', description: 'Watcher id to query' },
+					{ flags: '--id <watcherId>', description: 'Watcher id to query (same as the positional id)' },
 					{ flags: '--file <path>', description: 'Read replacement source from a file' },
 					{ flags: '--search <pattern>', description: 'Plain string or /regex/flags to find in the existing source' },
 					{ flags: '--replace <text>', description: 'Replacement text (required with --search)' },
@@ -95,12 +114,14 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 					jsonOption,
 				],
 				examples: [
-					'argus code edit http://127.0.0.1:3333/app.js --id playground --search "DEBUG=false" --replace "DEBUG=true"',
-					'argus code edit http://127.0.0.1:3333/app.js --id playground --file ./patched.js',
-					'cat patched.css | argus code edit inline-css://1 --id playground',
+					'argus code edit playground http://127.0.0.1:3333/app.js --search "DEBUG=false" --replace "DEBUG=true"',
+					'argus code edit playground http://127.0.0.1:3333/app.js --file ./patched.js',
+					'cat patched.css | argus code edit playground inline-css://1',
 				],
-				action: async (url, options) => {
-					await runCodeEdit(options.id, url, options)
+				action: async (first, second, options) => {
+					const target = resolveWatcherAndTarget(first, second, options, 'edit', 'url')
+					if (!target) return
+					await runCodeEdit(target.id, target.value, options)
 				},
 			},
 			{
@@ -128,3 +149,31 @@ export const codeCommands: readonly ArgusCommandDefinition[] = [
 		],
 	},
 ]
+
+/**
+ * Read `[id] <pattern|url>` for the `code` subcommands that also take a resource argument.
+ *
+ * They used to take the watcher only as `--id`, so `argus code grep app foo` — the shape every
+ * other command has — failed with "too many arguments". Commander cannot express an optional
+ * argument before a required one (a lone value would bind to `[id]` and then fail as a missing
+ * pattern), so both are declared optional and a lone value is the pattern/url here; `--id` stays
+ * for old scripts. The leading `[id]` also makes `argus session` inject its pinned watcher.
+ */
+const resolveWatcherAndTarget = (
+	first: string | undefined,
+	second: string | undefined,
+	options: { json?: boolean; id?: string },
+	subcommand: string,
+	targetName: string,
+): { id: string | undefined; value: string } | null => {
+	const [positionalId, value] = second === undefined ? [undefined, first] : [first, second]
+	if (value === undefined) {
+		usageError(options, `Missing <${targetName}>. Usage: argus code ${subcommand} [id] <${targetName}>.`)
+		return null
+	}
+	if (positionalId !== undefined && options.id !== undefined && positionalId !== options.id) {
+		usageError(options, `Watcher id given twice: positional "${positionalId}" and --id "${options.id}". Pass one.`)
+		return null
+	}
+	return { id: positionalId ?? options.id, value }
+}
