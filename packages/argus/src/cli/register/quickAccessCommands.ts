@@ -105,10 +105,16 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 		name: 'reload',
 		description: 'Reload the page attached to a watcher',
 		arguments: [{ flags: '[id]', description: 'Watcher id to reload' }],
-		options: [{ flags: '--ignore-cache', description: 'Bypass browser cache' }, ...actionOptions, jsonOption],
+		options: [
+			{ flags: '--ignore-cache', description: 'Bypass browser cache' },
+			{ flags: '--timeout <duration>', description: 'Budget for the reload request itself (default 60s); --until-timeout starts after it returns' },
+			...actionOptions,
+			jsonOption,
+		],
 		examples: [
 			'argus reload app',
 			'argus reload app --ignore-cache',
+			'argus reload app --timeout 2m',
 			'argus reload app --json',
 			'argus reload app --until "typeof window.app !== \'undefined\'" --until-timeout 60s',
 		],

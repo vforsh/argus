@@ -4,6 +4,7 @@ import { evalOnce } from '../eval/evalClient.js'
 import { appendNetCommandParams, parseNetDurationMs, parseSettleDurationMs, validateNetCommandOptions } from './netShared.js'
 import { parseIntervalMs } from './evalShared.js'
 import { fetchWatcherJson } from '../watchers/requestWatcher.js'
+import { reloadRequestPlan } from './reload.js'
 
 const WATCH_BATCH_LIMIT = 5_000
 const DEFAULT_SETTLE_AFTER_INTERVAL_MS = 250
@@ -123,12 +124,7 @@ export const captureNetWindow = async (
 	}
 
 	if (capture.shouldReload) {
-		await fetchWatcherJson<ReloadResponse>(watcher, {
-			path: '/reload',
-			method: 'POST',
-			body: { ignoreCache: capture.ignoreCache },
-			timeoutMs: 10_000,
-		})
+		await fetchWatcherJson<ReloadResponse>(watcher, reloadRequestPlan(capture.ignoreCache))
 	}
 
 	return {

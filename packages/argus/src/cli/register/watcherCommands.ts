@@ -112,7 +112,11 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				name: 'reload',
 				description: 'Reload the page attached to a watcher',
 				arguments: [{ flags: '[id]', description: 'Watcher id to reload' }],
-				options: [{ flags: '--ignore-cache', description: 'Bypass browser cache' }, jsonOption],
+				options: [
+					{ flags: '--ignore-cache', description: 'Bypass browser cache' },
+					{ flags: '--timeout <duration>', description: 'Budget for the reload request itself (default 60s); --until-timeout starts after it returns' },
+					jsonOption,
+				],
 				examples: ['argus watcher reload app', 'argus watcher reload app --ignore-cache', 'argus watcher reload app --json'],
 				action: async (id, options) => {
 					await runReload(id, options)

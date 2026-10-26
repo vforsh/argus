@@ -1,5 +1,5 @@
 import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
-import { compact, optionalBoolean, readFields, requireObject } from '../schemaFields.js'
+import { compact, optionalBoolean, optionalNumber, readFields, requireObject } from '../schemaFields.js'
 
 import type { WatcherRecord } from '../../registry/types.js'
 import type { DialogStatus } from './dialog.js'
@@ -75,7 +75,23 @@ export type ShutdownResponse = Ok<{}>
 export type ReloadRequest = {
 	/** If true, bypass browser cache. Default: false. */
 	ignoreCache?: boolean
+	/**
+	 * How long the watcher waits for Chrome to answer `Page.reload`, in milliseconds. Default:
+	 * {@link DEFAULT_RELOAD_TIMEOUT_MS}. The load itself is never awaited (use `--until`).
+	 */
+	timeoutMs?: number
 }
+
+/**
+ * Default `/reload` budget.
+ *
+ * Chrome answers `Page.reload` as soon as the reload starts: ~150ms on both transports even with
+ * the renderer blocked or a 12s busy `beforeunload` (measured 2026-10). Yet observed agent reloads
+ * took ~9s typical and ~48s p90, and the old 10s client timeout produced bare transport timeouts,
+ * so the slow cases are stalls before Chrome (extension worker/bridge, busy watcher). The budget
+ * lets those finish, and a real stall gets the watcher's layered diagnosis instead.
+ */
+export const DEFAULT_RELOAD_TIMEOUT_MS = 60_000
 
 /** Response payload for POST /reload. */
 export type ReloadResponse = Ok<{}>
@@ -85,7 +101,10 @@ export const reloadRequestSchema = defineProtocolSchema<ReloadRequest>((value) =
 	const invalid = requireObject<ReloadRequest>(value)
 	if (invalid) return invalid
 
-	const fields = readFields(value as Record<string, unknown>, { ignoreCache: optionalBoolean })
+	const fields = readFields(value as Record<string, unknown>, {
+		ignoreCache: optionalBoolean,
+		timeoutMs: (source, key) => optionalNumber(source, key, { min: 1 }),
+	})
 	if (!fields.ok) return fields
 
 	return validProtocolPayload(compact(fields.value))

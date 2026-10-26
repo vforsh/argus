@@ -114,7 +114,7 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 
 `goto`, `back`, `forward`, and `click/keydown --wait-nav` return an `epoch` for the same purpose: `argus logs app --since-epoch "$epoch"`.
 
-**Navigate**: `argus goto app /checkout` (relative, `?tab=2`, `#top`, `localhost:3000` all resolve in the watcher), `argus page back app`, `argus reload app`. Bare `settings` is a host, write `/settings`.
+**Navigate**: `argus goto app /checkout` (relative, `?tab=2`, `#top`, `localhost:3000` all resolve in the watcher), `argus page back app`, `argus reload app` (`--timeout`, default 60s, bounds the reload request; `--until-timeout` starts after it). Bare `settings` is a host, write `/settings`.
 
 **Interact**: `click`, `drag`, `hover`, `fill`, `keydown`, `scroll-to`. Target with `--selector`, `--testid`, `--ref eN` (from `snapshot`/`locate`), or `--pos x,y`. `--all` allows multiple matches; `--text /regex/` filters trimmed text in the selected document’s isolated world (plain text is exact, CSS selection does not pierce shadow roots); `--wait 5s` polls for the selector. `argus locate role app button --name Save --action click` finds and acts in one step. `hover --pos x,y` hovers a bare point; `keydown app Escape` takes the key positionally.
 

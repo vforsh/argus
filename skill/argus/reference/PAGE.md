@@ -13,6 +13,7 @@ argus goto app /slow --wait domcontentloaded        # load (default) | domconten
 argus goto app /settings --timeout 5s --json
 argus page back app / forward app         # -n, --steps <n>; same --wait/--timeout
 argus reload app [--ignore-cache]         # alias of `page reload --id app` / `watcher reload`
+argus reload app --timeout 2m --until "appctl.ready()" --until-timeout 60s   # reload budget (default 60s), then a separate wait budget
 argus page reload <targetId> --param foo=bar        # reload any CDP target, optionally rewriting query
 ```
 

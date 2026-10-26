@@ -1,5 +1,5 @@
 import type { ReloadRequest, ReloadResponse } from '@vforsh/argus-core'
-import { reloadRequestSchema } from '@vforsh/argus-core'
+import { DEFAULT_RELOAD_TIMEOUT_MS, reloadRequestSchema } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
 
 export const route = defineJsonRoute<ReloadRequest, ReloadResponse>({
@@ -9,9 +9,14 @@ export const route = defineJsonRoute<ReloadRequest, ReloadResponse>({
 	endpoint: 'reload',
 	handle: async ({ ctx, body: payload }) => {
 		// Reload is page-scoped in CDP, even when the active Argus target is an iframe.
-		await ctx.pageCdpSession.sendAndWait('Page.reload', {
-			ignoreCache: payload.ignoreCache ?? false,
-		})
+		// The deadline is the watcher's, not the client's: a timeout here gets the layered CDP diagnosis
+		// (`defineJsonRoute` → `respondCdpError`). Direct CDP had no deadline at all and the extension
+		// bridge 30s, both hidden behind the CLI's old 10s transport timeout.
+		await ctx.pageCdpSession.sendAndWait(
+			'Page.reload',
+			{ ignoreCache: payload.ignoreCache ?? false },
+			{ timeoutMs: payload.timeoutMs ?? DEFAULT_RELOAD_TIMEOUT_MS },
+		)
 		return { ok: true }
 	},
 })
