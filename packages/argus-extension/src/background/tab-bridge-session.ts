@@ -50,6 +50,8 @@ export class TabBridgeSession {
 	private readonly hostReady = createLatch()
 	private readonly watcherInfoReceived = createLatch()
 	private readonly initialized = createLatch()
+	/** Opens on dispose so pending handshake waits fail fast with the real reason (e.g. protocol mismatch). */
+	private readonly closed = createLatch()
 	private disposed = false
 	private protocolMismatch: string | null = null
 	private initializationError: string | null = null
@@ -90,7 +92,6 @@ export class TabBridgeSession {
 		}
 		await this.awaitLatch(this.hostReady, 'did not become ready')
 		await this.awaitLatch(this.watcherInfoReceived, 'did not report watcher info')
-		this.assertOpen()
 		if (!this.bridgeClient.isConnected()) throw new Error(`Native host disconnected for tab ${this.tabId}`)
 		await this.cdpProxy.attachTab(this.tabId)
 		// The host can disappear while Chrome initializes the debugger. Never leave
@@ -100,7 +101,6 @@ export class TabBridgeSession {
 			throw new Error(`Native host disconnected while attaching tab ${this.tabId}`)
 		}
 		await this.awaitLatch(this.initialized, 'did not finish watcher initialization', 8_000)
-		this.assertOpen()
 	}
 
 	async detach(): Promise<void> {
@@ -133,6 +133,7 @@ export class TabBridgeSession {
 		}
 
 		this.disposed = true
+		this.closed.signal()
 		this.cdpProxy.dispose()
 		this.bridgeClient.disconnect()
 	}
@@ -155,7 +156,9 @@ export class TabBridgeSession {
 
 	private async awaitLatch(latch: Latch, failure: string, timeoutMs = 3_000): Promise<void> {
 		this.assertOpen()
-		await latch.wait(timeoutMs, `Native host session for tab ${this.tabId} ${failure}`)
+		const timeoutMessage = `Native host session for tab ${this.tabId} ${failure}`
+		await Promise.race([latch.wait(timeoutMs, timeoutMessage), this.closed.wait(timeoutMs, timeoutMessage)])
+		this.assertOpen()
 	}
 
 	private handleMessage(message: TabHostToExtension): void {
