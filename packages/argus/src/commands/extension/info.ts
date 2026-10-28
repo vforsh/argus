@@ -29,7 +29,7 @@ export const runExtensionInfo = async (options: ExtensionInfoOptions): Promise<v
 	output.writeHuman('')
 	output.writeHuman(`  Platform:      ${platform}`)
 	for (const host of hosts) {
-		output.writeHuman(`  Host name:     ${host.hostName}`)
+		output.writeHuman(`  Host name:     ${host.hostName} (${host.browser})`)
 		output.writeHuman(`  Manifest path: ${shortenPath(host.manifestPath)}`)
 		output.writeHuman(`  Wrapper path:  ${shortenPath(host.wrapperPath)}`)
 	}
@@ -37,7 +37,7 @@ export const runExtensionInfo = async (options: ExtensionInfoOptions): Promise<v
 	output.writeHuman('Current configuration:')
 	output.writeHuman(`  Installed:     ${installed ? 'yes' : 'no'}`)
 	for (const host of hosts.filter((entry) => entry.installed)) {
-		output.writeHuman(`  ${host.hostName}`)
+		output.writeHuman(`  ${host.hostName} (${host.browser})`)
 		output.writeHuman(`    Extension ID: ${host.extensionId ?? '(unknown)'}`)
 		output.writeHuman(`    Argus path:   ${host.argusPath ?? '(unknown)'}`)
 	}

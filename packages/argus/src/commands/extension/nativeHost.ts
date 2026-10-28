@@ -13,25 +13,45 @@ export type NativeHostName = (typeof HOST_NAMES)[number]
 
 export type Platform = 'darwin' | 'linux' | 'win32'
 
-export const getManifestDir = (platform: Platform): string => {
+/** Chromium-family browsers whose native messaging host locations Argus knows. */
+export const HOST_BROWSERS = ['chrome', 'chromium'] as const
+
+export type HostBrowser = (typeof HOST_BROWSERS)[number]
+
+const getUserDataDir = (platform: Platform, browser: HostBrowser): string => {
+	const chrome = browser === 'chrome'
 	switch (platform) {
 		case 'darwin':
-			return path.join(os.homedir(), 'Library/Application Support/Google/Chrome/NativeMessagingHosts')
+			return path.join(os.homedir(), 'Library/Application Support', chrome ? 'Google/Chrome' : 'Chromium')
 		case 'linux':
-			return path.join(os.homedir(), '.config/google-chrome/NativeMessagingHosts')
+			return path.join(os.homedir(), '.config', chrome ? 'google-chrome' : 'chromium')
 		case 'win32':
-			return path.join(process.env.LOCALAPPDATA ?? os.homedir(), 'Google/Chrome/User Data/NativeMessagingHosts')
+			return path.join(process.env.LOCALAPPDATA ?? os.homedir(), chrome ? 'Google/Chrome/User Data' : 'Chromium/User Data')
 		default:
 			throw new Error(`Unsupported platform: ${platform}`)
 	}
 }
 
-export const getManifestPath = (platform: Platform, hostName: NativeHostName = BRIDGE_HOST_NAME): string => {
-	return path.join(getManifestDir(platform), `${hostName}.json`)
+/**
+ * Browsers to install native hosts for: every one with an existing profile, so Chrome and
+ * Chromium side by side both get them. Chrome alone when none exists yet, since its directory
+ * is still the right place for a browser that has not been launched.
+ */
+export const detectHostBrowsers = (platform: Platform): HostBrowser[] => {
+	const present = HOST_BROWSERS.filter((browser) => fs.existsSync(getUserDataDir(platform, browser)))
+	return present.length > 0 ? present : ['chrome']
 }
 
-export const getWrapperPath = (platform: Platform, hostName: NativeHostName = BRIDGE_HOST_NAME): string => {
-	return path.join(getManifestDir(platform), wrapperFilename(hostName))
+export const getManifestDir = (platform: Platform, browser: HostBrowser): string => {
+	return path.join(getUserDataDir(platform, browser), 'NativeMessagingHosts')
+}
+
+export const getManifestPath = (platform: Platform, hostName: NativeHostName, browser: HostBrowser): string => {
+	return path.join(getManifestDir(platform, browser), `${hostName}.json`)
+}
+
+export const getWrapperPath = (platform: Platform, hostName: NativeHostName, browser: HostBrowser): string => {
+	return path.join(getManifestDir(platform, browser), wrapperFilename(hostName))
 }
 
 const wrapperFilename = (hostName: NativeHostName): string =>
@@ -85,6 +105,7 @@ export type NativeHostManifest = {
 }
 
 export type NativeHostInspection = {
+	browser: HostBrowser
 	hostName: NativeHostName
 	manifestPath: string
 	wrapperPath: string
@@ -104,6 +125,8 @@ export type InstalledNativeHost = {
 	wrapperPath: string
 }
 
+export type InstalledBrowserNativeHost = InstalledNativeHost & { browser: HostBrowser }
+
 export type RemovedNativeHost = NativeHostInspection & {
 	manifestRemoved: boolean
 	wrapperRemoved: boolean
@@ -119,8 +142,8 @@ export const createManifest = (extensionId: string, executablePath: string, host
 	}
 }
 
-export const createWrapperScript = (platform: Platform, executablePath: string, hostName: NativeHostName = BRIDGE_HOST_NAME): string => {
-	return writeWrapperScript(getWrapperPath(platform, hostName), executablePath, hostName)
+export const createWrapperScript = (platform: Platform, executablePath: string, hostName: NativeHostName, browser: HostBrowser): string => {
+	return writeWrapperScript(getWrapperPath(platform, hostName, browser), executablePath, hostName)
 }
 
 const writeWrapperScript = (
@@ -145,15 +168,18 @@ ${exports ? `${exports}\n` : ''}${nativeHostDiagnosticsScript(hostName === CONTR
 	return wrapperPath
 }
 
-export const installNativeHosts = (platform: Platform, extensionId: string, executablePath: string): InstalledNativeHost[] => {
-	fs.mkdirSync(getManifestDir(platform), { recursive: true })
-	return HOST_NAMES.map((hostName) => {
-		const wrapperPath = createWrapperScript(platform, executablePath, hostName)
-		const manifestPath = getManifestPath(platform, hostName)
-		const manifest = createManifest(extensionId, wrapperPath, hostName)
-		fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
-		registerWindowsNativeHost(platform, hostName, manifestPath)
-		return { hostName, manifestPath, wrapperPath }
+/** Install both hosts for every browser {@link detectHostBrowsers} finds. */
+export const installNativeHosts = (platform: Platform, extensionId: string, executablePath: string): InstalledBrowserNativeHost[] => {
+	return detectHostBrowsers(platform).flatMap((browser) => {
+		fs.mkdirSync(getManifestDir(platform, browser), { recursive: true })
+		return HOST_NAMES.map((hostName) => {
+			const wrapperPath = createWrapperScript(platform, executablePath, hostName, browser)
+			const manifestPath = getManifestPath(platform, hostName, browser)
+			const manifest = createManifest(extensionId, wrapperPath, hostName)
+			fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
+			registerWindowsNativeHost(platform, browser, hostName, manifestPath)
+			return { browser, hostName, manifestPath, wrapperPath }
+		})
 	})
 }
 
@@ -196,23 +222,27 @@ export const installNativeHostsTo = (
 	})
 }
 
+/** Inspect both hosts for every browser {@link detectHostBrowsers} finds. */
 export const inspectNativeHosts = (platform: Platform): NativeHostInspection[] => {
-	return HOST_NAMES.map((hostName) => inspectNativeHost(platform, hostName))
+	return detectHostBrowsers(platform).flatMap((browser) => HOST_NAMES.map((hostName) => inspectNativeHost(platform, hostName, browser)))
 }
 
+/** Remove both hosts for every known browser, including ones whose profile has since been deleted. */
 export const removeNativeHosts = (platform: Platform): RemovedNativeHost[] => {
-	return HOST_NAMES.map((hostName) => {
-		const host = inspectNativeHost(platform, hostName)
-		const manifestRemoved = removeFileIfExists(host.manifestPath)
-		const wrapperRemoved = removeFileIfExists(host.wrapperPath)
-		unregisterWindowsNativeHost(platform, hostName)
-		return { ...host, manifestRemoved, wrapperRemoved }
-	})
+	return HOST_BROWSERS.flatMap((browser) =>
+		HOST_NAMES.map((hostName) => {
+			const host = inspectNativeHost(platform, hostName, browser)
+			const manifestRemoved = removeFileIfExists(host.manifestPath)
+			const wrapperRemoved = removeFileIfExists(host.wrapperPath)
+			unregisterWindowsNativeHost(platform, browser, hostName)
+			return { ...host, manifestRemoved, wrapperRemoved }
+		}),
+	)
 }
 
-export const inspectNativeHost = (platform: Platform, hostName: NativeHostName): NativeHostInspection => {
-	const manifestPath = getManifestPath(platform, hostName)
-	const wrapperPath = getWrapperPath(platform, hostName)
+export const inspectNativeHost = (platform: Platform, hostName: NativeHostName, browser: HostBrowser): NativeHostInspection => {
+	const manifestPath = getManifestPath(platform, hostName, browser)
+	const wrapperPath = getWrapperPath(platform, hostName, browser)
 	const manifestExists = fs.existsSync(manifestPath)
 	const wrapperExists = fs.existsSync(wrapperPath)
 	const wrapperExecutable = wrapperExists && isWrapperExecutable(wrapperPath)
@@ -221,6 +251,7 @@ export const inspectNativeHost = (platform: Platform, hostName: NativeHostName):
 	const extensionId = extractExtensionId(manifest?.allowed_origins?.[0])
 
 	return {
+		browser,
 		hostName,
 		manifestPath,
 		wrapperPath,
@@ -277,21 +308,22 @@ const removeFileIfExists = (filePath: string): boolean => {
 	return true
 }
 
-const registerWindowsNativeHost = (platform: Platform, hostName: NativeHostName, manifestPath: string): void => {
+const windowsRegistryKey = (browser: HostBrowser, hostName: NativeHostName): string =>
+	`HKCU\\Software\\${browser === 'chrome' ? 'Google\\Chrome' : 'Chromium'}\\NativeMessagingHosts\\${hostName}`
+
+const registerWindowsNativeHost = (platform: Platform, browser: HostBrowser, hostName: NativeHostName, manifestPath: string): void => {
 	if (platform !== 'win32') {
 		return
 	}
-	const regKey = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${hostName}`
-	execSync(`reg add "${regKey}" /ve /t REG_SZ /d "${manifestPath}" /f`, { stdio: 'pipe' })
+	execSync(`reg add "${windowsRegistryKey(browser, hostName)}" /ve /t REG_SZ /d "${manifestPath}" /f`, { stdio: 'pipe' })
 }
 
-const unregisterWindowsNativeHost = (platform: Platform, hostName: NativeHostName): void => {
+const unregisterWindowsNativeHost = (platform: Platform, browser: HostBrowser, hostName: NativeHostName): void => {
 	if (platform !== 'win32') {
 		return
 	}
-	const regKey = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${hostName}`
 	try {
-		execSync(`reg delete "${regKey}" /f`, { stdio: 'pipe' })
+		execSync(`reg delete "${windowsRegistryKey(browser, hostName)}" /f`, { stdio: 'pipe' })
 	} catch {
 		// Key might not exist.
 	}

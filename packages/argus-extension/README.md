@@ -40,11 +40,13 @@ argus extension status   # native host config + extension ID
 argus extension install --no-wait   # scripted / non-interactive
 ```
 
-`install` writes the native messaging host manifests:
+`install` writes the native messaging host manifests (`com.vforsh.argus.bridge.json` and `com.vforsh.argus.control.json`) for every installed browser profile it finds, Google Chrome and/or Chromium (Chrome alone when neither has been launched yet):
 
-- **macOS**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json` and `com.vforsh.argus.control.json`
-- **Linux**: `~/.config/google-chrome/NativeMessagingHosts/com.vforsh.argus.bridge.json` and `com.vforsh.argus.control.json`
+- **macOS**: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`, `~/Library/Application Support/Chromium/NativeMessagingHosts/`
+- **Linux**: `~/.config/google-chrome/NativeMessagingHosts/`, `~/.config/chromium/NativeMessagingHosts/`
 - **Windows**: Manifest in AppData + registry key (see console output)
+
+Installed Chromium after running `install`? Launch it once, then run `argus extension setup` again.
 
 Advanced: `argus extension setup [extensionId]` installs only the hosts (pass an id to override the pinned one for a differently-keyed build).
 

@@ -208,7 +208,7 @@ export const runExtensionDoctor = async (options: ExtensionDoctorOptions): Promi
 	output.writeHuman('')
 	output.writeHuman(`Native hosts: ${configured ? 'configured' : 'incomplete'}`)
 	for (const host of hosts) {
-		output.writeHuman(`  ${host.hostName}: ${host.configured ? 'ok' : 'broken'}`)
+		output.writeHuman(`  ${host.hostName} (${host.browser}): ${host.configured ? 'ok' : 'broken'}`)
 	}
 	if (configuredExtensionId) {
 		output.writeHuman(`  configured extension: ${configuredExtensionId}`)

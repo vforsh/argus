@@ -34,11 +34,12 @@ export const runExtensionStatus = async (options: ExtensionStatusOptions): Promi
 		output.writeHuman('Native messaging hosts are configured')
 		output.writeHuman('')
 		output.writeHuman(`  Extension ID: ${extensionId}`)
+		output.writeHuman(`  Browsers:     ${[...new Set(hosts.map((host) => host.browser))].join(', ')}`)
 	} else {
 		output.writeHuman('Native messaging hosts not configured')
 		output.writeHuman('')
 		for (const host of hosts) {
-			output.writeHuman(`  ${host.hostName}`)
+			output.writeHuman(`  ${host.hostName} (${host.browser})`)
 			output.writeHuman(`    Manifest: ${host.manifestExists ? (host.manifestValid ? 'exists' : 'exists, invalid') : 'not found'}`)
 			output.writeHuman(
 				`    Wrapper:  ${host.wrapperExists ? (host.wrapperExecutable ? 'exists, executable' : 'exists, not executable') : 'not found'}`,
@@ -48,7 +49,7 @@ export const runExtensionStatus = async (options: ExtensionStatusOptions): Promi
 			output.writeHuman(`  Extension ID: ${extensionId}`)
 		}
 		output.writeHuman('')
-		output.writeHuman("Run 'argus extension setup <extensionId>' to install.")
+		output.writeHuman("Run 'argus extension setup' to install.")
 		process.exitCode = 1
 	}
 	output.writeHuman('')

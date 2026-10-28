@@ -46,7 +46,7 @@ export const runExtensionSetup = async (options: ExtensionSetupOptions): Promise
 		output.writeHuman('')
 		output.writeHuman(`  Extension ID: ${extensionId}`)
 		for (const host of installedHosts) {
-			output.writeHuman(`  Host name:    ${host.hostName}`)
+			output.writeHuman(`  Host name:    ${host.hostName} (${host.browser})`)
 			output.writeHuman(`  Manifest:     ${shortenPath(host.manifestPath)}`)
 			output.writeHuman(`  Wrapper:      ${shortenPath(host.wrapperPath)}`)
 		}

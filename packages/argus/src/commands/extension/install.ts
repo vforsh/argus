@@ -6,7 +6,7 @@ import { resolveChromeBin } from '../../utils/chromeBin.js'
 import { ARGUS_EXTENSION_ID } from './extensionId.js'
 import { resolveExtensionDir } from './extensionPath.js'
 import { readExtensionRole } from './liveControls.js'
-import { CONTROL_WATCHER_ID, findArgusExecutable, installNativeHosts, type InstalledNativeHost } from './nativeHost.js'
+import { CONTROL_WATCHER_ID, findArgusExecutable, installNativeHosts, type InstalledBrowserNativeHost } from './nativeHost.js'
 import { emitFailure, getPlatformOrFail } from './failures.js'
 import { delay } from '@vforsh/argus-core'
 
@@ -48,7 +48,7 @@ export const runExtensionInstall = async (options: ExtensionInstallOptions): Pro
 		return emitFailure(output, { error: (error as Error).message })
 	}
 
-	let hosts: InstalledNativeHost[]
+	let hosts: InstalledBrowserNativeHost[]
 	try {
 		hosts = installNativeHosts(platform, ARGUS_EXTENSION_ID, executablePath)
 	} catch (error) {
@@ -119,12 +119,14 @@ const waitForControl = async (timeoutMs: number, output: Output): Promise<boolea
 
 const printSummary = (
 	output: Output,
-	info: { extensionDir: string; hosts: InstalledNativeHost[]; connected: boolean; opened: boolean; shouldOpen: boolean },
+	info: { extensionDir: string; hosts: InstalledBrowserNativeHost[]; connected: boolean; opened: boolean; shouldOpen: boolean },
 ): void => {
 	output.writeHuman('')
 	output.writeHuman('Argus extension setup')
 	output.writeHuman('')
-	output.writeHuman(`  Native hosts:  installed (${info.hosts.map((host) => host.hostName).join(', ')})`)
+	const browsers = [...new Set(info.hosts.map((host) => host.browser))].join(', ')
+	const hostNames = [...new Set(info.hosts.map((host) => host.hostName))].join(', ')
+	output.writeHuman(`  Native hosts:  installed for ${browsers} (${hostNames})`)
 	output.writeHuman(`  Extension ID:  ${ARGUS_EXTENSION_ID}`)
 	output.writeHuman(`  Load unpacked: ${info.extensionDir}`)
 	output.writeHuman('')
