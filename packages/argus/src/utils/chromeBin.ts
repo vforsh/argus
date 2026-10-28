@@ -1,13 +1,22 @@
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import path from 'node:path'
 
-const MACOS_CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+// Google Chrome first, then Chromium, so an existing Chrome setup resolves exactly as before.
+const MACOS_CANDIDATES = [
+	'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+	'/Applications/Chromium.app/Contents/MacOS/Chromium',
+	path.join(homedir(), 'Applications/Chromium.app/Contents/MacOS/Chromium'),
+]
 const LINUX_CANDIDATES = ['google-chrome', 'google-chrome-stable', 'chromium-browser', 'chromium']
 const WINDOWS_CANDIDATES = [
 	'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
 	'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+	...(process.env.LOCALAPPDATA ? [path.join(process.env.LOCALAPPDATA, 'Chromium\\Application\\chrome.exe')] : []),
+	'C:\\Program Files\\Chromium\\Application\\chrome.exe',
 ]
 
-/** Resolve Chrome binary path based on environment and OS. */
+/** Resolve the Chrome or Chromium binary path based on environment and OS. */
 export const resolveChromeBin = (): string | null => {
 	if (process.env.ARGUS_CHROME_BIN) {
 		const bin = process.env.ARGUS_CHROME_BIN.trim()
@@ -19,7 +28,7 @@ export const resolveChromeBin = (): string | null => {
 
 	const platform = process.platform
 	if (platform === 'darwin') {
-		return existsSync(MACOS_CHROME_PATH) ? MACOS_CHROME_PATH : null
+		return MACOS_CANDIDATES.find((candidate) => existsSync(candidate)) ?? null
 	}
 
 	if (platform === 'linux') {

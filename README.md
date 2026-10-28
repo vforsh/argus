@@ -344,6 +344,8 @@ See [skill/argus/reference/PERF.md](skill/argus/reference/PERF.md) for the run-r
 
 Chromium with remote debugging enabled. Argus uses CDP (Chrome DevTools Protocol) to inspect and interact with targets.
 
+`argus start` and `argus chrome start` launch Google Chrome, falling back to Chromium when Chrome is not installed. Set `ARGUS_CHROME_BIN` to pick another Chromium-based binary.
+
 ### Watcher
 
 A local process that attaches to a browser target, exposes an HTTP API, buffers events, and registers itself under an id such as `app`.
