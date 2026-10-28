@@ -16,7 +16,7 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.5.31",
+      "version": "0.5.32",
       "bin": {
         "argus": "dist/argus.js",
       },
@@ -43,7 +43,7 @@
     },
     "packages/argus-extension": {
       "name": "@vforsh/argus-extension",
-      "version": "0.2.7",
+      "version": "0.2.8",
       "devDependencies": {
         "@types/chrome": "^0.0.287",
         "@vforsh/argus-core": "^0.5.14",
