@@ -1,3 +1,4 @@
+import type { ExtensionIframeMatch } from '@vforsh/argus-core'
 import type { ExtensionSession } from '../native-messaging/session-manager.js'
 import type { CdpSourceTarget } from './types.js'
 import {
@@ -10,6 +11,7 @@ import {
 	isSelectedTargetReady,
 	resolveRequestedTarget,
 	type ExtensionFrameState,
+	type RequestedFrameHint,
 } from './extension-frame-state.js'
 
 export const seedExtensionFrameState = (session: ExtensionSession, state: ExtensionFrameState): ExtensionFrameState => {
@@ -45,13 +47,33 @@ export const getSelectedExtensionTarget = (session: ExtensionSession, state: Ext
 	return buildSelectedIframeFallbackTarget(session, state)
 }
 
-export const setRequestedTargetSelection = (state: ExtensionFrameState, frameId: string | null): void => {
-	if (state.requestedFrameId !== frameId) {
+/**
+ * Record the user's target selection.
+ *
+ * `match` is the selector an `/attach` caller picked the iframe with; `null` clears it. Left
+ * `undefined` (an extension-side selection such as the popup or a remembered-target restore), a
+ * re-selection of the same frame keeps the selector it already had.
+ */
+export const setRequestedTargetSelection = (state: ExtensionFrameState, frameId: string | null, match?: ExtensionIframeMatch | null): void => {
+	const sameFrame = state.requestedFrameId === frameId
+	if (!sameFrame) {
 		state.activeAttachedAt = null
 	}
-	const previousHint = state.requestedFrameId === frameId ? state.requestedFrameHint : null
+	const previousHint = sameFrame ? state.requestedFrameHint : null
+	const nextMatch = match === undefined ? previousHint?.match : (match ?? undefined)
 	state.requestedFrameId = frameId
-	state.requestedFrameHint = frameId ? (createRequestedFrameHint(state.frames.get(frameId)) ?? previousHint) : null
+	if (!frameId) {
+		state.requestedFrameHint = null
+		return
+	}
+	// A frame that is gone keeps its previous URL/title fields; a match alone still makes a hint.
+	const frameHint = createRequestedFrameHint(state.frames.get(frameId)) ?? previousHint
+	state.requestedFrameHint = frameHint ? withMatch(frameHint, nextMatch) : createRequestedFrameHint(null, nextMatch)
+}
+
+const withMatch = (hint: RequestedFrameHint, match: ExtensionIframeMatch | undefined): RequestedFrameHint => {
+	const { match: _previous, ...rest } = hint
+	return match ? { ...rest, match } : rest
 }
 
 /** List discovered targets plus a selected, pending placeholder when the requested iframe is missing. */
@@ -198,7 +220,8 @@ const syncRequestedFrameSelection = (state: ExtensionFrameState, frameId: string
 	}
 
 	state.requestedFrameId = frameId
-	state.requestedFrameHint = createRequestedFrameHint(frame)
+	// The frame-derived fields follow the frame; the user's selector stays what they asked for.
+	state.requestedFrameHint = createRequestedFrameHint(frame, state.requestedFrameHint?.match)
 }
 
 /**

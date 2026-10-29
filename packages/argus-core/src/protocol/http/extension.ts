@@ -1,6 +1,6 @@
 import type { LifecycleEvent } from '../../diagnostics/events.js'
-import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload } from '../schema.js'
-import { compact, optionalBoolean, optionalInteger, optionalNonEmptyString, readFields, requireObject } from '../schemaFields.js'
+import { defineProtocolSchema, invalidProtocolPayload, validProtocolPayload, type ProtocolValidationResult } from '../schema.js'
+import { compact, optionalBoolean, optionalInteger, optionalEnum, optionalNonEmptyString, optionalRecord, readFields, requireObject } from '../schemaFields.js'
 
 import type { ExtensionControlBridgeStatus, ExtensionTabBridgeStatus, ExtensionRecentEvent } from '../native-messaging.js'
 import type { Ok } from './errors.js'
@@ -75,7 +75,22 @@ export type ExtensionAttachRequest = {
 	tabId?: number
 	/** Watcher id to bind the attached target to. */
 	watcherId?: string
+	/**
+	 * The selector the caller picked an iframe target with. The watcher keeps it with the selection
+	 * and re-resolves it when the frame comes back under a fresh id after a reload.
+	 */
+	iframeMatch?: ExtensionIframeMatch
 }
+
+/**
+ * Case-insensitive substring selector for an iframe target, as `--iframe-url`/`--iframe-title` take it.
+ *
+ * `by: 'title'` matches the frame's title, or its URL while the title is unknown, the same fallback
+ * the target listing shows.
+ */
+export type ExtensionIframeMatch = { by: 'url' | 'title'; value: string }
+
+const IFRAME_MATCH_FIELDS = ['url', 'title'] as const
 
 /** Request payload for POST /detach. Identifies the target like {@link ExtensionAttachRequest}. */
 export type ExtensionDetachRequest = {
@@ -133,8 +148,28 @@ export const extensionAttachRequestSchema = defineProtocolSchema<ExtensionAttach
 		return invalidProtocolPayload('targetId is required')
 	}
 
-	return validProtocolPayload(compact(fields.value))
+	const iframeMatch = readIframeMatch(value as Record<string, unknown>)
+	if (!iframeMatch.ok) return iframeMatch
+
+	return validProtocolPayload(compact({ ...fields.value, iframeMatch: iframeMatch.value }))
 })
+
+const readIframeMatch = (source: Record<string, unknown>): ProtocolValidationResult<ExtensionIframeMatch | undefined> => {
+	const record = readFields(source, { iframeMatch: optionalRecord })
+	if (!record.ok) return record
+	if (!record.value.iframeMatch) return validProtocolPayload(undefined)
+
+	const fields = readFields(record.value.iframeMatch, {
+		by: (match, key) => optionalEnum(match, key, IFRAME_MATCH_FIELDS),
+		value: optionalNonEmptyString,
+	})
+	if (!fields.ok) return fields
+	const { by, value } = fields.value
+	if (by == null || value == null) {
+		return invalidProtocolPayload('iframeMatch needs by ("url" or "title") and a non-empty value')
+	}
+	return validProtocolPayload({ by, value })
+}
 
 /** Schema for POST /detach request payloads. */
 export const extensionDetachRequestSchema = defineProtocolSchema<ExtensionDetachRequest>((value) => {

@@ -9,6 +9,7 @@ import type {
 	AuthStateCookie,
 	ExtensionDiagnosticsResponse,
 	ExtensionTabActionResponse,
+	ExtensionIframeMatch,
 	ExtensionTabMuteResponse,
 	ExtensionTabOpenResponse,
 	LogEvent,
@@ -137,7 +138,7 @@ export type CdpSourceHandle = {
 		}>
 	>
 	/** Attach to a specific target by ID (extension mode only). */
-	attachTarget?: (targetId: string, options?: { watcherId?: string }) => Promise<ExtensionTabActionResponse>
+	attachTarget?: (targetId: string, options?: { watcherId?: string; iframeMatch?: ExtensionIframeMatch }) => Promise<ExtensionTabActionResponse>
 	/** Detach from a specific target by ID (extension mode only). */
 	detachTarget?: (targetId: string) => Promise<ExtensionTabActionResponse>
 	/** Open a URL in a new browser tab (extension-control only). */

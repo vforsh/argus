@@ -11,6 +11,6 @@ export const route = defineExtensionRoute<ExtensionAttachRequest, ExtensionTabAc
 	capability: 'attachTarget',
 	handle: async ({ res, ctx, body: payload, capability }) => {
 		emitRequest(ctx, res, 'attach')
-		return await capability(resolveExtensionTargetId(payload), { watcherId: payload.watcherId })
+		return await capability(resolveExtensionTargetId(payload), { watcherId: payload.watcherId, iframeMatch: payload.iframeMatch })
 	},
 })

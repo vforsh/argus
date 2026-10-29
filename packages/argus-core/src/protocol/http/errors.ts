@@ -30,6 +30,7 @@ export const ARGUS_ERROR_CODES = [
 	'eval_exception',
 	'extension_action_failed',
 	'extension_bridge_unresponsive',
+	'extension_frame_missing',
 	'extension_frame_not_ready',
 	'http_error',
 	'invalid_json',

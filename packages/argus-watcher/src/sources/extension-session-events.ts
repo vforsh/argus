@@ -95,6 +95,7 @@ export const registerExtensionSessionEventHandlers = ({
 		setCurrentSession(session)
 
 		if (!frame.parentFrameId && !meta.sessionId) {
+			state.lastTopNavigationAt = Date.now()
 			events.onPageNavigation?.({ url: frame.url, title: session.title ?? null })
 		}
 

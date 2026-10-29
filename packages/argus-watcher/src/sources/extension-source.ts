@@ -1,4 +1,4 @@
-import { NATIVE_MESSAGING_PROTOCOL_VERSION } from '@vforsh/argus-core'
+import { NATIVE_MESSAGING_PROTOCOL_VERSION, type ExtensionIframeMatch } from '@vforsh/argus-core'
 import { createNativeMessaging } from '../native-messaging/messaging.js'
 import { SessionManager, type ExtensionSession } from '../native-messaging/session-manager.js'
 import type { ExtensionToTabHost, TabHostToExtension } from '../native-messaging/types.js'
@@ -139,17 +139,19 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 				return undefined
 			}
 
-			const readyTargetContext = await targetRecovery.waitForSelectedFrameCommandTarget()
+			const budgetMs = command.commandOptions?.timeoutMs
+			const startedAt = Date.now()
+			const readyTargetContext = await targetRecovery.waitForSelectedFrameCommandTarget(budgetMs)
+			// Waiting for the frame spent part of the command's deadline; the command gets the rest.
+			const commandOptions = budgetMs == null ? undefined : { ...command.commandOptions, timeoutMs: Math.max(1, budgetMs - (Date.now() - startedAt)) }
 			// Checking the method first narrows `command.params` to Runtime.evaluate's shape.
-			if (command.method !== 'Runtime.evaluate' || readyTargetContext.sessionId) {
-				return { targetContext: readyTargetContext }
-			}
-			if (command.params?.contextId != null) {
-				return { targetContext: readyTargetContext }
+			if (command.method !== 'Runtime.evaluate' || readyTargetContext.sessionId || command.params?.contextId != null) {
+				return { targetContext: readyTargetContext, commandOptions }
 			}
 
 			return {
 				targetContext: readyTargetContext,
+				commandOptions,
 				params: {
 					...(command.params ?? { expression: '' }),
 					contextId: readyTargetContext.executionContextId,
@@ -194,7 +196,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		return listExtensionTargets(session, frameStateByTabId.get(session.tabId))
 	}
 
-	const attachTarget = async (targetId: string) => {
+	const attachTarget = async (targetId: string, options?: { iframeMatch?: ExtensionIframeMatch }) => {
 		const target = parseExtensionTargetId(targetId)
 		const session = currentSession
 		if (!session) {
@@ -206,7 +208,7 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		if (session.tabId !== target.tabId) {
 			throw new Error(`Watcher ${hostInfo.watcherId} is pinned to tab ${session.tabId}, not tab ${target.tabId}`)
 		}
-		requestTargetSelection(session, target.frameId)
+		requestTargetSelection(session, target.frameId, (target.frameId && options?.iframeMatch) || null)
 		return { ok: true as const, tab: sessionToBrowserTab(session), watcherId: hostInfo.watcherId }
 	}
 
@@ -429,9 +431,9 @@ export const createExtensionSource = (options: ExtensionSourceOptions): CdpSourc
 		return getSelectedExtensionTarget(session, frameStateByTabId.get(session.tabId))
 	}
 
-	function requestTargetSelection(session: ExtensionSession, frameId: string | null): void {
+	function requestTargetSelection(session: ExtensionSession, frameId: string | null, match?: ExtensionIframeMatch | null): void {
 		const state = getOrCreateFrameState(session.tabId)
-		setRequestedTargetSelection(state, frameId)
+		setRequestedTargetSelection(state, frameId, match)
 		reconcileTargetSelection(session)
 	}
 

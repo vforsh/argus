@@ -1,3 +1,4 @@
+import type { ExtensionIframeMatch } from '@vforsh/argus-core'
 import type { CdpSourceTarget } from './types.js'
 import type { CdpTargetContext } from '../cdp/connection.js'
 import { normalizeNetUrlKey } from '../net/filtering.js'
@@ -18,6 +19,8 @@ export type ExtensionFrameState = {
 	frames: Map<string, ExtensionFrame>
 	executionContexts: Map<string, number>
 	pendingTitleLoads: Set<string>
+	/** Epoch ms of the last real top-frame navigation (reload included); null before the first one. */
+	lastTopNavigationAt: number | null
 }
 
 export type ExtensionFrame = {
@@ -37,6 +40,12 @@ export type RequestedFrameHint = {
 	url: string | null
 	urlKey: string | null
 	title: string | null
+	/**
+	 * The selector the user picked the iframe with (`--iframe-url`/`--iframe-title`). It names the
+	 * intent, so it re-resolves first; the frame-derived fields above only break ties or cover a
+	 * selection made without one (`--iframe auto`, the extension popup).
+	 */
+	match?: ExtensionIframeMatch
 }
 
 export type RequestedTargetResolution = { kind: 'page' } | { kind: 'pending' } | { kind: 'frame'; frameId: string }
@@ -54,6 +63,7 @@ export const createEmptyFrameState = (): ExtensionFrameState => ({
 	frames: new Map(),
 	executionContexts: new Map(),
 	pendingTitleLoads: new Set(),
+	lastTopNavigationAt: null,
 })
 
 export { createNotAttachedError } from '../errors.js'
@@ -153,15 +163,16 @@ export const parseExecutionContext = (params: unknown): { id: number; frameId: s
 	}
 }
 
-export const createRequestedFrameHint = (frame: ExtensionFrame | null | undefined): RequestedFrameHint | null => {
+export const createRequestedFrameHint = (frame: ExtensionFrame | null | undefined, match?: ExtensionIframeMatch): RequestedFrameHint | null => {
 	if (!frame) {
-		return null
+		return match ? { url: null, urlKey: null, title: null, match } : null
 	}
 
 	return {
 		url: frame.url || null,
 		urlKey: normalizeNetUrlKey(frame.url),
 		title: frame.title?.trim() || null,
+		...(match ? { match } : {}),
 	}
 }
 
@@ -254,7 +265,9 @@ export const buildFrameTargetContext = (state: ExtensionFrameState, frameId: str
 	sessionId: state.frames.get(frameId)?.sessionId ?? null,
 })
 
-const findSingleMatchingFrameId = (state: ExtensionFrameState, predicate: (frame: ExtensionFrame) => boolean): string | null => {
+type FramePredicate = (frame: ExtensionFrame) => boolean
+
+const findSingleMatchingFrameId = (state: ExtensionFrameState, predicate: FramePredicate): string | null => {
 	let matchId: string | null = null
 	for (const frame of state.frames.values()) {
 		if (frame.frameId === state.topFrameId || !predicate(frame)) {
@@ -268,36 +281,52 @@ const findSingleMatchingFrameId = (state: ExtensionFrameState, predicate: (frame
 	return matchId
 }
 
+/**
+ * Re-resolve a selection whose frame id is gone. The user's own selector goes first: a host page
+ * that re-signs the iframe URL on every load defeats the exact URL, while the substring the user
+ * chose survives. When it matches several frames, the frame-derived hint picks among
+ * them; when it matches none, the hint alone decides. Every path stays unique-or-nothing.
+ */
 const findRequestedFrameMatch = (state: ExtensionFrameState, requestedFrameHint: RequestedFrameHint): string | null => {
-	const exactUrlMatch = findFrameMatchByUrl(state, requestedFrameHint.url)
+	const { match } = requestedFrameHint
+	if (!match) {
+		return findHintFrameMatch(state, requestedFrameHint, () => true)
+	}
+
+	const matchesSelector: FramePredicate = (frame) => frameMatchesIframeSelector(frame, match)
+	const selectorMatches = [...state.frames.values()].filter((frame) => frame.frameId !== state.topFrameId && matchesSelector(frame))
+	if (selectorMatches.length === 1) {
+		return selectorMatches[0]!.frameId
+	}
+	return findHintFrameMatch(state, requestedFrameHint, selectorMatches.length > 0 ? matchesSelector : () => true)
+}
+
+/** Same case-insensitive substring rule the CLI selected with, including its title-or-URL fallback. */
+const frameMatchesIframeSelector = (frame: ExtensionFrame, match: ExtensionIframeMatch): boolean => {
+	if (!frame.url) {
+		return false
+	}
+	const haystack = match.by === 'url' ? frame.url : (frame.title ?? frame.url)
+	return haystack.toLowerCase().includes(match.value.toLowerCase())
+}
+
+const findHintFrameMatch = (state: ExtensionFrameState, requestedFrameHint: RequestedFrameHint, within: FramePredicate): string | null => {
+	const matchWithin = (predicate: FramePredicate) => findSingleMatchingFrameId(state, (frame) => within(frame) && predicate(frame))
+	const { url, urlKey, title } = requestedFrameHint
+
+	const exactUrlMatch = url == null ? null : matchWithin((frame) => frame.url === url)
 	if (exactUrlMatch) {
 		return exactUrlMatch
 	}
 
-	const normalizedUrlMatch = findFrameMatchByNormalizedUrl(state, requestedFrameHint.urlKey)
+	const normalizedUrlMatch = urlKey == null ? null : matchWithin((frame) => normalizeNetUrlKey(frame.url) === urlKey)
 	if (normalizedUrlMatch) {
 		return normalizedUrlMatch
 	}
 
-	if (requestedFrameHint.url != null || !requestedFrameHint.title) {
+	if (url != null || !title) {
 		return null
 	}
 
-	return findSingleMatchingFrameId(state, (frame) => frame.title?.trim() === requestedFrameHint.title)
-}
-
-const findFrameMatchByUrl = (state: ExtensionFrameState, url: string | null): string | null => {
-	if (url == null) {
-		return null
-	}
-
-	return findSingleMatchingFrameId(state, (frame) => frame.url === url)
-}
-
-const findFrameMatchByNormalizedUrl = (state: ExtensionFrameState, urlKey: string | null): string | null => {
-	if (urlKey == null) {
-		return null
-	}
-
-	return findSingleMatchingFrameId(state, (frame) => normalizeNetUrlKey(frame.url) === urlKey)
+	return matchWithin((frame) => frame.title?.trim() === title)
 }

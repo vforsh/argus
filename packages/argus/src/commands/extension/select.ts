@@ -45,7 +45,7 @@ export const runExtensionSelect = async (id: string | undefined, options: Extens
 		return
 	}
 
-	const selected = await selectExtensionTarget(resolved.watcher, target.target)
+	const selected = await selectExtensionTarget(resolved.watcher, target.target, options)
 	if (!selected.ok) {
 		writeFailure(output, options, selected.error, 1)
 		return

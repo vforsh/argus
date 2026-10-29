@@ -48,6 +48,8 @@ export class ScenarioTimeoutError extends Error {
 
 export const evaluateExpression = async (session: CdpSessionHandle, options: EvalRequestOptions): Promise<EvalResponse> => {
 	const args = hasEvalArgs(options.args) ? options.args : undefined
+	// The scenario bridge keeps the plain session: its binding cleanup must still run after a timeout.
+	const evalSession = withEvalDeadline(session, options.timeoutMs)
 
 	let scenarioBridge: Awaited<ReturnType<typeof installScenarioBridge>> | undefined
 	try {
@@ -58,7 +60,7 @@ export const evaluateExpression = async (session: CdpSessionHandle, options: Eva
 			scenarioBridge = await installScenarioBridge(session, options.expression, args, options.scenarioServices, options.timeoutMs)
 		}
 
-		const recordResult = await evaluateAndAwaitRecord(session, {
+		const recordResult = await evaluateAndAwaitRecord(evalSession, {
 			...options,
 			expression: wrapExpressionWithArgs(scenarioBridge?.expression ?? options.expression, args),
 			replMode: scenarioBridge ? false : options.replMode,
@@ -68,7 +70,7 @@ export const evaluateExpression = async (session: CdpSessionHandle, options: Eva
 		const record = recordResult.record
 
 		if (options.jsonValue) {
-			const jsonResult = await materializeJsonValue(session, record, options)
+			const jsonResult = await materializeJsonValue(evalSession, record, options)
 			if (!jsonResult.ok) return jsonResult.response
 
 			return {
@@ -79,7 +81,7 @@ export const evaluateExpression = async (session: CdpSessionHandle, options: Eva
 			}
 		}
 
-		const value = await materializeRemoteObject(session, record, options)
+		const value = await materializeRemoteObject(evalSession, record, options)
 
 		return {
 			ok: true,
@@ -99,6 +101,27 @@ export const evaluateExpression = async (session: CdpSessionHandle, options: Eva
 }
 
 type EvalRecordResult = { record: RuntimeRemoteObject | undefined; exception: false } | { response: EvalResponse; exception: true }
+
+/**
+ * One deadline for the whole eval, not one per CDP call.
+ *
+ * Evaluate, `awaitPromise` and materialization each used to get the full `timeoutMs`, and an
+ * extension iframe still re-attaching after a reload spends part of it before the first call even
+ * runs (`waitForSelectedFrameCommandTarget`). Per-call budgets then add up past the CLI's
+ * timeout-plus-grace, and the client gives up before the watcher's diagnosis arrives.
+ */
+const withEvalDeadline = (session: CdpSessionHandle, timeoutMs: number | undefined): CdpSessionHandle => {
+	if (timeoutMs == null) return session
+	const deadline = Date.now() + timeoutMs
+	return {
+		isAttached: () => session.isAttached(),
+		sendAndWait: (method, params, options) =>
+			session.sendAndWait(method, params, options?.timeoutMs == null ? options : { ...options, timeoutMs: Math.max(1, deadline - Date.now()) }),
+		onEvent: (method, handler) => session.onEvent(method, handler),
+		getTargetContext: () => session.getTargetContext(),
+		getReadyTargetContext: () => session.getReadyTargetContext(),
+	}
+}
 
 const hasEvalArgs = (args: Record<string, string> | undefined): args is Record<string, string> => args != null && Object.keys(args).length > 0
 

@@ -151,7 +151,7 @@ const selectTargetIfRequested = async (
 		return false
 	}
 
-	const selected = await selectExtensionTarget(watcher, target.target)
+	const selected = await selectExtensionTarget(watcher, target.target, options)
 	if (!selected.ok) {
 		writeFailure(output, options, selected.error, 1)
 		return false

@@ -40,7 +40,7 @@ describe('extension source selected-frame recovery', () => {
 		])
 		for (const result of results) {
 			expect(result.status).toBe('rejected')
-			if (result.status === 'rejected') expect(result.reason.code).toBe('extension_frame_not_ready')
+			if (result.status === 'rejected') expect(result.reason.code).toBe('extension_frame_missing')
 		}
 		expect(harness.commands.filter((command) => methods.includes(command.method as CdpMethod))).toHaveLength(0)
 		expect(harness.commands.some((command) => command.method === 'DOM.getFrameOwner')).toBe(false)

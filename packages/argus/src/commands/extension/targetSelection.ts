@@ -1,5 +1,7 @@
 import { formatError } from '../../cli/parse.js'
 import type {
+	ExtensionAttachRequest,
+	ExtensionIframeMatch,
 	ExtensionTabActionResponse,
 	ExtensionTargetSummary,
 	ExtensionTargetsResponse,
@@ -41,15 +43,22 @@ export const fetchExtensionTargets = async (
 	}
 }
 
+/**
+ * Select `target` on the watcher. `options` is the selector it was resolved with: the watcher keeps
+ * an `--iframe-url`/`--iframe-title` substring and re-resolves it when the iframe is re-created
+ * under a fresh id after a reload.
+ */
 export const selectExtensionTarget = async (
 	watcher: WatcherRecord,
 	target: ExtensionTargetSummary,
+	options: ExtensionTargetSelectorOptions = {},
 ): Promise<{ ok: true; tab: ExtensionTabActionResponse['tab']; watcherId?: string } | { ok: false; error: string }> => {
+	const iframeMatch = toIframeMatch(options)
 	try {
 		const response = await fetchWatcherJson<ApiResult<ExtensionTabActionResponse>>(watcher, {
 			path: '/attach',
 			method: 'POST',
-			body: { targetId: target.id },
+			body: { targetId: target.id, ...(iframeMatch ? { iframeMatch } : {}) } satisfies ExtensionAttachRequest,
 			timeoutMs: 5_000,
 			returnErrorResponse: true,
 		})
@@ -60,6 +69,12 @@ export const selectExtensionTarget = async (
 	} catch (error) {
 		return { ok: false, error: `${watcher.id}: failed to select target (${formatError(error)})` }
 	}
+}
+
+const toIframeMatch = (options: ExtensionTargetSelectorOptions): ExtensionIframeMatch | undefined => {
+	if (options.iframeUrl) return { by: 'url', value: options.iframeUrl }
+	if (options.iframeTitle) return { by: 'title', value: options.iframeTitle }
+	return undefined
 }
 
 export const waitForSelectedTarget = async (
