@@ -94,10 +94,11 @@ export const parseUntilFlags = (options: UntilFlags, output: Output): UntilPlan 
 
 /**
  * Where the last poll of a missed wait got stuck, so a reader knows which layer to fix:
- * the selected iframe never came back (`target_missing`), it came back but never got an execution
+ * the page never left the document the action navigated away from (`navigation_pending`), the
+ * selected iframe never came back (`target_missing`), it came back but never got an execution
  * context (`target_not_ready`), the condition ran and was falsy or threw, or the request failed.
  */
-export type UntilLastState = 'target_missing' | 'target_not_ready' | 'falsy' | 'threw' | 'error'
+export type UntilLastState = 'navigation_pending' | 'target_missing' | 'target_not_ready' | 'falsy' | 'threw' | 'error'
 
 /** Result of a post-action wait, shaped for the command's JSON output. */
 export type UntilOutcome =
@@ -121,8 +122,17 @@ export type UntilOutcome =
  * globals are missing and the target may be swapping, which is exactly when callers wait. A
  * selected iframe that is missing or still booting (`extension_frame_missing`/`_not_ready`) is the
  * same "not yet": the watcher keeps the selection and each poll waits inside the re-resolved frame.
+ *
+ * @param navigatedFrom The navigating action's pre-action document. Chrome acknowledges a reload
+ *   before the old page stops running, so without it the first poll could match the old page;
+ *   with it the watcher answers `navigation_pending` (another "not yet") until the new document
+ *   commits. Once a poll gets past that check the document can only be newer, so later polls skip it.
  */
-export const waitForCondition = async (watcher: Pick<WatcherRecord, 'id' | 'host' | 'port'>, plan: UntilPlan): Promise<UntilOutcome> => {
+export const waitForCondition = async (
+	watcher: Pick<WatcherRecord, 'id' | 'host' | 'port'>,
+	plan: UntilPlan,
+	navigatedFrom?: string,
+): Promise<UntilOutcome> => {
 	const startedAt = Date.now()
 	// `--until-timeout` is a hard deadline, and an `argus session` request's own deadline or
 	// cancellation ends the wait too — otherwise an abandoned request kept polling for its full
@@ -134,6 +144,7 @@ export const waitForCondition = async (watcher: Pick<WatcherRecord, 'id' | 'host
 	let last: ConditionReply | undefined
 	let lastError: string | undefined
 	let lastState: UntilLastState | undefined
+	let guard = navigatedFrom
 
 	while (Date.now() < deadline && !parent.signal?.aborted) {
 		iterations += 1
@@ -146,6 +157,7 @@ export const waitForCondition = async (watcher: Pick<WatcherRecord, 'id' | 'host
 				returnByValue: true,
 				timeoutMs: Math.max(1, Math.min(UNTIL_EVAL_TIMEOUT_MS, deadline - Date.now())),
 				failOnException: false,
+				navigatedFrom: guard,
 			}),
 		)
 		// A reply after the deadline does not count, and a poll cut short by the deadline is not an
@@ -153,6 +165,7 @@ export const waitForCondition = async (watcher: Pick<WatcherRecord, 'id' | 'host
 		if (Date.now() > deadline) break
 
 		if (outcome.ok) {
+			guard = undefined
 			if (!outcome.response.exception && isTruthyEvalResult(outcome.response)) {
 				return { matched: true, value: outcome.response.result, iterations, elapsedMs: Date.now() - startedAt }
 			}
@@ -180,6 +193,7 @@ export const waitForCondition = async (watcher: Pick<WatcherRecord, 'id' | 'host
 }
 
 const classifyEvalFailure = (code: string | undefined): UntilLastState => {
+	if (code === 'navigation_pending') return 'navigation_pending'
 	if (code === 'extension_frame_missing') return 'target_missing'
 	if (code === 'extension_frame_not_ready') return 'target_not_ready'
 	return 'error'
@@ -205,6 +219,9 @@ export const describeUntilMiss = (plan: UntilPlan, outcome: Extract<UntilOutcome
 }
 
 const describeLastReply = (outcome: Extract<UntilOutcome, { matched: false }>): string => {
+	if (outcome.lastState === 'navigation_pending') {
+		return `the page never left the document from before the action (the navigation did not start or commit — a beforeunload prompt, or a server that never answered?): ${outcome.lastError}`
+	}
 	if (outcome.lastState === 'target_missing') return `selected iframe never came back: ${outcome.lastError}`
 	if (outcome.lastState === 'target_not_ready') return `selected iframe never became executable: ${outcome.lastError}`
 	if (outcome.lastError) return `last error: ${outcome.lastError}`

@@ -23,6 +23,8 @@ export type EvalOnceInput = {
 	timeoutMs?: number
 	failOnException: boolean
 	scenario?: boolean
+	/** A navigating action's `navigatedFrom`: the watcher answers `navigation_pending` until the target leaves that document. */
+	navigatedFrom?: string
 }
 
 export type EvalWithRetriesInput = EvalOnceInput & {
@@ -56,6 +58,7 @@ export const evalOnce = async (input: EvalOnceInput): Promise<EvalOutcome> => {
 		returnByValue: input.returnByValue,
 		timeoutMs: evalTimeoutMs,
 		scenario: input.scenario,
+		navigatedFrom: input.navigatedFrom,
 	}
 	const requestTimeoutMs = evalTimeoutMs + REQUEST_TIMEOUT_GRACE_MS
 

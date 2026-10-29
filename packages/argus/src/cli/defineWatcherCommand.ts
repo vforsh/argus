@@ -181,7 +181,7 @@ const runWatcherCommand = async <
 	const renderOutput: Output = actionFlags.quiet && !output.json ? { ...output, writeHuman: () => {} } : output
 	const ctx: WatcherCommandContext<TArgs, TOptions, TMeta> = { output: renderOutput, watcher: result.watcher, args, options, meta: plan.meta as TMeta }
 
-	const outcome = until ? await waitForCondition(result.watcher, until) : undefined
+	const outcome = until ? await waitForCondition(result.watcher, until, readNavigatedFrom(result.data)) : undefined
 	// A missed condition still reports the action: it did happen, so a retry would repeat it.
 	const missed = until && outcome && !outcome.matched ? describeUntilMiss(until, outcome) : undefined
 	if (missed) setExitCode(1)
@@ -205,6 +205,15 @@ const runWatcherCommand = async <
 		renderOutput.writeHuman(`--until met after ${formatSeconds(outcome.elapsedMs)}: ${describeConditionReply({ result: outcome.value })}`)
 	}
 	if (missed) output.writeWarn(missed)
+}
+
+/**
+ * The pre-action document a navigating action (`reload`, `goto`, `back`/`forward`) reports, so
+ * `--until` never matches in the page it navigated away from. Absent for every other action.
+ */
+const readNavigatedFrom = (response: unknown): string | undefined => {
+	const value = isPlainObject(response) ? response.navigatedFrom : undefined
+	return typeof value === 'string' ? value : undefined
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => value != null && typeof value === 'object' && !Array.isArray(value)
