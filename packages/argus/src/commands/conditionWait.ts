@@ -92,6 +92,13 @@ export const parseUntilFlags = (options: UntilFlags, output: Output): UntilPlan 
 	return { expression, timeoutMs: timeout.value ?? DEFAULT_UNTIL_TIMEOUT_MS }
 }
 
+/**
+ * Where the last poll of a missed wait got stuck, so a reader knows which layer to fix:
+ * the selected iframe never came back (`target_missing`), it came back but never got an execution
+ * context (`target_not_ready`), the condition ran and was falsy or threw, or the request failed.
+ */
+export type UntilLastState = 'target_missing' | 'target_not_ready' | 'falsy' | 'threw' | 'error'
+
 /** Result of a post-action wait, shaped for the command's JSON output. */
 export type UntilOutcome =
 	| { matched: true; value: unknown; iterations: number; elapsedMs: number }
@@ -99,6 +106,8 @@ export type UntilOutcome =
 			matched: false
 			iterations: number
 			elapsedMs: number
+			/** Absent when no poll got an answer before the deadline. */
+			lastState?: UntilLastState
 			last?: ConditionReply
 			lastError?: string
 			/** Set when the caller's own deadline or cancellation (an `argus session` request) ended the wait first. */
@@ -109,7 +118,9 @@ export type UntilOutcome =
  * Poll `plan.expression` until it is truthy or the budget runs out.
  *
  * Exceptions and transport failures count as "not yet": right after `reload`/`goto` the app's
- * globals are missing and the target may be swapping, which is exactly when callers wait.
+ * globals are missing and the target may be swapping, which is exactly when callers wait. A
+ * selected iframe that is missing or still booting (`extension_frame_missing`/`_not_ready`) is the
+ * same "not yet": the watcher keeps the selection and each poll waits inside the re-resolved frame.
  */
 export const waitForCondition = async (watcher: Pick<WatcherRecord, 'id' | 'host' | 'port'>, plan: UntilPlan): Promise<UntilOutcome> => {
 	const startedAt = Date.now()
@@ -122,6 +133,7 @@ export const waitForCondition = async (watcher: Pick<WatcherRecord, 'id' | 'host
 	let iterations = 0
 	let last: ConditionReply | undefined
 	let lastError: string | undefined
+	let lastState: UntilLastState | undefined
 
 	while (Date.now() < deadline && !parent.signal?.aborted) {
 		iterations += 1
@@ -146,8 +158,10 @@ export const waitForCondition = async (watcher: Pick<WatcherRecord, 'id' | 'host
 			}
 			last = summarizeConditionReply(outcome.response)
 			lastError = undefined
+			lastState = 'exception' in last ? 'threw' : 'falsy'
 		} else {
 			lastError = outcome.error
+			lastState = classifyEvalFailure(outcome.code)
 		}
 
 		await sleepUntil(Math.min(Date.now() + UNTIL_INTERVAL_MS, deadline), parent.signal)
@@ -159,9 +173,16 @@ export const waitForCondition = async (watcher: Pick<WatcherRecord, 'id' | 'host
 		iterations,
 		elapsedMs: Date.now() - startedAt,
 		...(cutByRequest ? { stoppedBy: 'request' as const } : {}),
+		...(lastState ? { lastState } : {}),
 		...(last ? { last } : {}),
 		...(lastError ? { lastError } : {}),
 	}
+}
+
+const classifyEvalFailure = (code: string | undefined): UntilLastState => {
+	if (code === 'extension_frame_missing') return 'target_missing'
+	if (code === 'extension_frame_not_ready') return 'target_not_ready'
+	return 'error'
 }
 
 /** Resolve at `until` (epoch ms), or as soon as `signal` aborts. */
@@ -184,6 +205,8 @@ export const describeUntilMiss = (plan: UntilPlan, outcome: Extract<UntilOutcome
 }
 
 const describeLastReply = (outcome: Extract<UntilOutcome, { matched: false }>): string => {
+	if (outcome.lastState === 'target_missing') return `selected iframe never came back: ${outcome.lastError}`
+	if (outcome.lastState === 'target_not_ready') return `selected iframe never became executable: ${outcome.lastError}`
 	if (outcome.lastError) return `last error: ${outcome.lastError}`
 	if (outcome.last) return `last: ${describeConditionReply(outcome.last)}`
 	return 'no reply'

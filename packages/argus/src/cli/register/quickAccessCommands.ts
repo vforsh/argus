@@ -103,7 +103,8 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 	},
 	{
 		name: 'reload',
-		description: 'Reload the page attached to a watcher',
+		description:
+			'Reload the page attached to a watcher. A selected extension iframe stays selected; --until polls inside it once the host page re-creates it',
 		arguments: [{ flags: '[id]', description: 'Watcher id to reload' }],
 		options: [
 			{ flags: '--ignore-cache', description: 'Bypass browser cache' },
@@ -117,6 +118,8 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 			'argus reload app --timeout 2m',
 			'argus reload app --json',
 			'argus reload app --until "typeof window.app !== \'undefined\'" --until-timeout 60s',
+			// Extension watcher with an iframe selected: polls inside the re-created iframe, not the host page.
+			'argus reload app --until "window.app?.ready" --until-timeout 60s',
 		],
 		action: async (id, options) => {
 			await runReload(id, options)
