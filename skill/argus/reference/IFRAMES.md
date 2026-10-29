@@ -30,4 +30,4 @@ argus ext select app --iframe-title "Game Title" | --iframe auto | --page
 argus ext targets app --tree
 ```
 
-Selection is per watcher and survives reloads; a missing frame fails `extension_frame_not_ready` rather than running on the host. `net` and `net mock add` default to the selected iframe (`--scope tab|page` opts out).
+Selection is per watcher and survives reloads (re-resolved by the same `--iframe-url`/`--iframe-title`); a missing frame fails `extension_frame_missing`, a booting one `extension_frame_not_ready`, never running on the host. After a reload use `argus reload app --until "<ready expr>"`, which polls inside the re-created iframe. `net` and `net mock add` default to the selected iframe (`--scope tab|page` opts out).

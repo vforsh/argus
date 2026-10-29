@@ -68,7 +68,13 @@ argus ext tabs --browser codex --json                    # later: select that br
 
 Failed binds can resume with the same ticket before expiry, even after navigation removed its URL locator. Retry keeps the selected browser/tab/watcher run and skips completed navigation; an owner/endpoint replacement fails with `registration_conflict`. Concurrent attempts return `bind_ticket_used`. `prepare` probes the real bind page; old hosts without it return `not_available`. Background visibility requires policy support and never falls back to foreground activation. Attach failures retain codes such as `watcher_id_taken` and `tab_owned_by_other_debugger`.
 
-Embedded app: `argus ext use --url portal.example --as app --iframe-url game.example`; later switch with `argus ext select app --iframe-url … | --iframe-title … | --page`. Commands then run inside the selected iframe (eval, DOM, click, screenshot, `net --scope selected`). Reload stays tab-scoped; a selected iframe that is missing waits 3s then fails `extension_frame_not_ready` instead of silently using the host page.
+Embedded app: `argus ext use --url portal.example --as app --iframe-url game.example`; later switch with `argus ext select app --iframe-url … | --iframe-title … | --page`. Commands then run inside the selected iframe (eval, DOM, click, screenshot, `net --scope selected`). Reload stays tab-scoped and keeps the selection: the watcher re-resolves the same `--iframe-url`/`--iframe-title` substring when the host page re-creates the iframe, and never falls back to the host page. After a reload, wait inside the iframe in one step instead of `sleep` + `ext select` + polling:
+
+```bash
+argus reload app --until "window.app?.ready" --until-timeout 60s   # polls inside the re-created iframe
+```
+
+Within 15s of a reload, frame commands wait for the iframe up to half their `--timeout`; otherwise up to 3s. Then they fail `extension_frame_missing` (iframe not back) or `extension_frame_not_ready` (back, still booting).
 
 Tab stuck in background or booting: `argus ext show app` then `argus reload app`.
 
@@ -176,7 +182,7 @@ Read the error code before retrying or raising a timeout.
 | ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `watcher_not_found`             | id not in registry (`candidates` lists live ids) | `argus list`, `argus watcher prune`, reattach                                                                       |
 | `eval_exception`                | the expression threw                            | read `exception.description` (message + stack); fix the expression, don't retry                                      |
-| `wait_timeout`                  | `--until` / `wait` condition never truthy       | read `last`; the action (if any) already ran — don't blindly repeat it                                              |
+| `wait_timeout`                  | `--until` / `wait` condition never truthy       | read `lastState`/`last`; the action (if any) already ran — don't blindly repeat it                                  |
 | "failed to reach watcher"       | process gone / hung                             | `argus watcher status <id>`, `argus doctor`                                                                         |
 | `chrome_unreachable`            | CDP endpoint down                               | `argus chrome status --cdp 127.0.0.1:9222`; restart Chrome                                                          |
 | `cdp_not_attached`              | watcher has no target yet                       | check `--url/--type` match; `argus page ls --tree`                                                                  |
@@ -185,7 +191,8 @@ Read the error code before retrying or raising a timeout.
 | `cdp_timeout`                   | expression exceeded its deadline                | the only case a longer `--timeout` fixes; for waits use `eval-until`                                                |
 | `extension_bridge_unresponsive` | extension worker/native channel stalled         | `argus ext doctor --watcher <id>`; reload the extension at chrome://extensions                                     |
 | `dialog_blocking`               | alert/confirm/prompt open                       | `argus dialog accept <id>` or `dialog dismiss <id>`                                                                 |
-| `extension_frame_not_ready`     | selected iframe missing/booting                 | wait, `argus ext targets <id> --tree`, or `ext select --page`                                                       |
+| `extension_frame_missing`       | selected iframe not re-created yet              | `reload --until …`, `argus ext targets <id> --tree`, or `ext select` another target                                 |
+| `extension_frame_not_ready`     | selected iframe back, no execution context yet  | retry in a few seconds; `reload --until …` waits through it                                                         |
 | `target_not_focused`            | page could not be activated for keyboard        | `argus page show <id>` then retry                                                                                   |
 | `multiple_matches`              | selector hit >1 element                         | narrow selector, add `--text`, or `--all` (`--nth` on `dom add`)                                                    |
 | `not_interactable`              | element hidden/covered/zero-size                | `scroll-to`, `dom info`, wait for state                                                                             |

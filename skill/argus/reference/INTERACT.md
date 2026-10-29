@@ -28,7 +28,8 @@ argus keydown app Escape --until "!document.querySelector('.modal')"
 ```
 
 - JSON success adds `until: { matched: true, value, iterations, elapsedMs }`.
-- A miss exits 1 with `{ ok: false, error: { code: "wait_timeout" }, action, until: { matched: false, last, lastError? } }`. The action **did** run, so inspect `last` before repeating it.
+- A miss exits 1 with `{ ok: false, error: { code: "wait_timeout" }, action, until: { matched: false, lastState, last, lastError? } }`. The action **did** run, so inspect `last` before repeating it. `lastState` names where the last poll stuck: `target_missing` (selected iframe never re-created), `target_not_ready` (no execution context yet), `falsy`, `threw`, or `error`.
+- With an extension iframe selected, `reload --until` polls inside that iframe once it is re-created; a missing or booting iframe counts as "not yet".
 - `-q`/`--quiet` prints nothing on success.
 
 ## Drag

@@ -103,7 +103,7 @@ argus ext select app --page                    # back to the host page
 
 Prefer `--iframe-url` / `--iframe-title` over `auto`. Once selected, eval, DOM, interaction, and capture run inside the iframe; `net` and `net mock add` default to that iframe; `--scope tab|page` opts out ([NET.md](./NET.md)).
 
-**Recovery semantics.** `argus reload <id>` reloads the whole tab. A selected iframe stays selected while it is missing or booting: commands wait up to 3s for readiness, then fail with `extension_frame_not_ready`. They never fall back to the host page. `ext targets --tree` shows the missing frame as `pending` (`attached: true`, `targetReady: false` in JSON). Retry once the iframe loads, or `ext select <id> --page` explicitly. `ext doctor --watcher <id>` separates target readiness from bridge health.
+**Recovery semantics.** `argus reload <id>` reloads the whole tab. A selected iframe stays selected while it is missing or booting, and the watcher re-resolves it by the `--iframe-url`/`--iframe-title` substring it was selected with (then exact URL, then origin+path), unique match only. Commands wait for readiness — up to half their `--timeout` within 15s of a reload, up to 3s otherwise — then fail with `extension_frame_missing` (not re-created) or `extension_frame_not_ready` (no execution context yet). They never fall back to the host page. `argus reload <id> --until "<expr>"` treats both as "not yet" and polls inside the re-resolved iframe. `ext targets --tree` shows the missing frame as `pending` (`attached: true`, `targetReady: false` in JSON). Retry once the iframe loads, or `ext select <id> --page` explicitly. `ext doctor --watcher <id>` separates target readiness from bridge health.
 
 Iframe not appearing after attach:
 

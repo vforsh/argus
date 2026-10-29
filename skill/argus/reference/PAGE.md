@@ -20,7 +20,7 @@ argus page reload <targetId> --param foo=bar        # reload any CDP target, opt
 - A bare token without `/`, `?`, `#`, or `.` is a **host**: `goto app settings` → `http://settings/`. Write `/settings`.
 - Every `goto`/`back`/`forward` returns `epoch` in `--json` for race-free log reads ([LOGS.md](./LOGS.md)).
 - `--wait none` returns as soon as Chrome accepts the command and reports the requested URL. There is no `networkidle`; use `net watch --settle` ([NET.md](./NET.md)). Same-document navigations and bfcache restores settle immediately.
-- Navigation is tab-scoped even with an iframe selected; the selection persists and `extension_frame_not_ready` recovery applies.
+- Navigation is tab-scoped even with an iframe selected; the selection persists and `extension_frame_missing`/`extension_frame_not_ready` recovery applies.
 - Errors: `navigation_failed` carries Chrome's `errorText` (`net::ERR_CONNECTION_REFUSED`); `navigation_timeout` means the phase was late, not that it failed; `no_history` means already at the edge (`index`/`length` in the response).
 
 ## Targets (CDP only)
