@@ -73,6 +73,8 @@ export type NavigateResponse = Ok<{
 	url: string
 	/** Chrome's loader id for this navigation, when it reported one. */
 	loaderId: string | null
+	/** See `ReloadResponse.navigatedFrom`. Absent for a same-document navigation, which replaces no document. */
+	navigatedFrom?: string
 	/**
 	 * Log epoch opened immediately before the navigation was dispatched.
 	 *
@@ -104,6 +106,11 @@ export type NavigateHistoryResponse = Ok<{
 	index: number
 	/** Number of entries in the session history. */
 	length: number
+	/**
+	 * See `ReloadResponse.navigatedFrom`. Present only when the wait saw a new document commit: a
+	 * same-document entry replaces no document, and `wait: none` observes nothing.
+	 */
+	navigatedFrom?: string
 	/** Log epoch opened immediately before the history entry was dispatched. */
 	epoch: LogEpoch
 	/** The wait mode that was actually applied. */

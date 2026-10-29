@@ -2,6 +2,7 @@ import type { NavigateHistoryRequest, NavigateHistoryResponse } from '@vforsh/ar
 import { DEFAULT_NAVIGATION_TIMEOUT_MS, DEFAULT_NAVIGATION_WAIT, navigateHistoryRequestSchema } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
 import { navigateHistory } from '../../cdp/navigation.js'
+import { readNavigationBaseline } from '../../cdp/documentIdentity.js'
 
 /**
  * Move the attached page through its session history.
@@ -17,6 +18,7 @@ export const route = defineJsonRoute<NavigateHistoryRequest, NavigateHistoryResp
 	endpoint: 'navigate/history',
 	handle: async ({ ctx, body: payload }) => {
 		const wait = payload.wait ?? DEFAULT_NAVIGATION_WAIT
+		const navigatedFrom = await readNavigationBaseline({ page: ctx.pageCdpSession, target: ctx.cdpSession })
 		const epoch = ctx.buffer.beginLogEpoch()
 		const result = await navigateHistory(ctx.pageCdpSession, {
 			direction: payload.direction,
@@ -30,6 +32,7 @@ export const route = defineJsonRoute<NavigateHistoryRequest, NavigateHistoryResp
 			url: result.url,
 			index: result.index,
 			length: result.length,
+			...(result.newDocument ? { navigatedFrom } : {}),
 			epoch,
 			waited: wait,
 		} satisfies NavigateHistoryResponse

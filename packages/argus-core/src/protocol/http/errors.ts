@@ -47,6 +47,7 @@ export const ARGUS_ERROR_CODES = [
 	'multiple_matches',
 	'native_host_install_failed',
 	'navigation_failed',
+	'navigation_pending',
 	'navigation_timeout',
 	'net_disabled',
 	'net_request_not_found',

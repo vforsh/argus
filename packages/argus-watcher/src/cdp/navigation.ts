@@ -33,6 +33,8 @@ export type NavigationWaiter = {
 	 * @throws A `navigation_timeout` coded error when the phase does not arrive in time.
 	 */
 	settle: (expectedLoaderId?: string | null) => Promise<string | null>
+	/** Whether the top frame committed a new document (bfcache restores included) rather than a same-document change. */
+	committedNewDocument: () => boolean
 	dispose: () => void
 }
 
@@ -48,6 +50,7 @@ export const armNavigationWaiter = (session: CdpSessionHandle, options: { wait: 
 	// not parsed). Waiting for `load` in either case would burn the whole timeout on a page that
 	// is already there.
 	let settledWithoutLoadUrl: string | null = null
+	let newDocument = false
 	let notify: (() => void) | null = null
 
 	// The top frame's id, so a same-document navigation inside an iframe cannot settle the wait.
@@ -76,6 +79,7 @@ export const armNavigationWaiter = (session: CdpSessionHandle, options: { wait: 
 			navigatedLoaderId = frame.loaderId ?? null
 			domFired = false
 			loadFired = false
+			newDocument = true
 			settledWithoutLoadUrl = params.type === 'BackForwardCacheRestore' ? navigatedUrl : null
 			notify?.()
 		}),
@@ -93,6 +97,7 @@ export const armNavigationWaiter = (session: CdpSessionHandle, options: { wait: 
 			if (meta.sessionId || !params.url) return
 			if (topFrameId != null && params.frameId !== topFrameId) return
 			settledWithoutLoadUrl = params.url
+			newDocument = false
 			notify?.()
 		}),
 	]
@@ -127,7 +132,7 @@ export const armNavigationWaiter = (session: CdpSessionHandle, options: { wait: 
 		return settledWithoutLoadUrl ?? navigatedUrl
 	}
 
-	return { settle, dispose }
+	return { settle, committedNewDocument: () => newDocument, dispose }
 }
 
 /** Result of a completed `Page.navigate`. */
@@ -160,7 +165,7 @@ export const navigatePage = async (
 }
 
 /** Result of a completed history navigation. */
-export type NavigateHistoryResult = { url: string; index: number; length: number }
+export type NavigateHistoryResult = { url: string; index: number; length: number; newDocument: boolean }
 
 /**
  * Move through the session history and wait for the requested phase.
@@ -190,7 +195,7 @@ export const navigateHistory = async (
 	try {
 		await session.sendAndWait('Page.navigateToHistoryEntry', { entryId: entry.id })
 		const settledUrl = await waiter.settle()
-		return { url: settledUrl ?? entry.url, index: targetIndex, length: entries.length }
+		return { url: settledUrl ?? entry.url, index: targetIndex, length: entries.length, newDocument: waiter.committedNewDocument() }
 	} finally {
 		waiter.dispose()
 	}

@@ -8,6 +8,7 @@ import {
 } from '@vforsh/argus-core'
 import { defineJsonRoute } from './defineRoute.js'
 import { navigatePage } from '../../cdp/navigation.js'
+import { readNavigationBaseline } from '../../cdp/documentIdentity.js'
 import { respondInvalidBody } from '../httpUtils.js'
 
 /**
@@ -43,6 +44,7 @@ export const route = defineJsonRoute<NavigateRequest, NavigateResponse>({
 
 		const wait = payload.wait ?? DEFAULT_NAVIGATION_WAIT
 		// Navigation is page-scoped, like /reload: a selected iframe stays selected across the load.
+		const navigatedFrom = await readNavigationBaseline({ page: ctx.pageCdpSession, target: ctx.cdpSession })
 		const epoch = ctx.buffer.beginLogEpoch()
 		const result = await navigatePage(ctx.pageCdpSession, {
 			url: rewritten.url,
@@ -55,6 +57,8 @@ export const route = defineJsonRoute<NavigateRequest, NavigateResponse>({
 			requestedUrl: rewritten.url,
 			url: result.url,
 			loaderId: result.loaderId,
+			// Chrome reports a loader only for a cross-document navigation; a hash change keeps the document.
+			...(result.loaderId ? { navigatedFrom } : {}),
 			epoch,
 			waited: wait,
 		} satisfies NavigateResponse

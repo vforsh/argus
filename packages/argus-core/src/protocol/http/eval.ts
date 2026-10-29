@@ -1,5 +1,5 @@
 import { defineProtocolSchema, validProtocolPayload } from '../schema.js'
-import { compact, optionalBoolean, optionalNumber, optionalRecord, readFields, requireObject, requiredString } from '../schemaFields.js'
+import { compact, optionalBoolean, optionalNumber, optionalRecord, optionalString, readFields, requireObject, requiredString } from '../schemaFields.js'
 import type { Ok } from './errors.js'
 
 /** Request payload for POST /eval. */
@@ -37,6 +37,12 @@ export type EvalRequest = {
 	jsonValue?: boolean
 	/** Install the temporary host bridge used by bundled scenario modules. */
 	scenario?: boolean
+	/**
+	 * A navigating action's `navigatedFrom`. While the selected target still shows that document
+	 * (or the host page has not committed its navigation), the watcher fails with
+	 * `navigation_pending` instead of evaluating in the page the action navigated away from.
+	 */
+	navigatedFrom?: string
 }
 
 /** Response payload for POST /eval. */
@@ -73,6 +79,7 @@ export const evalRequestSchema = defineProtocolSchema<EvalRequest>((value) => {
 		returnByValue: optionalBoolean,
 		jsonValue: optionalBoolean,
 		scenario: optionalBoolean,
+		navigatedFrom: optionalString,
 		timeoutMs: (input, key) => optionalNumber(input, key, { min: 0 }),
 		// `args` is string-only by contract; the eval runtime re-checks each entry before
 		// installing it, so the schema only rejects an outright wrong container shape.

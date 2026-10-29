@@ -1,6 +1,7 @@
 import type { EvalRequest, EvalResponse } from '@vforsh/argus-core'
 import { evalRequestSchema } from '@vforsh/argus-core'
 import { evaluateExpression, ScenarioTimeoutError } from '../../cdp/eval.js'
+import { assertNavigatedPast } from '../../cdp/documentIdentity.js'
 import type { CdpHealthDiagnosis } from '../../cdp/health.js'
 import type { RouteContext } from './types.js'
 import { defineJsonRoute } from './defineRoute.js'
@@ -30,15 +31,19 @@ export const route = defineJsonRoute<EvalRequest, EvalResponse>({
 	},
 })
 
-const runEval = (ctx: RouteContext, payload: EvalRequest): Promise<EvalResponse> =>
-	evaluateExpression(ctx.cdpSession, {
+const runEval = async (ctx: RouteContext, payload: EvalRequest): Promise<EvalResponse> => {
+	const timeoutMs = normalizeTimeout(payload.timeoutMs) ?? DEFAULT_EVAL_CDP_TIMEOUT_MS
+	if (payload.navigatedFrom != null) {
+		await assertNavigatedPast({ page: ctx.pageCdpSession, target: ctx.cdpSession }, payload.navigatedFrom, timeoutMs)
+	}
+	return evaluateExpression(ctx.cdpSession, {
 		expression: payload.expression,
 		args: normalizeEvalArgs(payload.args),
 		awaitPromise: normalizeBoolean(payload.awaitPromise, true),
 		replMode: normalizeBoolean(payload.replMode, true),
 		returnByValue: normalizeBoolean(payload.returnByValue, true),
 		jsonValue: normalizeBoolean(payload.jsonValue, false),
-		timeoutMs: normalizeTimeout(payload.timeoutMs) ?? DEFAULT_EVAL_CDP_TIMEOUT_MS,
+		timeoutMs,
 		scenario: normalizeBoolean(payload.scenario, false),
 		scenarioServices: {
 			buffer: ctx.buffer,
@@ -46,6 +51,7 @@ const runEval = (ctx: RouteContext, payload: EvalRequest): Promise<EvalResponse>
 			recorder: ctx.recorder,
 		},
 	})
+}
 
 /** Return the scenario's last progress snapshot, labeled with the same diagnosis a bare timeout gets. */
 const respondWithProgress = async (ctx: RouteContext, error: ScenarioTimeoutError): Promise<EvalResponse> => {

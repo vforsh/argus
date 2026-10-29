@@ -94,7 +94,14 @@ export type ReloadRequest = {
 export const DEFAULT_RELOAD_TIMEOUT_MS = 60_000
 
 /** Response payload for POST /reload. */
-export type ReloadResponse = Ok<{}>
+export type ReloadResponse = Ok<{
+	/**
+	 * Opaque identity of the selected target's document before the reload. Pass it as
+	 * `EvalRequest.navigatedFrom` so a post-reload poll never evaluates in the old page, which
+	 * keeps running until the new navigation commits.
+	 */
+	navigatedFrom?: string
+}>
 
 /** Schema for POST /reload request payloads. */
 export const reloadRequestSchema = defineProtocolSchema<ReloadRequest>((value) => {
