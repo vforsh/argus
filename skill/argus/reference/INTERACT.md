@@ -28,7 +28,8 @@ argus keydown app Escape --until "!document.querySelector('.modal')"
 ```
 
 - JSON success adds `until: { matched: true, value, iterations, elapsedMs }`.
-- A miss exits 1 with `{ ok: false, error: { code: "wait_timeout" }, action, until: { matched: false, lastState, last, lastError? } }`. The action **did** run, so inspect `last` before repeating it. `lastState` names where the last poll stuck: `target_missing` (selected iframe never re-created), `target_not_ready` (no execution context yet), `falsy`, `threw`, or `error`.
+- A miss exits 1 with `{ ok: false, error: { code: "wait_timeout" }, action, until: { matched: false, lastState, last, lastError? } }`. The action **did** run, so inspect `last` before repeating it. `lastState` names where the last poll stuck: `navigation_pending` (the page never left the document from before the action — the navigation did not start or commit, e.g. a `beforeunload` prompt), `target_missing` (selected iframe never re-created), `target_not_ready` (no execution context yet), `falsy`, `threw`, or `error`.
+- Navigating actions (`reload`, `goto`, a cross-document `page back/forward`) are safe against the old page: Chrome acknowledges a reload while the old document still runs, so their polls carry the pre-action document identity (frame id + loader id, `navigatedFrom` in the action's JSON) and the watcher answers `navigation_pending` ("not yet") until a new document commits — for a selected iframe, until the host page committed *and* the iframe was re-created. No `window.__marker` trick needed. Not covered: `back/forward --wait none` (whether the entry replaces the document is unknown) and a `click` that navigates (add `--wait-nav load`).
 - With an extension iframe selected, `reload --until` polls inside that iframe once it is re-created; a missing or booting iframe counts as "not yet".
 - `-q`/`--quiet` prints nothing on success.
 
