@@ -127,7 +127,7 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 
 **Never `sleep` after an action.** Every action (`click`, `hover`, `drag`, `fill`, `keydown`, `scroll-to`, `reload`, `goto`, `page back/forward`) takes:
 
-- `--settle` — return once the page stopped moving: document loaded, no open request for 500ms, then the app's optional `window.__argus.settle()` hook (return `false` for "not yet") and two frames. Navigations (`goto`, `reload`, cross-document `back/forward`) settle **by default** (`--no-settle` opts out). Best effort: a page that never goes quiet warns `settle: … ; continuing` and reports `settle.settled: false`, exit 0. `--settle-timeout` (default 10s).
+- `--settle` — return once the page stopped moving: document loaded, no open request for 500ms, then the app's optional `window.__argus.settle()` hook (return `false` for "not yet") and two frames. Navigations (`goto`, `reload`, cross-document `back/forward`) settle **by default** unless `--wait domcontentloaded|none` asked to return early (`--no-settle` opts out). Best effort: a page that never goes quiet warns `settle: … ; continuing` and reports `settle.settled: false`, exit 0. `--settle-timeout` (default 10s).
 - `--until <expr>` — assert a state: returns once the expression is truthy (throws = "not yet"; `--until-timeout`, default 15s). A miss exits 1 with `wait_timeout`, `lastState` and the last value; the action already ran. Polls never match the document a navigation left (`navigation_pending` until the new one commits).
 
 ```bash

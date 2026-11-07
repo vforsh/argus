@@ -133,7 +133,7 @@ export const defineActionCommand: ArgusDefineWatcherCommand =
 	(id, ...rest) =>
 		runWatcherCommand(spec, id, rest, true)
 
-type ActionFlags = UntilFlags & SettleFlags & { quiet?: boolean }
+type ActionFlags = UntilFlags & SettleFlags & { quiet?: boolean; wait?: string }
 
 const runWatcherCommand = async <
 	TOptions extends { json?: boolean },
@@ -185,9 +185,11 @@ const runWatcherCommand = async <
 	const renderOutput: Output = actionFlags.quiet && !output.json ? { ...output, writeHuman: () => {} } : output
 	const ctx: WatcherCommandContext<TArgs, TOptions, TMeta> = { output: renderOutput, watcher: result.watcher, args, options, meta: plan.meta as TMeta }
 
-	// Navigations settle unless told not to: their callers slept more than anyone else's.
+	// Navigations settle unless told not to: their callers slept more than anyone else's. A caller
+	// that asked to return before load (`--wait domcontentloaded|none`) did not ask for that.
 	const navigatedFrom = readNavigatedFrom(result.data)
-	const settlePlan = (actionFlags.settle ?? navigatedFrom !== undefined) ? settleBudget : undefined
+	const waitedForLoad = actionFlags.wait === undefined || actionFlags.wait === 'load'
+	const settlePlan = (actionFlags.settle ?? (navigatedFrom !== undefined && waitedForLoad)) ? settleBudget : undefined
 	const settled = settlePlan ? await settlePage(result.watcher, settlePlan, Date.now(), navigatedFrom) : undefined
 
 	const outcome = until ? await waitForCondition(result.watcher, until, settled?.page === 'ready' ? undefined : navigatedFrom) : undefined
