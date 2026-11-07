@@ -62,6 +62,8 @@ export type HttpServerOptions = {
 	visibilityController: VisibilityController
 	/** Source handle for extension mode (enables /targets, /attach, /detach endpoints). */
 	sourceHandle?: CdpSourceHandle
+	/** Open-request count for `GET /net/activity`; absent when net capture is disabled. */
+	getNetActivity?: () => { pending: number; lastActivityAt: number | null }
 	/** Best-effort target metadata for resolving net scope filters. */
 	getNetFilterContext?: () => NetFilterContext | null
 	/** Optional browser-cookie reader when the source can access cookies outside the page's request scope. */

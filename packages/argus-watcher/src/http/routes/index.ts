@@ -7,6 +7,7 @@ import { route as getLogCursor } from './getLogCursor.js'
 import { route as getLogEpoch } from './getLogEpoch.js'
 import { route as getTail } from './getTail.js'
 import { route as getNet } from './getNet.js'
+import { route as getNetActivity } from './getNetActivity.js'
 import { route as getNetRequests } from './getNetRequests.js'
 import { route as getNetRequest } from './getNetRequest.js'
 import { route as getNetRequestBody } from './getNetRequestBody.js'
@@ -80,6 +81,7 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	getLogs,
 	getTail,
 	getNet,
+	getNetActivity,
 	getNetRequests,
 	getNetRequest,
 	getNetRequestBody,

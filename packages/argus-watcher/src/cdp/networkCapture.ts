@@ -69,7 +69,26 @@ type InflightRequest = {
 export type NetworkCaptureHandle = {
 	onAttached: () => Promise<void>
 	onDetached: () => void
+	/** Requests still open and when traffic last changed; feeds `GET /net/activity` (`--settle`). */
+	getActivity: () => NetActivity
 }
+
+/** Snapshot of page traffic for settle checks. */
+export type NetActivity = {
+	/** Open requests started within {@link SETTLE_PENDING_WINDOW_MS}, excluding streams. */
+	pending: number
+	/** Wall-clock ms of the last request start or finish; `null` before any traffic. */
+	lastActivityAt: number | null
+}
+
+/**
+ * A request open longer than this is a long poll, a stalled beacon, or a stream CDP never finished:
+ * counting it would keep a page "busy" forever, which is worse for `--settle` than ignoring it.
+ */
+const SETTLE_PENDING_WINDOW_MS = 10_000
+
+/** Resource types that stay open by design. */
+const STREAMING_RESOURCE_TYPES = new Set(['EventSource', 'WebSocket'])
 
 /**
  * Subscribe to CDP network events and keep a compact summary plus a richer request record.
@@ -81,6 +100,8 @@ export const createNetworkCapture = (options: {
 	realtimeBuffer?: RealtimeNetBuffer | null
 }): NetworkCaptureHandle => {
 	const inflight = new Map<string, InflightRequest>()
+	const openedAt = new Map<string, number>()
+	let lastActivityAt: number | null = null
 
 	const getOrCreate = (requestId: string): InflightRequest => {
 		const existing = inflight.get(requestId)
@@ -106,6 +127,8 @@ export const createNetworkCapture = (options: {
 			return
 		}
 		inflight.delete(requestId)
+		openedAt.delete(requestId)
+		lastActivityAt = Date.now()
 
 		const durationMs =
 			record.startTime != null && record.endTime != null ? Math.max(0, Math.round((record.endTime - record.startTime) * 1000)) : null
@@ -181,6 +204,10 @@ export const createNetworkCapture = (options: {
 		}
 
 		const entry = getOrCreateForSession(requestId, meta.sessionId)
+		// Only a real request start counts toward settle: late ExtraInfo events can recreate a
+		// finished request's entry, and that orphan must not keep the page "busy".
+		if (!openedAt.has(requestId)) openedAt.set(requestId, Date.now())
+		lastActivityAt = Date.now()
 		const nextUrl = payload.request?.url ?? entry.url
 
 		if (payload.redirectResponse && entry.url) {
@@ -333,6 +360,15 @@ export const createNetworkCapture = (options: {
 		},
 		onDetached: () => {
 			inflight.clear()
+			openedAt.clear()
+		},
+		getActivity: () => {
+			const since = Date.now() - SETTLE_PENDING_WINDOW_MS
+			let pending = 0
+			for (const [requestId, record] of inflight) {
+				if ((openedAt.get(requestId) ?? 0) >= since && !STREAMING_RESOURCE_TYPES.has(record.resourceType ?? '')) pending += 1
+			}
+			return { pending, lastActivityAt }
 		},
 	}
 }

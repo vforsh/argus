@@ -246,6 +246,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		initScriptController,
 		diagnoseCdp,
 		getNetFilterContext: sourceHandle.getNetFilterContext,
+		getNetActivity: networkCapture ? () => networkCapture.getActivity() : undefined,
 		readBrowserCookies: sourceHandle.readBrowserCookies,
 		sourceHandle: sourceMode === 'extension' ? sourceHandle : undefined,
 		onRequest: (event) => {

@@ -90,6 +90,18 @@ export type NetResponse = Ok<{
 	nextAfter: number
 }>
 
+/**
+ * Response payload for GET /net/activity: what `--settle` needs to call the network quiet.
+ * `pending` excludes streams and requests open longer than 10s (long polls, stalled beacons).
+ */
+export type NetActivityResponse = Ok<{
+	pending: number
+	/** Wall-clock ms of the last request start or finish; `null` before any traffic. */
+	lastActivityAt: number | null
+	/** The watcher's clock, so callers measure quiet time without trusting their own. */
+	now: number
+}>
+
 /** Response payload for GET /net/requests. */
 export type NetRequestsResponse = Ok<{
 	requests: NetworkRequestDetail[]
