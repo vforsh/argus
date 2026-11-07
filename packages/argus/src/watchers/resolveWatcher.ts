@@ -15,6 +15,16 @@ export type ResolveWatcherResult =
 	| { ok: false; error: string; exitCode: 1 | 2; code?: 'watcher_not_found' | 'watcher_id_required'; candidates?: WatcherRecord[] }
 
 const sessionResolver = new AsyncLocalStorage<WatcherResolver>()
+const pinnedWatcher = new AsyncLocalStorage<string>()
+
+/**
+ * Make `id` the default for every resolution inside `action` that names no watcher.
+ *
+ * `session` and `run` promise one watcher, but they inject it only into a command's leading
+ * positional; commands that take the watcher later (`net body <request> [id]`, `net mock rm`) would
+ * otherwise fall back to cwd-based discovery and could act on a different watcher.
+ */
+export const withPinnedWatcher = <T>(id: string, action: () => T): T => pinnedWatcher.run(id, action)
 
 /** Scope discovery reuse to one session; unrelated one-shot invocations always read a fresh snapshot. */
 export const withWatcherResolver = <T>(resolver: WatcherResolver, action: () => T): T => sessionResolver.run(resolver, action)
@@ -22,7 +32,8 @@ export const withWatcherResolver = <T>(resolver: WatcherResolver, action: () => 
 /** Invalidate a failed session endpoint; a later request rediscovers it without replaying this one. */
 export const invalidateWatcher = (watcher: WatcherRecord): void => sessionResolver.getStore()?.invalidate(watcher)
 
-export const resolveWatcher = async (input: ResolveWatcherInput): Promise<ResolveWatcherResult> => {
+export const resolveWatcher = async (requested: ResolveWatcherInput): Promise<ResolveWatcherResult> => {
+	const input = requested.id ? requested : { ...requested, id: pinnedWatcher.getStore() }
 	let registry: RegistryV1
 	try {
 		registry = await (sessionResolver.getStore()?.snapshot() ?? loadActiveRegistry())

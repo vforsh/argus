@@ -61,6 +61,7 @@ export const ARGUS_ERROR_CODES = [
 	'payload_too_large',
 	'registration_conflict',
 	'request_cancelled',
+	'run_step_failed',
 	'session_command_failed',
 	'session_command_rejected',
 	'session_invalid_request',

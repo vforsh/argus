@@ -15,7 +15,7 @@ import { createPluginLoader, type PluginLoader } from '../cli/plugins/registerPl
 import { usageError } from '../cli/validation.js'
 import { createOutput, routeConsoleToStderr, type Output } from '../output/io.js'
 import { fetchWatcherJson, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
-import { resolveWatcher, withWatcherResolver } from '../watchers/resolveWatcher.js'
+import { resolveWatcher, withPinnedWatcher, withWatcherResolver } from '../watchers/resolveWatcher.js'
 import { resolveSessionCommand } from './sessionArgv.js'
 import { dispatchSessionRequest } from './sessionDispatch.js'
 import { createSessionScheduler } from './sessionScheduler.js'
@@ -65,7 +65,7 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 	writeLine(readyEvent(resolved.watcher))
 
 	const resolver = createWatcherResolver()
-	const exitCode = await withWatcherResolver(resolver, () => serveRequests({
+	const exitCode = await withWatcherResolver(resolver, () => withPinnedWatcher(resolved.watcher.id, () => serveRequests({
 		program,
 		controlProgram,
 		plugins,
@@ -76,7 +76,7 @@ export const runSession = async (id: string | undefined, options: RunSessionOpti
 		defaultTimeoutMs,
 		reconnect: options.reconnect === true,
 		resolver,
-	}))
+	})))
 
 	capture.restore()
 	await flushStdout()
@@ -282,7 +282,7 @@ const controlResponse = (id: SessionRequestId | undefined, result: unknown): Ses
 const idOf = (id: SessionRequestId | undefined): { id?: SessionRequestId } => (id === undefined ? {} : { id })
 
 /** Build a second, session-mode command tree; the one currently mid-parse cannot re-enter itself. */
-const buildSessionProgram = async (): Promise<{ program: Command; plugins: PluginLoader }> => {
+export const buildSessionProgram = async (): Promise<{ program: Command; plugins: PluginLoader }> => {
 	const program = createProgram({ mode: 'session' })
 	for (const registerProgramPart of coreProgramRegistrars) {
 		registerProgramPart(program)

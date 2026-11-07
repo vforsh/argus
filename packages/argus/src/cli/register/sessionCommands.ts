@@ -3,6 +3,7 @@ import { jsonOption } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
 const runSession = lazyAction(() => import('../../session/runSession.js').then((mod) => mod.runSession))
+const runScript = lazyAction(() => import('../../session/runScript.js').then((mod) => mod.runScript))
 
 export const sessionCommands: readonly ArgusCommandDefinition[] = [
 	{
@@ -22,6 +23,23 @@ export const sessionCommands: readonly ArgusCommandDefinition[] = [
 		],
 		action: async (id, options) => {
 			await runSession(id, options)
+		},
+	},
+	{
+		name: 'run',
+		description: 'Run argus commands (one per line, from stdin or --file) against one watcher in a single process; stops at the first failure',
+		arguments: [{ flags: '[id]', description: 'Watcher id (or @page selector) every line runs against' }],
+		options: [
+			{ flags: '-f, --file <path>', description: 'Read the script from a file instead of stdin' },
+			{ flags: '--keep-going', description: 'Run every step even after a failure' },
+			{ ...jsonOption, description: 'Output one JSON document with every step result' },
+		],
+		examples: [
+			`argus run app <<'EOF'\n  click --testid open --settle\n  fill --selector "#q" "hello"\n  keydown Enter --until "document.querySelector('.results')"\n  screenshot --out ./results.png\n  EOF`,
+			'argus run app --file ./smoke.argus --json',
+		],
+		action: async (id, options) => {
+			await runScript(id, options)
 		},
 	},
 ]
