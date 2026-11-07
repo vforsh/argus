@@ -83,7 +83,7 @@ export const writeEvalSuccess = (
 	}
 
 	if (options.json) {
-		const document = shapeEvalJson(response, shaping)
+		const document = shapeEvalJson(decodeStringifiedResult(response, output), shaping)
 		if (streaming) {
 			output.writeJsonLine(document)
 		} else {
@@ -97,8 +97,40 @@ export const writeEvalSuccess = (
 		return
 	}
 
-	output.writeHuman(truncateText(formatEvalValue(projectFields(response.result, shaping.fields)), shaping.maxChars))
+	// `--fields` selects from an object, so a stringified one is decoded first.
+	const result = shaping.fields ? decodeStringifiedResult(response, output).result : response.result
+	output.writeHuman(truncateText(formatEvalValue(projectFields(result, shaping.fields)), shaping.maxChars))
 }
+
+/**
+ * Undo a page-side `JSON.stringify` in `--json` mode.
+ *
+ * 22% of observed agent evals wrapped their result in `JSON.stringify` (habit from tools that only
+ * return strings), which made `--json` emit an escaped string that callers then re-parsed with
+ * `python3 -c 'json.loads(...)'`. A string that parses to an object or array is returned parsed,
+ * marked `decoded: "json"` so a caller that really wanted the text can tell.
+ */
+const decodeStringifiedResult = (response: EvalResponse, output: Output): EvalResponse | (EvalResponse & { decoded: 'json' }) => {
+	if (response.exception || typeof response.result !== 'string') return response
+	const text = response.result.trim()
+	if (!(text.startsWith('{') && text.endsWith('}')) && !(text.startsWith('[') && text.endsWith(']'))) return response
+
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(text)
+	} catch {
+		return response
+	}
+	if (parsed === null || typeof parsed !== 'object') return response
+
+	if (!stringifyHintShown) {
+		stringifyHintShown = true
+		output.writeWarn('hint: eval returns objects as-is; return the value directly instead of JSON.stringify(...)')
+	}
+	return { ...response, result: parsed, type: 'object', decoded: 'json' }
+}
+
+let stringifyHintShown = false
 
 /**
  * Apply `--fields` / `--max-chars` to the `result` of a JSON eval reply.
