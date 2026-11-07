@@ -32,6 +32,10 @@ export const resolveWatcher = async (input: ResolveWatcherInput): Promise<Resolv
 
 	const watchers = Object.values(registry.watchers)
 
+	if (input.id?.startsWith('@')) {
+		return resolveByPage(input.id, watchers, registry)
+	}
+
 	if (input.id) {
 		const watcher = registry.watchers[input.id]
 		if (!watcher) {
@@ -66,6 +70,44 @@ export const resolveWatcher = async (input: ResolveWatcherInput): Promise<Resolv
 	}
 
 	return { ok: false, error: 'Watcher id required.', exitCode: 2, code: 'watcher_id_required', candidates: watchers }
+}
+
+/**
+ * `@<text>`: pick the one watcher whose page URL or title contains `text` (case-insensitive).
+ *
+ * Agents ran `argus list | grep` before commands because auto-named ids said nothing about the page.
+ * This selects by what they actually know. More than one match fails closed and lists them: acting
+ * on the wrong tab is worse than asking for an id.
+ */
+const resolveByPage = async (selector: string, watchers: WatcherRecord[], registry: RegistryV1): Promise<ResolveWatcherResult> => {
+	const needle = selector.slice(1).trim().toLowerCase()
+	if (!needle) {
+		return { ok: false, error: 'Empty page selector: use @<url or title substring>, e.g. @localhost:3000.', exitCode: 2, code: 'watcher_id_required' }
+	}
+
+	// Control watchers own no page; asking them would only cost a round trip.
+	const pages = watchers.filter((watcher) => watcher.extensionRole !== 'control')
+	const statuses = await Promise.all(pages.map(async (watcher) => ({ watcher, status: await checkWatcherStatus(watcher) })))
+	const matches = statuses.filter(({ status }) => {
+		if (!status.ok) return false
+		const { url, title } = status.status.target ?? {}
+		return Boolean(url?.toLowerCase().includes(needle) || title?.toLowerCase().includes(needle))
+	})
+
+	if (matches.length === 1) {
+		return { ok: true, watcher: matches[0].watcher, registry }
+	}
+	if (matches.length === 0) {
+		return { ok: false, error: `No watcher page matches ${selector}.`, exitCode: 2, code: 'watcher_not_found', candidates: pages }
+	}
+	const ids = matches.map(({ watcher }) => watcher.id).join(', ')
+	return {
+		ok: false,
+		error: `${selector} matches ${matches.length} watchers (${ids}); use a longer substring or the watcher id.`,
+		exitCode: 2,
+		code: 'watcher_id_required',
+		candidates: matches.map(({ watcher }) => watcher),
+	}
 }
 
 const checkWatcherStatus = async (watcher: WatcherRecord): Promise<{ ok: true; status: StatusResponse } | { ok: false; error: string }> => {

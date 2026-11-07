@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import type { LogEvent, WatcherRecord } from '@vforsh/argus-core'
 import { formatLogLevelTag } from '@vforsh/argus-core'
 
@@ -77,7 +78,8 @@ const formatCwd = (watcher: WatcherRecord): string => {
 	if (!watcher.cwd) {
 		return ''
 	}
-	return `cwd:${watcher.cwd}`
+	// A watcher left running from a deleted worktree: say how to clean it up.
+	return existsSync(watcher.cwd) ? `cwd:${watcher.cwd}` : `cwd:${watcher.cwd} (deleted; argus watcher prune)`
 }
 
 const formatLineColumn = (event: LogEvent): string => {

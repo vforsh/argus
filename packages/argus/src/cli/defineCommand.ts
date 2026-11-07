@@ -1,5 +1,6 @@
 import { Command, Option } from 'commander'
 import { addUniversalOutputOptions, runWithUniversalOutput } from './universalOutput.js'
+import { takesWatcherArgument } from './watcherArgument.js'
 
 export type ArgusCommandOption = {
 	flags: string
@@ -100,8 +101,33 @@ const createActionRunner =
 		const declaredArgs = last instanceof Command ? args.slice(0, -2) : args
 		const options = mergeCommandOptions(instance)
 
-		await runWithUniversalOutput(instance, options, () => Promise.resolve(action(...declaredArgs, options, instance)))
+		await runWithUniversalOutput(instance, options, async () => {
+			// Only an `@` selector costs an await; everything else starts the action synchronously.
+			if (isPageSelector(instance, declaredArgs[0]) && !(await resolvePageSelector(declaredArgs, options))) return
+			await action(...declaredArgs, options, instance)
+		})
 	}
+
+const isPageSelector = (command: Command, value: unknown): value is string =>
+	typeof value === 'string' &&
+	value.startsWith('@') &&
+	(takesWatcherArgument(command) || command.registeredArguments[0]?.name() === 'watcherId')
+
+/**
+ * Turn an `@<url or title>` watcher argument into the watcher's id before the action sees it.
+ *
+ * Most commands resolve their watcher through `resolveWatcher`, which understands `@` itself, but some
+ * compare the positional to tab records directly (`ext mute`, `ext detach`); resolving it once here
+ * gives every command the same selector. Loaded lazily: most invocations never pay for it.
+ */
+const resolvePageSelector = async (declaredArgs: unknown[], options: Record<string, unknown>): Promise<boolean> => {
+	const selector = declaredArgs[0] as string
+	const [{ resolveWatcherOrExit }, { createOutput }] = await Promise.all([import('../watchers/requestWatcher.js'), import('../output/io.js')])
+	const resolved = await resolveWatcherOrExit({ id: selector }, createOutput({ json: options.json === true }))
+	if (!resolved) return false
+	declaredArgs[0] = resolved.watcher.id
+	return true
+}
 
 /**
  * Merge a command's options with its ancestors'.

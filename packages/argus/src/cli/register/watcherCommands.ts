@@ -150,7 +150,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 			{
 				name: 'prune',
 				alias: 'clean',
-				description: 'Remove unreachable watchers from the registry',
+				description: 'Remove unreachable watchers, and stop watchers whose working directory was deleted',
 				options: [
 					{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
 					{ flags: '--dry-run', description: 'Preview what would be removed without changing the registry' },

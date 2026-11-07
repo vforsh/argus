@@ -1,4 +1,4 @@
-import type { PageConsoleLogging, WatcherSourceMode } from '@vforsh/argus-core'
+import { watcherNameFromUrl, type PageConsoleLogging, type WatcherSourceMode } from '@vforsh/argus-core'
 import crypto from 'node:crypto'
 import { createOutput } from '../output/io.js'
 import type { WatcherInjectConfig } from '../config/types.js'
@@ -105,7 +105,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		}
 	}
 
-	const watcherId = options.id?.trim() || generateWatcherId()
+	const watcherId = options.id?.trim() || nameFromUrlMatch(sourceMode === 'cdp' ? options.url : undefined) || generateWatcherId()
 	const match = sourceMode === 'cdp' ? buildWatcherMatch(options) : undefined
 
 	const startedWatcher = await startManagedWatcher({
@@ -185,3 +185,10 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 
 /** Generate a short random watcher ID (e.g. "a3f1b2"). */
 const generateWatcherId = (): string => crypto.randomBytes(3).toString('hex')
+
+/** `--url 127.0.0.1:3333` → `127-0-0-1-3333`: a readable default instead of random hex. */
+const nameFromUrlMatch = (url: string | undefined): string | undefined => {
+	const trimmed = url?.trim()
+	if (!trimmed) return undefined
+	return watcherNameFromUrl(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`)
+}

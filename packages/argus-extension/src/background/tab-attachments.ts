@@ -3,6 +3,7 @@ import { TabBridgeSession, type TabBridgeSessionOptions, type TabBridgeSessionEv
 import { TabOperationQueue } from './tab-operation-queue.js'
 import type { RememberedTargetSelection } from './target-selection-history.js'
 import type { TabWatcherNames } from './tab-watcher-names.js'
+import { watcherNameFromUrl } from '@vforsh/argus-core/watcher-name'
 
 /** Session and selection state share one lifetime, including while attachment is pending. */
 export type TabAttachment = {
@@ -46,7 +47,9 @@ export class TabAttachments {
 		const url = await this.nameMemory?.getTabUrl(tabId).catch(() => undefined)
 		if (!options.watcherId) {
 			const remembered = await this.nameMemory?.names.recall(tabId, url)
-			if (remembered) options = { ...options, watcherId: remembered, watcherIdPolicy: 'prefer' }
+			// No remembered name: name the watcher after the site instead of `extension-N`.
+			const named = remembered ?? watcherNameFromUrl(url)
+			if (named) options = { ...options, watcherId: named, watcherIdPolicy: 'prefer' }
 		}
 
 		const session = new TabBridgeSession(

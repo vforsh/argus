@@ -25,6 +25,10 @@
 		"./diagnostic-events": {
 			"types": "./dist/diagnostics/events.d.ts",
 			"default": "./dist/diagnostics/events.js"
+		},
+		"./watcher-name": {
+			"types": "./dist/watcherName.d.ts",
+			"default": "./dist/watcherName.js"
 		}
 	},
 	"files": [
