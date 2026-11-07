@@ -1,4 +1,31 @@
-# Session Transport
+# Scripts And Session Transport
+
+## `argus run` (CLI lines)
+
+Run several commands against one watcher in one process, written exactly as you would type them after `argus`:
+
+```bash
+argus run app <<'EOF'
+# one command per line; the watcher id may be left out; a leading `argus` is ignored
+goto /login
+fill --selector "#user" "demo"
+click --testid submit --settle
+eval "location.pathname"
+screenshot --out ./after-login.png
+EOF
+```
+
+```
+✓ 1 goto /login (640ms) → {"url":"http://localhost:3000/login",…}
+✓ 2 fill --selector "#user" "demo" (35ms) → {"matches":1,"filled":1}
+✓ 3 click --testid submit --settle (812ms) → {"matches":1,"clicked":1,"settle":{"settled":true,…}}
+✗ 4 eval "nope.x" (2ms): ReferenceError: nope is not defined [eval_exception]
+3/5 steps ok; stopped at step 4
+```
+
+Quoting is shell-like (`'…'` literal, `"…"` with `\"` escapes, trailing `\` continues a line). Each step runs with `--json` forced on, as in `session`; the summary shows a bounded preview of its result. Stops at the first failure (exit 1) unless `--keep-going`. `--file <path>` reads the script from a file; `--json` prints `{ ok, watcher, steps: [{ step, line, ok, durationMs, result | error }] }` (plus `error.code: "run_step_failed"` when a step failed). Commands `session` refuses (below) are refused here too. Every step targets the run's watcher, including commands whose watcher argument is not the first positional. Per-step watchdog: 120s; a step that hits it ends the run (its abandoned work cannot be joined) and the process exits once the report is written.
+
+## `argus session` (JSONL)
 
 `argus session <id>` serves many commands from one process over stdin/stdout. Each one-shot `argus` call pays Node startup plus watcher discovery (~100–200ms); a session pays it once. Use it when a harness issues dozens of sequential commands against one watcher.
 

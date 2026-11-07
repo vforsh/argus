@@ -26,7 +26,7 @@ argus eval app "document.title" --json --out ./result.json
 | `--body`                     | Treat input as an async function body; use an explicit `return`, declarations stay local |
 | `--no-fail-on-exception`     | `eval`: exit 0 even when the expression throws (`eval-until` polls through throws already) |
 | `--retry <n>`                | Retry failed evaluations                                                                 |
-| `-q, --silent`               | Print only on error                                                                      |
+| `-q, --quiet`                | Print only on error (`--silent` still accepted)                                          |
 | `--inject <file>`            | Run this file before the expression                                                      |
 | `--bundle` / `--no-bundle`   | Force / skip bundling of `--file` (auto when the file has `import`/`export`)             |
 | `--arg k=v`, `--args <json>` | Frozen string `args` object visible to the script                                        |
@@ -35,6 +35,8 @@ argus eval app "document.title" --json --out ./result.json
 | `--max-chars <n>`            | Cap stdout; see below                                                                    |
 
 `--fields` / `--max-chars` shape stdout only (also on `eval-until`); `--out` keeps the full result. Human mode prints the projected value and cuts it at `n` chars with a final `… [truncated N chars; raise --max-chars]` line. `--json` keeps one valid object: if the serialized `result` exceeds `n`, `result` becomes that serialized prefix (a string) and the reply adds `truncated: true, totalChars: <full length>`. Primitive results ignore `--fields`.
+
+A result that is a `JSON.stringify`'d object or array comes back parsed in `--json` (`"decoded": "json"`, `type: "object"`, plus a one-line stderr hint) and before `--fields` in human mode, so `eval app 'JSON.stringify(x)' --json` needs no second `json.loads`. Returning the object itself is still shorter.
 
 ```bash
 argus eval app "window.store.getState()" --json --fields user.id,cart.items.sku --max-chars 2000
@@ -65,10 +67,14 @@ argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rota
 
 ## `eval-until` / `wait`
 
-Poll until the value is truthy in JS terms (`undefined`, `NaN`, `-0`, `0n` count as falsy). A throw counts as "not yet" (same as action `--until`), so `argus wait app "appctl.ready()"` works while the app is still booting; `--fail-on-exception` stops on the first throw instead (exit 1). Default interval 250ms, intermediate results silent. After an action, prefer the action's own `--until` ([INTERACT.md](./INTERACT.md#wait-for-the-result---until)) over a separate `wait`.
+Poll until the value is truthy in JS terms (`undefined`, `NaN`, `-0`, `0n` count as falsy). A throw counts as "not yet" (same as action `--until`), so `argus wait app "appctl.ready()"` works while the app is still booting; `--fail-on-exception` stops on the first throw instead (exit 1). Default interval 250ms, intermediate results silent. After an action, prefer the action's own `--until`/`--settle` ([INTERACT.md](./INTERACT.md#wait-for-the-result---until)) over a separate `wait`.
+
+`--settle` first waits for the page to stop moving (load, 500ms without open requests, `window.__argus.settle()`, two frames; `--settle-timeout`, default 10s). Alone (`argus wait app --settle`) that is the whole wait: JSON `{ ok: true, settle: { settled, elapsedMs, network, page } }`, and a page that never settles exits 1 with `wait_timeout`. Before an expression it is a warm-up: a miss only warns and polling starts anyway.
 
 ```bash
 argus wait app "document.querySelector('#loaded')"
+argus wait app --settle
+argus wait app --settle "window.store.ready" --total-timeout 30s
 argus wait app "window.APP_READY" --interval 500 --total-timeout 30s
 argus wait app "await window.appReadyPromise"
 argus wait app --file ./ready.js --arg level=10 --total-timeout 20s --out ./ready.json

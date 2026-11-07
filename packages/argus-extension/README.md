@@ -77,18 +77,18 @@ The keypair lives in `key.pem` (gitignored; back it up out-of-band). To regenera
   argus ext detach --tab 123
 
   # Change tab audio without changing attachment state
-  argus ext mute extension-2
+  argus ext mute localhost-3000
   argus ext unmute --tab 123
 
-  # View logs from a specific attached extension tab watcher
-  argus logs extension
-  argus logs extension-2
+  # View logs from a specific attached tab watcher (auto-named after the site)
+  argus logs localhost-3000
+  argus logs @localhost:3000   # or select it by page URL/title substring
 
   # Evaluate JavaScript
-  argus eval extension-2 "document.title"
+  argus eval localhost-3000 "document.title"
 
   # List extension-backed page/iframe targets
-  argus page ls --id extension-2 --tree
+  argus page ls --id localhost-3000 --tree
 ```
 
 Run `argus list` to see the `extension-control` watcher plus any attached tab watchers.

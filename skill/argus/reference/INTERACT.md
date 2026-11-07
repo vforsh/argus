@@ -19,6 +19,26 @@ argus hover app --pos 520,300                       # bare viewport point (canva
 
 ## Wait For The Result (`--until`)
 
+Two post-action waits replace `sleep`: `--until <expr>` asserts a state (a miss fails), `--settle` waits until the page stops moving (a miss warns). Use `--settle` when you don't know what to wait for, `--until` when you do; both may be combined (settle runs first).
+
+### `--settle`
+
+After the action: the document is `complete` (never the one a navigation left), no request has been open for 500ms (counted from the action at the earliest; streams and requests open >10s are ignored), then the page's optional `window.__argus.settle()` hook resolves to anything but `false`, then two animation frames. `goto`, `reload` and a cross-document `page back/forward` settle by default; `--no-settle` skips it. `--settle-timeout` (default 10s) bounds the whole wait. A page that never settles prints `settle: network still busy (2 open requests) after 10s; continuing` and still exits 0; JSON adds `settle: { settled, elapsedMs, network: "quiet"|"busy"|"unknown"|"unsupported", pending?, page: "ready"|"loading"|"busy" }`. `unsupported` means the watcher predates `GET /net/activity` (restart it on the current build) or runs with net capture off; the other phases still apply. `unknown`: the activity probe kept failing, so quiet was never confirmed (not settled).
+
+```bash
+argus click app --testid save --settle
+argus goto app /checkout                     # settles by default
+argus reload app --no-settle                 # return as soon as the reload is acknowledged
+```
+
+Apps with their own idle notion (animations, an internal queue) register it once, so every `--settle` and `wait --settle` honors it:
+
+```js
+window.__argus = { settle: async () => { await store.waitIdle(); return true } } // false = not yet, polled again
+```
+
+### `--until`
+
 Every action (`click`, `hover`, `drag`, `fill`, `keydown`, `scroll-to`, `reload`, `goto`, `page back/forward`) takes `--until <expr>`: after the action, poll that page expression every 250ms until it is truthy. Throws count as "not yet", so `reload --until "appctl.ready()"` works while the app is still booting. Budget: `--until-timeout <duration>` (default 15s). Use it instead of `sleep`.
 
 ```bash

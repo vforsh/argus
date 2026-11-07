@@ -134,10 +134,10 @@ Then use the CLI as usual:
 ```bash
 argus list
 argus ext attach --url localhost --show
-# or, for an already attached tab:
-argus ext show extension
-argus logs extension
-argus eval extension-2 "document.title"
+# or, for an already attached tab (auto-named after its site: localhost:3000 → localhost-3000):
+argus ext show localhost-3000
+argus logs localhost-3000
+argus eval @localhost:3000 "document.title"   # or select the watcher by page URL/title
 argus watcher start --id app --source extension
 argus page ls --id app
 ```

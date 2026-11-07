@@ -72,7 +72,7 @@ argus start --id app --url https://example.com --headless \
 
 ```bash
 argus watcher start --id app --url localhost:3000 --chrome-port 9222
-argus watcher start --url localhost:3000                         # auto-generated id
+argus watcher start --url localhost:3000                         # id from the URL: localhost-3000
 argus watcher start --id game --type iframe --url localhost:3007
 argus watcher start --id game --origin https://localhost:3007    # protocol+host+port, ignores query
 argus watcher start --id game --target CC1135709D9AC3B9CC0446F8B58CC344
@@ -83,7 +83,7 @@ argus watcher ls --by-cwd my-project
 argus watcher stop app
 argus watcher stop app --json
 argus watcher stop --port 54321 --json            # registered watcher HTTP port, not CDP
-argus watcher prune --dry-run                                    # drop unreachable registry entries
+argus watcher prune --dry-run                                    # unreachable entries + watchers whose cwd was deleted (shut down)
 argus watcher show app / hide app                                # alias of `page show/hide`
 ```
 

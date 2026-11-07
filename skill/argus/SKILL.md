@@ -5,7 +5,7 @@ description: Guides use of the Argus CLI to debug and inspect web apps via Chrom
 
 # Argus CLI
 
-Terminal control of a live Chromium page: logs, eval, DOM, interaction, network, screenshots, recordings. A **watcher** process attaches to one tab (or iframe) and serves a local HTTP API; every CLI command takes the watcher id as its first positional argument and supports `--json`.
+Terminal control of a live Chromium page: logs, eval, DOM, interaction, network, screenshots, recordings. A **watcher** process attaches to one tab (or iframe) and serves a local HTTP API; every CLI command takes the watcher as its first positional argument — its id, or `@<url or title substring>` (`argus eval @localhost:3000 …`; several matches fail closed and list them) — and supports `--json`.
 
 ```bash
 npm i -g @vforsh/argus        # or: npx -y @vforsh/argus --help
@@ -52,7 +52,7 @@ argus ext use --open https://portal.example/x --as app  # reuse that exact URL, 
 argus page url app
 ```
 
-If Chrome and Codex @Browser both run Argus, `ext tabs` without `--id`/`--browser` lists both browsers' tabs grouped by control, and `ext use --url/--title/--tab` uses the one browser whose tabs match; `ext doctor` and `ext browsers` report every browser; mutating control commands, and selectors matching in several browsers, fail with `ambiguous_control` and list the candidates. Pick one and use it consistently (`--browser <label>` works once labeled): `argus ext tabs --id extension-control-2 --json`, then `argus ext use --id extension-control-2 --tab <tabId> --as app`. `--id` also selects the control instance for `attach`, `detach`, `show`, `targets` (when resolving a tab), `mute`, and `unmute`. `ext doctor --watcher app` finds its owning control; `--id` selects one explicitly. Explicit names are exact: `--as`, `start --id`, and `watcher start --id` fail with `watcher_id_taken` while another live watcher holds the name (no silent `app-2`). Re-attaching a tab without `--as` (CLI or popup) reuses its previous name while the tab keeps its origin. `argus ext detach app` detaches by watcher id. A successful attach means the tab watcher completed bootstrap; `--no-wait` skips only the CLI's final status poll.
+If Chrome and Codex @Browser both run Argus, `ext tabs` without `--id`/`--browser` lists both browsers' tabs grouped by control, and `ext use --url/--title/--tab` uses the one browser whose tabs match; `ext doctor` and `ext browsers` report every browser; mutating control commands, and selectors matching in several browsers, fail with `ambiguous_control` and list the candidates. Pick one and use it consistently (`--browser <label>` works once labeled): `argus ext tabs --id extension-control-2 --json`, then `argus ext use --id extension-control-2 --tab <tabId> --as app`. `--id` also selects the control instance for `attach`, `detach`, `show`, `targets` (when resolving a tab), `mute`, and `unmute`. `ext doctor --watcher app` finds its owning control; `--id` selects one explicitly. Explicit names are exact: `--as`, `start --id`, and `watcher start --id` fail with `watcher_id_taken` while another live watcher holds the name (no silent `app-2`). Without `--as` (CLI or popup) a tab is named after its site (`partner.yandex.ru` → `partner-yandex`, `localhost:3000` → `localhost-3000`; `-2` while taken), and re-attaching reuses its previous name while the tab keeps its origin. `argus ext detach app` detaches by watcher id. A successful attach means the tab watcher completed bootstrap; `--no-wait` skips only the CLI's final status poll.
 
 **Agent-opened tab (Codex @Browser, CUA): bind by ticket, never by URL.** Same-URL tabs in other chats or browsers make URL matching unsafe.
 
@@ -105,7 +105,8 @@ argus logs app --since 10m --levels error,warning
 argus screenshot app --out shot.png
 argus snapshot app --interactive                     # a11y tree with refs (e5, e12…)
 argus eval app "({ title: document.title, href: location.href })" --json
-argus wait app "document.readyState === 'complete'" --total-timeout 30s   # throws = not yet; --fail-on-exception to stop
+argus wait app --settle                              # load + quiet network + window.__argus.settle()
+argus wait app "window.store?.ready" --total-timeout 30s   # throws = not yet; --fail-on-exception to stop
 ```
 
 **Race-free verification**: take a cursor, act, read only what followed.
@@ -124,16 +125,22 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 
 **Interact**: `click`, `drag`, `hover`, `fill`, `keydown`, `scroll-to`. Target with `--selector`, `--testid`, `--ref eN` (from `snapshot`/`locate`), or `--pos x,y`. `--all` allows multiple matches; `--text /regex/` filters trimmed text in the selected document’s isolated world (plain text is exact, CSS selection does not pierce shadow roots); `--wait 5s` polls for the selector. `argus locate role app button --name Save --action click` finds and acts in one step. `hover --pos x,y` hovers a bare point; `keydown app Escape` takes the key positionally.
 
-**Wait for the result, never `sleep`**: every action (`click`, `hover`, `drag`, `fill`, `keydown`, `scroll-to`, `reload`, `goto`, `page back/forward`) takes `--until <expr>` and returns once that page expression is truthy (throws count as "not yet"; `--until-timeout`, default 15s). A miss exits 1 with `wait_timeout` and the last value; the action already ran. After `reload`, `goto` and a cross-document `back/forward`, polls never match the page the action navigated away from (no pre-reload marker needed): until the new document commits they answer `navigation_pending`. `-q` silences success output ([INTERACT.md](./reference/INTERACT.md#wait-for-the-result---until)).
+**Never `sleep` after an action.** Every action (`click`, `hover`, `drag`, `fill`, `keydown`, `scroll-to`, `reload`, `goto`, `page back/forward`) takes:
+
+- `--settle` — return once the page stopped moving: document loaded, no open request for 500ms, then the app's optional `window.__argus.settle()` hook (return `false` for "not yet") and two frames. Navigations (`goto`, `reload`, cross-document `back/forward`) settle **by default** (`--no-settle` opts out). Best effort: a page that never goes quiet warns `settle: … ; continuing` and reports `settle.settled: false`, exit 0. `--settle-timeout` (default 10s).
+- `--until <expr>` — assert a state: returns once the expression is truthy (throws = "not yet"; `--until-timeout`, default 15s). A miss exits 1 with `wait_timeout`, `lastState` and the last value; the action already ran. Polls never match the document a navigation left (`navigation_pending` until the new one commits).
 
 ```bash
+argus click app --testid save --settle
 argus click app --testid save --until "document.querySelector('.toast-saved')" --json
 argus reload app --until "typeof window.appctl !== 'undefined'" --until-timeout 60s
 ```
 
-**Eval scripts**: `eval --file ./script.js --body` supports local declarations, `await`, and an explicit `return`; also works with inline/stdin input. Default eval keeps REPL completion values and top-level await. Successful output preserves full nested values, so return objects directly: wrapping them in `JSON.stringify` makes `--json` emit an escaped string. `--no-return-by-value` requests a preview. Canvas key handlers need a focusable canvas and `keydown --selector canvas`.
+Apps with their own idle signal expose it once (`window.__argus = { settle: () => store.idle() }`) and every `--settle` uses it ([INTERACT.md](./reference/INTERACT.md#wait-for-the-result---until)).
 
-**Multi-step suites**: write a bundled TypeScript scenario (`export default async function scenario(ctx)`) and run `argus eval app --file ./scenario.ts --arg level=3 --json`; `ctx` exposes screenshots, checkpoints, recordings, log sessions, and `ctx.progress(value)`, whose last value is returned (with `timedOut`) when the eval hits its timeout. Many sequential commands from a harness: `argus session app` (JSONL over stdin, one process). Session deadlines bound watcher requests; a timed-out dispatched mutation returns an uncertain outcome, so inspect state before retrying.
+**Eval scripts**: `eval --file ./script.js --body` supports local declarations, `await`, and an explicit `return`; also works with inline/stdin input. Default eval keeps REPL completion values and top-level await. Successful output preserves full nested values, so return objects directly; a `JSON.stringify`'d object or array is decoded back in `--json` (`decoded: "json"`, with a stderr hint). `--no-return-by-value` requests a preview. Canvas key handlers need a focusable canvas and `keydown --selector canvas`.
+
+**Multi-step suites**: write a bundled TypeScript scenario (`export default async function scenario(ctx)`) and run `argus eval app --file ./scenario.ts --arg level=3 --json`; `ctx` exposes screenshots, checkpoints, recordings, log sessions, and `ctx.progress(value)`, whose last value is returned (with `timedOut`) when the eval hits its timeout. **Several commands in a row**: `argus run app <<'EOF'` with one command per line (exactly what you would type after `argus`; the watcher may be left out, `#` comments allowed) runs them in one process, prints `✓ n cmd (ms) → result` per step and stops at the first failure (`--keep-going`, `--json`, `--file`). A harness speaking JSON uses `argus session app` (JSONL over stdin). Session deadlines bound watcher requests; a timed-out dispatched mutation returns an uncertain outcome, so inspect state before retrying.
 
 ---
 
@@ -141,7 +148,7 @@ argus reload app --until "typeof window.appctl !== 'undefined'" --until-timeout 
 
 - **Durations**: `500ms`, `5s`, `2m`, `1h`; bare numbers are milliseconds.
 - **`--json` failures** always put one `{ "ok": false, "error": { "message", "code" } }` document on stdout with a non-zero exit (stderr may carry the same text as prose): branch on `ok`, then `error.code`. Bad flags/arguments exit 2 with `invalid_request`. Unknown watcher ids add `candidates`; a thrown eval adds `exception: { text, description }`.
-- **Shrink output instead of piping to `head`/`cut`**: `eval`, `logs`, and `net` take `--fields a,b.c` (keep only these dot paths per record; arrays project each element) and `--max-chars <n>` (cap with an explicit `… [truncated …; raise --max-chars]` marker; JSON stays valid). `argus net app --json --fields id,url,status --max-chars 4000`. With `--max-chars`, `logs`/`net` `--json` becomes `{ events|requests, truncated, omitted }`; eval sets `truncated: true, totalChars` and a string prefix `result` when cut. `--out` files are never shaped.
+- **Every command takes `-q/--quiet`, `--max-chars <n>`, and (with `--json`) `--fields a,b.c`** — don't pipe to `head`/`tail`/`grep`/`python`. `-q` prints nothing on success (errors still print). `--fields` keeps only those dot paths of the JSON (implies `--json`; arrays project each element): `argus screenshot app --out a.png --fields outFile`. `--max-chars` caps output with an explicit `… [truncated …]` marker. When stdout is a pipe (not a terminal or a `> file` redirect), human output is capped at 20000 chars by default (`ARGUS_MAX_CHARS=<n>`, `0` disables); `--json` is never capped implicitly. `eval`/`logs`/`net` shape per record (`logs`/`net` `--json` → `{ events|requests, truncated, omitted }`; eval → `truncated: true, totalChars`). `--out` files are never shaped.
 - **`--out` paths** (`screenshot`, `record`, `trace`, `eval --out`) are absolute or relative to _your_ cwd. Response `outFile` is absolute.
 - **Selected iframe** (extension mode) is the target for eval/DOM/interaction/capture. `net` and `net mock add` default to the selected iframe too; `--scope tab|page` opts out.
 - **Keyboard needs focus**: `keydown` activates a hidden page (same sticky lock as `page show`) and reports `activated: true`; release with `argus page hide app`.
@@ -169,7 +176,7 @@ argus reload app --until "typeof window.appctl !== 'undefined'" --until-timeout 
 | Auth & storage     | `auth cookies/export-cookies/export-state/load-state/clone`, `storage local/session`               | [STATE.md](./reference/STATE.md)         |
 | Runtime code       | `code ls/read/grep/deminify/edit/strings`                                                          | [CODE.md](./reference/CODE.md)           |
 | Injection          | `page init-script add/ls/rm/clear`, `--inject`, config `inject`, `window.__ARGUS__`                | [INJECT.md](./reference/INJECT.md)       |
-| Session transport  | `session` JSONL protocol                                                                           | [SESSION.md](./reference/SESSION.md)     |
+| Scripts / session  | `run` (CLI lines, one process), `session` JSONL protocol                                           | [SESSION.md](./reference/SESSION.md)     |
 | Plugins            | `plugin list/add/remove`, `plugin list --discovery`, `--plugin`, plugin contract                                              | [PLUGINS.md](./reference/PLUGINS.md)     |
 
 ---
@@ -180,7 +187,8 @@ Read the error code before retrying or raising a timeout.
 
 | Code                            | Meaning                                         | Do                                                                                                                  |
 | ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `watcher_not_found`             | id not in registry (`candidates` lists live ids) | `argus list`, `argus watcher prune`, reattach                                                                       |
+| `watcher_not_found`             | id / `@page` not found (`candidates` lists live ids) | `argus list`, `argus watcher prune` (also stops watchers whose worktree was deleted), reattach                  |
+| `watcher_id_required`           | no id given, or `@page` matched several          | pass an id or a longer `@` substring from `candidates`                                                              |
 | `eval_exception`                | the expression threw                            | read `exception.description` (message + stack); fix the expression, don't retry                                      |
 | `wait_timeout`                  | `--until` / `wait` condition never truthy       | read `lastState`/`last`; the action (if any) already ran — don't blindly repeat it                                  |
 | "failed to reach watcher"       | process gone / hung                             | `argus watcher status <id>`, `argus doctor`                                                                         |
