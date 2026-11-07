@@ -13,12 +13,16 @@ export const jsonOption: ArgusCommandOption = { flags: '--json', description: 'O
 /**
  * Post-action flags for page actions built with `defineActionCommand`.
  *
- * `--until` replaces the `click …; sleep 3; eval …` pattern agents fall back to: the action
- * reports only once the page reached the state the caller cares about.
+ * `--until` and `--settle` replace the `click …; sleep 3; eval …` pattern agents fall back to: the
+ * action reports only once the page reached the state the caller cares about (`--until`) or
+ * stopped moving (`--settle`).
  */
 export const actionOptions: readonly ArgusCommandOption[] = [
 	{ flags: '--until <expr>', description: 'After the action, poll this page expression until truthy (throws count as not yet)' },
 	{ flags: '--until-timeout <duration>', description: 'Budget for --until (e.g. 30s). Default: 15s' },
+	{ flags: '--settle', description: 'After the action, wait for load, a quiet network, and window.__argus.settle() (default for navigations)' },
+	{ flags: '--no-settle', description: 'Skip the settle wait (navigations settle by default)' },
+	{ flags: '--settle-timeout <duration>', description: 'Budget for --settle (e.g. 5s). Default: 10s; a miss warns and continues' },
 	{ flags: '-q, --quiet', description: 'Print nothing on success; errors still print' },
 ]
 

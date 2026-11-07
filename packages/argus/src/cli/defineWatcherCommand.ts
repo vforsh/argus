@@ -18,6 +18,7 @@ import {
 	waitForCondition,
 	type UntilFlags,
 } from '../commands/conditionWait.js'
+import { describeSettleMiss, parseSettleFlags, settlePage, type SettleFlags } from '../commands/settle.js'
 import {
 	requestWatcherAction,
 	requestWatcherJson,
@@ -132,7 +133,7 @@ export const defineActionCommand: ArgusDefineWatcherCommand =
 	(id, ...rest) =>
 		runWatcherCommand(spec, id, rest, true)
 
-type ActionFlags = UntilFlags & { quiet?: boolean }
+type ActionFlags = UntilFlags & SettleFlags & { quiet?: boolean }
 
 const runWatcherCommand = async <
 	TOptions extends { json?: boolean },
@@ -156,6 +157,9 @@ const runWatcherCommand = async <
 	const actionFlags: ActionFlags = isAction ? (options as ActionFlags) : {}
 	const until = parseUntilFlags(actionFlags, output)
 	if (until === null) return
+	// Validated before the action, like `--until`; whether it applies depends on the action's reply.
+	const settleBudget = isAction ? parseSettleFlags(actionFlags, output, true) : undefined
+	if (settleBudget === null) return
 
 	const plan = await spec.build(args, options, output)
 	if (plan == null) return
@@ -181,17 +185,23 @@ const runWatcherCommand = async <
 	const renderOutput: Output = actionFlags.quiet && !output.json ? { ...output, writeHuman: () => {} } : output
 	const ctx: WatcherCommandContext<TArgs, TOptions, TMeta> = { output: renderOutput, watcher: result.watcher, args, options, meta: plan.meta as TMeta }
 
-	const outcome = until ? await waitForCondition(result.watcher, until, readNavigatedFrom(result.data)) : undefined
+	// Navigations settle unless told not to: their callers slept more than anyone else's.
+	const navigatedFrom = readNavigatedFrom(result.data)
+	const settlePlan = (actionFlags.settle ?? navigatedFrom !== undefined) ? settleBudget : undefined
+	const settled = settlePlan ? await settlePage(result.watcher, settlePlan, Date.now(), navigatedFrom) : undefined
+
+	const outcome = until ? await waitForCondition(result.watcher, until, settled?.page === 'ready' ? undefined : navigatedFrom) : undefined
 	// A missed condition still reports the action: it did happen, so a retry would repeat it.
 	const missed = until && outcome && !outcome.matched ? describeUntilMiss(until, outcome) : undefined
 	if (missed) setExitCode(1)
 
 	if (output.json) {
 		const document = spec.formatJson ? spec.formatJson(result.data, ctx) : result.data
+		const extras = { ...(settled ? { settle: settled } : {}), ...(outcome ? { until: outcome } : {}) }
 		if (missed) {
-			output.writeJson({ ok: false, error: { message: missed, code: 'wait_timeout' }, action: document, until: outcome })
+			output.writeJson({ ok: false, error: { message: missed, code: 'wait_timeout' }, action: document, ...extras })
 		} else {
-			output.writeJson(outcome && isPlainObject(document) ? { ...document, until: outcome } : document)
+			output.writeJson(isPlainObject(document) ? { ...document, ...extras } : document)
 		}
 		return
 	}
@@ -201,6 +211,7 @@ const runWatcherCommand = async <
 	} else {
 		renderOutput.writeHuman(JSON.stringify(result.data, null, 2))
 	}
+	if (settlePlan && settled && !settled.settled) output.writeWarn(`${describeSettleMiss(settlePlan, settled)}; continuing`)
 	if (outcome?.matched) {
 		renderOutput.writeHuman(`--until met after ${formatSeconds(outcome.elapsedMs)}: ${describeConditionReply({ result: outcome.value })}`)
 	}

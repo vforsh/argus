@@ -84,7 +84,7 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 	{
 		name: 'eval-until',
 		alias: 'wait',
-		description: 'Poll a JS expression until it returns a truthy value',
+		description: 'Poll a JS expression until it returns a truthy value, and/or wait for the page to settle (--settle)',
 		arguments: [
 			{ flags: '[id]', description: 'Watcher id to query' },
 			{ flags: '[expression]', description: 'JS expression to poll until truthy (or use --file / --stdin)' },
@@ -100,10 +100,14 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--count <n>', description: 'Stop after N iterations' },
 			{ flags: '--total-timeout <duration>', description: 'Max wall-clock time (e.g. 30s, 2m)' },
 			{ flags: '--verbose', description: 'Print intermediate (falsy) results' },
+			{ flags: '--settle', description: 'First wait for load, a quiet network, and window.__argus.settle(); alone, that is the whole wait' },
+			{ flags: '--settle-timeout <duration>', description: 'Budget for --settle (default: 10s)' },
 			...sharedEvalTailOptions,
 			{ flags: '-o, --out <path>', description: 'Write the matched eval result to a file' },
 		],
 		examples: [
+			'argus wait app --settle',
+			'argus wait app --settle "window.store.ready" --total-timeout 30s',
 			'argus eval-until app "document.querySelector(\'#loaded\')"',
 			'argus eval-until app "await window.appReadyPromise"',
 			'argus eval-until app "window.APP_READY" --interval 500',

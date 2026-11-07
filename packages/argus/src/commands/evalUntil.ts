@@ -6,9 +6,11 @@ import { pollEval, type EvalPollOutcome } from './evalPolling.js'
 import { createEvalEmitter, writeEvalSuccess } from './evalEmit.js'
 import { parseDurationFlagMs, parseEvalCommonFlags, prepareEvalExpression, type EvalCommonOptions } from './evalShared.js'
 import { validateEvalResultFileOptions } from './evalResultOutput.js'
+import { describeSettleMiss, parseSettleFlags, settlePage, type SettleFlags } from './settle.js'
 
 /** Options for the eval-until command. */
-export type EvalUntilOptions = EvalCommonOptions & {
+export type EvalUntilOptions = EvalCommonOptions &
+	SettleFlags & {
 	/** Give up after this much wall-clock time. */
 	totalTimeout?: string
 	/** Report each poll instead of only the match. */
@@ -18,6 +20,11 @@ export type EvalUntilOptions = EvalCommonOptions & {
 /** Execute the eval-until command: poll until the expression returns a truthy value. */
 export const runEvalUntil = async (id: string | undefined, rawExpression: string | undefined, options: EvalUntilOptions): Promise<void> => {
 	const output = createOutput(options)
+
+	if (options.settle) {
+		const settled = await runSettleStep(id, options, output, rawExpression == null && !options.file && !options.stdin)
+		if (settled === 'done') return
+	}
 
 	const prepared = await prepareEvalExpression(rawExpression, options, output)
 	if (prepared == null) {
@@ -133,4 +140,36 @@ const writeUntilMiss = (
 		return
 	}
 	output.writeWarn(last ? `${message}; last: ${describeConditionReply(last)}` : message)
+}
+
+/**
+ * `wait --settle`: settle first, then poll the expression if there is one.
+ *
+ * Alone it is the whole wait, so a page that never settles fails it (`wait_timeout`); before an
+ * expression it is a best-effort warm-up and a miss only warns.
+ */
+const runSettleStep = async (id: string | undefined, options: EvalUntilOptions, output: Output, settleOnly: boolean): Promise<'done' | 'continue'> => {
+	const plan = parseSettleFlags(options, output, true)
+	if (!plan) return 'done'
+
+	const resolved = await resolveWatcherOrExit({ id }, output)
+	if (!resolved) return 'done'
+
+	const outcome = await settlePage(resolved.watcher, plan, Date.now())
+	if (!settleOnly) {
+		if (!outcome.settled) output.writeWarn(`${describeSettleMiss(plan, outcome)}; polling anyway`)
+		return 'continue'
+	}
+
+	if (!outcome.settled) process.exitCode = 1
+	// `-q` mutes success only; a page that never settled still reports.
+	if (outcome.settled && options.silent) return 'done'
+	if (output.json) {
+		output.writeJson(outcome.settled ? { ok: true, settle: outcome } : { ok: false, error: { message: describeSettleMiss(plan, outcome), code: 'wait_timeout' }, settle: outcome })
+	} else if (outcome.settled) {
+		output.writeHuman(`settled in ${formatSeconds(outcome.elapsedMs)} (network ${outcome.network})`)
+	} else {
+		output.writeWarn(describeSettleMiss(plan, outcome))
+	}
+	return 'done'
 }
