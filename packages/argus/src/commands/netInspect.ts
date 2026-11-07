@@ -246,7 +246,7 @@ const writeBodySection = (output: ReturnType<typeof createOutput>, title: string
 		return
 	}
 
-	process.stdout.write(prettifyJsonLikeBody(rendered))
+	output.writeHuman(prettifyJsonLikeBody(rendered))
 }
 
 const prettifyJsonLikeBody = (value: string): string => {

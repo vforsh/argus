@@ -1,4 +1,5 @@
 import { Command, Option } from 'commander'
+import { addUniversalOutputOptions, runWithUniversalOutput } from './universalOutput.js'
 
 export type ArgusCommandOption = {
 	flags: string
@@ -67,6 +68,9 @@ export const defineCommand = (parent: Command, definition: ArgusCommandDefinitio
 	}
 
 	definition.configure?.(command)
+	if (definition.action) {
+		addUniversalOutputOptions(command)
+	}
 	for (const subcommand of definition.subcommands ?? []) {
 		defineCommand(command, subcommand)
 	}
@@ -94,8 +98,9 @@ const createActionRunner =
 		const last = args.at(-1)
 		const instance = last instanceof Command ? last : command
 		const declaredArgs = last instanceof Command ? args.slice(0, -2) : args
+		const options = mergeCommandOptions(instance)
 
-		await action(...declaredArgs, mergeCommandOptions(instance), instance)
+		await runWithUniversalOutput(instance, options, () => Promise.resolve(action(...declaredArgs, options, instance)))
 	}
 
 /**

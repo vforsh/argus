@@ -6,6 +6,7 @@ import type { Output } from '../output/io.js'
 import { createOutput } from '../output/io.js'
 import type { WatcherRequestSuccess } from '../watchers/requestWatcher.js'
 import { formatError } from '../cli/parse.js'
+import { writeScopedStdout } from '../output/outputScope.js'
 
 // Intentionally not on `defineWatcherCommand`: these flows compose multiple
 // watcher calls (clone = export from one watcher + load into another).
@@ -204,5 +205,6 @@ const writeOutput = async (content: string, outPath?: string): Promise<void> => 
 		await writeFile(outPath, withTrailingNewline, 'utf8')
 		return
 	}
-	process.stdout.write(withTrailingNewline)
+	// Exports are data: `-q` may silence them, a character cap never cuts them.
+	writeScopedStdout(withTrailingNewline, 'data')
 }

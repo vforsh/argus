@@ -34,3 +34,10 @@ export const setExitCode = (code: number): void => {
  * its own scope rather than whichever request runs next.
  */
 export const runWithExitCodeScope = <T>(scope: ExitCodeScope, body: () => Promise<T>): Promise<T> => scopes.run(scope, body)
+
+/** The exit code reported so far in the current scope (or the process), `0` when nothing failed. */
+export const currentExitCode = (): number => {
+	const scoped = scopes.getStore()?.exitCode
+	if (scoped !== undefined) return scoped
+	return typeof process.exitCode === 'number' ? process.exitCode : 0
+}

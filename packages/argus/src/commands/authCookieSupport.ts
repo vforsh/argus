@@ -10,6 +10,7 @@ import {
 import { writeFile } from 'node:fs/promises'
 import { requestWatcherCommandJson } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
+import { writeScopedStdout } from '../output/outputScope.js'
 
 type CookieFetchInput = {
 	domain?: string
@@ -191,7 +192,8 @@ export const writeOutput = async (content: string, outPath?: string): Promise<vo
 		await writeFile(outPath, withTrailingNewline, 'utf8')
 		return
 	}
-	process.stdout.write(withTrailingNewline)
+	// Exports are data: `-q` may silence them, a character cap never cuts them.
+	writeScopedStdout(withTrailingNewline, 'data')
 }
 
 const writeCookieInputError = (output: Output, message: string): null => {

@@ -16,7 +16,8 @@ const sharedEvalHeadOptions = (timeoutDescription: string, exceptionOptions: rea
 	{ flags: '--no-return-by-value', description: 'Disable returnByValue (use preview)' },
 	...exceptionOptions,
 	{ flags: '--retry <n>', description: 'Retry failed evaluations up to N times' },
-	{ flags: '-q, --silent', description: 'Suppress success output; only emit output on error' },
+	{ flags: '-q, --quiet', description: 'Suppress success output; only emit output on error' },
+	{ flags: '--silent', description: 'Old spelling of --quiet', hidden: true },
 	...outputShapingOptions,
 ]
 
@@ -69,7 +70,7 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			'argus eval app - < script.js',
 			'argus eval app "document.title" --no-fail-on-exception',
 			'argus eval app "1+1" --retry 3',
-			'argus eval app "1+1" --silent',
+			'argus eval app "1+1" --quiet',
 			'argus eval app "window.store.getState()" --fields user.id,cart.items --max-chars 2000',
 			'argus eval app "Date.now()" --interval 500 --count 10',
 			'argus eval app "document.title" --interval 250 --until \'result === "ready"\'',
@@ -138,8 +139,10 @@ const REJECTED = Symbol('eval-expression-rejected')
  */
 const resolveEvalExpression = (
 	expression: string | undefined,
-	options: { json?: boolean; expression?: string },
+	options: { json?: boolean; expression?: string; quiet?: boolean; silent?: boolean },
 ): string | undefined | typeof REJECTED => {
+	// `-q/--quiet` is the spelling every other command uses; the eval pipeline still reads `silent`.
+	if (options.quiet) options.silent = true
 	if (expression != null && options.expression != null) {
 		usageError(options, 'Provide either a positional expression or --expression, not both.')
 		return REJECTED

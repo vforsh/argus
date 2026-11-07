@@ -38,5 +38,5 @@ export const runNetBody = async (id: string | undefined, request: string, option
 		return
 	}
 
-	process.stdout.write(rendered.endsWith('\n') ? rendered : `${rendered}\n`)
+	output.writeHuman(rendered)
 }

@@ -3,17 +3,28 @@ type OutputOptions = {
 }
 
 import type { ArgusOutput } from '@vforsh/argus-plugin-api'
+import { shapeScopedJson, writeScopedStdout } from './outputScope.js'
 const ensureTrailingNewline = (value: string): string => (value.endsWith('\n') ? value : `${value}\n`)
 
 /** Route incidental console progress to stderr before JSON-mode plugins are loaded. */
 export const configureMachineSafeConsole = (argv: readonly string[]): void => {
-	if (isJsonRequested(argv) || isMachineOnlyCommand(argv)) {
+	// `--fields` may imply `--json`, which is only known once the command is resolved: plugin console
+	// noise must not reach a stdout that may turn out to carry JSON.
+	if (isJsonRequested(argv) || argv.includes('--fields') || isMachineOnlyCommand(argv)) {
 		routeConsoleToStderr()
 	}
 }
 
 /** Whether a one-shot invocation asked for machine output. */
-export const isJsonRequested = (argv: readonly string[]): boolean => argv.includes('--json') || argv.includes('--json-full')
+export const isJsonRequested = (argv: readonly string[]): boolean => jsonImplied || argv.includes('--json') || argv.includes('--json-full')
+
+/** Set once a flag that implies `--json` (generic `--fields`) was seen; argv alone does not say so. */
+let jsonImplied = false
+
+/** Record that this invocation asked for JSON without spelling `--json`. */
+export const markJsonRequested = (): void => {
+	jsonImplied = true
+}
 
 // Process-wide, because the backstop below runs after the command's own `Output` is gone.
 let machineOutputWritten = false
@@ -76,7 +87,7 @@ export const createOutput = (options: OutputOptions): Output => {
 
 	const writeJsonLine = (value: unknown): void => {
 		machineOutputWritten = true
-		process.stdout.write(JSON.stringify(value) + '\n')
+		writeScopedStdout(JSON.stringify(shapeScopedJson(value)) + '\n', 'data')
 	}
 
 	const writeJson = (value: unknown): void => {
@@ -92,7 +103,7 @@ export const createOutput = (options: OutputOptions): Output => {
 		if (json) {
 			process.stderr.write(line)
 		} else {
-			process.stdout.write(line)
+			writeScopedStdout(line, 'human')
 		}
 	}
 

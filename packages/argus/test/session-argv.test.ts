@@ -50,7 +50,7 @@ describe('session argv', () => {
 	it('matches option keys by camelCase, kebab-case, and short flag', () => {
 		expect(argvFor('eval-until', { expression: 'x', totalTimeout: '30s' })).toContain('--total-timeout')
 		expect(argvFor('eval-until', { expression: 'x', 'total-timeout': '30s' })).toContain('--total-timeout')
-		expect(argvFor('eval', { expression: 'x', q: true })).toContain('--silent')
+		expect(argvFor('eval', { expression: 'x', q: true })).toContain('--quiet')
 	})
 
 	it('expands repeatable options and switches', () => {
