@@ -14,6 +14,7 @@ import { route as getNetRequestBody } from './getNetRequestBody.js'
 import { route as getNetTail } from './getNetTail.js'
 import { route as getNetWebSockets } from './getNetWebSockets.js'
 import { route as getNetWebSocketConnection } from './getNetWebSocketConnection.js'
+import { route as getNetWebSocketFrames } from './getNetWebSocketFrames.js'
 import { route as getNetSse } from './getNetSse.js'
 import { route as postNetClear } from './postNetClear.js'
 import { netMockRoutes } from './netMock.js'
@@ -88,6 +89,7 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	getNetTail,
 	getNetWebSockets,
 	getNetWebSocketConnection,
+	getNetWebSocketFrames,
 	getNetSse,
 	postNetClear,
 	...netMockRoutes,

@@ -1,21 +1,31 @@
-import type { NetSseSummary, NetWebSocketDetail, NetWebSocketFramePreview, NetWebSocketSummary } from '@vforsh/argus-core'
+import type { NetSseSummary, NetWebSocketDetail, NetWebSocketFrame, NetWebSocketFramePreview, NetWebSocketSummary } from '@vforsh/argus-core'
 import { matchesNetFilters, type NetFilters } from '../net/filtering.js'
+import { WebSocketFrameLog, type WebSocketFrameFilters, type WebSocketFrameInput } from './WebSocketFrameLog.js'
 
 const RECENT_FRAME_LIMIT = 20
+const RECENT_FRAME_PREVIEW_CHARS = 500
 
-/** Bounded store for realtime network records: WebSocket connections and SSE streams. */
+/** Connection record without its frames; `recentFrames` is derived from the frame log on read. */
+export type StoredWebSocket = Omit<NetWebSocketDetail, 'recentFrames'>
+
+/** Frame filters as the route parses them; `socket` is an Argus connection id or a CDP requestId. */
+export type WebSocketFrameQuery = Omit<WebSocketFrameFilters, 'connectionId'> & { socket?: string }
+
+/** Bounded store for realtime network records: WebSocket connections, their frames, and SSE streams. */
 export class RealtimeNetBuffer {
 	private readonly maxSize: number
-	private webSockets: NetWebSocketDetail[] = []
+	private readonly frames: WebSocketFrameLog
+	private webSockets: StoredWebSocket[] = []
 	private sseStreams: NetSseSummary[] = []
 	private nextWebSocketId = 1
 	private nextSseId = 1
 
 	constructor(maxSize: number) {
 		this.maxSize = maxSize
+		this.frames = new WebSocketFrameLog(maxSize)
 	}
 
-	upsertWebSocket(requestId: string, patch: WebSocketPatch): NetWebSocketDetail {
+	upsertWebSocket(requestId: string, patch: WebSocketPatch): StoredWebSocket {
 		const existing = this.findWebSocketByRequestId(requestId)
 		if (existing) {
 			applyWebSocketPatch(existing, patch)
@@ -23,7 +33,7 @@ export class RealtimeNetBuffer {
 		}
 
 		const createdAt = patch.createdAt ?? Date.now()
-		const detail: NetWebSocketDetail = {
+		const detail: StoredWebSocket = {
 			id: this.nextWebSocketId++,
 			ts: Date.now(),
 			requestId,
@@ -46,7 +56,6 @@ export class RealtimeNetBuffer {
 			errorText: patch.errorText ?? null,
 			requestHeaders: patch.requestHeaders,
 			responseHeaders: patch.responseHeaders,
-			recentFrames: [],
 		}
 		applyWebSocketPatch(detail, patch)
 		this.webSockets.push(detail)
@@ -54,12 +63,15 @@ export class RealtimeNetBuffer {
 		return detail
 	}
 
-	addWebSocketFrame(requestId: string, frame: NetWebSocketFramePreview): void {
-		const stored = this.findWebSocketByRequestId(requestId)
-		if (!stored) {
-			return
-		}
-
+	/**
+	 * Count a frame against its socket and append it to the frame log.
+	 *
+	 * A frame for an unknown socket means it opened before capture started (attach to a live tab, or after
+	 * `net clear`): CDP never replays `webSocketCreated`, so the socket is recorded as open with an unknown URL
+	 * instead of silently dropping its traffic.
+	 */
+	addWebSocketFrame(requestId: string, frame: Omit<WebSocketFrameInput, 'connectionId' | 'requestId' | 'url'>): StoredWebSocket {
+		const stored = this.findWebSocketByRequestId(requestId) ?? this.upsertWebSocket(requestId, { state: 'open' })
 		if (frame.direction === 'sent') {
 			stored.sentFrames += 1
 			stored.sentBytes += frame.payloadLength
@@ -67,12 +79,9 @@ export class RealtimeNetBuffer {
 			stored.receivedFrames += 1
 			stored.receivedBytes += frame.payloadLength
 		}
-
-		stored.recentFrames.push(frame)
-		if (stored.recentFrames.length > RECENT_FRAME_LIMIT) {
-			stored.recentFrames = stored.recentFrames.slice(stored.recentFrames.length - RECENT_FRAME_LIMIT)
-		}
 		stored.ts = Date.now()
+		this.frames.add({ ...frame, connectionId: stored.id, requestId, url: stored.url })
+		return stored
 	}
 
 	listWebSocketsAfter(after: number, filters: NetFilters, limit: number): NetWebSocketSummary[] {
@@ -82,12 +91,33 @@ export class RealtimeNetBuffer {
 			.map(toWebSocketSummary)
 	}
 
+	/**
+	 * List frames after a frame-id cursor.
+	 *
+	 * `socket` filters by the frame's own ids, so a socket whose record was evicted stays readable while its frames last.
+	 *
+	 * @returns `null` when `socket` names neither a known connection nor any retained frame, so the route can answer 404.
+	 */
+	listWebSocketFramesAfter(after: number, query: WebSocketFrameQuery, limit: number): NetWebSocketFrame[] | null {
+		const { socket, ...filters } = query
+		if (socket == null) return this.frames.listAfter(after, filters, limit)
+		const socketFilter = /^\d+$/.test(socket) ? { connectionId: Number(socket) } : { requestId: socket }
+		const known = this.webSockets.some((connection) => connection.id === socketFilter.connectionId || connection.requestId === socketFilter.requestId)
+		if (!known && !this.frames.some(socketFilter)) return null
+		return this.frames.listAfter(after, { ...filters, ...socketFilter }, limit)
+	}
+
+	/** Newest frame id ever captured (0 before the first), ignoring filters. */
+	get latestWebSocketFrameId(): number {
+		return this.frames.latestId
+	}
+
 	getWebSocketById(id: number): NetWebSocketDetail | null {
-		return this.webSockets.find((connection) => connection.id === id) ?? null
+		return this.withRecentFrames(this.webSockets.find((connection) => connection.id === id) ?? null)
 	}
 
 	getWebSocketByRequestId(requestId: string): NetWebSocketDetail | null {
-		return this.findWebSocketByRequestId(requestId)
+		return this.withRecentFrames(this.findWebSocketByRequestId(requestId))
 	}
 
 	upsertSse(requestId: string, patch: SsePatch): NetSseSummary {
@@ -146,14 +176,25 @@ export class RealtimeNetBuffer {
 			.map((stream) => stream)
 	}
 
+	/**
+	 * Drop frames, finished sockets, and SSE streams. Open sockets stay: they are still live, and forgetting
+	 * them would turn their next frame into an unknown-URL socket.
+	 */
 	clear(): number {
-		const cleared = this.webSockets.length + this.sseStreams.length
-		this.webSockets = []
+		const live = this.webSockets.filter((connection) => connection.state === 'created' || connection.state === 'open')
+		const cleared = this.webSockets.length - live.length + this.sseStreams.length + this.frames.clear()
+		this.webSockets = live
 		this.sseStreams = []
 		return cleared
 	}
 
-	private findWebSocketByRequestId(requestId: string): NetWebSocketDetail | null {
+	private withRecentFrames(connection: StoredWebSocket | null): NetWebSocketDetail | null {
+		if (!connection) return null
+		const recentFrames = this.frames.recentForConnection(connection.id, RECENT_FRAME_LIMIT).map(toFramePreview)
+		return { ...connection, recentFrames }
+	}
+
+	private findWebSocketByRequestId(requestId: string): StoredWebSocket | null {
 		return this.webSockets.find((connection) => connection.requestId === requestId) ?? null
 	}
 
@@ -170,9 +211,9 @@ export class RealtimeNetBuffer {
 	}
 }
 
-type WebSocketPatch = Partial<
+export type WebSocketPatch = Partial<
 	Pick<
-		NetWebSocketDetail,
+		StoredWebSocket,
 		| 'url'
 		| 'documentUrl'
 		| 'frameId'
@@ -212,7 +253,11 @@ type SsePatch = Partial<
 	>
 >
 
-const applyWebSocketPatch = (detail: NetWebSocketDetail, patch: WebSocketPatch): void => {
+const applyWebSocketPatch = (detail: StoredWebSocket, patch: WebSocketPatch): void => {
+	// A frame error already ended the socket; its later `webSocketClosed` must not downgrade it to a clean close.
+	if (detail.state === 'error' && patch.state === 'closed') {
+		patch = { ...patch, state: 'error' }
+	}
 	for (const [key, value] of Object.entries(patch)) {
 		if (value !== undefined) {
 			;(detail as Record<string, unknown>)[key] = value
@@ -223,11 +268,26 @@ const applyWebSocketPatch = (detail: NetWebSocketDetail, patch: WebSocketPatch):
 }
 
 const toWebSocketSummary = ({
-	recentFrames: _recentFrames,
 	requestHeaders: _requestHeaders,
 	responseHeaders: _responseHeaders,
 	...summary
-}: NetWebSocketDetail): NetWebSocketSummary => summary
+}: StoredWebSocket): NetWebSocketSummary => summary
+
+const toFramePreview = (frame: NetWebSocketFrame): NetWebSocketFramePreview => ({
+	ts: frame.ts,
+	direction: frame.direction,
+	opcode: frame.opcode,
+	mask: frame.mask,
+	payloadLength: frame.payloadLength,
+	preview: previewPayload(frame.payload),
+	base64Encoded: frame.base64Encoded,
+	error: null,
+})
+
+const previewPayload = (payload: string): string | null => {
+	if (payload.length === 0) return null
+	return payload.length > RECENT_FRAME_PREVIEW_CHARS ? `${payload.slice(0, RECENT_FRAME_PREVIEW_CHARS)}...` : payload
+}
 
 const applySsePatch = (stream: NetSseSummary, patch: SsePatch): void => {
 	for (const [key, value] of Object.entries(patch)) {

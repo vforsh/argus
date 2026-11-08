@@ -152,6 +152,7 @@
 			<div class="btn-row">
 				<button data-testid="btn-ws-connect" onclick="connectWebSocket()">Connect WS</button>
 				<button data-testid="btn-ws-send" onclick="sendWebSocketMessage()">Send WS message</button>
+				<button data-testid="btn-ws-send-binary" onclick="sendWebSocketBinary()">Send WS binary</button>
 				<button data-testid="btn-ws-disconnect" onclick="disconnectWebSocket()">Disconnect WS</button>
 				<button data-testid="btn-sse-start" onclick="startSse()">Start SSE</button>
 				<button data-testid="btn-sse-stop" onclick="stopSse()">Stop SSE</button>
@@ -674,6 +675,7 @@
 				const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
 				const wsHost = window.__WS_PORT ? `${location.hostname}:${window.__WS_PORT}` : location.host
 				playgroundSocket = new WebSocket(`${protocol}//${wsHost}/ws/echo?token=playground-secret`)
+				playgroundSocket.binaryType = 'arraybuffer'
 				realtimeState.ws = 'connecting'
 				refreshRealtimeOutput()
 
@@ -682,7 +684,8 @@
 					refreshRealtimeOutput()
 				})
 				playgroundSocket.addEventListener('message', (event) => {
-					realtimeState.wsMessages.push({ direction: 'received', data: event.data, ts: Date.now() })
+					const data = typeof event.data === 'string' ? event.data : `binary ${event.data.byteLength} bytes`
+					realtimeState.wsMessages.push({ direction: 'received', data, ts: Date.now() })
 					realtimeState.wsMessages = realtimeState.wsMessages.slice(-5)
 					refreshRealtimeOutput()
 				})
@@ -705,6 +708,19 @@
 				const message = `playground-ws-${Date.now()}`
 				playgroundSocket.send(message)
 				realtimeState.wsMessages.push({ direction: 'sent', data: message, ts: Date.now() })
+				realtimeState.wsMessages = realtimeState.wsMessages.slice(-5)
+				refreshRealtimeOutput()
+			}
+
+			function sendWebSocketBinary() {
+				if (!playgroundSocket || playgroundSocket.readyState !== WebSocket.OPEN) {
+					connectWebSocket()
+					setTimeout(sendWebSocketBinary, 250)
+					return
+				}
+				const bytes = new Uint8Array([0, 1, 2, 250, 251, 252, 253, 254, 255])
+				playgroundSocket.send(bytes)
+				realtimeState.wsMessages.push({ direction: 'sent', data: `binary ${bytes.length} bytes`, ts: Date.now() })
 				realtimeState.wsMessages = realtimeState.wsMessages.slice(-5)
 				refreshRealtimeOutput()
 			}

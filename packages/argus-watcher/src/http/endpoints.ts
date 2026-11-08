@@ -26,6 +26,7 @@ export const WATCHER_ENDPOINTS = [
 	'page/init-script/clear',
 	'net/ws',
 	'net/ws/connection',
+	'net/ws/frames',
 	'net/sse',
 	'auth/cookies',
 	'auth/cookies/get',
@@ -131,4 +132,7 @@ export type WatcherRequestQuery = {
 	url?: string
 	title?: string
 	includeValues?: boolean
+	socket?: string
+	direction?: string
+	maxPayloadChars?: number
 }

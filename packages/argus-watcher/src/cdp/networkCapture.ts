@@ -351,6 +351,7 @@ export const createNetworkCapture = (options: {
 	registerRealtimeNetworkCapture({
 		session: options.session,
 		buffer: options.realtimeBuffer,
+		netBuffer: options.buffer,
 		getInflight: (requestId) => inflight.get(requestId) ?? null,
 	})
 

@@ -84,6 +84,30 @@ export type NetQuery = {
 	timeoutMs?: number
 }
 
+/** Which way a WebSocket frame travelled. */
+export const NET_WS_FRAME_DIRECTIONS = ['sent', 'received'] as const
+
+/** Query parameters accepted by GET /net/ws/frames. */
+export type NetWebSocketFramesQuery = {
+	/** Frame id cursor. */
+	after?: number
+	limit?: number
+	/** Epoch milliseconds; older frames are dropped. */
+	sinceTs?: number
+	/** Argus connection id or raw CDP requestId of one socket. */
+	socket?: string
+	/** Substring match over the redacted socket URL. */
+	grep?: string
+	/** Regex patterns over the payload (base64 for binary frames), repeatable; a frame matching any one is kept. */
+	match?: string[]
+	matchCase?: MatchCase
+	direction?: (typeof NET_WS_FRAME_DIRECTIONS)[number]
+	/** Cut each returned payload to this many characters. */
+	maxPayloadChars?: number
+	/** Long-poll budget: wait up to this long for a matching frame. Omitted answers immediately. */
+	timeoutMs?: number
+}
+
 /** A value a query parameter can carry before serialization. */
 export type QueryValue = string | number | boolean | readonly string[] | null | undefined
 

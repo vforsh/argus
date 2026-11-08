@@ -51,6 +51,7 @@ const STREAMING_COMMANDS = new Set([
 	'logs tail',
 	'net tail',
 	'net sse',
+	'net ws tail',
 	'android attach',
 ])
 

@@ -16,7 +16,23 @@ export type NetworkRequestSummary = {
 	encodedDataLength: number | null
 	errorText: string | null
 	durationMs: number | null
+	/** Live socket state for `resourceType: 'WebSocket'` rows; frames are read with `GET /net/ws/frames`. */
+	webSocket?: NetWebSocketNetInfo
 	// later: add redacted request/response headers behind a flag.
+}
+
+/**
+ * WebSocket counters attached to the socket's `/net` row.
+ *
+ * Chrome reports sockets through `Network.webSocket*` events, never `requestWillBeSent`/`loadingFinished`,
+ * so the capture inserts the row itself and keeps these fields current as frames arrive.
+ */
+export type NetWebSocketNetInfo = {
+	/** Argus WebSocket connection id (`net ws show <connectionId>`, `net ws frames --socket <connectionId>`). */
+	connectionId: number
+	state: NetWebSocketSummary['state']
+	sentFrames: number
+	receivedFrames: number
 }
 
 /** Single stack frame from a network initiator trace. */
@@ -154,6 +170,35 @@ export type NetWebSocketFramePreview = {
 	error: string | null
 }
 
+/**
+ * One captured WebSocket frame, in capture order across all sockets.
+ *
+ * Text frames (opcode 1) carry their payload as-is; binary frames (opcode 2) carry base64. The watcher stores a
+ * bounded prefix of each payload (64 KiB of characters), so `truncated` can be set even without a caller-side cap;
+ * `payloadLength` is always the real byte length on the wire.
+ */
+export type NetWebSocketFrame = {
+	/** Monotonic frame id; the cursor for `after`. */
+	id: number
+	/** Argus WebSocket connection id. */
+	connectionId: number
+	requestId: string
+	/** Redacted socket URL. */
+	url: string
+	/** Wall-clock ms when the watcher received the frame event. */
+	ts: number
+	direction: NetWebSocketFrameDirection
+	/** RFC 6455 opcode: 1 text, 2 binary (CDP reports data frames only). */
+	opcode: number | null
+	mask: boolean | null
+	/** Payload size in bytes (decoded for binary frames). */
+	payloadLength: number
+	/** Text payload, or base64 for binary frames; cut to the stored or requested cap. */
+	payload: string
+	base64Encoded: boolean
+	truncated: boolean
+}
+
 /** Compact WebSocket connection record for `net ws`. */
 export type NetWebSocketSummary = {
 	id: number
@@ -218,6 +263,16 @@ export type NetWebSocketsResponse = Ok<{
 /** Response payload for GET /net/ws/connection. */
 export type NetWebSocketResponse = Ok<{
 	connection: NetWebSocketDetail
+}>
+
+/** Response payload for GET /net/ws/frames. */
+export type NetWebSocketFramesResponse = Ok<{
+	frames: NetWebSocketFrame[]
+	nextAfter: number
+	/** Set when the request long-polled (`timeoutMs`) and no frame matched before the deadline. */
+	timedOut: boolean
+	/** Newest frame id captured so far, ignoring filters (0 before the first); pass as `after` to follow from now. */
+	latestId: number
 }>
 
 /** Response payload for GET /net/sse. */

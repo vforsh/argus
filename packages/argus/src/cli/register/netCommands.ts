@@ -1,5 +1,5 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
-import { collectValues } from '../validation.js'
+import { collectMatch, collectValues } from '../validation.js'
 import { jsonOption, outputShapingOptions } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
@@ -19,6 +19,8 @@ const runNetMockList = lazyAction(() => import('../../commands/netMock.js').then
 const runNetMockRemove = lazyAction(() => import('../../commands/netMock.js').then((mod) => mod.runNetMockRemove))
 const runNetWebSocket = lazyAction(() => import('../../commands/netWebSocket.js').then((mod) => mod.runNetWebSocket))
 const runNetWebSocketShow = lazyAction(() => import('../../commands/netWebSocket.js').then((mod) => mod.runNetWebSocketShow))
+const runNetWebSocketFrames = lazyAction(() => import('../../commands/netWebSocket.js').then((mod) => mod.runNetWebSocketFrames))
+const runNetWebSocketTail = lazyAction(() => import('../../commands/netWebSocket.js').then((mod) => mod.runNetWebSocketTail))
 
 const RELOAD_SELECTED_SCOPE_NOTE = '\n\nNote:\n  --reload does not support --scope selected or --frame selected.\n'
 
@@ -66,6 +68,24 @@ const netSettleOptions = (description: string): ArgusCommandOption[] => [
 	{ flags: '--settle <duration>', description: `${description} (e.g. 3s, 500ms)` },
 	{ flags: '--settle-after <expression>', description: 'Wait for this JS expression to become truthy before the quiet window can start' },
 	{ flags: '--settle-after-interval <duration>', description: 'Polling interval for --settle-after (default: 250ms)' },
+]
+
+/** Filters shared by `net ws frames` and `net ws tail`. */
+const webSocketFrameOptions: readonly ArgusCommandOption[] = [
+	{ flags: '--socket <socket>', description: 'Only this socket: Argus connection id (from `net ws`) or raw CDP requestId' },
+	{ flags: '--direction <dir>', description: 'Only sent or received frames (aliases: out, in)' },
+	{ flags: '--grep <substring>', description: 'Only sockets whose URL contains substring' },
+	{
+		flags: '--match <regex>',
+		description: 'Payload regex, repeatable (any matches); binary payloads match as base64',
+		parser: collectMatch,
+		defaultValue: [],
+	},
+	{ flags: '--case-sensitive', description: 'Case-sensitive --match (default: insensitive)' },
+	{ flags: '--since <duration>', description: 'Only frames from this time window (e.g. 30s, 5m)' },
+	{ flags: '--after <id>', description: 'Only frames after this frame id' },
+	{ flags: '--limit <count>', description: 'Maximum number of frames (per poll for tail)' },
+	{ flags: '--max-chars <n>', description: 'Cut each payload to N characters (marked truncated); text as-is, binary as base64' },
 ]
 
 const netMockCommand: ArgusCommandDefinition = {
@@ -347,7 +367,14 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 					...netFilterOptions({ includeSince: true }),
 					jsonOption,
 				],
-				examples: ['argus net ws app', 'argus net ws app --grep socket', 'argus net ws app --json', 'argus net ws show 1 app'],
+				examples: [
+					'argus net ws app',
+					'argus net ws app --grep socket',
+					'argus net ws app --json',
+					'argus net ws show 1 app',
+					'argus net ws frames app --socket 1',
+					'argus net ws tail app --direction sent',
+				],
 				action: async (id, options) => {
 					await runNetWebSocket(id, options)
 				},
@@ -363,6 +390,35 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 						examples: ['argus net ws show 1 app', 'argus net ws show 90829.42 app --json'],
 						action: async (connection, id, options) => {
 							await runNetWebSocketShow(id, connection, options)
+						},
+					},
+					{
+						name: 'frames',
+						description: 'Read buffered WebSocket frames: direction, time, opcode, size, payload',
+						arguments: [{ flags: '[id]', description: 'Watcher id to query' }],
+						options: [...webSocketFrameOptions, jsonOption],
+						examples: [
+							'argus net ws frames app',
+							'argus net ws frames app --socket 1 --direction sent',
+							'argus net ws frames app --grep usedesk --match "message" --since 2m',
+							'argus net ws frames app --json --fields id,direction,payload --max-chars 300',
+						],
+						action: async (id, options) => {
+							await runNetWebSocketFrames(id, options)
+						},
+					},
+					{
+						name: 'tail',
+						description: 'Follow new WebSocket frames via long-polling (starts at the newest frame unless --after/--since)',
+						arguments: [{ flags: '[id]', description: 'Watcher id to follow' }],
+						options: [
+							...webSocketFrameOptions,
+							{ flags: '--timeout <ms>', description: 'Long-poll timeout in milliseconds' },
+							{ flags: '--json', description: 'Output newline-delimited JSON frames' },
+						],
+						examples: ['argus net ws tail app', 'argus net ws tail app --socket 1 --json', 'argus net ws tail app --match "typing" --max-chars 200'],
+						action: async (id, options) => {
+							await runNetWebSocketTail(id, options)
 						},
 					},
 				],

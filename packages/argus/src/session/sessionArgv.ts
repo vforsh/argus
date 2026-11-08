@@ -104,7 +104,18 @@ export const buildSessionArgv = (input: {
  * session down with them; the tails block until interrupted. Run these as their own process
  * and drive the resulting watcher from the session.
  */
-const NON_SESSION_COMMANDS = new Set(['session', 'run', 'start', 'chrome start', 'watcher start', 'watcher native-host', 'logs tail', 'net tail', 'net sse'])
+const NON_SESSION_COMMANDS = new Set([
+	'session',
+	'run',
+	'start',
+	'chrome start',
+	'watcher start',
+	'watcher native-host',
+	'logs tail',
+	'net tail',
+	'net sse',
+	'net ws tail',
+])
 
 const rejectNonSessionCommand = (path: readonly string[]): SessionArgvFailure | null => {
 	const name = path.join(' ')

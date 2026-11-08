@@ -67,6 +67,24 @@ export class NetBuffer {
 		return this.latestByRequestId.get(requestId) ?? null
 	}
 
+	/**
+	 * Merge fields into the latest record for a CDP request id: `patch` into its summary and detail, `detailPatch`
+	 * into the detail only. For rows that stay live after insertion (WebSocket sockets); finished requests are immutable.
+	 *
+	 * @returns false when no record is retained for `requestId` (never added, or evicted).
+	 */
+	patchByRequestId(
+		requestId: string,
+		patch: Partial<Omit<NetworkRequestSummary, 'id' | 'requestId'>>,
+		detailPatch: Partial<Omit<NetworkRequestDetail, keyof NetworkRequestSummary>> = {},
+	): boolean {
+		const stored = this.latestByRequestId.get(requestId)
+		if (!stored) return false
+		Object.assign(stored.summary, patch)
+		Object.assign(stored.detail, patch, detailPatch)
+		return true
+	}
+
 	/** Get buffer size and id boundaries. */
 	getStats(): { size: number; count: number; minId: number | null; maxId: number | null } {
 		if (this.events.length === 0) {

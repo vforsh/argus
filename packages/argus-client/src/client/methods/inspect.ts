@@ -1,4 +1,4 @@
-import { describeProtocolMismatch, formatError } from '@vforsh/argus-core'
+import { describeProtocolMismatch, formatError, toSearchParams } from '@vforsh/argus-core'
 import type {
 	LogCursorResponse,
 	LogEpochResponse,
@@ -6,6 +6,8 @@ import type {
 	NetClearResponse,
 	NetRequestResponse,
 	NetResponse,
+	NetWebSocketFramesQuery,
+	NetWebSocketFramesResponse,
 	RegistryV1,
 	StatusResponse,
 } from '@vforsh/argus-core'
@@ -86,6 +88,20 @@ export const createInspectMethods = (ctx: ClientContext) => ({
 		})
 
 		return response.request
+	},
+
+	/**
+	 * Read captured WebSocket frames, oldest first. Pass the returned `nextAfter` as `after` to page or follow;
+	 * with `timeoutMs` the watcher waits up to that long for a matching frame (`timedOut` when none came).
+	 * Text payloads are as-is, binary ones base64 (`base64Encoded`).
+	 */
+	netWebSocketFrames: async (watcherId: string, query: NetWebSocketFramesQuery = {}) => {
+		const { data } = await requestWatcher<NetWebSocketFramesResponse>(ctx, watcherId, {
+			path: '/net/ws/frames',
+			query: toSearchParams(query),
+			timeoutMs: ctx.requestTimeoutMs + (query.timeoutMs ?? 0),
+		})
+		return { frames: data.frames, nextAfter: data.nextAfter, timedOut: data.timedOut }
 	},
 
 	netClear: async (watcherId: string) => {

@@ -145,9 +145,7 @@ export const startWebSocketServer = (port: number): TcpServer => {
 				upgraded = handleWebSocketUpgrade(chunk, socket)
 				return
 			}
-			for (const message of decodeWebSocketTextFrames(chunk)) {
-				socket.write(encodeWebSocketTextFrame(`echo:${message}`))
-			}
+			echoWebSocketFrames(chunk, socket)
 		})
 	})
 	server.listen(port, '127.0.0.1', () => {
@@ -185,15 +183,26 @@ const handleWebSocketUpgrade = (chunk: Buffer, socket: Socket): boolean => {
 
 	const remaining = Buffer.from(rest, 'binary')
 	if (remaining.length > 0) {
-		for (const message of decodeWebSocketTextFrames(remaining)) {
-			socket.write(encodeWebSocketTextFrame(`echo:${message}`))
-		}
+		echoWebSocketFrames(remaining, socket)
 	}
 	return true
 }
 
-const decodeWebSocketTextFrames = (buffer: Buffer): string[] => {
-	const messages: string[] = []
+/** Text frames come back as `echo:<text>`, binary frames byte-for-byte (captures see both opcodes); close is answered. */
+const echoWebSocketFrames = (buffer: Buffer, socket: Socket): void => {
+	for (const { opcode, payload } of decodeWebSocketFrames(buffer)) {
+		if (opcode === 0x8) {
+			// Answer the close handshake so the browser reports the socket closed with the client's code.
+			socket.end(encodeWebSocketFrame(0x8, payload))
+			return
+		}
+		const reply = opcode === 0x1 ? Buffer.from(`echo:${payload.toString('utf8')}`) : payload
+		socket.write(encodeWebSocketFrame(opcode, reply))
+	}
+}
+
+const decodeWebSocketFrames = (buffer: Buffer): Array<{ opcode: number; payload: Buffer }> => {
+	const messages: Array<{ opcode: number; payload: Buffer }> = []
 	let offset = 0
 
 	while (offset + 2 <= buffer.length) {
@@ -231,22 +240,21 @@ const decodeWebSocketTextFrames = (buffer: Buffer): string[] => {
 			}
 		}
 
-		if (opcode === 0x1) {
-			messages.push(payload.toString('utf8'))
+		if (opcode === 0x1 || opcode === 0x2 || opcode === 0x8) {
+			messages.push({ opcode, payload })
 		}
 	}
 
 	return messages
 }
 
-const encodeWebSocketTextFrame = (message: string): Buffer => {
-	const payload = Buffer.from(message)
+const encodeWebSocketFrame = (opcode: number, payload: Buffer): Buffer => {
 	if (payload.length < 126) {
-		return Buffer.concat([Buffer.from([0x81, payload.length]), payload])
+		return Buffer.concat([Buffer.from([0x80 | opcode, payload.length]), payload])
 	}
 
 	const header = Buffer.alloc(4)
-	header[0] = 0x81
+	header[0] = 0x80 | opcode
 	header[1] = 126
 	header.writeUInt16BE(payload.length, 2)
 	return Buffer.concat([header, payload])

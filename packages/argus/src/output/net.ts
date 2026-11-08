@@ -2,6 +2,7 @@ import type {
 	NetRequestBodyResponse,
 	NetSseSummary,
 	NetWebSocketDetail,
+	NetWebSocketFrame,
 	NetWebSocketFramePreview,
 	NetWebSocketSummary,
 	NetworkInitiatorStackFrame,
@@ -12,6 +13,11 @@ import type {
 
 /** Format a network request summary for human output. */
 export const formatNetworkRequest = (request: NetworkRequestSummary): string => {
+	if (request.webSocket) {
+		const ws = request.webSocket
+		const status = request.status != null ? String(request.status) : '...'
+		return `WS ${status} ${ws.state} ${ws.sentFrames} sent ${ws.receivedFrames} recv socket=${ws.connectionId} ${formatSocketUrl(request.url)}`
+	}
 	const status = request.status != null ? String(request.status) : request.errorText ? 'ERR' : '...'
 	const duration = request.durationMs != null ? `${request.durationMs}ms` : ''
 	const size = request.encodedDataLength != null ? `${request.encodedDataLength}b` : ''
@@ -39,6 +45,12 @@ export const formatNetworkRequestDetail = (request: NetworkRequestDetail): strin
 	].filter((value): value is string => Boolean(value))
 
 	lines.push(...overview)
+
+	if (request.webSocket) {
+		const ws = request.webSocket
+		const counts = `${ws.sentFrames} sent / ${ws.receivedFrames} received`
+		lines.push(`WebSocket: socket ${ws.connectionId} ${ws.state}, ${counts} (frames: argus net ws frames --socket ${ws.connectionId})`)
+	}
 
 	if (request.errorText) {
 		lines.push(`Error: ${request.errorText}`)
@@ -142,14 +154,14 @@ export const formatWebSocketSummary = (connection: NetWebSocketSummary): string 
 	const frames = `${connection.sentFrames} sent ${connection.receivedFrames} recv`
 	const bytes = formatBytes(connection.sentBytes + connection.receivedBytes) ?? '0 B'
 	const status = connection.status != null ? String(connection.status) : 'n/a'
-	const duration = formatMs(connection.durationMs) ?? 'open'
-	const close = connection.closeCode != null ? ` close=${connection.closeCode}${connection.closeReason ? ` ${connection.closeReason}` : ''}` : ''
-	return `${connection.id} ${connection.state} ${status} ${duration} ${frames} ${bytes}${close} ${connection.url}`
+	const duration = formatMs(connection.durationMs)
+	const close = connection.closeCode != null ? `close=${connection.closeCode}${connection.closeReason ? ` ${connection.closeReason}` : ''}` : null
+	return [connection.id, connection.state, status, duration, frames, bytes, close, formatSocketUrl(connection.url)].filter(Boolean).join(' ')
 }
 
 export const formatWebSocketDetail = (connection: NetWebSocketDetail): string[] => {
 	const lines = [
-		`${connection.state.toUpperCase()} ${connection.url}`,
+		`${connection.state.toUpperCase()} ${formatSocketUrl(connection.url)}`,
 		`Argus id: ${connection.id}  requestId: ${connection.requestId}`,
 		`Status: ${connection.status ?? 'n/a'}${connection.statusText ? ` ${connection.statusText}` : ''}`,
 		`Frames: ${connection.sentFrames} sent (${formatBytes(connection.sentBytes) ?? '0 B'})  ${connection.receivedFrames} received (${formatBytes(connection.receivedBytes) ?? '0 B'})`,
@@ -206,6 +218,22 @@ const formatStatus = (request: NetworkRequestDetail): string => {
 	}
 	return request.statusText ? `${request.status} ${request.statusText}` : String(request.status)
 }
+
+/**
+ * One frame per line: `<id> socket=<n> <time> sent|recv <kind> <size> <payload>`. Text payloads print as-is;
+ * binary ones as `base64:<…>`. A cut payload ends with an explicit marker naming the full size.
+ */
+export const formatWebSocketFrameLine = (frame: NetWebSocketFrame): string => {
+	const direction = frame.direction === 'sent' ? 'sent' : 'recv'
+	const kind = frame.opcode === 1 ? 'text' : frame.opcode === 2 ? 'binary' : `opcode=${frame.opcode ?? 'n/a'}`
+	const size = formatBytes(frame.payloadLength) ?? '0 B'
+	const payload = frame.base64Encoded ? `base64:${frame.payload}` : frame.payload
+	const truncated = frame.truncated ? ` … [truncated; ${size} total]` : ''
+	return `${frame.id} socket=${frame.connectionId} ${new Date(frame.ts).toISOString()} ${direction} ${kind} ${size} ${payload}${truncated}`
+}
+
+/** Sockets opened before the watcher attached have no `webSocketCreated` event, so CDP never told us the URL. */
+const formatSocketUrl = (url: string): string => url || '(url unknown: opened before capture)'
 
 const formatWebSocketFrame = (frame: NetWebSocketFramePreview): string => {
 	const opcode = frame.opcode != null ? `opcode=${frame.opcode}` : 'opcode=n/a'

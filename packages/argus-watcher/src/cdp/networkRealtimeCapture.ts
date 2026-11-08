@@ -1,5 +1,6 @@
-import type { NetWebSocketFrameDirection, NetWebSocketFramePreview } from '@vforsh/argus-core'
-import type { RealtimeNetBuffer } from '../buffer/RealtimeNetBuffer.js'
+import type { NetWebSocketFrameDirection, NetworkRequestDetail } from '@vforsh/argus-core'
+import type { NetBuffer } from '../buffer/NetBuffer.js'
+import type { RealtimeNetBuffer, StoredWebSocket, WebSocketPatch } from '../buffer/RealtimeNetBuffer.js'
 import type { CdpSessionHandle } from './connection.js'
 import { captureHeaders, redactOptionalUrl, redactUrl } from './redaction.js'
 import { normalizeString, pickNumber } from './cdpValues.js'
@@ -18,11 +19,32 @@ export type RealtimeInflightRequest = {
 	errorText: string | null
 }
 
+/**
+ * Subscribe to SSE and WebSocket events. Works the same for CDP and extension watchers: the extension forwards
+ * every `Network.*` event of the tab and its child sessions as `cdp_event`.
+ */
 export const registerRealtimeNetworkCapture = (options: {
 	session: CdpSessionHandle
 	buffer: RealtimeNetBuffer | null | undefined
+	netBuffer: NetBuffer
 	getInflight: (requestId: string) => RealtimeInflightRequest | null
 }): void => {
+	const realtime = options.buffer
+	if (!realtime) {
+		return
+	}
+
+	const updateWebSocket = (requestId: string | undefined, patch: WebSocketPatch): void => {
+		if (requestId) syncWebSocketNetRow(options.netBuffer, realtime.upsertWebSocket(requestId, patch))
+	}
+
+	const addFrame = (params: unknown, direction: NetWebSocketFrameDirection): void => {
+		const payload = params as { requestId?: string; response?: { opcode?: number; mask?: boolean; payloadData?: string } }
+		if (payload.requestId) {
+			syncWebSocketNetRow(options.netBuffer, realtime.addWebSocketFrame(payload.requestId, buildFrame(payload.response, direction)))
+		}
+	}
+
 	options.session.onEvent('Network.eventSourceMessageReceived', (params) => {
 		const payload = params as { requestId?: string; eventId?: string; eventName?: string; data?: string }
 		if (!payload.requestId) {
@@ -41,10 +63,7 @@ export const registerRealtimeNetworkCapture = (options: {
 
 	options.session.onEvent('Network.webSocketCreated', (params) => {
 		const payload = params as { requestId?: string; url?: string; initiator?: { url?: unknown } }
-		if (!payload.requestId) {
-			return
-		}
-		options.buffer?.upsertWebSocket(payload.requestId, {
+		updateWebSocket(payload.requestId, {
 			url: redactOptionalUrl(payload.url ?? null) ?? '',
 			documentUrl: typeof payload.initiator?.url === 'string' ? redactOptionalUrl(payload.initiator.url) : null,
 			createdAt: Date.now(),
@@ -53,15 +72,8 @@ export const registerRealtimeNetworkCapture = (options: {
 	})
 
 	options.session.onEvent('Network.webSocketWillSendHandshakeRequest', (params) => {
-		const payload = params as {
-			requestId?: string
-			wallTime?: number
-			request?: { headers?: Record<string, unknown> }
-		}
-		if (!payload.requestId) {
-			return
-		}
-		options.buffer?.upsertWebSocket(payload.requestId, {
+		const payload = params as { requestId?: string; wallTime?: number; request?: { headers?: Record<string, unknown> } }
+		updateWebSocket(payload.requestId, {
 			createdAt: toWallTimeMs(payload.wallTime) ?? Date.now(),
 			requestHeaders: captureHeaders(payload.request?.headers),
 		})
@@ -72,10 +84,7 @@ export const registerRealtimeNetworkCapture = (options: {
 			requestId?: string
 			response?: { status?: number; statusText?: string; headers?: Record<string, unknown> }
 		}
-		if (!payload.requestId) {
-			return
-		}
-		options.buffer?.upsertWebSocket(payload.requestId, {
+		updateWebSocket(payload.requestId, {
 			state: 'open',
 			openedAt: Date.now(),
 			status: pickNumber(payload.response?.status),
@@ -84,37 +93,87 @@ export const registerRealtimeNetworkCapture = (options: {
 		})
 	})
 
-	options.session.onEvent('Network.webSocketFrameSent', (params) => {
-		addWebSocketFrame(options.buffer, params, 'sent')
-	})
-
-	options.session.onEvent('Network.webSocketFrameReceived', (params) => {
-		addWebSocketFrame(options.buffer, params, 'received')
-	})
+	options.session.onEvent('Network.webSocketFrameSent', (params) => addFrame(params, 'sent'))
+	options.session.onEvent('Network.webSocketFrameReceived', (params) => addFrame(params, 'received'))
 
 	options.session.onEvent('Network.webSocketFrameError', (params) => {
 		const payload = params as { requestId?: string; errorMessage?: string }
-		if (!payload.requestId) {
-			return
-		}
-		options.buffer?.upsertWebSocket(payload.requestId, {
-			state: 'error',
-			errorText: normalizeString(payload.errorMessage),
-		})
+		updateWebSocket(payload.requestId, { state: 'error', errorText: normalizeString(payload.errorMessage) })
 	})
 
 	options.session.onEvent('Network.webSocketClosed', (params) => {
 		const payload = params as { requestId?: string; code?: number; reason?: string }
-		if (!payload.requestId) {
-			return
-		}
-		options.buffer?.upsertWebSocket(payload.requestId, {
+		updateWebSocket(payload.requestId, {
 			state: 'closed',
 			closedAt: Date.now(),
 			closeCode: pickNumber(payload.code),
 			closeReason: normalizeString(payload.reason),
 		})
 	})
+}
+
+/**
+ * Mirror a socket into `/net` as a `WebSocket` row and keep it current.
+ *
+ * Chrome never sends `requestWillBeSent`/`loadingFinished` for sockets, so without this `argus net` showed no
+ * trace of them and agents concluded Argus does not capture WebSocket traffic. The row is inserted once and
+ * patched in place; an evicted row is re-added with a new id on the socket's next event.
+ */
+const syncWebSocketNetRow = (netBuffer: NetBuffer, connection: StoredWebSocket): void => {
+	// `ts` follows the socket like a finished request's does: its close time, else its latest event. HAR derives the
+	// start as `ts - durationMs`, and `net --since` must keep a long-lived socket that is still talking.
+	const live = {
+		ts: connection.closedAt ?? connection.ts,
+		url: connection.url,
+		documentUrl: connection.documentUrl,
+		status: connection.status,
+		encodedDataLength: connection.sentBytes + connection.receivedBytes,
+		errorText: connection.errorText,
+		durationMs: connection.durationMs,
+		webSocket: {
+			connectionId: connection.id,
+			state: connection.state,
+			sentFrames: connection.sentFrames,
+			receivedFrames: connection.receivedFrames,
+		},
+	}
+	// Handshake fields arrive after the row exists (`webSocketCreated` inserts it), so they are patched in too.
+	const handshake = {
+		requestHeaders: connection.requestHeaders,
+		responseHeaders: connection.responseHeaders,
+		statusText: connection.statusText,
+	}
+	if (netBuffer.patchByRequestId(connection.requestId, live, handshake)) {
+		return
+	}
+
+	const summary = {
+		requestId: connection.requestId,
+		method: 'GET',
+		resourceType: 'WebSocket',
+		mimeType: null,
+		frameId: connection.frameId,
+		...live,
+	}
+	const detail: Omit<NetworkRequestDetail, 'id'> = {
+		...summary,
+		...handshake,
+		loaderId: null,
+		initiator: null,
+		redirects: [],
+		servedFromCache: false,
+		fromDiskCache: false,
+		fromPrefetchCache: false,
+		fromServiceWorker: false,
+		serviceWorkerResponseSource: null,
+		remoteAddress: null,
+		remotePort: null,
+		protocol: null,
+		priority: null,
+		timingPhases: null,
+		body: { request: false, response: false },
+	}
+	netBuffer.add({ summary, detail })
 }
 
 export const openSseRequest = (buffer: RealtimeNetBuffer | null | undefined, entry: RealtimeInflightRequest): void => {
@@ -153,17 +212,6 @@ export const finalizeSseRequest = (buffer: RealtimeNetBuffer | null | undefined,
 	})
 }
 
-const addWebSocketFrame = (buffer: RealtimeNetBuffer | null | undefined, params: unknown, direction: NetWebSocketFrameDirection): void => {
-	const payload = params as {
-		requestId?: string
-		response?: { opcode?: number; mask?: boolean; payloadData?: string }
-	}
-	if (!payload.requestId) {
-		return
-	}
-	buffer?.addWebSocketFrame(payload.requestId, buildFramePreview(payload.response, direction))
-}
-
 const isSseRequest = (entry: Pick<RealtimeInflightRequest, 'resourceType' | 'mimeType'>): boolean => {
 	if (entry.resourceType?.toLowerCase() === 'eventsource') {
 		return true
@@ -171,21 +219,19 @@ const isSseRequest = (entry: Pick<RealtimeInflightRequest, 'resourceType' | 'mim
 	return entry.mimeType?.toLowerCase().startsWith('text/event-stream') === true
 }
 
-const buildFramePreview = (
-	frame: { opcode?: number; mask?: boolean; payloadData?: string } | undefined,
-	direction: NetWebSocketFrameDirection,
-): NetWebSocketFramePreview => {
+/** CDP payloads: text frames as-is, binary frames (opcode 2) as base64. */
+const buildFrame = (frame: { opcode?: number; mask?: boolean; payloadData?: string } | undefined, direction: NetWebSocketFrameDirection) => {
 	const payload = frame?.payloadData ?? ''
 	const opcode = pickNumber(frame?.opcode)
+	const base64Encoded = opcode === 2
 	return {
 		ts: Date.now(),
 		direction,
 		opcode,
 		mask: typeof frame?.mask === 'boolean' ? frame.mask : null,
-		payloadLength: Buffer.byteLength(payload),
-		preview: payload.length > 0 ? truncatePayload(payload) : null,
-		base64Encoded: opcode === 2,
-		error: null,
+		payloadLength: base64Encoded ? Buffer.from(payload, 'base64').length : Buffer.byteLength(payload),
+		payload,
+		base64Encoded,
 	}
 }
 

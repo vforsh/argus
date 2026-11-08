@@ -165,6 +165,11 @@ const matchesFrameFilter = (event: NetworkRequestSummary, filters: NetFilters): 
 	if (!filters.frameId && !filters.documentUrlKey) {
 		return true
 	}
+	// CDP reports sockets without a frame or document, so no frame scope can claim or exclude them;
+	// hiding them under the selected-iframe default made `net` look like it never saw the socket.
+	if (event.webSocket && event.frameId == null) {
+		return true
+	}
 
 	const matchesFrameId = filters.frameId != null && event.frameId === filters.frameId
 	const matchesDocumentUrl = filters.documentUrlKey != null && normalizeNetUrlKey(event.documentUrl) === filters.documentUrlKey

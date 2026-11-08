@@ -33,6 +33,16 @@ export class CircularBuffer<T> {
 		return evicted
 	}
 
+	/** Remove and return the oldest item in constant time. */
+	shift(): T | undefined {
+		if (this.count === 0) return undefined
+		const oldest = this.values[this.head]
+		this.values[this.head] = undefined as T
+		this.head = (this.head + 1) % this.capacity
+		this.count -= 1
+		return oldest
+	}
+
 	/** Release all retained references; return the number removed. */
 	clear(): number {
 		const removed = this.count
