@@ -83,16 +83,18 @@ Targets `input`, `textarea`, and `contenteditable`; fires `input`/`change` like 
 argus keydown app --key Enter
 argus keydown app Escape                             # positional key = --key
 argus keydown app --key a --selector "#input"        # focus first
-argus keydown app --code KeyG --selector "canvas"   # canvas-owned key handler; canvas must be focusable
+argus keydown app Digit1                             # code names work as keys too: KeyA, Numpad5, ArrowUp
+argus keydown app --code KeyG --selector "canvas"   # canvas key handler; a non-focusable canvas gets the key via the document
 argus keydown app --code KeyG --print-event          # show resolved key/code/keyCode
 argus keydown app --code Backquote --shift           # dispatches key "~", code Backquote
 argus keydown app --key a --shift --ctrl             # or --modifiers shift,ctrl,alt,meta (--cmd = --meta)
 ```
 
-- `--key` is `KeyboardEvent.key`, `--code` is `KeyboardEvent.code`; case-insensitive. Codes: `KeyA–Z`, `Digit0–9`, `F1–12`, `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `Space`, arrows, `Home/End/PageUp/PageDown/Insert`, US punctuation row (`Backquote`, `Minus`, `Equal`, `BracketLeft/Right`, `Backslash`, `Semicolon`, `Quote`, `Comma`, `Period`, `Slash`).
+- `--key` takes a `KeyboardEvent.key` value (`a`, `1`, `Enter`, `ArrowUp`) **or** a `KeyboardEvent.code` name (`KeyA`, `Digit1`, `Numpad5`) and sends the matching key/code/keyCode (`Digit1` → key `1`, keyCode 49; `Numpad5` → key `5`, keyCode 101, numpad location). `--code` takes code names only. Case-insensitive; aliases `Esc`, `Return`, `Del`, `Up/Down/Left/Right`, `Ctrl`, `Cmd`, `Option`. Codes: `KeyA–Z`, `Digit0–9`, `Numpad0–9`, `NumpadAdd/Subtract/Multiply/Divide/Decimal/Enter/Equal/Comma`, `F1–24`, `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `Space`, arrows, `Home/End/PageUp/PageDown/Insert`, `Shift/Control/Alt/MetaLeft|Right`, `CapsLock`, `NumLock`, `ScrollLock`, `Pause`, `PrintScreen`, `ContextMenu`, US punctuation row (`Backquote`, `Minus`, `Equal`, `BracketLeft/Right`, `Backslash`, `Semicolon`, `Quote`, `Comma`, `Period`, `Slash`).
+- Unknown names fail with the closest matches: `Unknown key: "Digt1". Did you mean: Digit1?`
 - One `keyDown` + one `keyUp`, matching what real presses produce: printable keys (and `Enter`) carry text and fire `keypress`/`input`; non-printing keys go as `rawKeyDown`. `--key Enter` submits a focused form.
 - **Focus rule**: Chrome drops keys aimed at an unfocused page but still acks CDP. `keydown` therefore activates a hidden page first (same sticky lock as `page show`) and reports `activated: true`; release with `argus page hide app`. If activation fails it errors `target_not_focused` instead of lying.
-- **Element focus**: Without a selector, keys go to the current active element and bubble to its document/window. Use `--selector canvas` for handlers attached to a focusable canvas (`tabindex="0"`). `focused: false` means no element-focus operation was requested; `activated` reports page activation separately.
+- **Element focus**: Without a selector, keys go to the current active element and bubble to its document/window. `--selector` focuses the element first. A target that cannot take focus (a canvas without `tabindex`, a plain div) gets what a click on it gives: focus is released to the document, the key lands on `<body>` and bubbles to window/document listeners (where most games listen), and the reply says `focused: false` (human mode prints a note). Handlers attached to the canvas element itself only fire when it is focusable (`tabindex="0"`). `activated` reports page activation separately.
 
 ## Wait For Navigation
 

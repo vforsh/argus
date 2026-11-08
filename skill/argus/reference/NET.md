@@ -1,6 +1,6 @@
 # Network
 
-Request summaries buffered per watcher, with bodies fetched lazily, plus WebSocket/SSE listing, HAR export, and request mocking.
+Request summaries buffered per watcher, with bodies fetched lazily, plus WebSocket frames, SSE listing, HAR export, and request mocking.
 
 ## Read
 
@@ -62,11 +62,28 @@ argus net body 42 app --request                             # request body
 
 ## WebSockets / SSE
 
+Captured in both CDP and extension mode (`Network.webSocket*` events of the tab and its iframes).
+
 ```bash
-argus net ws app --grep socket
-argus net ws show 1 app                                     # handshake headers + recent frame previews
+argus net app --resource-type WebSocket                     # sockets as WS rows: status, state, frame counts, socket=<n>
+argus net ws app --grep socket                              # one line per socket: id, state, status, duration, frames, bytes, url
+argus net ws show 1 app                                     # handshake headers + last 20 frame previews
+argus net ws frames app                                     # every buffered frame, oldest first, all sockets
+argus net ws frames app --socket 1 --direction sent         # one socket (id from `net ws`, or raw CDP requestId); sent|received (out|in)
+argus net ws frames app --grep pubsub --match '"type":"message"' --since 2m
+argus net ws frames app --json --fields id,direction,payload --max-chars 300
+argus net ws tail app --socket 1                            # follow new frames (long-poll); --json = NDJSON {watcher, frame}
 argus net sse app --mime text/event-stream                  # request-level only; CDP does not expose SSE payloads
 ```
+
+Frame line: `<frameId> socket=<n> <ISO time> sent|recv text|binary <size> <payload>`. JSON frame: `id`, `connectionId`, `requestId`, `url`, `ts`, `direction`, `opcode` (1 text, 2 binary), `mask`, `payloadLength` (bytes on the wire), `payload`, `base64Encoded`, `truncated`.
+
+- **Payloads**: text as-is, binary as base64 (human mode prefixes `base64:`). `--max-chars <n>` cuts **each payload** to `n` chars and sets `truncated: true`; the watcher itself keeps at most 64 KiB of characters per frame.
+- **Filters** (`frames` and `tail`): `--socket`, `--direction`, `--grep` (socket URL substring), `--match <regex>` (payload, repeatable, any matches, case-insensitive unless `--case-sensitive`; binary matches its base64), `--since`, `--after <frameId>`, `--limit`.
+- **`tail`** starts at the newest frame; `--since`/`--after` replay buffered frames first. Ctrl+C stops it.
+- **Bounds**: frames share one ring per watcher (same count cap as the request buffer, plus a 16M-character payload budget); the oldest go first. `net clear` drops frames and finished sockets but keeps open ones.
+- **Opened before attach**: CDP never replays a socket's handshake, so a socket that was already open shows up on its next frame as `(url unknown: opened before capture)`, with frames from then on. Reload (or reconnect the socket) to get its URL and handshake headers.
+- CDP reports data frames only (no ping/pong/close frames, no close code). Socket rows carry no frame id, so `--scope selected` never hides them.
 
 ## Export
 

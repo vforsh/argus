@@ -33,7 +33,7 @@ Never use `argus start`, `--profile temp`, or headless for a flow that needs the
 
 **Agent startup**: `start --detach` returns after CDP attachment with the watcher id, Chrome/watcher PIDs, CDP coordinates, and launcher log (`--json` for automation). Stop with `watcher stop <id> --json`; this also closes the Chrome owned by `start` and removes its temp profile. A standalone `watcher start` owns only its watcher.
 
-**Long-running commands** (`start` without `--detach`, `chrome start`, `watcher start`, `android attach`, `page open --attach`, `logs tail`, `net tail`, `net sse`, `session`) stay alive. Run them in the background in agent shells.
+**Long-running commands** (`start` without `--detach`, `chrome start`, `watcher start`, `android attach`, `page open --attach`, `logs tail`, `net tail`, `net ws tail`, `net sse`, `session`) stay alive. Run them in the background in agent shells.
 
 ---
 
@@ -121,9 +121,11 @@ Use `logs --raw` / `logs tail --raw` for immediate arrival-time values/previews 
 
 `goto`, `back`, `forward`, and `click/keydown --wait-nav` return an `epoch` for the same purpose: `argus logs app --since-epoch "$epoch"`.
 
+**WebSockets**: sockets appear in `net` as `WS` rows (`--resource-type WebSocket`, live frame counts). Read frames with `argus net ws frames app --socket 1 --direction sent --match "hello"` (id, socket, time, direction, opcode, size, payload; text as-is, binary as `base64:`), follow them with `argus net ws tail app` (from now; `--since 1m` to include recent), list sockets with `argus net ws app`. Sockets opened before the watcher attached are captured from their next frame, with the URL unknown ([NET.md](./reference/NET.md#websockets--sse)).
+
 **Navigate**: `argus goto app /checkout` (relative, `?tab=2`, `#top`, `localhost:3000` all resolve in the watcher), `argus page back app`, `argus reload app` (`--timeout`, default 60s, bounds the reload request; `--until-timeout` starts after it). Bare `settings` is a host, write `/settings`.
 
-**Interact**: `click`, `drag`, `hover`, `fill`, `keydown`, `scroll-to`. Target with `--selector`, `--testid`, `--ref eN` (from `snapshot`/`locate`), or `--pos x,y`. `--all` allows multiple matches; `--text /regex/` filters trimmed text in the selected document’s isolated world (plain text is exact, CSS selection does not pierce shadow roots); `--wait 5s` polls for the selector. `argus locate role app button --name Save --action click` finds and acts in one step. `hover --pos x,y` hovers a bare point; `keydown app Escape` takes the key positionally.
+**Interact**: `click`, `drag`, `hover`, `fill`, `keydown`, `scroll-to`. Target with `--selector`, `--testid`, `--ref eN` (from `snapshot`/`locate`), or `--pos x,y`. `--all` allows multiple matches; `--text /regex/` filters trimmed text in the selected document’s isolated world (plain text is exact, CSS selection does not pierce shadow roots); `--wait 5s` polls for the selector. `argus locate role app button --name Save --action click` finds and acts in one step. `hover --pos x,y` hovers a bare point; `keydown app Escape` takes the key positionally, as a key value or a code name (`Digit1`, `KeyA`, `Numpad5`, `ArrowUp`).
 
 **Never `sleep` after an action.** Every action (`click`, `hover`, `drag`, `fill`, `keydown`, `scroll-to`, `reload`, `goto`, `page back/forward`) takes:
 
@@ -138,7 +140,7 @@ argus reload app --until "typeof window.appctl !== 'undefined'" --until-timeout 
 
 Apps with their own idle signal expose it once (`window.__argus = { settle: () => store.idle() }`) and every `--settle` uses it ([INTERACT.md](./reference/INTERACT.md#wait-for-the-result---until)).
 
-**Eval scripts**: `eval --file ./script.js --body` supports local declarations, `await`, and an explicit `return`; also works with inline/stdin input. Default eval keeps REPL completion values and top-level await. Successful output preserves full nested values, so return objects directly; a `JSON.stringify`'d object or array is decoded back in `--json` (`decoded: "json"`, with a stderr hint). `--no-return-by-value` requests a preview. Canvas key handlers need a focusable canvas and `keydown --selector canvas`.
+**Eval scripts**: `eval --file ./script.js --body` supports local declarations, `await`, and an explicit `return`; also works with inline/stdin input. Default eval keeps REPL completion values and top-level await. Successful output preserves full nested values, so return objects directly; a `JSON.stringify`'d object or array is decoded back in `--json` (`decoded: "json"`, with a stderr hint). `--no-return-by-value` requests a preview. `keydown --selector canvas` works on a non-focusable canvas too (the key reaches the document, like after a click); handlers on the canvas element itself need `tabindex`.
 
 **Multi-step suites**: write a bundled TypeScript scenario (`export default async function scenario(ctx)`) and run `argus eval app --file ./scenario.ts --arg level=3 --json`; `ctx` exposes screenshots, checkpoints, recordings, log sessions, and `ctx.progress(value)`, whose last value is returned (with `timedOut`) when the eval hits its timeout. **Several commands in a row**: `argus run app <<'EOF'` with one command per line (exactly what you would type after `argus`; the watcher may be left out, `#` comments allowed) runs them in one process, prints `✓ n cmd (ms) → result` per step and stops at the first failure (`--keep-going`, `--json`, `--file`). A harness speaking JSON uses `argus session app` (JSONL over stdin). Session deadlines bound watcher requests; a timed-out dispatched mutation returns an uncertain outcome, so inspect state before retrying.
 
@@ -148,7 +150,7 @@ Apps with their own idle signal expose it once (`window.__argus = { settle: () =
 
 - **Durations**: `500ms`, `5s`, `2m`, `1h`; bare numbers are milliseconds.
 - **`--json` failures** always put one `{ "ok": false, "error": { "message", "code" } }` document on stdout with a non-zero exit (stderr may carry the same text as prose): branch on `ok`, then `error.code`. Bad flags/arguments exit 2 with `invalid_request`. Unknown watcher ids add `candidates`; a thrown eval adds `exception: { text, description }`.
-- **Every command takes `-q/--quiet`, `--max-chars <n>`, and (with `--json`) `--fields a,b.c`** — don't pipe to `head`/`tail`/`grep`/`python`. `-q` prints nothing on success (errors still print). `--fields` keeps only those dot paths of the JSON (implies `--json`; arrays project each element): `argus screenshot app --out a.png --fields outFile`. `--max-chars` caps output with an explicit `… [truncated …]` marker. When stdout is a pipe (not a terminal or a `> file` redirect), human output is capped at 20000 chars by default (`ARGUS_MAX_CHARS=<n>`, `0` disables); `--json` is never capped implicitly. `eval`/`logs`/`net` shape per record (`logs`/`net` `--json` → `{ events|requests, truncated, omitted }`; eval → `truncated: true, totalChars`). `--out` files are never shaped.
+- **Every command takes `-q/--quiet`, `--max-chars <n>`, and (with `--json`) `--fields a,b.c`** — don't pipe to `head`/`tail`/`grep`/`python`. `-q` prints nothing on success (errors still print). `--fields` keeps only those dot paths of the JSON (implies `--json`; arrays project each element): `argus screenshot app --out a.png --fields outFile`. `--max-chars` caps output with an explicit `… [truncated …]` marker. When stdout is a pipe (not a terminal or a `> file` redirect), human output is capped at 20000 chars by default (`ARGUS_MAX_CHARS=<n>`, `0` disables); `--json` is never capped implicitly. `eval`/`logs`/`net` shape per record (`logs`/`net` `--json` → `{ events|requests, truncated, omitted }`; eval → `truncated: true, totalChars`); `net ws frames/tail --max-chars` cuts each frame payload instead (`truncated: true`). `--out` files are never shaped.
 - **`--out` paths** (`screenshot`, `record`, `trace`, `eval --out`) are absolute or relative to _your_ cwd. Response `outFile` is absolute.
 - **Selected iframe** (extension mode) is the target for eval/DOM/interaction/capture. `net` and `net mock add` default to the selected iframe too; `--scope tab|page` opts out.
 - **Keyboard needs focus**: `keydown` activates a hidden page (same sticky lock as `page show`) and reports `activated: true`; release with `argus page hide app`.
@@ -172,7 +174,7 @@ Apps with their own idle signal expose it once (`window.__argus = { settle: () =
 | Page               | `goto/back/forward/url/reload`, `page ls/activate/close`, visibility, emulation, throttle, dialogs | [PAGE.md](./reference/PAGE.md)           |
 | Capture            | `screenshot`, `record` (mp4/webm/gif, `--until`), `trace`                                          | [CAPTURE.md](./reference/CAPTURE.md)     |
 | Perf / smoothness  | `perf gesture/capture/motion/compare`, `input record/replay`, `trace --preset`, `trace analyze`     | [PERF.md](./reference/PERF.md)           |
-| Network            | `net`, `net watch/inspect/show/body/summary/export/ws/sse/mock`                                    | [NET.md](./reference/NET.md)             |
+| Network            | `net`, `net watch/inspect/show/body/summary/export/ws/ws frames/ws tail/sse/mock`                  | [NET.md](./reference/NET.md)             |
 | Auth & storage     | `auth cookies/export-cookies/export-state/load-state/clone`, `storage local/session`               | [STATE.md](./reference/STATE.md)         |
 | Runtime code       | `code ls/read/grep/deminify/edit/strings`                                                          | [CODE.md](./reference/CODE.md)           |
 | Injection          | `page init-script add/ls/rm/clear`, `--inject`, config `inject`, `window.__ARGUS__`                | [INJECT.md](./reference/INJECT.md)       |
