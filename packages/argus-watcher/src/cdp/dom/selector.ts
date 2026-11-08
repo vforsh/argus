@@ -234,7 +234,14 @@ const getFrameDomRootId = async (session: CdpSessionHandle, targetContext: Extra
 		throw new Error(`Unable to resolve DOM root for frame: ${targetContext.frameId}`)
 	}
 
-	const requested = await session.sendAndWait('DOM.requestNode', { objectId })
+	// `DOM.requestNode` answers nodeId 0 until the client has requested the document once. A selector right after
+	// `ext select --iframe-url` was the watcher's first DOM call and failed; load the document and ask again. Only on a
+	// miss, since `DOM.getDocument` invalidates node ids handed out earlier.
+	let requested = await session.sendAndWait('DOM.requestNode', { objectId })
+	if (!requested.nodeId) {
+		await session.sendAndWait('DOM.getDocument', { depth: 0 })
+		requested = await session.sendAndWait('DOM.requestNode', { objectId })
+	}
 	if (!requested.nodeId) {
 		throw new Error(`Unable to resolve DOM root for frame: ${targetContext.frameId}`)
 	}
