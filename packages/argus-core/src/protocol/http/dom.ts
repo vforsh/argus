@@ -144,6 +144,8 @@ export type DomKeydownEvent = {
 	keyCode: number
 	/** Text inserted by printable keys, when any. */
 	text?: string
+	/** KeyboardEvent.location when not standard: 1 left, 2 right, 3 numpad. */
+	location?: number
 	/** Resolved modifier bitmask (Alt=1, Ctrl=2, Meta=4, Shift=8). */
 	modifiers: number
 	altKey: boolean
@@ -162,7 +164,10 @@ export type DomKeydownResponse = Ok<{
 	code: string
 	/** Resolved modifier bitmask (Alt=1, Ctrl=2, Meta=4, Shift=8). */
 	modifiers: number
-	/** Whether a selector was focused before dispatch. */
+	/**
+	 * Whether a selector was focused before dispatch. False with a selector means the target is not focusable
+	 * (a canvas without tabindex): focus was released to the document and the key dispatched there, as a click would.
+	 */
 	focused: boolean
 	/**
 	 * Whether the page had to be activated (focus emulation) so the renderer would accept the key.

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Argus Playground — Keyboard</title>
+		<style>
+			body {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				margin: 0;
+				padding: 2rem;
+				max-width: 720px;
+			}
+			canvas {
+				border: 1px solid #888;
+				display: block;
+				margin: 1rem 0;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Keyboard</h1>
+		<p>
+			Every keydown is logged to <code>window.__keys</code> with its target, so <code>argus keydown</code> can be checked by key, code, keyCode
+			and location: <code>argus eval &lt;id&gt; "window.__keys"</code>.
+		</p>
+		<input data-testid="key-input" id="key-input" placeholder="focus me" />
+		<!-- No tabindex on purpose: games draw into canvases that are not focusable. -->
+		<canvas data-testid="key-canvas" id="key-canvas" width="320" height="120"></canvas>
+		<pre data-testid="key-log" id="key-log">—</pre>
+		<script>
+			window.__keys = []
+			const log = document.getElementById('key-log')
+			window.addEventListener('keydown', (event) => {
+				const target = event.target === document.body ? 'body' : event.target.id || event.target.tagName.toLowerCase()
+				window.__keys.push({ key: event.key, code: event.code, keyCode: event.keyCode, location: event.location, target })
+				log.textContent = JSON.stringify(window.__keys.slice(-8), null, 1)
+			})
+		</script>
+	</body>
+</html>

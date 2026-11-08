@@ -77,6 +77,9 @@ export const runDomKeydown = defineActionCommand<DomKeydownOptions, DomKeydownRe
 		} else {
 			output.writeHuman(`Dispatched keydown: ${response.key} (code=${response.code})${navigation}`)
 		}
+		if (options.selector && !response.focused) {
+			output.writeHuman('Target is not focusable (e.g. a canvas without tabindex); the key went to the document, as after a click on it.')
+		}
 		if (response.activated) {
 			// Sticky, exactly like `argus page show` — say so rather than leaving the page silently locked shown.
 			output.writeHuman('Page was hidden and has been activated (as `argus page show`); release it with `argus page hide`.')
