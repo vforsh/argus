@@ -3,6 +3,7 @@ import { collectMatch, collectValues } from '../validation.js'
 import { jsonOption, outputShapingOptions } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
+const runNetCacheClear = lazyAction(() => import('../../commands/netCacheClear.js').then((mod) => mod.runNetCacheClear))
 const runNetClear = lazyAction(() => import('../../commands/netClear.js').then((mod) => mod.runNetClear))
 const runNetExport = lazyAction(() => import('../../commands/netExport.js').then((mod) => mod.runNetExport))
 const runNetInspect = lazyAction(() => import('../../commands/netInspect.js').then((mod) => mod.runNetInspect))
@@ -183,6 +184,23 @@ const netMockCommand: ArgusCommandDefinition = {
 			examples: ['argus net mock clear app', 'argus net mock clear app --json'],
 			action: async (id, options) => {
 				await runNetMockClear(id, options)
+			},
+		},
+	],
+}
+
+const netCacheCommand: ArgusCommandDefinition = {
+	name: 'cache',
+	description: 'Browser HTTP cache',
+	subcommands: [
+		{
+			name: 'clear',
+			description: 'Clear the browser HTTP cache, so the next load is cold (whole browser profile, not just this page)',
+			arguments: [{ flags: '[id]', description: 'Watcher id' }],
+			options: [jsonOption],
+			examples: ['argus net cache clear app', 'argus net cache clear app && argus reload app', 'argus net cache clear app --json'],
+			action: async (id, options) => {
+				await runNetCacheClear(id, options)
 			},
 		},
 	],
@@ -424,6 +442,7 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 				],
 			},
 			netMockCommand,
+			netCacheCommand,
 			{
 				name: 'sse',
 				description: 'List SSE/EventSource streams captured by a watcher',

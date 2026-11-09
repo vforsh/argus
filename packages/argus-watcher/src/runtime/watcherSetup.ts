@@ -11,6 +11,7 @@ import { createSourcemapResolver, type SourcemapResolver } from '../sourcemaps/s
 import { createCdpSessionHandle } from '../cdp/connection.js'
 import { createEmulationController } from '../emulation/EmulationController.js'
 import { createThrottleController } from '../throttle/ThrottleController.js'
+import { createNetworkThrottleController } from '../throttle/NetworkThrottleController.js'
 import { createNetMockController } from '../net/NetMockController.js'
 import { createInitScriptController } from '../initScripts/InitScriptController.js'
 import { createVisibilityController } from '../visibility/VisibilityController.js'
@@ -42,6 +43,7 @@ export type NormalizedWatcherSetup = {
 	sessionHandle: ReturnType<typeof createCdpSessionHandle>
 	emulationController: ReturnType<typeof createEmulationController>
 	throttleController: ReturnType<typeof createThrottleController>
+	networkThrottleController: ReturnType<typeof createNetworkThrottleController>
 	visibilityController: ReturnType<typeof createVisibilityController>
 	netMockController: ReturnType<typeof createNetMockController>
 	initScriptController: ReturnType<typeof createInitScriptController>
@@ -120,6 +122,7 @@ export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: s
 		sessionHandle: createCdpSessionHandle(),
 		emulationController: createEmulationController(options.emulation),
 		throttleController: createThrottleController(),
+		networkThrottleController: createNetworkThrottleController(),
 		visibilityController: createVisibilityController(),
 		netMockController: createNetMockController(),
 		initScriptController: createInitScriptController(),

@@ -11,6 +11,7 @@ argus net app --after 42 --limit 100          # paginate by Argus request id
 argus net summary app                          # counts by host/type/status
 argus net tail app --grep api --json           # long-poll stream (NDJSON); --timeout <ms>
 argus net clear app                            # reset buffer
+argus net cache clear app                      # drop the browser HTTP cache (whole profile) so the next load is cold
 argus net app --json --fields id,method,url,status,durationMs --max-chars 4000
 ```
 
@@ -45,6 +46,8 @@ argus net watch app --reload --settle-after "window.appReady" --settle 2s --sett
 argus net watch app --reload --ignore-cache --ignore-pattern /poll --max-timeout 30s
 argus net watch app --settle 2s --no-clear                   # keep buffer, wait for quiet only
 ```
+
+Slow-network runs: `argus throttle net set app --preset slow-4g` ([PAGE.md](./PAGE.md)) holds across these reloads until `throttle net clear`.
 
 `--settle` is the quiet window (no new matching requests); `--settle-after <expr>` delays the countdown until the expression is truthy; `--max-timeout` caps the whole wait.
 

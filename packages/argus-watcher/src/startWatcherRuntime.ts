@@ -34,6 +34,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		fileLogger,
 		emulationController,
 		throttleController,
+		networkThrottleController,
 		visibilityController,
 		netMockController,
 		initScriptController,
@@ -119,6 +120,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		runtimeEditor?.rebind()
 		await emulationController.onAttach(session)
 		await throttleController.onAttach(session)
+		await networkThrottleController.onAttach(getPageSession())
 		// Visibility lock is sticky across detaches; restore it before we
 		// forward the attach to other services so downstream flows (boot
 		// waits, indicator paints) benefit immediately.
@@ -241,6 +243,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		runtimeEditor,
 		emulationController,
 		throttleController,
+		networkThrottleController,
 		visibilityController,
 		netMockController,
 		initScriptController,

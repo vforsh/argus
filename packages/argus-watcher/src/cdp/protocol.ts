@@ -258,6 +258,8 @@ export type CdpCommandMap = {
 	'Input.dispatchTouchEvent': Command<Record<string, unknown>, unknown>
 
 	// --- Network ---
+	'Network.clearBrowserCache': Command<NoParams, unknown>
+	'Network.emulateNetworkConditions': Command<{ offline: boolean; latency: number; downloadThroughput: number; uploadThroughput: number }, unknown>
 	'Network.enable': Command<{ maxTotalBufferSize?: number; maxResourceBufferSize?: number; maxPostDataSize?: number }, unknown>
 	'Network.deleteCookies': Command<{ name: string; url?: string; domain?: string; path?: string }, unknown>
 	'Network.getCookies': Command<{ urls?: string[] }, { cookies?: CdpCookie[] }>

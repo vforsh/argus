@@ -16,6 +16,7 @@ import { route as getNetWebSockets } from './getNetWebSockets.js'
 import { route as getNetWebSocketConnection } from './getNetWebSocketConnection.js'
 import { route as getNetWebSocketFrames } from './getNetWebSocketFrames.js'
 import { route as getNetSse } from './getNetSse.js'
+import { route as postNetCacheClear } from './postNetCacheClear.js'
 import { route as postNetClear } from './postNetClear.js'
 import { netMockRoutes } from './netMock.js'
 import { initScriptRoutes } from './initScript.js'
@@ -53,6 +54,7 @@ import { route as getEmulation } from './getEmulation.js'
 import { route as postEmulation } from './postEmulation.js'
 import { route as getThrottle } from './getThrottle.js'
 import { route as postThrottle } from './postThrottle.js'
+import { route as postThrottleNet } from './postThrottleNet.js'
 import { route as getDialog } from './getDialog.js'
 import { route as postDialog } from './postDialog.js'
 import { route as getVisibility } from './getVisibility.js'
@@ -91,6 +93,7 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	getNetWebSocketConnection,
 	getNetWebSocketFrames,
 	getNetSse,
+	postNetCacheClear,
 	postNetClear,
 	...netMockRoutes,
 	...initScriptRoutes,
@@ -131,6 +134,7 @@ export const watcherRoutes: readonly WatcherRouteDefinition[] = [
 	postEmulation,
 	getThrottle,
 	postThrottle,
+	postThrottleNet,
 	getDialog,
 	postDialog,
 	getVisibility,

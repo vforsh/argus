@@ -65,13 +65,32 @@ argus page emulation clear app
 
 Devices: `iphone-14`, `iphone-15-pro-max`, `pixel-7`, `ipad-mini`, `desktop-1440`, `desktop-1600`. `--no-mobile` / `--no-touch` disable those toggles.
 
-## CPU Throttle
+## CPU & Network Throttle
 
 ```bash
-argus throttle set app 4        # 4× slowdown; 1 = none
-argus throttle status app
-argus throttle clear app
+argus throttle set app 4        # CPU: 4× slowdown; 1 = none
+argus throttle clear app        # CPU only
+argus throttle status app       # CPU and network; --json adds a `network` block
+
+argus throttle net set app --preset slow-4g                    # fast-4g | slow-4g | 3g | offline
+argus throttle net set app --latency 300 --down 1500 --up 750  # ms, kbps, kbps; an omitted cap is unlimited
+argus throttle net set app --preset 3g --latency 500           # preset with one value overridden
+argus throttle net clear app
 ```
+
+| Preset    | Latency  | Down      | Up        |
+| --------- | -------- | --------- | --------- |
+| `fast-4g` | 165 ms   | 8100 kbps | 1350 kbps |
+| `slow-4g` | 562.5 ms | 1440 kbps | 675 kbps  |
+| `3g`      | 2000 ms  | 400 kbps  | 400 kbps  |
+| `offline` | —        | —         | —         |
+
+`offline` fails every request and flips `navigator.onLine` to `false`.
+
+- **Sticky**: both throttles are owned by the watcher and hold until cleared, across `eval`, `reload`, navigation, and detach/re-attach. Set while detached, they are queued and applied on attach. They end with the watcher.
+- **Set replaces**: each `throttle net set` states the full conditions; nothing carries over from the previous set.
+- **Cold loads**: pair with `argus net cache clear app` ([NET.md](./NET.md)); a throttled load served from cache measures nothing.
+- **Scope**: the network throttle covers the page target. Out-of-process iframes and workers keep their normal network; a CDP watcher attached directly to an iframe (`--type iframe`) throttles that iframe.
 
 ## Dialogs
 

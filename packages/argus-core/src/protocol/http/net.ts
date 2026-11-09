@@ -137,6 +137,9 @@ export type NetClearResponse = Ok<{
 	cleared: number
 }>
 
+/** Response payload for POST /net/cache/clear. */
+export type NetCacheClearResponse = Ok<{}>
+
 /** Response payload for GET /net/request. */
 export type NetRequestResponse = Ok<{
 	request: NetworkRequestDetail

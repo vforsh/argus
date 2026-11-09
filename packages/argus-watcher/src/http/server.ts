@@ -13,6 +13,7 @@ import type { Recorder } from '../cdp/recording.js'
 import type { CdpSourceCookieQuery, CdpSourceHandle, CdpSourceStatus } from '../sources/types.js'
 import type { EmulationController } from '../emulation/EmulationController.js'
 import type { ThrottleController } from '../throttle/ThrottleController.js'
+import type { NetworkThrottleController } from '../throttle/NetworkThrottleController.js'
 import type { NetMockController } from '../net/NetMockController.js'
 import type { InitScriptController } from '../initScripts/InitScriptController.js'
 import type { VisibilityController } from '../visibility/VisibilityController.js'
@@ -54,6 +55,8 @@ export type HttpServerOptions = {
 	emulationController: EmulationController
 	/** Throttle controller for GET/POST /throttle endpoints. */
 	throttleController: ThrottleController
+	/** Network throttle controller for POST /throttle/net; reported by GET /throttle. */
+	networkThrottleController: NetworkThrottleController
 	/** Network mock controller for /net/mock endpoints. */
 	netMockController: NetMockController
 	/** Init-script controller for /page/init-script endpoints. */

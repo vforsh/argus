@@ -174,7 +174,7 @@ Apps with their own idle signal expose it once (`window.__argus = { settle: () =
 | Page               | `goto/back/forward/url/reload`, `page ls/activate/close`, visibility, emulation, throttle, dialogs | [PAGE.md](./reference/PAGE.md)           |
 | Capture            | `screenshot`, `record` (mp4/webm/gif, `--until`), `trace`                                          | [CAPTURE.md](./reference/CAPTURE.md)     |
 | Perf / smoothness  | `perf gesture/capture/motion/compare`, `input record/replay`, `trace --preset`, `trace analyze`     | [PERF.md](./reference/PERF.md)           |
-| Network            | `net`, `net watch/inspect/show/body/summary/export/ws/ws frames/ws tail/sse/mock`                  | [NET.md](./reference/NET.md)             |
+| Network            | `net`, `net watch/inspect/show/body/summary/export/ws/ws frames/ws tail/sse/mock/cache clear`      | [NET.md](./reference/NET.md)             |
 | Auth & storage     | `auth cookies/export-cookies/export-state/load-state/clone`, `storage local/session`               | [STATE.md](./reference/STATE.md)         |
 | Runtime code       | `code ls/read/grep/deminify/edit/strings`                                                          | [CODE.md](./reference/CODE.md)           |
 | Injection          | `page init-script add/ls/rm/clear`, `--inject`, config `inject`, `window.__ARGUS__`                | [INJECT.md](./reference/INJECT.md)       |
