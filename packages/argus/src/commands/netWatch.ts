@@ -2,7 +2,7 @@ import type { NetResponse } from '@vforsh/argus-core'
 import { captureNetWindow, parseNetCaptureOptions, withReloadScopeDefault, type NetCaptureOptions } from './netCapture.js'
 import { formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { createOutput } from '../output/io.js'
-import { formatNetworkRequest } from '../output/net.js'
+import { compactRequestSummary, formatNetworkRequest } from '../output/net.js'
 
 export type NetWatchOptions = NetCaptureOptions & {
 	json?: boolean
@@ -45,21 +45,22 @@ export const runNetWatch = async (id: string | undefined, rawOptions: NetWatchOp
 			reloaded: options.reload === true,
 			settleMs: parsed.value.settleMs,
 			timedOut,
-			requests,
+			requests: requests.map(compactRequestSummary),
 			nextAfter: requests[requests.length - 1]?.id ?? 0,
 		})
 		return
 	}
 
 	if (requests.length === 0) {
-		output.writeHuman(`no requests captured after ${parsed.value.settleMs}ms quiet window`)
+		// Status, not payload: stdout carries only request rows (stdout/stderr split, SKILL.md).
+		output.writeWarn(`no requests captured after ${parsed.value.settleMs}ms quiet window`)
 		return
 	}
 
 	for (const request of requests) {
 		output.writeHuman(formatNetworkRequest(request))
 	}
-	output.writeHuman(
+	output.writeWarn(
 		timedOut
 			? `stopped after max timeout (${requests.length} requests collected; quiet window ${parsed.value.settleMs}ms not reached)`
 			: `settled after ${parsed.value.settleMs}ms quiet window (${requests.length} requests)`,

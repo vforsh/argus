@@ -102,7 +102,11 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				name: 'ls',
 				alias: 'list',
 				description: 'List registered watchers',
-				options: [jsonOption, { flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' }],
+				options: [
+					jsonOption,
+					{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
+					{ flags: '-v, --verbose', description: 'Full table: host:port, match rules, cwd, target URLs, Chrome instances' },
+				],
 				examples: ['argus watcher ls', 'argus watcher ls --json', 'argus watcher ls --by-cwd my-project'],
 				action: async (options) => {
 					await runList(options)

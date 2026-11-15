@@ -15,6 +15,8 @@ argus net cache clear app                      # drop the browser HTTP cache (wh
 argus net app --json --fields id,method,url,status,durationMs --max-chars 4000
 ```
 
+**Compact rows**: request lists (`net`, `net tail`, `net watch`, human and JSON) show long `data:` URIs as `data:image/png;base64,…(342b)` (decoded size); `net show <id>` / `net body <id>` keep the full URI. Piped human `net`/`logs` without `--limit`/`--since`/`--after`/`--max-chars` print the newest 100 rows and say so on stderr.
+
 **Output shaping** (`net` list only): `--fields a,b.c` keeps only those dot paths of each request; human mode then prints one compact JSON line per request. `--max-chars <n>` keeps leading requests while they fit `n` chars: human mode ends with `… [truncated K of N records; raise --max-chars]`; `--json` switches to `{ "requests": [...], "truncated": bool, "omitted": K }` whenever `--max-chars` is set (a plain array otherwise).
 
 ## Filters (all list/summary/watch/export/inspect commands)

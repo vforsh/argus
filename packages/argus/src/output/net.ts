@@ -11,6 +11,29 @@ import type {
 	NetworkTimingPhases,
 } from '@vforsh/argus-core'
 
+/** Longest `data:` URI shown in full; inline images ran to ~1.5 KB of base64 per `net` row. */
+const DATA_URI_MAX_CHARS = 64
+
+/**
+ * `data:image/avif;base64,…(342b)` for a long `data:` URI; anything else unchanged.
+ *
+ * Applied to request lists (`net`, `net tail`, `net watch`, human and JSON). `net show`/`net body`
+ * keep the full URI for the one request a caller asks about. The size is the decoded payload.
+ */
+export const compactDataUri = (url: string): string => {
+	if (!url.startsWith('data:') || url.length <= DATA_URI_MAX_CHARS) return url
+	const comma = url.indexOf(',')
+	if (comma < 0) return `${url.slice(0, DATA_URI_MAX_CHARS)}…(${url.length}b)`
+	const header = url.slice(0, comma)
+	const payload = url.length - comma - 1
+	const bytes = header.endsWith(';base64') ? Math.floor((payload * 3) / 4) : payload
+	return `${header.slice(0, DATA_URI_MAX_CHARS)},…(${bytes}b)`
+}
+
+/** A request summary with its `data:` URI compacted, for list output. */
+export const compactRequestSummary = <T extends { url: string }>(request: T): T =>
+	request.url.startsWith('data:') ? { ...request, url: compactDataUri(request.url) } : request
+
 /** Format a network request summary for human output. */
 export const formatNetworkRequest = (request: NetworkRequestSummary): string => {
 	if (request.webSocket) {
@@ -21,7 +44,7 @@ export const formatNetworkRequest = (request: NetworkRequestSummary): string => 
 	const status = request.status != null ? String(request.status) : request.errorText ? 'ERR' : '...'
 	const duration = request.durationMs != null ? `${request.durationMs}ms` : ''
 	const size = request.encodedDataLength != null ? `${request.encodedDataLength}b` : ''
-	const parts = [request.method, status, duration, size, request.url].filter(Boolean)
+	const parts = [request.method, status, duration, size, compactDataUri(request.url)].filter(Boolean)
 	return parts.join(' ')
 }
 

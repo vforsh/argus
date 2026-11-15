@@ -1,7 +1,7 @@
 import { describeProtocolMismatch } from '@vforsh/argus-core'
 import type { StatusResponse, WatcherRecord } from '@vforsh/argus-core'
-import { loadActiveRegistry } from '../registry.js'
-import { formatWatcherLine } from '../output/format.js'
+import { pruneRegistry } from '../registry.js'
+import { formatCompactWatcherLine, formatWatcherLine } from '../output/format.js'
 import { createOutput } from '../output/io.js'
 import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/requestWatcher.js'
 import { discoverChromeInstances, formatChromeInstanceLine } from './chrome.js'
@@ -20,6 +20,8 @@ export type ListOptions = {
 	byCwd?: string
 	/** Suppress version-skew row markers and the summary line (also `ARGUS_NO_VERSION_WARNINGS=1`). */
 	quiet?: boolean
+	/** The full table: host:port, match rules, cwd, target URLs, Chrome instances, version skew. */
+	verbose?: boolean
 }
 
 type WatcherProbe = { watcher: WatcherRecord; status?: StatusResponse; warning?: string; skew?: HostVersionSkew }
@@ -48,7 +50,13 @@ export const runList = async (options: ListOptions): Promise<void> => {
 		return
 	}
 
-	output.writeHuman('Browsers')
+	if (!options.verbose) {
+		writeCompactList(probes, chromeInstances.length, output)
+		return
+	}
+
+	// Section headers are not payload: stderr, so stdout stays the rows (`argus list | wc -l` counts watchers).
+	output.writeWarn('Browsers')
 	if (chromeInstances.length > 0) {
 		for (const r of chromeInstances) {
 			output.writeHuman(`  ${formatChromeInstanceLine(r)}`)
@@ -57,8 +65,8 @@ export const runList = async (options: ListOptions): Promise<void> => {
 		output.writeHuman('  (none)')
 	}
 
-	output.writeHuman('')
-	output.writeHuman('Watchers')
+	output.writeWarn('')
+	output.writeWarn('Watchers')
 	if (probes.length > 0) {
 		for (const entry of probes) {
 			const marker = entry.skew && !quiet ? ` [${formatHostVersionSkewMarker(entry.skew)}]` : ''
@@ -82,6 +90,31 @@ export const runList = async (options: ListOptions): Promise<void> => {
 }
 
 /**
+ * Default `list`: one `id · state · title · age` row per answering watcher on stdout.
+ *
+ * The full table averaged ~250 chars per watcher (cwd, host:port, match rules, full target URLs,
+ * a version-skew marker on every row); agents called `list` 96 times in a week to pick an id.
+ * Unreachable watchers and the Chrome count become one stderr line each, pointing at the fix.
+ */
+const writeCompactList = (probes: WatcherProbe[], chromeCount: number, output: ReturnType<typeof createOutput>): void => {
+	const reachable = probes.filter((probe) => probe.status)
+	const unreachable = probes.filter((probe) => !probe.status)
+	const now = Date.now()
+	for (const probe of reachable) output.writeHuman(formatCompactWatcherLine(probe.watcher, probe.status!, now))
+
+	if (probes.length === 0) {
+		output.writeWarn('No watchers. Start one: argus start --id app --url <url>, or argus ext use --url <substr> --as app')
+	}
+	if (unreachable.length > 0) {
+		const hint = describeAllUnreachable(probes) ?? 'argus watcher prune removes them'
+		output.writeWarn(`${unreachable.length} not answering: ${unreachable.map((probe) => probe.watcher.id).join(', ')} (${hint})`)
+	}
+	const mismatches = probes.flatMap((probe) => (probe.status && probe.warning ? [probe.warning] : []))
+	for (const warning of mismatches) output.writeWarn(warning)
+	if (chromeCount > 0 || probes.some((probe) => probe.skew)) output.writeWarn('more: argus list --verbose (Chrome instances, cwd, URLs, version skew)')
+}
+
+/**
  * Dead processes never reach this point (the registry read drops records whose pid is gone), so an
  * unreachable row is a live process that did not answer. When every watcher is like that, the
  * likely cause is this shell, not the watchers: agent sandboxes commonly block localhost sockets.
@@ -94,7 +127,10 @@ const describeAllUnreachable = (probes: WatcherProbe[]): string | null => {
 const isTruthyEnv = (value: string | undefined): boolean => value != null && value !== '' && value !== '0' && value.toLowerCase() !== 'false'
 
 const listWatchers = async (options: ListOptions): Promise<WatcherProbe[]> => {
-	const registry = await loadActiveRegistry()
+	// The prune path (`watcher prune` uses it too) drops records of dead processes and expired TTLs from
+	// the file itself, not just from this read. Unreachable-but-alive watchers stay: in a sandboxed shell
+	// every probe fails, and deleting them all from there would be wrong.
+	const registry = await pruneRegistry()
 
 	let watchers = Object.values(registry.watchers)
 

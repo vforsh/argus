@@ -101,7 +101,7 @@ argus page open --url http://example.com                         # just opens, p
 ## Diagnostics
 
 ```bash
-argus list                 # watchers + Chrome instances
+argus list                 # id · state · title · age; --verbose adds host:port, cwd, URLs, Chrome instances, version skew
 argus doctor --json        # environment checks
 argus watcher status app
 argus chrome status --id app

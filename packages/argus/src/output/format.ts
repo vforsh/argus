@@ -23,6 +23,38 @@ export const formatWatcherLine = (watcher: WatcherRecord, status?: WatcherLineSt
 	return [base, match, cwd, state ? `[${state}]` : ''].filter(Boolean).join(' ') + targetSuffix
 }
 
+/**
+ * `id · state · title · age` — the default `argus list` row.
+ *
+ * Title falls back to the URL's host+path; both are cut at 40 chars. Control watchers have no page.
+ */
+export const formatCompactWatcherLine = (watcher: WatcherRecord, status: WatcherLineStatus, now: number): string => {
+	const state = formatWatcherState(watcher, status) ?? 'unknown'
+	const target = status.target
+	const label = target?.title?.trim() || shortenUrl(target?.url ?? '') || ''
+	return [watcher.id, state, label ? truncateLabel(label, 40) : '', formatAge(now - watcher.startedAt)].filter(Boolean).join(' · ')
+}
+
+const shortenUrl = (url: string): string => {
+	try {
+		const parsed = new URL(url)
+		return `${parsed.host}${parsed.pathname === '/' ? '' : parsed.pathname}`
+	} catch {
+		return url
+	}
+}
+
+const truncateLabel = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+
+/** `45s`, `12m`, `3h`, `2d`. */
+const formatAge = (ms: number): string => {
+	const seconds = Math.max(0, Math.round(ms / 1000))
+	if (seconds < 60) return `${seconds}s`
+	if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+	if (seconds < 86_400) return `${Math.round(seconds / 3600)}h`
+	return `${Math.round(seconds / 86_400)}d`
+}
+
 /** A control watcher brokers tabs and never attaches to one, so "detached" would misreport it. */
 const formatWatcherState = (watcher: WatcherRecord, status: WatcherLineStatus | 'unreachable' | undefined): string | null => {
 	if (status === 'unreachable') {

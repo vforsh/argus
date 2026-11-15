@@ -242,8 +242,9 @@ const runWatcherCommand = async <
 		renderOutput.writeHuman(JSON.stringify(result.data, null, 2))
 	}
 	if (settlePlan && settled && !settled.settled) output.writeWarn(`${describeSettleMiss(settlePlan, settled)}; continuing`)
-	if (outcome?.matched) {
-		renderOutput.writeHuman(`--until met after ${formatSeconds(outcome.elapsedMs)}: ${describeConditionReply({ result: outcome.value })}`)
+	// A status line, so stderr: stdout is the action's own result.
+	if (outcome?.matched && !actionFlags.quiet) {
+		output.writeWarn(`--until met after ${formatSeconds(outcome.elapsedMs)}: ${describeConditionReply({ result: outcome.value })}`)
 	}
 	if (missed) output.writeWarn(missed)
 }

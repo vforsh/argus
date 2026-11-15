@@ -2,7 +2,7 @@ import type { NetTailResponse } from '@vforsh/argus-core'
 import type { NetCliListOptions } from './netShared.js'
 import { appendNetCommandParams } from './netShared.js'
 import { fetchJson } from '../httpClient.js'
-import { formatNetworkRequest } from '../output/net.js'
+import { compactRequestSummary, formatNetworkRequest } from '../output/net.js'
 import { createOutput } from '../output/io.js'
 import { parseNumber } from '../cli/parse.js'
 import { buildWatcherUrl, formatWatcherTransportError, resolveWatcherOrExit } from '../watchers/requestWatcher.js'
@@ -56,7 +56,7 @@ export const runNetTail = async (id: string | undefined, options: NetTailOptions
 		if (response.requests.length > 0) {
 			for (const request of response.requests) {
 				if (options.json) {
-					output.writeJsonLine({ watcher: watcher.id, request })
+					output.writeJsonLine({ watcher: watcher.id, request: compactRequestSummary(request) })
 					continue
 				}
 				output.writeHuman(formatNetworkRequest(request))

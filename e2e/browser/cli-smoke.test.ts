@@ -82,7 +82,7 @@ test('watcher + CLI e2e', async () => {
 		// 4. Assert `argus list`
 		const { stdout: listOut } = await cli.run(['list'])
 		expect(listOut).toMatch(new RegExp(watcherId))
-		expect(listOut).toMatch(/\[attached\]/)
+		expect(listOut).toMatch(/ · attached · /)
 
 		// 5. Emit log and assert `argus logs`
 		const testMsg = `hello from e2e ${Date.now()}`
@@ -256,7 +256,7 @@ test('watcher + CLI e2e', async () => {
 		// 8a. `argus ls` should return the same output as `argus list`
 		const { stdout: lsOut } = await cli.run(['ls'])
 		expect(lsOut).toMatch(new RegExp(watcherId))
-		expect(lsOut).toMatch(/\[attached\]/)
+		expect(lsOut).toMatch(/ · attached · /)
 
 		// 8b. `argus log <id> --json` should behave like `argus logs <id> --json`
 		const { stdout: logOut } = await cli.run(['log', watcherId, '--json'])

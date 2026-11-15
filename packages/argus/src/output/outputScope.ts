@@ -55,6 +55,19 @@ export const resolveDefaultMaxChars = (): number | undefined => {
 	return parsed === 0 ? undefined : parsed
 }
 
+/**
+ * Default row bound for piped human `net`/`logs` output, when the caller set none of their own.
+ *
+ * Measured on the playground: ordinary answers run 1–5k chars at ~85 chars per row, so 100 rows sit
+ * well inside {@link DEFAULT_PIPED_MAX_CHARS}. Without it a busy page hit the char cap and lost its
+ * *newest* rows — the end of an oldest-first list, and the ones an agent was asking about.
+ *
+ * @param bounded Whether `--limit`/`--after`/`--since`/`--max-chars` already bound the answer.
+ */
+export const pipedRowTail = (bounded: boolean): number | undefined => (bounded || resolveDefaultMaxChars() === undefined ? undefined : DEFAULT_PIPED_ROWS)
+
+const DEFAULT_PIPED_ROWS = 100
+
 const stdoutIsFile = (): boolean => {
 	try {
 		return fstatSync(1).isFile()

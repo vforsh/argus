@@ -3,6 +3,7 @@ import { defineReadCommand, defineWatcherCommand, type WatcherRequestPlan } from
 import { formatLogEvent } from '../output/format.js'
 import type { Output } from '../output/io.js'
 import { previewLogEvent } from '../output/preview.js'
+import { pipedRowTail } from '../output/outputScope.js'
 import { parseOutputShaping, shapeJsonRecords, writeHumanRecords, type OutputShaping, type OutputShapingOptions } from '../output/projection.js'
 import { appendAfterLimitParams, appendLogFilterParams, appendSinceParam } from '../watchers/queryParams.js'
 
@@ -48,8 +49,9 @@ export const runLogs = defineReadCommand<LogsOptions, LogsResponse, unknown, [],
 		const events = options.jsonFull ? response.events : response.events.map((event) => previewLogEvent(event))
 		return shapeJsonRecords(events, 'events', meta)
 	},
-	formatHuman: (response, { output, watcher, meta }) => {
-		writeHumanRecords(response.events, meta, (event) => formatLogEvent(event, { includeTimestamps: watcher.includeTimestamps }), output)
+	formatHuman: (response, { output, watcher, meta, options }) => {
+		const bounded = [options.limit, options.after, options.since, options.sinceEpoch].some((value) => value != null) || meta.maxChars !== undefined
+		writeHumanRecords(response.events, meta, (event) => formatLogEvent(event, { includeTimestamps: watcher.includeTimestamps }), output, pipedRowTail(bounded))
 	},
 })
 

@@ -205,7 +205,17 @@ export const shapeJsonRecords = (records: readonly unknown[], key: string, shapi
  * command's own formatter cannot render arbitrary paths. With `--max-chars`, lines stop once the
  * budget is spent and a marker line names how many records were dropped.
  */
-export const writeHumanRecords = <T>(records: readonly T[], shaping: OutputShaping, format: (record: T) => string, output: Output): void => {
+export const writeHumanRecords = <T>(
+	all: readonly T[],
+	shaping: OutputShaping,
+	format: (record: T) => string,
+	output: Output,
+	tail?: number,
+): void => {
+	const records = tail !== undefined && all.length > tail ? all.slice(-tail) : all
+	if (records.length < all.length) {
+		output.writeWarn(`showing the newest ${records.length} of ${all.length}; pass --limit, --since, or --after to choose`)
+	}
 	const lines = records.map((record) => (shaping.fields ? JSON.stringify(projectFields(record, shaping.fields)) : format(record)))
 	const budgeted = takeWithinBudget(lines, shaping.maxChars, (line) => line.length)
 	for (const line of budgeted.records) {
