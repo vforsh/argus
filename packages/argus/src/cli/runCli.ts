@@ -3,6 +3,7 @@ import { coreProgramRegistrars } from './register/index.js'
 import { registerPlugins } from './plugins/registerPlugins.js'
 import { guardUnknownCommand } from './unknownCommand.js'
 import { configureMachineSafeConsole, isJsonRequested, writeJsonFailureFallback } from '../output/io.js'
+import { recordInvocationCadence } from './cadenceHint.js'
 
 configureMachineSafeConsole(process.argv.slice(2))
 
@@ -18,6 +19,7 @@ program
 	.parseAsync(guardUnknownCommand(program, process.argv.slice(2)), { from: 'user' })
 	.then(() => {
 		if (isJsonRequested(process.argv.slice(2))) writeJsonFailureFallback(Number(process.exitCode ?? 0))
+		recordInvocationCadence(process.argv.slice(2))
 	})
 	.catch((error) => {
 		console.error(error)

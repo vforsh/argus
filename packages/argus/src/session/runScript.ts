@@ -13,6 +13,8 @@ import { dispatchSessionRequest } from './sessionDispatch.js'
 import { installStdioCapture } from './stdioCapture.js'
 
 export type RunScriptOptions = {
+	/** Inline script lines (`-e`, repeatable); they run before `--file`. */
+	expr?: string[]
 	file?: string
 	json?: boolean
 	keepGoing?: boolean
@@ -22,11 +24,13 @@ export type RunScriptOptions = {
 const STEP_TIMEOUT_MS = 120_000
 
 /** One parsed script line. */
-type ScriptStep = { step: number; line: string; tokens: string[] }
+type ScriptStep = { step: number; line: string; tokens: string[]; cmd?: string }
 
 type StepReport = {
 	step: number
 	line: string
+	/** Canonical command path (aliases resolved), e.g. `dom info`. */
+	cmd: string
 	ok: boolean
 	durationMs: number
 	result?: unknown
@@ -77,6 +81,7 @@ export const runScript = async (id: string | undefined, options: RunScriptOption
 				// Load a deferred plugin before splitting, or its subcommands are not in the tree yet.
 				await plugins.prepare(step.tokens)
 				const split = splitCommand(program, step.tokens)
+				step.cmd = split.cmd
 				const response = await dispatchSessionRequest({
 					program,
 					capture,
@@ -131,17 +136,27 @@ const finishCapture = (capture: ReturnType<typeof installStdioCapture>, abandone
 	}, 0)
 }
 
+/**
+ * `-e` lines first, then `--file`; stdin only when neither was given. Reading stdin beside `-e` would
+ * block an agent shell whose stdin is an idle pipe, so the two never mix.
+ */
 const readScript = async (options: RunScriptOptions): Promise<string | null> => {
-	if (options.file) {
-		try {
-			return await readFile(resolvePath(options.file), 'utf8')
-		} catch (error) {
-			usageError(options, `Cannot read --file: ${formatError(error)}`)
-			return null
+	const inline = options.expr ?? []
+	if (inline.length > 0 || options.file) {
+		let fromFile = ''
+		if (options.file) {
+			try {
+				fromFile = await readFile(resolvePath(options.file), 'utf8')
+			} catch (error) {
+				usageError(options, `Cannot read --file: ${formatError(error)}`)
+				return null
+			}
 		}
+		// Each `-e` is one line; a newline inside one would silently split it into two steps.
+		return [...inline.map((line) => line.replace(/\r?\n/g, ' ')), fromFile].join('\n')
 	}
 	if (process.stdin.isTTY) {
-		usageError(options, 'Pass the script on stdin (heredoc or pipe) or with --file <path>.')
+		usageError(options, "Pass commands with -e '<cmd>' (repeatable), on stdin (heredoc or pipe), or with --file <path>.")
 		return null
 	}
 	const chunks: Buffer[] = []
@@ -236,7 +251,7 @@ const splitCommand = (program: Command, tokens: readonly string[]): { cmd: strin
 }
 
 const toReport = (step: ScriptStep, response: SessionResponse): StepReport => {
-	const base = { step: step.step, line: step.line, durationMs: response.durationMs }
+	const base = { step: step.step, line: step.line, cmd: step.cmd ?? step.tokens[0] ?? '', durationMs: response.durationMs }
 	if (response.ok) return { ...base, ok: true, result: response.result }
 	return { ...base, ok: false, error: { message: response.error.message, ...(response.error.code ? { code: response.error.code } : {}) } }
 }

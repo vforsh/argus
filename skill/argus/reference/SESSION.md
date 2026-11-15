@@ -2,7 +2,17 @@
 
 ## `argus run` (CLI lines)
 
-Run several commands against one watcher in one process, written exactly as you would type them after `argus`:
+Run several commands against one watcher in one process, written exactly as you would type them after `argus`. One `-e` per command keeps it on one bash line — the default for "do three things to a page":
+
+```bash
+argus run app -e 'click --testid play --settle' -e 'probe score=appctl.score' -e 'screenshot --out a.png'
+# verify a change:
+argus run app -e 'reload' -e 'wait --global appctl.ready' -e 'probe url=location.href err=!!window.lastError' -e 'screenshot --out after.png'
+# diagnostics: every step runs, one report
+argus run app --keep-going -e 'logs --levels error --since 1m' -e 'net --failed-only' -e 'probe ready=!!window.app'
+```
+
+Longer scripts go in a heredoc or `--file`:
 
 ```bash
 argus run app <<'EOF'
@@ -23,7 +33,9 @@ EOF
 3/5 steps ok; stopped at step 4
 ```
 
-Quoting is shell-like (`'…'` literal, `"…"` with `\"` escapes, trailing `\` continues a line). Each step runs with `--json` forced on, as in `session`; the summary shows a bounded preview of its result. Stops at the first failure (exit 1) unless `--keep-going`. `--file <path>` reads the script from a file; `--json` prints `{ ok, watcher, steps: [{ step, line, ok, durationMs, result | error }] }` (plus `error.code: "run_step_failed"` when a step failed). Commands `session` refuses (below) are refused here too. Every step targets the run's watcher, including commands whose watcher argument is not the first positional. Per-step watchdog: 120s; a step that hits it ends the run (its abandoned work cannot be joined) and the process exits once the report is written.
+Quoting is shell-like (`'…'` literal, `"…"` with `\"` escapes, trailing `\` continues a line). Each step runs with `--json` forced on, as in `session`; the summary shows a bounded preview of its result. Stops at the first failure (exit 1) unless `--keep-going`. `-e` lines run first, then `--file <path>`; stdin is read only when neither is given. `--json` prints `{ ok, watcher, steps: [{ step, cmd, line, ok, durationMs, result | error }] }` (`cmd` is the canonical command path, aliases resolved) (plus `error.code: "run_step_failed"` when a step failed). Commands `session` refuses (below) are refused here too. Every step targets the run's watcher, including commands whose watcher argument is not the first positional. Per-step watchdog: 120s; use `--keep-going` for diagnostics so one failing read does not hide the rest; a step that hits it ends the run (its abandoned work cannot be joined) and the process exits once the report is written.
+
+Three or more page commands from one shell within 10s print a stderr `hint:` naming `argus run` (`ARGUS_NO_HINTS=1` silences hints).
 
 ## `argus session` (JSONL)
 
