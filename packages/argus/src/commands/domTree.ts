@@ -1,7 +1,7 @@
 import type { DomTreeResponse } from '@vforsh/argus-core'
 import { formatDomTree } from '../output/dom.js'
 import { parsePositiveInt } from '../cli/parse.js'
-import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import { defineReadCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
 import { requireSelector, writeNoElementFound } from './dom/shared.js'
 
@@ -16,7 +16,7 @@ export type DomTreeOptions = {
 }
 
 /** Execute the dom tree command for a watcher id. */
-export const runDomTree = defineWatcherCommand<DomTreeOptions, DomTreeResponse>({
+export const runDomTree = defineReadCommand<DomTreeOptions, DomTreeResponse>({
 	build: (_args, options, output) => buildDomTreePlan(options, output),
 	formatHuman: (response, { output, options }) => {
 		if (response.matches === 0) {

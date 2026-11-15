@@ -1,5 +1,5 @@
 import type { LogCursorResponse, LogEpochResponse, LogsResponse } from '@vforsh/argus-core'
-import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import { defineReadCommand, defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import { formatLogEvent } from '../output/format.js'
 import type { Output } from '../output/io.js'
 import { previewLogEvent } from '../output/preview.js'
@@ -41,7 +41,7 @@ export const runLogEpoch = defineWatcherCommand<LogEpochOptions, LogEpochRespons
 })
 
 /** Execute the logs command for a watcher id. */
-export const runLogs = defineWatcherCommand<LogsOptions, LogsResponse, unknown, [], OutputShaping>({
+export const runLogs = defineReadCommand<LogsOptions, LogsResponse, unknown, [], OutputShaping>({
 	isJson: (options) => options.jsonFull === true,
 	build: (_args, options, output) => buildLogsPlan(options, output),
 	formatJson: (response, { options, meta }) => {

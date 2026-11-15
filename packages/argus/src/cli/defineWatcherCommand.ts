@@ -19,7 +19,9 @@ import {
 	type UntilFlags,
 } from '../commands/conditionWait.js'
 import { describeSettleMiss, parseSettleFlags, settlePage, type SettleFlags } from '../commands/settle.js'
+import { hasPreReadWait, parsePreReadWaitFlags, runPreReadWait, type PreReadWaitFlags } from '../commands/preReadWait.js'
 import {
+	resolveWatcherOrExit,
 	requestWatcherAction,
 	requestWatcherJson,
 	writeRequestError,
@@ -116,7 +118,7 @@ export const defineWatcherCommand: ArgusDefineWatcherCommand =
 		spec: WatcherCommandSpec<TArgs, TOptions, TBody, TResponse, TMeta>,
 	): WatcherCommandRunner<TArgs, TOptions> =>
 	(id, ...rest) =>
-		runWatcherCommand(spec, id, rest, false)
+		runWatcherCommand(spec, id, rest, 'plain')
 
 /**
  * {@link defineWatcherCommand} for page actions (`click`, `reload`, `goto`, …): adds the shared
@@ -131,7 +133,21 @@ export const defineActionCommand: ArgusDefineWatcherCommand =
 		spec: WatcherCommandSpec<TArgs, TOptions, TBody, TResponse, TMeta>,
 	): WatcherCommandRunner<TArgs, TOptions> =>
 	(id, ...rest) =>
-		runWatcherCommand(spec, id, rest, true)
+		runWatcherCommand(spec, id, rest, 'action')
+
+/**
+ * {@link defineWatcherCommand} for reads (`dom info/tree`, `screenshot`, `snapshot`, `logs`, `net`): adds the
+ * shared pre-read `--until <expr>` / `--settle` wait (`commands/preReadWait.ts`), so `click; sleep 3; screenshot`
+ * becomes `click --settle; screenshot` or `screenshot --until …`. Internal for the same reason as actions.
+ */
+export const defineReadCommand: ArgusDefineWatcherCommand =
+	<TOptions extends { json?: boolean }, TResponse extends { ok: true }, TBody = unknown, TArgs extends readonly unknown[] = [], TMeta = undefined>(
+		spec: WatcherCommandSpec<TArgs, TOptions, TBody, TResponse, TMeta>,
+	): WatcherCommandRunner<TArgs, TOptions> =>
+	(id, ...rest) =>
+		runWatcherCommand(spec, id, rest, 'read')
+
+type CommandMode = 'plain' | 'action' | 'read'
 
 type ActionFlags = UntilFlags & SettleFlags & { quiet?: boolean; wait?: string }
 
@@ -145,8 +161,9 @@ const runWatcherCommand = async <
 	spec: WatcherCommandSpec<TArgs, TOptions, TBody, TResponse, TMeta>,
 	id: string | undefined,
 	rest: unknown[],
-	isAction: boolean,
+	mode: CommandMode,
 ): Promise<void> => {
+	const isAction = mode === 'action'
 	// `rest` ends with the options object; everything before it is positional CLI args.
 	const tail = rest.length - 1
 	const options = rest[tail] as TOptions
@@ -160,6 +177,8 @@ const runWatcherCommand = async <
 	// Validated before the action, like `--until`; whether it applies depends on the action's reply.
 	const settleBudget = isAction ? parseSettleFlags(actionFlags, output, true) : undefined
 	if (settleBudget === null) return
+	const readWait = mode === 'read' ? parsePreReadWaitFlags(options as PreReadWaitFlags, output) : undefined
+	if (readWait === null) return
 
 	const plan = await spec.build(args, options, output)
 	if (plan == null) return
@@ -167,9 +186,18 @@ const runWatcherCommand = async <
 	const body = validateBody(plan, spec.schema, output)
 	if (body === SCHEMA_REJECTED) return
 
+	// Reads wait before the request; resolving first also pins the id so the read hits the watcher that waited.
+	let watcherId = id
+	if (readWait && hasPreReadWait(readWait)) {
+		const resolved = await resolveWatcherOrExit({ id }, output)
+		if (!resolved) return
+		if (!(await runPreReadWait(resolved.watcher, readWait, output))) return
+		watcherId = resolved.watcher.id
+	}
+
 	const result = await requestWatcherAction<TResponse>(
 		{
-			id,
+			id: watcherId,
 			path: plan.path,
 			method: plan.method ?? (plan.body !== undefined ? 'POST' : 'GET'),
 			body,

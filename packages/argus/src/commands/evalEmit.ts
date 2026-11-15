@@ -4,6 +4,7 @@ import { isArgusErrorCode, previewStringify } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
 import { projectFields, truncateJsonValue, truncateText, type OutputShaping } from '../output/projection.js'
 import { createEvalResultFileSink, formatEvalValue, type EvalResultFileOptions } from './evalResultOutput.js'
+import { writeHintOnce } from './evalHints.js'
 
 /**
  * Where an eval result goes: stdout/stderr, and optionally the `--out` file.
@@ -97,8 +98,9 @@ export const writeEvalSuccess = (
 		return
 	}
 
-	// `--fields` selects from an object, so a stringified one is decoded first.
+	// `--fields` selects from an object, so a stringified one is decoded first; otherwise only the hint fires.
 	const result = shaping.fields ? decodeStringifiedResult(response, output).result : response.result
+	if (!shaping.fields && parseStringifiedObject(response) !== undefined) writeStringifyHint(output)
 	output.writeHuman(truncateText(formatEvalValue(projectFields(result, shaping.fields)), shaping.maxChars))
 }
 
@@ -111,26 +113,28 @@ export const writeEvalSuccess = (
  * marked `decoded: "json"` so a caller that really wanted the text can tell.
  */
 const decodeStringifiedResult = (response: EvalResponse, output: Output): EvalResponse | (EvalResponse & { decoded: 'json' }) => {
-	if (response.exception || typeof response.result !== 'string') return response
-	const text = response.result.trim()
-	if (!(text.startsWith('{') && text.endsWith('}')) && !(text.startsWith('[') && text.endsWith(']'))) return response
-
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(text)
-	} catch {
-		return response
-	}
-	if (parsed === null || typeof parsed !== 'object') return response
-
-	if (!stringifyHintShown) {
-		stringifyHintShown = true
-		output.writeWarn('hint: eval returns objects as-is; return the value directly instead of JSON.stringify(...)')
-	}
+	const parsed = parseStringifiedObject(response)
+	if (parsed === undefined) return response
+	writeStringifyHint(output)
 	return { ...response, result: parsed, type: 'object', decoded: 'json' }
 }
 
-let stringifyHintShown = false
+/** The object/array a `JSON.stringify`'d result holds, or `undefined` when the result is anything else. */
+const parseStringifiedObject = (response: EvalResponse): object | undefined => {
+	if (response.exception || typeof response.result !== 'string') return undefined
+	const text = response.result.trim()
+	if (!(text.startsWith('{') && text.endsWith('}')) && !(text.startsWith('[') && text.endsWith(']'))) return undefined
+	try {
+		const parsed: unknown = JSON.parse(text)
+		return parsed !== null && typeof parsed === 'object' ? parsed : undefined
+	} catch {
+		return undefined
+	}
+}
+
+/** Shares the `stringify` key with the expression hint (`evalHints.ts`), so one eval prints at most one of them. */
+const writeStringifyHint = (output: Output): void =>
+	writeHintOnce('stringify', 'eval returns objects as-is; return the value directly instead of JSON.stringify(...), or read several values with `argus probe`', output)
 
 /**
  * Apply `--fields` / `--max-chars` to the `result` of a JSON eval reply.

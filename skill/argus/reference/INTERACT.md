@@ -19,6 +19,8 @@ argus hover app --pos 520,300                       # bare viewport point (canva
 
 ## Wait For The Result (`--until`)
 
+Actions wait *after* themselves; reads (`probe`, `eval`, `dom info`, `screenshot`, `logs`, `net`, …) take the same `--until`/`--settle` and wait *before* reading ([EVAL.md](./EVAL.md#wait-then-read---until----settle-on-reads)). Never `sleep` between them.
+
 Two post-action waits replace `sleep`: `--until <expr>` asserts a state (a miss fails), `--settle` waits until the page stops moving (a miss warns). Use `--settle` when you don't know what to wait for, `--until` when you do; both may be combined (settle runs first).
 
 ### `--settle`

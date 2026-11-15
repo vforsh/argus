@@ -86,6 +86,20 @@ argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rota
 
 `--json --interval` streams NDJSON (one document per iteration).
 
+## Wait, Then Read (`--until` / `--settle` on reads)
+
+Reads wait *before* reading: `eval`, `probe`, `dom info`, `dom tree`, `screenshot`, `snapshot`, `logs`, and `net` take `--until <page expr>` (`--until-timeout`, default 15s; a miss exits 1 with `wait_timeout` and nothing is read) and `--settle` (`--settle-timeout`, default 10s; a miss warns and reads anyway).
+
+```bash
+argus eval app "store.getState().cart" --until "window.store?.ready"   # replaces: sleep 3; eval …
+argus screenshot app --out after.png --settle
+argus logs app --after "$c" --levels error --settle
+```
+
+`eval --until` without `--interval` is this page-side wait; with `--interval` it stays the local stop condition over `result` (see Polling).
+
+Hints: `eval` prints a one-line stderr `hint:` when the expression polls with `setTimeout`/`new Promise` (→ `wait` / `--until`) or wraps several keys in `JSON.stringify({…})` (→ `probe`). Hints never touch stdout.
+
 ## `eval-until` / `wait`
 
 Poll until the value is truthy in JS terms (`undefined`, `NaN`, `-0`, `0n` count as falsy). A throw counts as "not yet" (same as action `--until`), so `argus wait app "appctl.ready()"` works while the app is still booting; `--fail-on-exception` stops on the first throw instead (exit 1). Default interval 250ms, intermediate results silent. After an action, prefer the action's own `--until`/`--settle` ([INTERACT.md](./INTERACT.md#wait-for-the-result---until)) over a separate `wait`.
@@ -93,8 +107,10 @@ Poll until the value is truthy in JS terms (`undefined`, `NaN`, `-0`, `0n` count
 `--settle` first waits for the page to stop moving (load, 500ms without open requests, `window.__argus.settle()`, two frames; `--settle-timeout`, default 10s). Alone (`argus wait app --settle`) that is the whole wait: JSON `{ ok: true, settle: { settled, elapsedMs, network, page } }`, and a page that never settles exits 1 with `wait_timeout`. Before an expression it is a warm-up: a miss only warns and polling starts anyway.
 
 ```bash
+argus wait app --global appctl.ads                 # dotted global path is truthy
+argus wait app --gone ".spinner"                   # no element matches
+argus wait app --idle                              # = --settle with no expression
 argus wait app "document.querySelector('#loaded')"
-argus wait app --settle
 argus wait app --settle "window.store.ready" --total-timeout 30s
 argus wait app "window.APP_READY" --interval 500 --total-timeout 30s
 argus wait app "await window.appReadyPromise"

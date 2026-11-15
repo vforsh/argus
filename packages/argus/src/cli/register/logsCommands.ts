@@ -1,7 +1,7 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
 import { collectMatch, usageError, validateCaseFlags, validateMatchOptions } from '../validation.js'
 import { lazyAction } from '../lazyAction.js'
-import { outputShapingOptions } from './sharedOptions.js'
+import { outputShapingOptions, readWaitOptions } from './sharedOptions.js'
 
 const runLogCursor = lazyAction(() => import('../../commands/logs.js').then((mod) => mod.runLogCursor))
 const runLogEpoch = lazyAction(() => import('../../commands/logs.js').then((mod) => mod.runLogEpoch))
@@ -54,9 +54,11 @@ export const logsCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--json', description: 'Output bounded JSON preview for automation' },
 			{ flags: '--json-full', description: 'Output full JSON (can be very large)' },
 			...outputShapingOptions,
+			...readWaitOptions,
 		],
 		examples: [
 			'argus logs app',
+			'argus logs app --after "$c" --levels error --settle',
 			'argus logs app --since 10m --levels error,warning',
 			'argus logs app --json',
 			'argus logs app --json-full',

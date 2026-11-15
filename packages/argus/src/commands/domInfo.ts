@@ -1,7 +1,7 @@
 import type { DomInfoResponse } from '@vforsh/argus-core'
 import { formatDomInfo } from '../output/dom.js'
 import { parsePositiveInt } from '../cli/parse.js'
-import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import { defineReadCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
 import { requireElementTarget, writeNoElementFound } from './dom/shared.js'
 import { runDomInfoRows, type DomInfoRowsOptions } from './domInfoRows.js'
@@ -22,7 +22,7 @@ export const runDomInfo = async (id: string | undefined, options: DomInfoOptions
 	return runDomInfoNodes(id, options)
 }
 
-const runDomInfoNodes = defineWatcherCommand<DomInfoOptions, DomInfoResponse>({
+const runDomInfoNodes = defineReadCommand<DomInfoOptions, DomInfoResponse>({
 	build: (_args, options, output) => buildDomInfoPlan(options, output),
 	formatHuman: (response, { output, options }) => {
 		const target = { selector: options.selector, ref: options.ref }

@@ -1,6 +1,6 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
 import { collectMatch, collectValues } from '../validation.js'
-import { jsonOption, outputShapingOptions } from './sharedOptions.js'
+import { jsonOption, outputShapingOptions, readWaitOptions } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
 const runNetCacheClear = lazyAction(() => import('../../commands/netCacheClear.js').then((mod) => mod.runNetCacheClear))
@@ -218,9 +218,11 @@ export const netCommands: readonly ArgusCommandDefinition[] = [
 			...netFilterOptions({ includeSince: true }),
 			jsonOption,
 			...outputShapingOptions,
+			...readWaitOptions,
 		],
 		examples: [
 			'argus net app --since 5m',
+			'argus net app --after 120 --settle',
 			'argus net app --grep api',
 			'argus net app --ignore-host mc.yandex.ru',
 			'argus net app --json',

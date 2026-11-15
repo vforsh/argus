@@ -1,5 +1,5 @@
 import type { ScreenshotClipRegion, ScreenshotResponse } from '@vforsh/argus-core'
-import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
+import { defineReadCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
 import { resolveArtifactOutFile } from '../utils/paths.js'
 
@@ -14,7 +14,7 @@ export type ScreenshotOptions = {
 }
 
 /** Execute the screenshot command for a watcher id. */
-export const runScreenshot = defineWatcherCommand<ScreenshotOptions, ScreenshotResponse>({
+export const runScreenshot = defineReadCommand<ScreenshotOptions, ScreenshotResponse>({
 	build: (_args, options, output) => buildScreenshotPlan(options, output),
 	formatHuman: (response, { output }) => {
 		output.writeHuman(`Screenshot saved: ${response.outFile}`)

@@ -4,7 +4,7 @@ import { TIMEOUTS } from '../helpers/timeouts.js'
 
 setDefaultTimeout(TIMEOUTS.browser)
 
-/** Read commands built for agents: `probe`, `dom info --props/--pick`. */
+/** Read commands built for agents: `probe`, `dom info --props/--pick`, pre-read waits, wait sugar, eval hints. */
 const TEST_HTML = `
 <!DOCTYPE html>
 <html>
@@ -96,5 +96,37 @@ describe('agent read commands', () => {
 
 		const both = await fx.cli.exec(['dom', 'info', watcherId, '--selector', '.item', '--props', 'text', '--pick', 'el.id'])
 		expect(both.code).toBe(2)
+	})
+
+	test('reads wait before reading: --until on eval, dom info and screenshot', async () => {
+		await fx.page.evaluate(() => setTimeout(() => ((window as unknown as { late: number }).late = 42), 300))
+		const late = await fx.cli.run(['eval', watcherId, 'window.late', '--until', 'window.late'])
+		expect(late.stdout.trim()).toBe('42')
+
+		const missed = await fx.cli.exec(['dom', 'info', watcherId, '--selector', '#go', '--props', 'text', '--until', 'window.never', '--until-timeout', '500ms', '--json'])
+		expect(missed.code).toBe(1)
+		expect(JSON.parse(missed.stdout)).toMatchObject({ ok: false, error: { code: 'wait_timeout' } })
+
+		const shot = await fx.cli.json<{ outFile: string }>(['screenshot', watcherId, '--settle', '--json'])
+		expect(shot.outFile).toContain('.png')
+	})
+
+	test('wait --global / --gone / --idle', async () => {
+		expect((await fx.cli.exec(['wait', watcherId, '--global', 'app.score', '--total-timeout', '2s'])).code).toBe(0)
+		expect((await fx.cli.exec(['wait', watcherId, '--global', 'app.nope', '--total-timeout', '500ms'])).code).toBe(1)
+		expect((await fx.cli.exec(['wait', watcherId, '--gone', '.missing', '--total-timeout', '2s'])).code).toBe(0)
+		expect((await fx.cli.exec(['wait', watcherId, '--gone', '.item', '--total-timeout', '500ms'])).code).toBe(1)
+		expect((await fx.cli.exec(['wait', watcherId, '--idle'])).code).toBe(0)
+		expect((await fx.cli.exec(['wait', watcherId, '--idle', 'window.app'])).code).toBe(2)
+	})
+
+	test('eval hints name probe and wait on stderr, never on stdout', async () => {
+		const stringified = await fx.cli.run(['eval', watcherId, 'JSON.stringify({ a: 1, b: 2 })'])
+		expect(stringified.stderr).toContain('argus probe')
+		expect(stringified.stdout).not.toContain('hint')
+
+		const polling = await fx.cli.run(['eval', watcherId, 'new Promise((r) => setTimeout(() => r(1), 10))'])
+		expect(polling.stderr).toContain('argus wait')
+		expect(polling.stdout.trim()).toBe('1')
 	})
 })

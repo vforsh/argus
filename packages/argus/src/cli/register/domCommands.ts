@@ -199,6 +199,7 @@ export const domCommands: readonly ArgusCommandDefinition[] = [
 					'argus dom tree app --selector "#root" --json',
 				],
 				textOption: textFilterOption,
+				readWait: true,
 				options: [
 					{ flags: '--depth <n>', description: 'Max depth to traverse (default: 2)' },
 					{ flags: '--max-nodes <n>', description: 'Max total nodes to return (default: 5000)' },
@@ -218,6 +219,7 @@ export const domCommands: readonly ArgusCommandDefinition[] = [
 					'argus dom info app --selector "#root" --json',
 				],
 				textOption: textFilterOption,
+				readWait: true,
 				options: [
 					{
 						flags: '--props <list>',

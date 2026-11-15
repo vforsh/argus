@@ -7,10 +7,16 @@ import { formatError } from '../cli/parse.js'
 import { createEvalEmitter } from './evalEmit.js'
 import { parseEvalCommonFlags, prepareEvalExpression, type EvalCommonOptions } from './evalShared.js'
 import { validateEvalResultFileOptions } from './evalResultOutput.js'
+import { writeExpressionHints } from './evalHints.js'
+import { hasPreReadWait, parsePreReadWaitFlags, runPreReadWait, type PreReadWaitFlags } from './preReadWait.js'
 
 /** Options for the eval command. */
-export type EvalOptions = EvalCommonOptions & {
-	/** Stop polling once this expression over `result` becomes truthy. Requires --interval. */
+export type EvalOptions = EvalCommonOptions &
+	PreReadWaitFlags & {
+	/**
+	 * Without `--interval`: a page expression to wait for before evaluating (`preReadWait.ts`).
+	 * With `--interval`: stop polling once this local expression over `result` becomes truthy.
+	 */
 	until?: string
 	/** With --interval, write one file per iteration instead of appending NDJSON. */
 	rotate?: boolean
@@ -35,13 +41,18 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 		return
 	}
 
-	if (options.until && flags.intervalMs == null) {
-		output.writeWarn('Invalid --until usage: --until requires --interval')
+	// `--until` predates the pre-read wait as a local stop condition for `--interval` polling; that
+	// meaning stays, and only the form that used to be a usage error (no `--interval`) became the wait.
+	const polling = flags.intervalMs != null
+	if (polling && (options.untilTimeout != null || options.settle)) {
+		output.writeWarn('--until-timeout and --settle wait before a single eval; they do not combine with --interval')
 		process.exitCode = 2
 		return
 	}
+	const wait = polling ? {} : parsePreReadWaitFlags(options, output)
+	if (!wait) return
 
-	const untilEvaluator = compileUntil(options.until)
+	const untilEvaluator = compileUntil(polling ? options.until : undefined)
 	if (untilEvaluator.error) {
 		output.writeWarn(untilEvaluator.error)
 		process.exitCode = 2
@@ -58,8 +69,11 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 	if (!resolved) return
 
 	const { watcher } = resolved
+	// A bundled scenario carries library code; its setTimeout calls are not the caller's polling.
+	if (!prepared.scenario) writeExpressionHints(prepared.expression, output)
 
 	if (flags.intervalMs == null) {
+		if (hasPreReadWait(wait) && !(await runPreReadWait(watcher, wait, output))) return
 		const singleResult = await evalWithRetries({
 			watcher,
 			expression: prepared.expression,

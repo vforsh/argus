@@ -1,6 +1,6 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
-import { jsonOption } from './sharedOptions.js'
+import { jsonOption, readWaitOptions } from './sharedOptions.js'
 
 type DomCommandOptions = {
 	selector?: string
@@ -21,6 +21,8 @@ type DomSelectorCommandSpec = {
 		description: string
 	}
 	waitOption?: boolean
+	/** Read commands take the pre-read `--until`/`--settle` wait (`readWaitOptions`). */
+	readWait?: boolean
 	/** Extra command-specific options appended after the shared selector/testid plumbing. */
 	options?: readonly ArgusCommandOption[]
 	action: (id: string | undefined, options: any) => Promise<void>
@@ -50,6 +52,7 @@ export const domSelectorCommand = (spec: DomSelectorCommandSpec): ArgusCommandDe
 	}
 	options.push(...(spec.options ?? []))
 	options.push(jsonOption)
+	if (spec.readWait) options.push(...readWaitOptions)
 
 	return {
 		name: spec.name,

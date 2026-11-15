@@ -1,6 +1,6 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { resolveTestId } from '../../commands/resolveTestId.js'
-import { jsonOption } from './sharedOptions.js'
+import { jsonOption, readWaitOptions } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
 const runScreenshot = lazyAction(() => import('../../commands/screenshot.js').then((mod) => mod.runScreenshot))
@@ -17,9 +17,12 @@ export const snapshotCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--clip <x,y,width,height>', description: 'Viewport-relative rectangle crop in CSS pixels' },
 			{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
 			jsonOption,
+			...readWaitOptions,
 		],
 		examples: [
 			'argus screenshot app',
+			'argus screenshot app --out after.png --settle',
+			'argus screenshot app --out modal.png --until "document.querySelector(\'.modal.open\')"',
 			'argus screenshot app --out /tmp/screenshot.png',
 			'argus screenshot app --selector "body"',
 			'argus screenshot app --clip 100,80,640,360',
@@ -41,6 +44,7 @@ export const snapshotCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--depth <n>', description: 'Max tree depth' },
 			{ flags: '-i, --interactive', description: 'Only show interactive elements (buttons, links, inputs, etc.)' },
 			jsonOption,
+			...readWaitOptions,
 		],
 		examples: [
 			'argus snapshot app',

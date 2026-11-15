@@ -15,11 +15,52 @@ export type EvalUntilOptions = EvalCommonOptions &
 	totalTimeout?: string
 	/** Report each poll instead of only the match. */
 	verbose?: boolean
+	/** Sugar: wait until this dotted global path (`appctl.ads`) is truthy. */
+	global?: string
+	/** Sugar: wait until no element matches this selector. */
+	gone?: string
+	/** Sugar: `--settle` with no expression. */
+	idle?: boolean
+}
+
+/**
+ * Turn `--global` / `--gone` / `--idle` into the expression (or settle-only wait) they stand for.
+ *
+ * The three shapes that dominated observed waits: "is the app global there yet" (73 probes),
+ * "is the spinner gone", and "is the page quiet". Each excludes an explicit expression.
+ *
+ * @returns The expression to poll (`undefined` for a settle-only wait), or `null` after a usage error.
+ */
+export const resolveWaitSugar = (expression: string | undefined, options: EvalUntilOptions, output: Output): string | undefined | null => {
+	const sugar = [options.global != null, options.gone != null, options.idle === true].filter(Boolean).length
+	if (sugar === 0) return expression
+	if (sugar > 1 || expression != null || options.file || options.stdin) {
+		output.writeWarn('Use one of an expression, --file/--stdin, --global, --gone, or --idle.')
+		process.exitCode = 2
+		return null
+	}
+	if (options.idle) {
+		options.settle = true
+		return undefined
+	}
+	if (options.gone != null) return `!document.querySelector(${JSON.stringify(options.gone)})`
+
+	const path = options.global!.trim().replace(/^(window|globalThis)\./, '')
+	const keys = path.split('.')
+	if (!path || keys.some((key) => !/^[A-Za-z_$][\w$]*$/.test(key))) {
+		output.writeWarn(`Invalid --global path ${JSON.stringify(options.global)}: expected a dotted identifier path like appctl.ads`)
+		process.exitCode = 2
+		return null
+	}
+	// Boolean, not the value: an app global is often a cyclic object that cannot cross returnByValue.
+	return `!!${JSON.stringify(keys)}.reduce((value, key) => (value == null ? undefined : value[key]), globalThis)`
 }
 
 /** Execute the eval-until command: poll until the expression returns a truthy value. */
-export const runEvalUntil = async (id: string | undefined, rawExpression: string | undefined, options: EvalUntilOptions): Promise<void> => {
+export const runEvalUntil = async (id: string | undefined, givenExpression: string | undefined, options: EvalUntilOptions): Promise<void> => {
 	const output = createOutput(options)
+	const rawExpression = resolveWaitSugar(givenExpression, options, output)
+	if (rawExpression === null) return
 
 	if (options.settle) {
 		const settled = await runSettleStep(id, options, output, rawExpression == null && !options.file && !options.stdin)
