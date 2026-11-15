@@ -14,6 +14,7 @@ argus goto app /settings --timeout 5s --json
 argus page back app / forward app         # -n, --steps <n>; same --wait/--timeout
 argus reload app [--ignore-cache]         # alias of `page reload --id app` / `watcher reload`
 argus reload app --timeout 2m --until "appctl.ready()" --until-timeout 60s   # reload budget (default 60s), then a separate wait budget; never matches the pre-reload page
+argus run app -e "reload" -e "wait --global appctl.ready" -e "probe url=location.href" -e "screenshot --out after.png"   # verify a change in one turn
 argus page reload <targetId> --param foo=bar        # reload any CDP target, optionally rewriting query
 ```
 
