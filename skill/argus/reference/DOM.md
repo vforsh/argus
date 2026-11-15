@@ -13,6 +13,21 @@ Read the page structure, find elements, get stable refs, and mutate DOM. Runs ag
 | `--all`             | Allow >1 match (default: `multiple_matches` error)                                               |
 | `--wait <duration>` | Poll for the selector before acting (`set-file`, `click`, `fill`, `drag`)                        |
 
+## Read A List Of Elements
+
+Default for "what do these elements look like": one compact row per match, only the columns asked for. Don't hand-write `Array.from(document.querySelectorAll(…)).map(…)` in `eval`.
+
+```bash
+argus dom info app --selector ".shelf-item" --all --props text,rect,class,disabled,style:opacity,attr:data-id
+# {"text":"Apple","rect":{"x":44,"y":379,"w":94,"h":31},"class":"shelf-item","disabled":false,"style:opacity":"0.5","attr:data-id":"a"}
+argus dom info app --selector ".row" --all --pick '({ id: el.dataset.id, w: el.getBoundingClientRect().width })' --json
+argus dom info app --testid save --props disabled,visible,text     # one element: exactly one match or an error
+```
+
+- `--props`: `text` (whitespace-collapsed), `value`, `class`, `id`, `tag`, `disabled`, `checked`, `href`, `rect` (`{x,y,w,h}` integers), `visible`, `html` (outerHTML), any other element property by name (`scrollTop`, `naturalWidth`, `dataset`), `style:<prop>` (computed; `fontSize` or `font-size`), `attr:<name>`.
+- `--pick <expr>`: an expression with `el` and `index` in scope; one row per element, a throw becomes that row's `{"__error"}`. Exclusive with `--props`.
+- Human output: one JSON row per line. `--json`: `{ ok, matches, rows }`. Selection matches plain `dom info`: `--selector`/`--testid`, `--text` (trimmed text, exact or `/regex/`), `--all` (else >1 match exits 1). `--ref` is not accepted with these flags; use a selector.
+
 ## Discovery
 
 ```bash

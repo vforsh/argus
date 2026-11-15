@@ -105,6 +105,7 @@ argus logs app --since 10m --levels error,warning
 argus screenshot app --out shot.png
 argus snapshot app --interactive                     # a11y tree with refs (e5, e12…)
 argus probe app title=document.title href=location.href ready='!!window.app?.ready'   # named reads, each isolated
+argus dom info app --selector ".item" --all --props text,rect,attr:data-id             # one row per element
 argus wait app --settle                              # load + quiet network + window.__argus.settle()
 argus wait app "window.store?.ready" --total-timeout 30s   # throws = not yet; --fail-on-exception to stop
 ```

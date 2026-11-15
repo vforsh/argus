@@ -4,6 +4,7 @@ import { parsePositiveInt } from '../cli/parse.js'
 import { defineWatcherCommand, type WatcherRequestPlan } from '../cli/defineWatcherCommand.js'
 import type { Output } from '../output/io.js'
 import { requireElementTarget, writeNoElementFound } from './dom/shared.js'
+import { runDomInfoRows, type DomInfoRowsOptions } from './domInfoRows.js'
 
 /** Options for the dom info command. */
 export type DomInfoOptions = {
@@ -15,8 +16,13 @@ export type DomInfoOptions = {
 	json?: boolean
 }
 
-/** Execute the dom info command for a watcher id. */
-export const runDomInfo = defineWatcherCommand<DomInfoOptions, DomInfoResponse>({
+/** Execute the dom info command for a watcher id: `--props`/`--pick` read compact rows, otherwise the fixed node shape. */
+export const runDomInfo = async (id: string | undefined, options: DomInfoOptions & DomInfoRowsOptions): Promise<void> => {
+	if (options.props != null || options.pick != null) return runDomInfoRows(id, options)
+	return runDomInfoNodes(id, options)
+}
+
+const runDomInfoNodes = defineWatcherCommand<DomInfoOptions, DomInfoResponse>({
 	build: (_args, options, output) => buildDomInfoPlan(options, output),
 	formatHuman: (response, { output, options }) => {
 		const target = { selector: options.selector, ref: options.ref }

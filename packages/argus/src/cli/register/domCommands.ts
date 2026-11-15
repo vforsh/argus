@@ -210,13 +210,23 @@ export const domCommands: readonly ArgusCommandDefinition[] = [
 				description: 'Fetch detailed info for element(s) matching a CSS selector',
 				allowRef: true,
 				examples: [
+					'argus dom info app --selector ".item" --all --props text,rect,attr:data-id,style:opacity',
+					'argus dom info app --selector ".row" --all --pick \'({ id: el.dataset.id, w: el.offsetWidth })\' --json',
+					'argus dom info app --testid save --props disabled,visible,text',
 					'argus dom info app --selector "body"',
-					'argus dom info app --selector "div" --all',
 					'argus dom info app --ref e3',
 					'argus dom info app --selector "#root" --json',
 				],
 				textOption: textFilterOption,
-				options: [{ flags: '--outer-html-max <n>', description: 'Max characters for outerHTML (default: 50000)' }],
+				options: [
+					{
+						flags: '--props <list>',
+						description:
+							'One compact row per element with these columns: text,value,class,id,tag,disabled,checked,href,rect,visible,html, any el property, style:<css-prop>, attr:<name>',
+					},
+					{ flags: '--pick <expr>', description: 'One row per element from this expression (`el`, `index` in scope); exclusive with --props' },
+					{ flags: '--outer-html-max <n>', description: 'Max characters for outerHTML (default: 50000)' },
+				],
 				action: runDomInfo,
 			}),
 			domSelectorCommand({

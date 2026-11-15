@@ -4,7 +4,7 @@ import { TIMEOUTS } from '../helpers/timeouts.js'
 
 setDefaultTimeout(TIMEOUTS.browser)
 
-/** Read commands built for agents: `probe`. */
+/** Read commands built for agents: `probe`, `dom info --props/--pick`. */
 const TEST_HTML = `
 <!DOCTYPE html>
 <html>
@@ -65,5 +65,36 @@ describe('agent read commands', () => {
 	test('probe reads a name=expr map from stdin', async () => {
 		const result = await fx.cli.run(['probe', watcherId, '--stdin'], { input: 'first=document.querySelector(".item").dataset.id\n# comment\ncount=3*2\n' })
 		expect(JSON.parse(result.stdout)).toEqual({ first: 'a', count: 6 })
+	})
+
+	test('dom info --props returns one compact row per element', async () => {
+		const doc = await fx.cli.json<{ ok: boolean; matches: number; rows: Array<Record<string, unknown>> }>([
+			'dom', 'info', watcherId, '--selector', '.item', '--all', '--props', 'text,attr:data-id,style:opacity,rect,class,disabled', '--json',
+		])
+		expect(doc.matches).toBe(3)
+		expect(doc.rows[0]).toEqual({
+			text: 'Apple',
+			'attr:data-id': 'a',
+			'style:opacity': '0.5',
+			rect: { x: expect.any(Number), y: expect.any(Number), w: 100, h: 20 },
+			class: 'item',
+			disabled: false,
+		})
+		expect(doc.rows.map((row) => row.text)).toEqual(['Apple', 'Banana', 'Cherry'])
+
+		const button = await fx.cli.json<{ rows: Array<Record<string, unknown>> }>(['dom', 'info', watcherId, '--selector', '#go', '--props', 'disabled,text', '--json'])
+		expect(button.rows).toEqual([{ disabled: true, text: 'Go' }])
+	})
+
+	test('dom info --pick evaluates per element; --text and --all keep their semantics', async () => {
+		const human = await fx.cli.run(['dom', 'info', watcherId, '--selector', '.item', '--all', '--text', '/an/', '--pick', '({ id: el.dataset.id, i: index })'])
+		expect(human.stdout.trim().split('\n').map((line) => JSON.parse(line))).toEqual([{ id: 'b', i: 0 }])
+
+		const multiple = await fx.cli.exec(['dom', 'info', watcherId, '--selector', '.item', '--props', 'text'])
+		expect(multiple.code).toBe(1)
+		expect(multiple.stderr).toContain('matched 3 elements')
+
+		const both = await fx.cli.exec(['dom', 'info', watcherId, '--selector', '.item', '--props', 'text', '--pick', 'el.id'])
+		expect(both.code).toBe(2)
 	})
 })
