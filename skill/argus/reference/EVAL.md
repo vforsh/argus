@@ -33,6 +33,10 @@ argus eval app --file ./script.js --body            # async function body: await
 argus eval app --file ./script.js --arg level=10 --arg mode=fast
 argus eval app --file ./script.js --args ./args.json               # JSON object → args; --arg overrides
 argus eval app "window.store.getState()" --inject ./debug-hooks.js # setup code runs first
+argus eval app --stdin <<'EOF'                                     # multi-line script, one turn, no scratch file
+const rows = [...document.querySelectorAll('.row')]
+rows.filter((row) => row.dataset.state === 'error').length
+EOF
 cat script.js | argus eval app --stdin                             # or: argus eval app - < script.js
 argus eval app "document.title" --json --out ./result.json
 ```

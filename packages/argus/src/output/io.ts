@@ -10,7 +10,9 @@ const ensureTrailingNewline = (value: string): string => (value.endsWith('\n') ?
 export const configureMachineSafeConsole = (argv: readonly string[]): void => {
 	// `--fields` may imply `--json`, which is only known once the command is resolved: plugin console
 	// noise must not reach a stdout that may turn out to carry JSON.
-	if (isJsonRequested(argv) || argv.includes('--fields') || isMachineOnlyCommand(argv)) {
+	// `ARGUS_JSON=1` may turn JSON on without a flag (`cli/jsonDefault.ts`); its config twin is resolved later.
+	const envJson = !process.stdout.isTTY && (process.env.ARGUS_JSON === '1' || process.env.ARGUS_JSON === 'true')
+	if (isJsonRequested(argv) || argv.includes('--fields') || envJson || isMachineOnlyCommand(argv)) {
 		routeConsoleToStderr()
 	}
 }

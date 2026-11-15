@@ -47,6 +47,14 @@ export type ArgusConfig = {
 	 * module resolution, so `argus --plugin sheets ...` can point at a full package.
 	 */
 	pluginAliases?: Record<string, string>
+	/**
+	 * CLI output defaults. `json: "piped"` makes every command that declares `--json` default to it
+	 * when stdout is not a terminal (same as `ARGUS_JSON=1`); `"never"` (default) keeps human output.
+	 * Experimental: see `cli/jsonDefault.ts`.
+	 */
+	output?: {
+		json?: 'never' | 'piped'
+	}
 }
 
 /** Result of loading a config file. `configDir` anchors relative-path resolution. */

@@ -3,7 +3,7 @@ import type { ArgusConfig, ChromeStartConfig, WatcherInjectConfig, WatcherStartC
 
 /** One-line shape reminder appended to every config validation error. */
 export const EXPECTED_SHAPE_HINT =
-	'Expected shape: { plugins?: string[], pluginAliases?: Record<string, string>, chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean, headless?: boolean, userAgent?: string } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full", inject?: { file: string, exposeArgus?: boolean } } } }.'
+	'Expected shape: { plugins?: string[], pluginAliases?: Record<string, string>, output?: { json?: "never"|"piped" }, chrome?: { start?: { url?: string, watcherId?: string, profile?: "temp"|"default-full"|"default-medium"|"default-lite", devTools?: boolean, headless?: boolean, userAgent?: string } }, watcher?: { start?: { id?: string, url?: string, chromeHost?: string, chromePort?: number, artifacts?: string, pageIndicator?: boolean, pageConsoleLogging?: "none"|"minimal"|"full", inject?: { file: string, exposeArgus?: boolean } } } }.'
 
 type Validated<T> = { ok: true; value: T } | { ok: false; error: string }
 type ValidatedOptional<T> = { ok: true; value?: T } | { ok: false; error: string }
@@ -51,9 +51,19 @@ export const validateArgusConfig = (value: unknown): Validated<ArgusConfig> => {
 		return watcherResult
 	}
 
+	const outputResult = validateOptionalSection<ArgusConfig['output']>(value.output, '"output"', (section) => {
+		if (section.json === undefined) return { ok: true, value: {} }
+		if (section.json !== 'never' && section.json !== 'piped') return { ok: false, error: 'Invalid "output.json": expected "never" or "piped".' }
+		return { ok: true, value: { json: section.json } }
+	})
+	if (!outputResult.ok) {
+		return outputResult
+	}
+
 	return {
 		ok: true,
 		value: {
+			output: outputResult.value,
 			chrome: chromeResult.value,
 			watcher: watcherResult.value,
 			plugins: pluginsResult.value,

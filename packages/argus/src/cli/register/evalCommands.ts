@@ -63,6 +63,7 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 		],
 		examples: [
 			'argus eval app "location.href"',
+			'argus probe app url=location.href ready=!!window.app   # several reads: prefer probe',
 			'argus eval app "await fetch(\'/ping\').then(r => r.status)"',
 			'argus eval app --file ./script.js',
 			'argus eval app --file ./script.js --bundle',
@@ -73,6 +74,7 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			'argus eval app "document.title" --json --out ./result.json',
 			'argus eval app "Date.now()" --interval 500 --count 10 --out ./poll.ndjson',
 			'argus eval app "Date.now()" --interval 500 --count 10 --out ./frames.json --rotate',
+			`argus eval app --stdin <<'EOF'\n  const rows = [...document.querySelectorAll('.row')]\n  rows.filter((row) => row.dataset.state === 'error').length\n  EOF`,
 			'cat script.js | argus eval app --stdin',
 			'argus eval app - < script.js',
 			'argus eval app "document.title" --no-fail-on-exception',

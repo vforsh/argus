@@ -3,6 +3,7 @@ import { createOutput, markJsonRequested } from '../output/io.js'
 import { currentExitCode, setExitCode } from '../output/exitCode.js'
 import { finishOutputScope, resolveDefaultMaxChars, runWithOutputScope, runWithoutOutputScope, type OutputScope } from '../output/outputScope.js'
 import { parseOutputShaping } from '../output/projection.js'
+import { isPipedJsonDefault } from './jsonDefault.js'
 
 /**
  * `-q/--quiet`, `--fields`, `--max-chars` on every command.
@@ -62,6 +63,13 @@ export const runWithUniversalOutput = async (command: Command, options: Record<s
 	const flags = owned.get(command) ?? new Set<UniversalFlag>()
 	const values = options as UniversalOptions
 	const explicitMaxChars = command.getOptionValueSource('maxChars') === 'cli'
+
+	// Experimental piped JSON default (`cli/jsonDefault.ts`): only where `--json` exists and was not typed either way.
+	const declaresJson = command.options.some((option) => option.long === '--json')
+	if (declaresJson && command.getOptionValueSource('json') === undefined && isPipedJsonDefault()) {
+		options.json = true
+		markJsonRequested()
+	}
 
 	const genericFields = flags.has('fields') ? values.fields : undefined
 	const genericMaxChars = flags.has('maxChars') ? values.maxChars : undefined
