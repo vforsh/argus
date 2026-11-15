@@ -2,6 +2,27 @@
 
 Run JavaScript in the attached page (or selected iframe). `js` = `eval`, `wait` = `eval-until`.
 
+## Probe: several reads, one round-trip
+
+`probe` is the default way to read page state; reach for `eval` only for scripts. Each `name=expression` runs in its own try/catch inside one injected function, so one missing global cannot void the rest:
+
+```bash
+argus probe app url=location.href ready='!!window.appctl?.ads' view='getComputedStyle(document.querySelector("#view")).display'
+# {"url":"http://…","ready":true,"view":{"__error":"TypeError: …"}}
+argus probe app 'document.querySelectorAll(".row").length'        # bare expression → key _0
+argus probe app score=appctl.score --until 'window.appctl?.ready' # wait, then read
+argus probe app --stdin <<'EOF'
+user=store.getState().user.id
+cart=store.getState().cart.items.length
+EOF
+argus probe app --file ./probe.json --json                        # {"name": "expr", …}
+```
+
+- A throw → `{"__error": "ReferenceError: …"}` for that key only; exit 0 unless `--fail-on-exception`. Syntax errors are caught locally, values that cannot be serialized (cycles, `window`) per key. `undefined` → `null`.
+- Promises are awaited (`--no-await` opts out). Keys must be unique; a trailing `;` is dropped.
+- `--json` → the eval envelope `{ ok, result: {…}, type }`; `--fields`, `--max-chars`, `-q`, `--timeout`, `--retry`, `--until`, `--settle` work as on `eval`.
+- No `JSON.stringify`, no `try/catch`, no `?.` chains needed.
+
 ```bash
 argus eval app "location.href"
 argus eval app "await fetch('/ping').then(r => r.status)"          # top-level await works

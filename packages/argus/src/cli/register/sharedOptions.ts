@@ -27,6 +27,19 @@ export const actionOptions: readonly ArgusCommandOption[] = [
 ]
 
 /**
+ * Pre-read wait flags for read commands (`probe`, `eval`, `dom info/tree`, `screenshot`, `snapshot`, `logs`, `net`).
+ *
+ * The mirror of {@link actionOptions}: an action waits after itself, a read waits before itself, so
+ * `reload --settle` followed by `probe --until …` needs no `sleep` in between. See `commands/preReadWait.ts`.
+ */
+export const readWaitOptions: readonly ArgusCommandOption[] = [
+	{ flags: '--until <expr>', description: 'Before reading, poll this page expression until truthy (throws count as not yet); a miss exits 1' },
+	{ flags: '--until-timeout <duration>', description: 'Budget for --until (e.g. 30s). Default: 15s' },
+	{ flags: '--settle', description: 'Before reading, wait for load, a quiet network, and window.__argus.settle()' },
+	{ flags: '--settle-timeout <duration>', description: 'Budget for --settle (e.g. 5s). Default: 10s; a miss warns and reads anyway' },
+]
+
+/**
  * `--fields` / `--max-chars` output shaping for `eval`, `logs`, and `net`.
  *
  * Parsed and applied by `output/projection.ts`; declared here so manifests don't load the runtime helper.

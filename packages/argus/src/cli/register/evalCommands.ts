@@ -1,9 +1,10 @@
 import type { ArgusCommandDefinition, ArgusCommandOption } from '../defineCommand.js'
-import { jsonOption, outputShapingOptions } from './sharedOptions.js'
+import { jsonOption, outputShapingOptions, readWaitOptions } from './sharedOptions.js'
 import { usageError } from '../validation.js'
 import { lazyAction } from '../lazyAction.js'
 
 const runEval = lazyAction(() => import('../../commands/eval.js').then((mod) => mod.runEval))
+const runProbe = lazyAction(() => import('../../commands/probe.js').then((mod) => mod.runProbe))
 const runEvalUntil = lazyAction(() => import('../../commands/evalUntil.js').then((mod) => mod.runEvalUntil))
 
 const collectValue = (value: string, previous: string[] = []): string[] => [...previous, value]
@@ -79,6 +80,37 @@ export const evalCommands: readonly ArgusCommandDefinition[] = [
 			const resolved = resolveEvalExpression(expression, options)
 			if (resolved === REJECTED) return
 			await runEval(id, resolved, options)
+		},
+	},
+	{
+		name: 'probe',
+		description: 'Read several named page expressions in one round-trip; a key that throws reports {"__error"} and the rest still answer',
+		arguments: [
+			{ flags: '[id]', description: 'Watcher id to query' },
+			{ flags: '[pairs...]', description: 'name=expression pairs; a bare expression gets the key _<position>' },
+		],
+		options: [
+			{ flags: '--no-await', description: 'Do not await promise values' },
+			{ flags: '--timeout <duration>', description: 'Eval timeout for the whole probe (e.g. 10s)' },
+			jsonOption,
+			{ flags: '--fail-on-exception', description: 'Exit 1 when any key threw (default: exit 0, the error is part of the answer)' },
+			{ flags: '--retry <n>', description: 'Retry a failed round-trip up to N times' },
+			{ flags: '-q, --quiet', description: 'Suppress success output; only emit output on error' },
+			...outputShapingOptions,
+			...readWaitOptions,
+			{ flags: '-f, --file <path>', description: 'Read more pairs from a file: a JSON object {name: expr} or one name=expr per line' },
+			{ flags: '--stdin', description: 'Read more pairs from stdin (same formats as --file)' },
+		],
+		examples: [
+			`argus probe app url=location.href title=document.title ready='!!window.appctl?.ready'`,
+			`argus probe app 'getComputedStyle(document.body).overflow' --json`,
+			`argus probe app score=appctl.score --until 'window.appctl?.ready' --until-timeout 30s`,
+			`argus probe app items='document.querySelectorAll(".item").length' --settle`,
+			`argus probe app --stdin <<'EOF'\n  user=store.getState().user.id\n  cart=store.getState().cart.items.length\n  EOF`,
+			'argus probe app --file ./probe.json --fields user,cart',
+		],
+		action: async (id, pairs, options) => {
+			await runProbe(id, pairs ?? [], options)
 		},
 	},
 	{

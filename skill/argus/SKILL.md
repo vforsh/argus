@@ -104,7 +104,7 @@ argus list                                           # watchers + Chrome instanc
 argus logs app --since 10m --levels error,warning
 argus screenshot app --out shot.png
 argus snapshot app --interactive                     # a11y tree with refs (e5, e12…)
-argus eval app "({ title: document.title, href: location.href })" --json
+argus probe app title=document.title href=location.href ready='!!window.app?.ready'   # named reads, each isolated
 argus wait app --settle                              # load + quiet network + window.__argus.settle()
 argus wait app "window.store?.ready" --total-timeout 30s   # throws = not yet; --fail-on-exception to stop
 ```
@@ -168,7 +168,7 @@ Apps with their own idle signal expose it once (`window.__argus = { settle: () =
 | Iframes            | CDP target flags, `ext select`                                                                     | [IFRAMES.md](./reference/IFRAMES.md)     |
 | Android WebView    | `android attach/doctor`, device proxy and `adb reverse` checks                                     | [ANDROID.md](./reference/ANDROID.md)     |
 | Logs               | `logs`, `logs cursor/epoch/tail`                                                                   | [LOGS.md](./reference/LOGS.md)           |
-| Eval               | `eval`/`js`, `eval-until`/`wait`, scenarios, `--arg`, polling                                      | [EVAL.md](./reference/EVAL.md)           |
+| Eval               | `probe`, `eval`/`js`, `eval-until`/`wait`, scenarios, `--arg`, polling                                     | [EVAL.md](./reference/EVAL.md)           |
 | DOM & discovery    | `dom tree/info/focus/add/add-script/remove/modify/set-file/scroll`, `snapshot`, `locate`           | [DOM.md](./reference/DOM.md)             |
 | Interaction        | `click`, `drag`, `hover`, `fill`, `keydown`, `scroll-to`, `--wait-nav`                             | [INTERACT.md](./reference/INTERACT.md)   |
 | Page               | `goto/back/forward/url/reload`, `page ls/activate/close`, visibility, emulation, throttle, dialogs | [PAGE.md](./reference/PAGE.md)           |
