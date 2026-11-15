@@ -53,13 +53,20 @@ describe('agent read commands', () => {
 	})
 
 	test('probe --fail-on-exception exits 1 when a key threw; --json keeps the eval envelope', async () => {
-		const failed = await fx.cli.exec(['probe', watcherId, 'x=NOPE', '--fail-on-exception'])
+		const failed = await fx.cli.exec(['probe', watcherId, 'x=NOPE', 'y=1', '--fail-on-exception', '--json'])
 		expect(failed.code).toBe(1)
+		expect(JSON.parse(failed.stdout)).toMatchObject({ ok: false, error: { code: 'eval_exception' }, result: { y: 1 } })
 
 		const doc = await fx.cli.json<{ ok: boolean; result: Record<string, unknown> }>(['probe', watcherId, 'a=1', 'b=window', '--json'])
 		expect(doc.ok).toBe(true)
 		expect(doc.result.a).toBe(1)
-		expect(String((doc.result.b as { __error: string }).__error)).toContain('not serializable')
+		expect(String((doc.result.b as { __error: string }).__error)).toContain('circular')
+	})
+
+	test('probe expressions see page globals, not its own helpers; values are snapshotted', async () => {
+		await fx.page.evaluate(() => Object.assign(window, { read: 'page read', out: 'page out', entries: 'page entries' }))
+		const result = await fx.cli.run(['probe', watcherId, 'a=read', 'b=out', 'c=entries', 'd=({ toJSON: () => ({ x: 1 }), self: window })'])
+		expect(JSON.parse(result.stdout)).toEqual({ a: 'page read', b: 'page out', c: 'page entries', d: { x: 1 } })
 	})
 
 	test('probe reads a name=expr map from stdin', async () => {
@@ -96,6 +103,12 @@ describe('agent read commands', () => {
 
 		const both = await fx.cli.exec(['dom', 'info', watcherId, '--selector', '.item', '--props', 'text', '--pick', 'el.id'])
 		expect(both.code).toBe(2)
+
+		await fx.page.evaluate(() => Object.assign(window, { matched: 'page matched' }))
+		const scoped = await fx.cli.json<{ rows: unknown[] }>(['dom', 'info', watcherId, '--selector', '#go', '--pick', 'matched', '--json'])
+		expect(scoped.rows).toEqual(['page matched'])
+		const inherited = await fx.cli.json<{ rows: Array<{ constructor: unknown }> }>(['dom', 'info', watcherId, '--selector', '#go', '--props', 'constructor', '--json'])
+		expect(inherited.rows).toHaveLength(1)
 	})
 
 	test('reads wait before reading: --until on eval, dom info and screenshot', async () => {

@@ -2,9 +2,11 @@ import { createProgram } from './program.js'
 import { coreProgramRegistrars } from './register/index.js'
 import { registerPlugins } from './plugins/registerPlugins.js'
 import { guardUnknownCommand } from './unknownCommand.js'
-import { configureMachineSafeConsole, isJsonRequested, writeJsonFailureFallback } from '../output/io.js'
+import { configureMachineSafeConsole, isJsonRequested, setPipedJsonDefault, writeJsonFailureFallback } from '../output/io.js'
+import { isPipedJsonDefault } from './jsonDefault.js'
 import { recordInvocationCadence } from './cadenceHint.js'
 
+setPipedJsonDefault(isPipedJsonDefault())
 configureMachineSafeConsole(process.argv.slice(2))
 
 const program = createProgram()

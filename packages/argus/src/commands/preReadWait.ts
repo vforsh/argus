@@ -35,7 +35,7 @@ export const parsePreReadWaitFlags = (options: PreReadWaitFlags, output: Output)
 export const hasPreReadWait = (plan: PreReadWaitPlan): boolean => plan.until != null || plan.settle != null
 
 /**
- * Settle (best effort, a miss warns) and then poll `--until` (a miss fails the command).
+ * Settle (best effort, a miss warns) and then poll `--until` (a miss fails the command); an empty plan waits for nothing.
  *
  * @returns `true` when the read should go ahead; `false` after the miss was reported and exit 1 set.
  */

@@ -12,7 +12,7 @@ const shown = new Set<string>()
 
 /** Write `text` once per process under `key`. */
 export const writeHintOnce = (key: string, text: string, output: Output): void => {
-	if (shown.has(key)) return
+	if (shown.has(key) || process.env.ARGUS_NO_HINTS === '1') return
 	shown.add(key)
 	output.writeWarn(`hint: ${text}`)
 }
@@ -39,7 +39,7 @@ export const writeExpressionHints = (expression: string, output: Output): void =
  * `JSON.stringify({ a: …, b: … })` with more than one top-level key. A rough scan (strings and
  * nesting are tracked, template literals and regexes are not): a hint that misfires costs one stderr line.
  */
-export const stringifiesMultiKeyObject = (expression: string): boolean => {
+const stringifiesMultiKeyObject = (expression: string): boolean => {
 	const pattern = /JSON\.stringify\(\s*\{/g
 	for (let match = pattern.exec(expression); match; match = pattern.exec(expression)) {
 		let depth = 0

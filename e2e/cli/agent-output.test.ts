@@ -12,7 +12,7 @@ const STATUS_REPLY = {
 	payload: { ok: true, attached: true, protocolVersion: 2, watcherVersion: '0.0.0-test', target: { title: 'A page title that is quite long, longer than forty chars', url: 'http://localhost:3000/x' } },
 }
 
-const DATA_URI = `data:image/png;base64,${'A'.repeat(2000)}`
+const DATA_URI = `data:image/png;base64,${'A'.repeat(1998)}==`
 const netRequest = (id: number, url: string) => ({ id, ts: 1, requestId: `r${id}`, url, method: 'GET', status: 200, encodedDataLength: 0, durationMs: 1 })
 
 const routes = (): StubRoutes => ({
@@ -63,10 +63,10 @@ describe('net lists compact data: URIs', () => {
 	test('human and JSON rows show the header and size, not the payload', async () => {
 		const { cli } = await open({ 'GET /net': { payload: { ok: true, requests: [netRequest(1, DATA_URI), netRequest(2, 'http://localhost:3000/api')] } } })
 		const human = await cli.run(['net', 'app'])
-		expect(human.stdout).toBe('GET 200 1ms 0b data:image/png;base64,…(1500b)\nGET 200 1ms 0b http://localhost:3000/api\n')
+		expect(human.stdout).toBe('GET 200 1ms 0b data:image/png;base64,…(1498b)\nGET 200 1ms 0b http://localhost:3000/api\n')
 
 		const json = await cli.json<Array<{ url: string }>>(['net', 'app', '--json'])
-		expect(json.map((request) => request.url)).toEqual(['data:image/png;base64,…(1500b)', 'http://localhost:3000/api'])
+		expect(json.map((request) => request.url)).toEqual(['data:image/png;base64,…(1498b)', 'http://localhost:3000/api'])
 	})
 })
 

@@ -6,7 +6,7 @@ import { formatError } from '../cli/parse.js'
 import { createEvalEmitter } from './evalEmit.js'
 import { parseEvalCommonFlags, type EvalCommonOptions } from './evalShared.js'
 import { readTextInput, type TextInputNames } from './inputSource.js'
-import { hasPreReadWait, parsePreReadWaitFlags, runPreReadWait, type PreReadWaitFlags } from './preReadWait.js'
+import { parsePreReadWaitFlags, runPreReadWait, type PreReadWaitFlags } from './preReadWait.js'
 
 /**
  * `argus probe <id> name=expr …`: several named reads in one round-trip, each isolated.
@@ -30,10 +30,10 @@ export type ProbeOptions = Pick<EvalCommonOptions, 'json' | 'await' | 'timeout' 
 	}
 
 /** One `name=expression` pair; bare expressions get a positional `_<n>` key. */
-export type ProbeEntry = { key: string; expression: string }
+type ProbeEntry = { key: string; expression: string }
 
 /** Marker key for an expression that threw (or could not be serialized). */
-export const PROBE_ERROR_KEY = '__error'
+const PROBE_ERROR_KEY = '__error'
 
 export const runProbe = async (id: string | undefined, rawPairs: string[], options: ProbeOptions): Promise<void> => {
 	if (options.quiet) options.silent = true
@@ -61,7 +61,7 @@ export const runProbe = async (id: string | undefined, rawPairs: string[], optio
 
 	const resolved = await resolveWatcherOrExit({ id: watcherId }, output)
 	if (!resolved) return
-	if (hasPreReadWait(wait) && !(await runPreReadWait(resolved.watcher, wait, output))) return
+	if (!(await runPreReadWait(resolved.watcher, wait, output))) return
 
 	const awaitValues = options.await ?? true
 	const { script, localErrors } = buildProbeScript(entries, awaitValues)
@@ -81,16 +81,25 @@ export const runProbe = async (id: string | undefined, rawPairs: string[], optio
 		return
 	}
 
-	const values = { ...(result.response.result as Record<string, unknown>), ...localErrors }
-	// Keep the caller's key order: local syntax errors were merged in last.
-	const ordered = Object.fromEntries(entries.map((entry) => [entry.key, values[entry.key] ?? null]))
-	await emitter.emitSuccess({ ...result.response, result: ordered, type: 'object' }, false)
-
+	const pageValues = result.response.result as Record<string, unknown>
+	// Keep the caller's key order; local syntax errors never reached the page.
+	const ordered = Object.fromEntries(
+		entries.map((entry) => [entry.key, Object.hasOwn(localErrors, entry.key) ? localErrors[entry.key] : (pageValues[entry.key] ?? null)]),
+	)
 	const failed = entries.filter((entry) => isProbeError(ordered[entry.key])).map((entry) => entry.key)
 	if (failed.length > 0 && options.failOnException) {
-		output.writeWarn(`probe: ${failed.join(', ')} threw`)
+		const message = `probe: ${failed.join(', ')} threw`
 		setExitCode(1)
+		// `--json` failures are one `ok: false` document; the partial answer rides along.
+		if (output.json) {
+			output.writeJson({ ok: false, error: { message, code: 'eval_exception' }, result: ordered })
+			return
+		}
+		await emitter.emitSuccess({ ...result.response, result: ordered, type: 'object' }, false)
+		output.writeWarn(message)
+		return
 	}
+	await emitter.emitSuccess({ ...result.response, result: ordered, type: 'object' }, false)
 }
 
 const isProbeError = (value: unknown): boolean => value != null && typeof value === 'object' && PROBE_ERROR_KEY in value
@@ -128,6 +137,10 @@ const collectProbeEntries = async (pairs: string[], options: ProbeOptions, outpu
 	const entries: ProbeEntry[] = []
 	for (const raw of sources.flat()) {
 		const entry = parseProbePair(raw, entries.length)
+		if (RESERVED_KEYS.has(entry.key)) {
+			output.writeWarn(`Probe key ${JSON.stringify(entry.key)} is reserved; pick another name.`)
+			return null
+		}
 		if (!entry.expression) {
 			output.writeWarn(`Empty expression for ${JSON.stringify(entry.key)}.`)
 			return null
@@ -151,7 +164,10 @@ const collectProbeEntries = async (pairs: string[], options: ProbeOptions, outpu
  */
 const PAIR_PATTERN = /^([A-Za-z_$][\w$-]*)=(?!=)([\s\S]*)$/
 
-export const parseProbePair = (raw: string, index: number): ProbeEntry => {
+/** `__proto__` would set a prototype instead of a key, on the page and here. */
+const RESERVED_KEYS = new Set(['__proto__'])
+
+const parseProbePair = (raw: string, index: number): ProbeEntry => {
 	const match = PAIR_PATTERN.exec(raw.trim())
 	if (match) return { key: match[1]!, expression: trimExpression(match[2]!) }
 	return { key: `_${index}`, expression: trimExpression(raw) }
@@ -164,7 +180,7 @@ const trimExpression = (expression: string): string => expression.trim().replace
  * A `--file`/`--stdin` map: a JSON object `{ "name": "expr" }`, or one `name=expr` (or bare
  * expression) per line with `#` comments. Returned as raw pairs so arguments and files share one parser.
  */
-export const parseProbeMap = (text: string): { value: string[] } | { error: string } => {
+const parseProbeMap = (text: string): { value: string[] } | { error: string } => {
 	const trimmed = text.trim()
 	if (trimmed.startsWith('{')) {
 		let parsed: unknown
@@ -191,16 +207,21 @@ export const parseProbeMap = (text: string): { value: string[] } | { error: stri
 }
 
 /**
- * One injected function that evaluates every entry in order, each inside its own try/catch.
+ * One injected call that evaluates every entry in order, each inside its own try/catch.
  *
- * Expressions that do not parse are caught here, in Node, before anything is sent: a single syntax
- * error would otherwise void the whole function, which is the failure this command exists to stop.
- * Values that cannot cross `returnByValue` (cycles, BigInt) are caught page-side per key for the
- * same reason. `undefined` comes back as `null` so the key is still there to read.
+ * The user expressions are thunks in the *argument list*, so they close over the page's globals
+ * only: the runner's own bindings (`out`, `read`, …) live in the callee's body, where a page global
+ * named `read` would otherwise have been shadowed.
+ *
+ * Expressions that do not parse are caught here, in Node, before anything is sent: one syntax error
+ * would otherwise void the whole call, which is the failure this command exists to stop. Each value
+ * is snapshotted through JSON inside its own try/catch — what `toJSON` returns is what comes back,
+ * cycles (`window`) and BigInt fail only their key, and a later expression cannot make an earlier
+ * value cyclic. `undefined` and functions come back as `null` so the key is still there to read.
  */
-export const buildProbeScript = (entries: ProbeEntry[], awaitValues: boolean): { script: string; localErrors: Record<string, unknown> } => {
+const buildProbeScript = (entries: ProbeEntry[], awaitValues: boolean): { script: string; localErrors: Record<string, unknown> } => {
 	const localErrors: Record<string, unknown> = {}
-	const calls: string[] = []
+	const thunks: string[] = []
 	const asyncPrefix = awaitValues ? 'async ' : ''
 	for (const entry of entries) {
 		const syntaxError = checkExpressionSyntax(entry.expression, awaitValues)
@@ -208,34 +229,31 @@ export const buildProbeScript = (entries: ProbeEntry[], awaitValues: boolean): {
 			localErrors[entry.key] = { [PROBE_ERROR_KEY]: syntaxError }
 			continue
 		}
-		calls.push(`\t${awaitValues ? 'await ' : ''}read(${JSON.stringify(entry.key)}, ${asyncPrefix}() => (\n${entry.expression}\n))`)
+		thunks.push(`\t[${JSON.stringify(entry.key)}, ${asyncPrefix}() => (\n${entry.expression}\n)],`)
 	}
 
-	const script = `(${asyncPrefix}() => {
+	const pending = awaitValues ? 'await ' : ''
+	const script = `(${asyncPrefix}(entries) => {
 	const out = {}
-	const describe = (error) => (error && typeof error === 'object' && 'message' in error ? \`\${error.name || 'Error'}: \${error.message}\` : String(error))
-	const read = ${asyncPrefix}(key, get) => {
-		let value
+	${PAGE_DESCRIBE_ERROR}
+	for (const [key, get] of entries) {
 		try {
-			value = ${awaitValues ? 'await ' : ''}get()
+			const json = JSON.stringify(${pending}get())
+			out[key] = json === undefined ? null : JSON.parse(json)
 		} catch (error) {
 			out[key] = { ${PROBE_ERROR_KEY}: describe(error) }
-			return
 		}
-		if (value === undefined) value = null
-		try {
-			JSON.stringify(value)
-		} catch (error) {
-			out[key] = { ${PROBE_ERROR_KEY}: 'not serializable: ' + describe(error) }
-			return
-		}
-		out[key] = value
 	}
-${calls.join('\n')}
 	return out
-})()`
+})([
+${thunks.join('\n')}
+])`
 	return { script, localErrors }
 }
+
+/** Page-side `describe(error)` → `"TypeError: message"`, shared by the injected probe and `dom info --pick` scripts. */
+export const PAGE_DESCRIBE_ERROR =
+	"const describe = (error) => (error && typeof error === 'object' && 'message' in error ? `${error.name || 'Error'}: ${error.message}` : String(error))"
 
 const checkExpressionSyntax = (expression: string, awaitValues: boolean): string | undefined => {
 	try {

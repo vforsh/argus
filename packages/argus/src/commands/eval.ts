@@ -8,7 +8,7 @@ import { createEvalEmitter } from './evalEmit.js'
 import { parseEvalCommonFlags, prepareEvalExpression, type EvalCommonOptions } from './evalShared.js'
 import { validateEvalResultFileOptions } from './evalResultOutput.js'
 import { writeExpressionHints } from './evalHints.js'
-import { hasPreReadWait, parsePreReadWaitFlags, runPreReadWait, type PreReadWaitFlags } from './preReadWait.js'
+import { parsePreReadWaitFlags, runPreReadWait, type PreReadWaitFlags } from './preReadWait.js'
 
 /** Options for the eval command. */
 export type EvalOptions = EvalCommonOptions &
@@ -73,7 +73,7 @@ export const runEval = async (id: string | undefined, rawExpression: string | un
 	if (!prepared.scenario) writeExpressionHints(prepared.expression, output)
 
 	if (flags.intervalMs == null) {
-		if (hasPreReadWait(wait) && !(await runPreReadWait(watcher, wait, output))) return
+		if (!(await runPreReadWait(watcher, wait, output))) return
 		const singleResult = await evalWithRetries({
 			watcher,
 			expression: prepared.expression,

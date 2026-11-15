@@ -6,8 +6,9 @@ import { setExitCode } from '../output/exitCode.js'
 import { resolveWatcherOrExit } from '../watchers/requestWatcher.js'
 import { createEvalEmitter } from './evalEmit.js'
 import { formatEvalValue } from './evalResultOutput.js'
+import { PAGE_DESCRIBE_ERROR } from './probe.js'
 import { writeNoElementFound } from './dom/shared.js'
-import { hasPreReadWait, parsePreReadWaitFlags, runPreReadWait, type PreReadWaitFlags } from './preReadWait.js'
+import { parsePreReadWaitFlags, runPreReadWait, type PreReadWaitFlags } from './preReadWait.js'
 
 /**
  * `dom info --props <list>` / `--pick <expr>`: one compact row per matched element.
@@ -47,7 +48,7 @@ export const runDomInfoRows = async (id: string | undefined, options: DomInfoRow
 
 	const resolved = await resolveWatcherOrExit({ id }, output)
 	if (!resolved) return
-	if (hasPreReadWait(wait) && !(await runPreReadWait(resolved.watcher, wait, output))) return
+	if (!(await runPreReadWait(resolved.watcher, wait, output))) return
 
 	const result = await evalWithRetries({
 		watcher: resolved.watcher,
@@ -116,7 +117,8 @@ const buildRowsPlan = (options: DomInfoRowsOptions, output: Output): RowsPlan | 
 	const row = options.pick != null ? buildPickRow(options.pick, output) : buildPropsRow(options.props ?? '', output)
 	if (row == null) return null
 
-	const script = `(() => {
+	// The row function is the argument, so a `--pick` expression sees page globals, not `text`/`matched` below.
+	const script = `((toRow) => {
 	const text = ${JSON.stringify(text)}
 	const regex = text && text.flags !== null ? new RegExp(text.value, text.flags) : null
 	const matched = Array.from(document.querySelectorAll(${JSON.stringify(selector)})).filter((el) => {
@@ -128,10 +130,9 @@ const buildRowsPlan = (options: DomInfoRowsOptions, output: Output): RowsPlan | 
 		return regex.test(content)
 	})
 	if (!${options.all === true} && matched.length > 1) return { matches: matched.length, rows: [] }
-	const describe = (error) => (error && typeof error === 'object' && 'message' in error ? \`\${error.name || 'Error'}: \${error.message}\` : String(error))
-	const toRow = ${row}
+	${PAGE_DESCRIBE_ERROR}
 	return { matches: matched.length, rows: matched.map((el, index) => { try { return toRow(el, index) } catch (error) { return { __error: describe(error) } } }) }
-})()`
+})(${row})`
 	return { selector, script }
 }
 
@@ -205,7 +206,8 @@ const readerFor = (prop: string): string | null => {
 		const name = prop.slice('attr:'.length).trim()
 		return name ? `el.getAttribute(${JSON.stringify(name)})` : null
 	}
-	if (PROP_READERS[prop]) return PROP_READERS[prop]!
+	// Own keys only: `constructor` would otherwise pick up Object.prototype's function source.
+	if (Object.hasOwn(PROP_READERS, prop)) return PROP_READERS[prop]!
 	if (!/^[A-Za-z_$][\w$]*$/.test(prop)) return null
 	return `el[${JSON.stringify(prop)}] ?? null`
 }

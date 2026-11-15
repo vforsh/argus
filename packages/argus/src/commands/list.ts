@@ -1,8 +1,8 @@
 import { describeProtocolMismatch } from '@vforsh/argus-core'
 import type { StatusResponse, WatcherRecord } from '@vforsh/argus-core'
-import { pruneRegistry } from '../registry.js'
+import { loadActiveRegistry } from '../registry.js'
 import { formatCompactWatcherLine, formatWatcherLine } from '../output/format.js'
-import { createOutput } from '../output/io.js'
+import { createOutput, type Output } from '../output/io.js'
 import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/requestWatcher.js'
 import { discoverChromeInstances, formatChromeInstanceLine } from './chrome.js'
 import {
@@ -96,7 +96,7 @@ export const runList = async (options: ListOptions): Promise<void> => {
  * a version-skew marker on every row); agents called `list` 96 times in a week to pick an id.
  * Unreachable watchers and the Chrome count become one stderr line each, pointing at the fix.
  */
-const writeCompactList = (probes: WatcherProbe[], chromeCount: number, output: ReturnType<typeof createOutput>): void => {
+const writeCompactList = (probes: WatcherProbe[], chromeCount: number, output: Output): void => {
 	const reachable = probes.filter((probe) => probe.status)
 	const unreachable = probes.filter((probe) => !probe.status)
 	const now = Date.now()
@@ -127,10 +127,10 @@ const describeAllUnreachable = (probes: WatcherProbe[]): string | null => {
 const isTruthyEnv = (value: string | undefined): boolean => value != null && value !== '' && value !== '0' && value.toLowerCase() !== 'false'
 
 const listWatchers = async (options: ListOptions): Promise<WatcherProbe[]> => {
-	// The prune path (`watcher prune` uses it too) drops records of dead processes and expired TTLs from
-	// the file itself, not just from this read. Unreachable-but-alive watchers stay: in a sandboxed shell
-	// every probe fails, and deleting them all from there would be wrong.
-	const registry = await pruneRegistry()
+	// Lock-free on purpose: dead processes and expired records are already dropped from this read, and
+	// physically pruning (`pruneRegistry`) would make `list` wait on — and fail with — a stale registry lock
+	// or a read-only registry dir. Unreachable-but-alive watchers collapse into one stderr line instead.
+	const registry = await loadActiveRegistry()
 
 	let watchers = Object.values(registry.watchers)
 

@@ -10,15 +10,25 @@ const ensureTrailingNewline = (value: string): string => (value.endsWith('\n') ?
 export const configureMachineSafeConsole = (argv: readonly string[]): void => {
 	// `--fields` may imply `--json`, which is only known once the command is resolved: plugin console
 	// noise must not reach a stdout that may turn out to carry JSON.
-	// `ARGUS_JSON=1` may turn JSON on without a flag (`cli/jsonDefault.ts`); its config twin is resolved later.
-	const envJson = !process.stdout.isTTY && (process.env.ARGUS_JSON === '1' || process.env.ARGUS_JSON === 'true')
-	if (isJsonRequested(argv) || argv.includes('--fields') || envJson || isMachineOnlyCommand(argv)) {
+	if (isJsonRequested(argv) || argv.includes('--fields') || isMachineOnlyCommand(argv)) {
 		routeConsoleToStderr()
 	}
 }
 
 /** Whether a one-shot invocation asked for machine output. */
-export const isJsonRequested = (argv: readonly string[]): boolean => jsonImplied || argv.includes('--json') || argv.includes('--json-full')
+export const isJsonRequested = (argv: readonly string[]): boolean => jsonImplied || pipedJsonDefault || argv.includes('--json') || argv.includes('--json-full')
+
+/**
+ * The experimental piped JSON default (`cli/jsonDefault.ts`), resolved once at startup — before plugins
+ * load and before Commander parses — so plugin console noise and parse errors already see JSON mode.
+ */
+let pipedJsonDefault = false
+
+export const setPipedJsonDefault = (enabled: boolean): void => {
+	pipedJsonDefault = enabled
+}
+
+export const isPipedJsonDefaultEnabled = (): boolean => pipedJsonDefault
 
 /** Set once a flag that implies `--json` (generic `--fields`) was seen; argv alone does not say so. */
 let jsonImplied = false

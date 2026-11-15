@@ -1,9 +1,8 @@
 import type { Command } from 'commander'
-import { createOutput, markJsonRequested } from '../output/io.js'
+import { createOutput, isPipedJsonDefaultEnabled, markJsonRequested } from '../output/io.js'
 import { currentExitCode, setExitCode } from '../output/exitCode.js'
 import { finishOutputScope, resolveDefaultMaxChars, runWithOutputScope, runWithoutOutputScope, type OutputScope } from '../output/outputScope.js'
 import { parseOutputShaping } from '../output/projection.js'
-import { isPipedJsonDefault } from './jsonDefault.js'
 
 /**
  * `-q/--quiet`, `--fields`, `--max-chars` on every command.
@@ -66,7 +65,7 @@ export const runWithUniversalOutput = async (command: Command, options: Record<s
 
 	// Experimental piped JSON default (`cli/jsonDefault.ts`): only where `--json` exists and was not typed either way.
 	const declaresJson = command.options.some((option) => option.long === '--json')
-	if (declaresJson && command.getOptionValueSource('json') === undefined && isPipedJsonDefault()) {
+	if (declaresJson && command.getOptionValueSource('json') === undefined && isPipedJsonDefaultEnabled()) {
 		options.json = true
 		markJsonRequested()
 	}

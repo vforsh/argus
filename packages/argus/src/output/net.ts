@@ -20,14 +20,22 @@ const DATA_URI_MAX_CHARS = 64
  * Applied to request lists (`net`, `net tail`, `net watch`, human and JSON). `net show`/`net body`
  * keep the full URI for the one request a caller asks about. The size is the decoded payload.
  */
-export const compactDataUri = (url: string): string => {
+const compactDataUri = (url: string): string => {
 	if (!url.startsWith('data:') || url.length <= DATA_URI_MAX_CHARS) return url
 	const comma = url.indexOf(',')
 	if (comma < 0) return `${url.slice(0, DATA_URI_MAX_CHARS)}…(${url.length}b)`
 	const header = url.slice(0, comma)
-	const payload = url.length - comma - 1
-	const bytes = header.endsWith(';base64') ? Math.floor((payload * 3) / 4) : payload
-	return `${header.slice(0, DATA_URI_MAX_CHARS)},…(${bytes}b)`
+	return `${header.slice(0, DATA_URI_MAX_CHARS)},…(${dataUriBytes(url.slice(comma + 1), header.endsWith(';base64'))}b)`
+}
+
+/** Decoded size of a `data:` payload: base64 minus padding, or text with each `%XX` counted as one byte. */
+const dataUriBytes = (payload: string, base64: boolean): number => {
+	if (base64) {
+		const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0
+		return Math.floor(((payload.length - padding) * 3) / 4)
+	}
+	const escapes = payload.match(/%[0-9a-fA-F]{2}/g)?.length ?? 0
+	return payload.length - escapes * 2
 }
 
 /** A request summary with its `data:` URI compacted, for list output. */
