@@ -46,3 +46,27 @@ argus storage local ls app --origin https://app.example   # guard: fail unless t
 ```
 
 Runs in the selected target's origin. Values are strings; JSON is stored as text.
+
+## IndexedDB
+
+```bash
+argus storage idb ls app                                   # alias of `storage indexeddb list`: databases, versions, stores, entry counts
+argus storage idb get app save slots                       # one "<key>\t<value>" JSON line per entry (default 50)
+argus storage idb get app save slots --limit 100 --skip 100   # page; stderr says when more remain
+argus storage idb get app save slots --key 1 --json        # exact primary key: JSON number/array, else string ('"42"' forces a string)
+argus storage idb clear app save slots                     # empty one store; omit the store to empty every store
+argus storage idb delete app save                          # drop the database, even while the page holds it open
+```
+
+Runs in the selected target's origin; `--origin` guards like `storage local`. Values come back as JSON: Date → ISO string, binary → `{ type, byteLength }`, Map/Set → arrays. `delete` needs a CDP watcher (Chrome force-closes the page's connections); on extension watchers use `idb clear` or `storage clear --types indexeddb`. The page keeps its in-memory state, so reload after a reset.
+
+## Reset The Origin
+
+```bash
+argus storage clear app --reload                           # everything for the page's origin, then reload: a first visit
+argus storage clear app --types indexeddb,local_storage    # types: all (default), cookies, local_storage, indexeddb,
+                                                           #   cache_storage, service_workers, file_systems, shared_storage, storage_buckets
+argus storage clear app --reload --until "window.game?.ready" --until-timeout 60s
+```
+
+CDP `Storage.clearDataForOrigin`: works on CDP and extension watchers and drops IndexedDB databases the page holds open. A cross-site iframe with partitioned storage gets its own partition cleared (`storageKey` in `--json`), not the iframe origin's first-party data. `local_storage` covers sessionStorage too. `storage local clear` alone leaves IndexedDB saves behind. The browser HTTP cache is not origin data: add `argus net cache clear app` for a cold load.

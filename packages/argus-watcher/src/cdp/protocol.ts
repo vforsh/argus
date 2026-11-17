@@ -252,6 +252,10 @@ export type CdpCommandMap = {
 		unknown
 	>
 
+	// --- IndexedDB ---
+	'IndexedDB.deleteDatabase': Command<{ storageKey: string; databaseName: string }, unknown>
+	'IndexedDB.requestDatabaseNames': Command<{ storageKey: string }, { databaseNames?: string[] }>
+
 	// --- Input ---
 	'Input.dispatchKeyEvent': Command<Record<string, unknown>, unknown>
 	'Input.dispatchMouseEvent': Command<Record<string, unknown>, unknown>
@@ -334,6 +338,9 @@ export type CdpCommandMap = {
 	'Runtime.removeBinding': Command<{ name: string }, unknown>
 
 	// --- Storage ---
+	'Storage.clearDataForOrigin': Command<{ origin: string; storageTypes: string }, unknown>
+	'Storage.clearDataForStorageKey': Command<{ storageKey: string; storageTypes: string }, unknown>
+	'Storage.getStorageKey': Command<{ frameId?: string }, { storageKey: string }>
 	'Storage.getCookies': Command<{ browserContextId?: string }, { cookies?: CdpCookie[] }>
 
 	// --- Target (browser-level) ---

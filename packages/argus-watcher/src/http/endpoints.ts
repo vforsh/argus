@@ -75,6 +75,8 @@ export const WATCHER_ENDPOINTS = [
 	'visibility',
 	'storage/local',
 	'storage/session',
+	'storage/indexeddb',
+	'storage/clear',
 	'reload',
 	'navigate',
 	'navigate/history',

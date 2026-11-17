@@ -32,6 +32,8 @@ Drive a live Chromium tab from the shell. A **watcher** attaches to one tab (or 
 | Failed / slow requests | `argus net app --failed-only` · `argus net show 42 app` · `argus net body 42 app` |
 | Screenshot | `argus screenshot app --out shot.png --settle` |
 | localStorage | `argus storage local list app` · `argus storage local get app <key>` |
+| IndexedDB | `argus storage idb ls app` · `argus storage idb get app <db> <store>` |
+| Reset to a first visit | `argus storage clear app --reload` (IndexedDB, local/session storage, cookies, caches, SW) |
 | Navigate | `argus goto app /checkout` · `argus reload app` (both settle by default) |
 | Multi-line script | `argus eval app --stdin <<'EOF'` … `EOF` (no scratch file) |
 
@@ -125,7 +127,7 @@ Never use `argus start`, `--profile temp`, or headless for a flow that needs the
 | Capture | `screenshot`, `record`, `trace` | [CAPTURE.md](./reference/CAPTURE.md) |
 | Perf | `perf gesture/capture/motion/compare`, `input record/replay`, `trace analyze` | [PERF.md](./reference/PERF.md) |
 | Network | `net`, `net watch/inspect/show/body/summary/export/ws/sse/mock/cache clear` | [NET.md](./reference/NET.md) |
-| Auth & storage | `auth cookies/export-state/load-state/clone`, `storage local/session` | [STATE.md](./reference/STATE.md) |
+| Auth & storage | `auth cookies/export-state/load-state/clone`, `storage local/session/idb/clear` | [STATE.md](./reference/STATE.md) |
 | Runtime code | `code ls/read/grep/deminify/edit/strings` | [CODE.md](./reference/CODE.md) |
 | Injection | `page init-script`, `--inject`, config `inject`, `window.__ARGUS__` | [INJECT.md](./reference/INJECT.md) |
 | Batches / session | `run -e`, `run --file`, `session` (JSONL) | [SESSION.md](./reference/SESSION.md) |
