@@ -16,15 +16,15 @@
     },
     "packages/argus": {
       "name": "@vforsh/argus",
-      "version": "0.5.39",
+      "version": "0.5.40",
       "bin": {
         "argus": "dist/argus.js",
       },
       "dependencies": {
         "@vforsh/argus-client": "^0.5.8",
-        "@vforsh/argus-core": "^0.5.23",
+        "@vforsh/argus-core": "^0.5.24",
         "@vforsh/argus-plugin-api": "^0.5.3",
-        "@vforsh/argus-watcher": "^0.5.30",
+        "@vforsh/argus-watcher": "^0.5.31",
         "commander": "14.0.2",
         "esbuild": "0.25.12",
         "oxfmt": "0.72.0",
@@ -39,7 +39,7 @@
     },
     "packages/argus-core": {
       "name": "@vforsh/argus-core",
-      "version": "0.5.23",
+      "version": "0.5.24",
     },
     "packages/argus-extension": {
       "name": "@vforsh/argus-extension",
@@ -65,10 +65,10 @@
     },
     "packages/argus-watcher": {
       "name": "@vforsh/argus-watcher",
-      "version": "0.5.30",
+      "version": "0.5.31",
       "dependencies": {
         "@jridgewell/trace-mapping": "^0.3.31",
-        "@vforsh/argus-core": "^0.5.23",
+        "@vforsh/argus-core": "^0.5.24",
         "emittery": "^1.2.0",
       },
     },
