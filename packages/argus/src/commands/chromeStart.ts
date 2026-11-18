@@ -15,6 +15,7 @@ import { buildChromeLaunchArgs } from './chrome/launchArgs.js'
 import { resolveChromeUserAgent } from './chrome/userAgent.js'
 import { createChromeCleanup } from './chrome/lifecycle.js'
 import { waitForLaunchedChrome } from './chrome/readiness.js'
+import { collectLeftovers, formatLeftovers } from './chrome/leftovers.js'
 
 export type ChromeStartOptions = {
 	url?: string
@@ -282,8 +283,11 @@ export const launchChrome = async (options: LaunchChromeOptions): Promise<Launch
 		cdpPort = ready.port
 		browserWebSocketUrl = ready.version.webSocketDebuggerUrl
 	} catch (error) {
+		// Kill this attempt first, so a retry never stacks one more browser on the pile.
 		await createChromeCleanup(chrome, undefined, cleanupDir).closeGracefully()
-		throw new Error(`Chrome started but CDP is unavailable. Reason: ${formatError(error)}`)
+		const leftovers = formatLeftovers(await collectLeftovers())
+		const hint = leftovers.length > 0 ? `\nThe failed Chrome was closed. Leftover Argus instances may be exhausting resources:\n${leftovers.join('\n')}` : ''
+		throw new Error(`Chrome started but CDP is unavailable. Reason: ${formatError(error)}${hint}`)
 	}
 	const { cleanup, closeGracefully } = createChromeCleanup(chrome, browserWebSocketUrl, cleanupDir)
 

@@ -1,7 +1,7 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
-import { jsonOption } from './sharedOptions.js'
+import { jsonOption, labelFilterOption, watcherLifecycleOptions } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
 const runList = lazyAction(() => import('../../commands/list.js').then((mod) => mod.runList))
@@ -41,11 +41,13 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 					{ flags: '--artifacts <dir>', description: 'Artifacts base directory (default: $TMPDIR/argus)' },
 					{ flags: '--no-page-indicator', description: 'Disable the in-page watcher indicator' },
 					{ flags: '--inject <path>', description: 'Path to JavaScript file to inject on watcher attach' },
+					...watcherLifecycleOptions,
 					{ flags: '--config <path>', description: 'Path to Argus config file' },
 					jsonOption,
 				],
 				examples: [
 					'argus watcher start --url localhost:3000              # auto-generated id',
+					'argus watcher start --id app --url localhost:3000 --owner-pid $PPID --ttl 2h --label session=abc',
 					'argus watcher start --id app --url localhost:3000',
 					'argus watcher start --id app --source extension',
 					'argus watcher start --id game --type iframe --url localhost:3007',
@@ -80,9 +82,16 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				options: [
 					{ flags: '--id <watcherId>', description: 'Watcher id to stop' },
 					{ flags: '--port <port>', description: 'Select a registered watcher by its HTTP port' },
+					{ ...labelFilterOption, description: 'Stop every watcher carrying this label (repeatable; all must match)' },
 					jsonOption,
 				],
-				examples: ['argus watcher stop app', 'argus watcher stop --id app', 'argus watcher kill app', 'argus watcher detach app'],
+				examples: [
+					'argus watcher stop app',
+					'argus watcher stop --id app',
+					'argus watcher stop --label session=abc',
+					'argus watcher kill app',
+					'argus watcher detach app',
+				],
 				action: async (id, options) => {
 					await runWatcherStop(id ?? options.id, options)
 				},
@@ -105,6 +114,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				options: [
 					jsonOption,
 					{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
+					labelFilterOption,
 					{ flags: '-v, --verbose', description: 'Full table: host:port, match rules, cwd, target URLs, Chrome instances' },
 				],
 				examples: ['argus watcher ls', 'argus watcher ls --json', 'argus watcher ls --by-cwd my-project'],
@@ -157,12 +167,14 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 				description: 'Remove unreachable watchers, and stop watchers whose working directory was deleted',
 				options: [
 					{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
+					labelFilterOption,
 					{ flags: '--dry-run', description: 'Preview what would be removed without changing the registry' },
 					jsonOption,
 				],
 				examples: [
 					'argus watcher prune',
 					'argus watcher prune --by-cwd my-project',
+					'argus watcher prune --label session=abc',
 					'argus watcher prune --dry-run',
 					'argus watcher prune --dry-run --json',
 				],

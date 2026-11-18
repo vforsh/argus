@@ -146,8 +146,8 @@ export const pruneStaleWatchers = (
 	}
 }
 
-/** `kill(pid, 0)` probes without signalling; EPERM means the process exists under another user. */
-const isProcessAlive = (pid: number): boolean => {
+/** `kill(pid, 0)` probes without signalling; EPERM means the process exists under another user. Non-pids count as alive. */
+export const isProcessAlive = (pid: number): boolean => {
 	if (!Number.isInteger(pid) || pid <= 0) return true
 	try {
 		process.kill(pid, 0)

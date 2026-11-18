@@ -3,7 +3,7 @@ import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { gotoCommand } from './pageCommands.js'
 import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
-import { actionOptions, jsonOption } from './sharedOptions.js'
+import { actionOptions, jsonOption, labelFilterOption, watcherLifecycleOptions } from './sharedOptions.js'
 import { usageError } from '../validation.js'
 import { lazyAction } from '../lazyAction.js'
 
@@ -21,9 +21,18 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 			jsonOption,
 			{ flags: '-v, --verbose', description: 'Full table: host:port, match rules, cwd, target URLs, Chrome instances, version skew' },
 			{ flags: '--by-cwd <substring>', description: 'Filter watchers by working directory substring' },
+			labelFilterOption,
 			{ flags: '--quiet', description: 'Omit watcher version-skew markers and summary (also ARGUS_NO_VERSION_WARNINGS=1)' },
 		],
-		examples: ['argus list', 'argus ls', 'argus list --verbose', 'argus list --json', 'argus list --by-cwd my-project', 'argus list --quiet'],
+		examples: [
+			'argus list',
+			'argus ls',
+			'argus list --verbose',
+			'argus list --json',
+			'argus list --by-cwd my-project',
+			'argus list --label session=abc',
+			'argus list --quiet',
+		],
 		action: async (options) => {
 			await runList(options)
 		},
@@ -58,11 +67,13 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 			{ flags: '--no-page-indicator', description: 'Disable the in-page watcher indicator' },
 			{ flags: '--inject <path>', description: 'Path to JavaScript file to inject on watcher attach' },
 			{ flags: '--artifacts <dir>', description: 'Artifacts base directory' },
+			...watcherLifecycleOptions,
 			{ flags: '--config <path>', description: 'Path to Argus config file' },
 			jsonOption,
 		],
 		examples: [
 			'argus start --id app --url localhost:3000',
+			'argus start --id app --url localhost:3000 --headless --profile temp --detach --owner-pid $PPID --idle-exit 15m --label session=abc',
 			'argus up --id app --url localhost:3000',
 			'argus start --id app --auth-from extension-2',
 			'argus start --id app --auth-from extension-2 --url https://target.app/',

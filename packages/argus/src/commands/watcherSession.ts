@@ -1,5 +1,5 @@
 import type { EmulationState, PageConsoleLogging, WatcherMatch, WatcherSourceMode } from '@vforsh/argus-core'
-import { startWatcher, type WatcherHandle } from '@vforsh/argus-watcher'
+import { startWatcher, type WatcherHandle, type WatcherLifecycleOptions } from '@vforsh/argus-watcher'
 import type { Output } from '../output/io.js'
 import type { WatcherInjectConfig } from '../config/types.js'
 import { resolvePath } from '../utils/paths.js'
@@ -19,6 +19,8 @@ export type StartManagedWatcherOptions = {
 	pageConsoleLogging?: PageConsoleLogging
 	inject?: WatcherInjectConfig
 	emulation?: EmulationState
+	labels?: Record<string, string>
+	lifecycle?: WatcherLifecycleOptions
 	onClose?: () => Promise<void> | void
 }
 
@@ -57,6 +59,8 @@ export const startManagedWatcher = async (options: StartManagedWatcherOptions): 
 			pageConsoleLogging: options.pageConsoleLogging,
 			inject: inject ?? undefined,
 			emulation: options.emulation,
+			labels: options.labels,
+			lifecycle: options.lifecycle,
 			onClose: options.onClose,
 		})
 	} catch (error) {

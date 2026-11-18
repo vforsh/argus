@@ -1,21 +1,27 @@
-import type { ShutdownResponse } from '@vforsh/argus-core'
+import type { ShutdownResponse, WatcherRecord } from '@vforsh/argus-core'
 import { loadActiveRegistry, removeWatcherAndPersist } from '../registry.js'
 import { fetchJson } from '../httpClient.js'
 import { formatError } from '../cli/parse.js'
 import { formatWatcherLine } from '../output/format.js'
-import { createOutput } from '../output/io.js'
+import { createOutput, type Output } from '../output/io.js'
 import { resolveWatcher } from '../watchers/resolveWatcher.js'
+import { matchesLabels, parseLabels } from '../watchers/labels.js'
 import { delay } from '@vforsh/argus-core'
 
 /** Options for the watcher stop command. */
-export type WatcherStopOptions = { json?: boolean; port?: string }
+export type WatcherStopOptions = { json?: boolean; port?: string; label?: string[] }
 
 /** Execute the watcher stop command. */
 export const runWatcherStop = async (id: string | undefined, options: WatcherStopOptions): Promise<void> => {
 	const output = createOutput(options)
-	const writeStopped = (watcherId: string) => {
-		if (options.json) output.writeJson({ ok: true, id: watcherId, stopped: true })
-		else output.writeHuman(`stopped ${watcherId}`)
+	if (options.label && options.label.length > 0) {
+		if (id || options.port !== undefined) {
+			output.writeWarn('Cannot combine --label with a watcher id or --port.')
+			process.exitCode = 2
+			return
+		}
+		await stopByLabels(options.label, options, output)
+		return
 	}
 	if (options.port !== undefined) {
 		const port = Number(options.port)
@@ -47,22 +53,56 @@ export const runWatcherStop = async (id: string | undefined, options: WatcherSto
 	}
 
 	const { watcher } = resolved
+	if (!(await stopWatcher(watcher, output))) {
+		process.exitCode = 1
+		return
+	}
+	if (options.json) output.writeJson({ ok: true, id: watcher.id, stopped: true })
+	else output.writeHuman(`stopped ${watcher.id}`)
+}
 
+/**
+ * Stop every live watcher carrying all given labels. No match is success: label cleanup is idempotent,
+ * so an agent can run it on every exit path without checking first.
+ */
+const stopByLabels = async (labelFlags: string[], options: WatcherStopOptions, output: Output): Promise<void> => {
+	const filter = parseLabels(labelFlags)
+	if (!filter.ok) {
+		output.writeWarn(filter.error)
+		process.exitCode = 2
+		return
+	}
+	const registry = await loadActiveRegistry()
+	const targets = Object.values(registry.watchers).filter((watcher) => matchesLabels(watcher, filter.labels))
+	const results = await Promise.all(targets.map(async (watcher) => ({ id: watcher.id, stopped: await stopWatcher(watcher, output) })))
+	const stopped = results.filter((result) => result.stopped).map((result) => result.id)
+	const failed = results.filter((result) => !result.stopped).map((result) => result.id)
+	if (failed.length > 0) process.exitCode = 1
+
+	if (options.json) {
+		output.writeJson({ ok: failed.length === 0, stopped, failed })
+		return
+	}
+	if (targets.length === 0) output.writeHuman('No watchers match.')
+	for (const watcherId of stopped) output.writeHuman(`stopped ${watcherId}`)
+}
+
+/**
+ * Ask the watcher to shut down (closing a Chrome it launched); fall back to SIGTERM on its pid.
+ * @returns True once the watcher is gone; false (after a warning) when its registry entry was kept.
+ */
+const stopWatcher = async (watcher: WatcherRecord, output: Output): Promise<boolean> => {
 	const shutdownUrl = `http://${watcher.host}:${watcher.port}/shutdown`
 	try {
 		const response = await fetchJson<ShutdownResponse>(shutdownUrl, { method: 'POST', timeoutMs: 2_000 })
-		if (response.ok) {
-			writeStopped(watcher.id)
-			return
-		}
+		if (response.ok) return true
 	} catch (error) {
 		output.writeWarn(`warn: shutdown endpoint failed; falling back to SIGTERM (${formatError(error)})`)
 	}
 
 	if (watcher.pid == null) {
 		output.writeWarn(`warn: missing pid for watcher ${watcher.id}; registry entry preserved`)
-		process.exitCode = 1
-		return
+		return false
 	}
 
 	const pid = watcher.pid
@@ -71,24 +111,21 @@ export const runWatcherStop = async (id: string | undefined, options: WatcherSto
 	} catch (error) {
 		if (isNoSuchProcessError(error)) {
 			await removeWatcherAndPersist(watcher.id, undefined, watcher)
-			writeStopped(watcher.id)
-			return
+			return true
 		}
 		output.writeWarn(`warn: failed to stop watcher ${watcher.id}; registry entry preserved (${formatError(error)})`)
-		process.exitCode = 1
-		return
+		return false
 	}
 
 	const waitResult = await waitForProcessExit(pid, 2_000, 100)
 	if (waitResult.state === 'dead') {
 		await removeWatcherAndPersist(watcher.id, undefined, watcher)
-		writeStopped(watcher.id)
-		return
+		return true
 	}
 
 	const reason = waitResult.error ? ` (${waitResult.error})` : ''
 	output.writeWarn(`warn: failed to stop watcher ${watcher.id}; registry entry preserved${reason}`)
-	process.exitCode = 1
+	return false
 }
 
 type WaitResult = { state: 'dead' | 'timeout' | 'error'; error?: string }

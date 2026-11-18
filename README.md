@@ -79,6 +79,16 @@ argus start --id app --url http://localhost:3000 --headless --profile temp --det
 argus watcher stop app --json
 ```
 
+To keep a crashed or killed agent from leaking watchers, let the watcher stop itself and tag it:
+
+```bash
+argus start --id app --url http://localhost:3000 --headless --profile temp --detach --json \
+  --owner-pid $PPID --idle-exit 15m --ttl 2h --label session=abc
+argus watcher stop --label session=abc
+```
+
+`--owner-pid` stops the watcher (and its Chrome) once that process exits, `--idle-exit` after no CLI request for that long (`list`/`status` pings don't count), `--ttl` at a hard deadline. `list`, `watcher stop`, and `watcher prune` accept `--label key=value` filters.
+
 `start --detach` reports the Chrome/watcher PIDs, CDP and HTTP ports, temp profile path, and launcher log. Stopping a watcher created by `start` closes its Chrome and removes the temp profile; stopping a standalone watcher leaves its browser running. Headless `start` uses a 1280×900 viewport at DPR 1; customize with `--width 900 --height 1250 --dpr 2`.
 
 In another terminal:
@@ -554,13 +564,14 @@ argus chrome status
 argus doctor
 ```
 
-If needed, restart Chrome with `argus chrome start`.
+If needed, restart Chrome with `argus chrome start`. When `start` fails with `CDP is unavailable`, the error lists leftover watchers and orphaned Chromes with cleanup commands; `argus chrome prune-orphans` kills Chromes left on Argus temp profiles by crashed launchers.
 
 ### Registry contains stale entries
 
 ```bash
 argus watcher prune
-argus watcher prune --dry-run
+argus watcher prune --dry-run          # reports only; the registry file is not touched
+argus watcher prune --label session=abc
 ```
 
 ### CLI changes are not visible during local development

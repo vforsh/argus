@@ -82,6 +82,8 @@ export type HttpServerOptions = {
 	onRequest?: (event: HttpRequestEventMetadata) => void
 	/** Optional callback invoked when a shutdown request is received. */
 	onShutdown?: () => void | Promise<void>
+	/** Called when a client request (anything but `GET /status`) starts; the returned callback runs when it ends. */
+	onClientRequest?: () => () => void
 }
 
 /** Handle for the running HTTP server. */
@@ -90,10 +92,14 @@ export type HttpServerHandle = {
 	close: () => Promise<void>
 }
 
+const CLOSE_GRACE_MS = 1_000
+
 /** Start HTTP server bound to localhost for watcher API. */
 export const startHttpServer = async (options: HttpServerOptions): Promise<HttpServerHandle> => {
 	const server = http.createServer((req, res) => {
 		const url = new URL(req.url ?? '/', `http://${req.headers.host ?? options.host}`)
+		// `list`/`doctor` poll /status; counting those would keep every idle watcher alive forever.
+		if (options.onClientRequest && url.pathname !== '/status') res.once('close', options.onClientRequest())
 		dispatch(req, res, url, options)
 	})
 
@@ -110,12 +116,18 @@ export const startHttpServer = async (options: HttpServerOptions): Promise<HttpS
 		close: () =>
 			new Promise((resolve, reject) => {
 				server.close((error) => {
+					clearTimeout(forceClose)
 					if (error) {
 						reject(error)
 						return
 					}
 					resolve()
 				})
+				// Long polls (`net tail` waits up to 2 minutes) would otherwise hold teardown — and the
+				// Chrome it closes — hostage. Give in-flight responses a moment, then cut them.
+				server.closeIdleConnections()
+				const forceClose = setTimeout(() => server.closeAllConnections(), CLOSE_GRACE_MS)
+				forceClose.unref()
 			}),
 	}
 }

@@ -5,3 +5,4 @@ export type { ChromeInstanceInfo, ChromeListOptions } from './chrome/processes.j
 export { runChromeVersion, runChromeStatus, runChromeStop } from './chrome/browser.js'
 export { runChromeTargets, runChromeOpen, runChromeActivate, runChromeClose, runChromeReload } from './chrome/targets.js'
 export { discoverChromeInstances, formatChromeInstanceLine, runChromeList } from './chrome/processes.js'
+export { runChromePruneOrphans } from './chrome/leftovers.js'

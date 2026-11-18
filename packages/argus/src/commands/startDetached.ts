@@ -54,7 +54,7 @@ const waitForReady = (child: ChildProcess, launcherLog: string): Promise<StartRe
 		}
 		const onError = (error: Error) => finish(error)
 		const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
-			const details = readFileSync(launcherLog, 'utf8').trim().slice(-4_000)
+			const details = readFileSync(launcherLog, 'utf8').trim().slice(-16_000)
 			finish(new Error(`Detached start exited (${signal ?? code}) before becoming ready. ${details}\nSee ${launcherLog}`))
 		}
 		child.on('message', onMessage)

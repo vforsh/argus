@@ -1,11 +1,11 @@
-import { watcherNameFromUrl, type PageConsoleLogging, type WatcherSourceMode } from '@vforsh/argus-core'
+import { watcherNameFromUrl, type PageConsoleLogging, type WatcherLifecycle, type WatcherSourceMode } from '@vforsh/argus-core'
 import crypto from 'node:crypto'
 import { createOutput } from '../output/io.js'
 import type { WatcherInjectConfig } from '../config/types.js'
-import { buildWatcherMatch, registerTerminationHandlers, waitForever } from './startShared.js'
+import { buildWatcherMatch, registerTerminationHandlers, resolveWatcherLifecycle, waitForever, type WatcherLifecycleFlags } from './startShared.js'
 import { startManagedWatcher } from './watcherSession.js'
 
-export type WatcherStartOptions = {
+export type WatcherStartOptions = WatcherLifecycleFlags & {
 	id?: string
 	/** Source mode for CDP connection: 'cdp' (default) or 'extension'. */
 	source?: WatcherSourceMode
@@ -42,6 +42,8 @@ type WatcherStartResult = {
 	chromeHost?: string
 	chromePort?: number
 	artifactsBaseDir?: string
+	labels?: Record<string, string>
+	lifecycle?: WatcherLifecycle
 }
 
 const isValidPort = (port: number): boolean => Number.isFinite(port) && port >= 1 && port <= 65535
@@ -105,6 +107,9 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		}
 	}
 
+	const lifecycle = resolveWatcherLifecycle(options, output)
+	if (!lifecycle) return
+
 	const watcherId = options.id?.trim() || nameFromUrlMatch(sourceMode === 'cdp' ? options.url : undefined) || generateWatcherId()
 	const match = sourceMode === 'cdp' ? buildWatcherMatch(options) : undefined
 
@@ -119,6 +124,7 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		artifacts: options.artifacts,
 		pageConsoleLogging: options.pageConsoleLogging,
 		inject: options.inject,
+		...lifecycle,
 	})
 	if (!startedWatcher) {
 		return
@@ -139,6 +145,8 @@ export const runWatcherStart = async (options: WatcherStartOptions): Promise<voi
 		chromeHost,
 		chromePort,
 		artifactsBaseDir,
+		labels: handle.watcher.labels,
+		lifecycle: handle.watcher.lifecycle,
 	}
 
 	const cleanup = async () => {

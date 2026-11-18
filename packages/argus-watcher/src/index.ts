@@ -70,6 +70,16 @@ export type ExtensionWatcherRole = WatcherExtensionRole
 
 export type { WatcherIdConflictPolicy }
 
+/** Self-stop conditions for {@link StartWatcherOptions.lifecycle}. */
+export type WatcherLifecycleOptions = {
+	/** Stop once this process exits (polled every couple of seconds). */
+	ownerPid?: number
+	/** Stop after this many milliseconds without a client request; `GET /status` pings do not count. */
+	idleExitMs?: number
+	/** Stop this many milliseconds after start, regardless of activity. */
+	ttlMs?: number
+}
+
 /** Options to start a watcher server. */
 export type StartWatcherOptions = {
 	/** Unique watcher identifier (used for registry presence and removal on shutdown). */
@@ -107,6 +117,13 @@ export type StartWatcherOptions = {
 	emulation?: EmulationState
 	/** Release caller-owned resources after watcher teardown, once for both close() and POST /shutdown. */
 	onClose?: () => Promise<void> | void
+	/** `key=value` tags published in the registry record, for filtering `list`/`stop`/`prune`. */
+	labels?: Record<string, string>
+	/**
+	 * Conditions under which the watcher stops itself, exactly as `close()` would (running `onClose`).
+	 * Lets a caller that may die without cleanup (SIGKILL, closed terminal) still bound a watcher's life.
+	 */
+	lifecycle?: WatcherLifecycleOptions
 	/**
 	 * Artifacts storage configuration for logs, traces, and screenshots.
 	 * All artifacts are stored under `artifacts.base` (default: `$TMPDIR/argus`).

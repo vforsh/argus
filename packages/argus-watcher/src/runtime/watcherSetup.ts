@@ -1,4 +1,4 @@
-import type { WatcherChrome, WatcherRecord } from '@vforsh/argus-core'
+import type { WatcherChrome, WatcherLifecycle, WatcherRecord } from '@vforsh/argus-core'
 import os from 'node:os'
 import path from 'node:path'
 import Emittery from 'emittery'
@@ -96,6 +96,8 @@ export const normalizeWatcherSetup = (options: StartWatcherOptions, watcherId: s
 		source: sourceMode,
 		extensionRole: sourceMode === 'extension' ? extensionRole : undefined,
 		ownerId,
+		labels: options.labels && Object.keys(options.labels).length > 0 ? { ...options.labels } : undefined,
+		lifecycle: resolveLifecycleRecord(options.lifecycle, startedAt),
 	}
 
 	return {
@@ -147,4 +149,14 @@ const resolveMaxFiles = (maxFiles?: number): number => {
 		throw new Error('artifacts.logs.maxFiles must be an integer >= 1')
 	}
 	return maxFiles
+}
+
+/** Publish self-stop conditions in the record so `list --json` and diagnostics can show them. */
+const resolveLifecycleRecord = (lifecycle: StartWatcherOptions['lifecycle'], startedAt: number): WatcherLifecycle | undefined => {
+	if (!lifecycle) return undefined
+	const record: WatcherLifecycle = {}
+	if (lifecycle.ownerPid !== undefined) record.ownerPid = lifecycle.ownerPid
+	if (lifecycle.idleExitMs !== undefined) record.idleExitMs = lifecycle.idleExitMs
+	if (lifecycle.ttlMs !== undefined) record.expiresAt = startedAt + lifecycle.ttlMs
+	return Object.keys(record).length > 0 ? record : undefined
 }

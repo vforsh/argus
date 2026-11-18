@@ -12,6 +12,7 @@ import type { StartWatcherOptions, WatcherHandle } from './index.js'
 import { createInjectOnAttach } from './runtime/watcherInject.js'
 import { createIndicatorBinding } from './runtime/watcherIndicator.js'
 import { createShutdownLatch } from './runtime/shutdownLatch.js'
+import { startLifecycleGuard, type LifecycleGuard } from './runtime/lifecycleGuard.js'
 import { normalizeWatcherSetup } from './runtime/watcherSetup.js'
 import { createWatcherRuntimeServices } from './runtime/watcherServices.js'
 
@@ -40,6 +41,9 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		initScriptController,
 	} = setup
 	const shutdown = createShutdownLatch()
+	// Started only once the watcher is published, so expiry can never race startup.
+	let lifecycle: LifecycleGuard | null = null
+	let closing = false
 	let cdpStatus: CdpSourceStatus = { attached: false, target: null }
 	let pageNavigations = 0
 	const dialogTracker = new DialogTracker()
@@ -264,6 +268,7 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 		onShutdown: () => {
 			void shutdown.close()
 		},
+		onClientRequest: options.lifecycle?.idleExitMs !== undefined ? () => lifecycle?.trackRequest() ?? (() => {}) : undefined,
 	})
 
 	record.port = server.port
@@ -275,21 +280,27 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	})
 	let heartbeat: { stop: () => Promise<void> } | null = null
 	shutdown.arm(async () => {
-		await heartbeat?.stop()
-		indicator.stop()
-		if (cdpStatus.attached) {
-			logToPageConsole('detached (reason=watcher_stopped)')
+		closing = true
+		lifecycle?.stop()
+		try {
+			await heartbeat?.stop()
+			indicator.stop()
+			if (cdpStatus.attached) {
+				logToPageConsole('detached (reason=watcher_stopped)')
+			}
+			await sourceHandle.stop()
+			logIngestor.close()
+			sourcemaps.clear()
+			await fileLogger?.close()
+			traceRecorder.onDetached('watcher_stopped')
+			recorder.onDetached('watcher_stopped')
+			await server.close()
+			await releaseWatcherId(record.id, ownerId)
+			events.clearListeners()
+		} finally {
+			// A failed registry release must not leave the caller's browser and profile behind.
+			await options.onClose?.()
 		}
-		await sourceHandle.stop()
-		logIngestor.close()
-		sourcemaps.clear()
-		await fileLogger?.close()
-		traceRecorder.onDetached('watcher_stopped')
-		recorder.onDetached('watcher_stopped')
-		await server.close()
-		await releaseWatcherId(record.id, ownerId)
-		events.clearListeners()
-		await options.onClose?.()
 	})
 
 	try {
@@ -297,6 +308,12 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 	} catch (error) {
 		await shutdown.close()
 		throw error
+	}
+
+	if (closing) {
+		// POST /shutdown landed while the record was being published; teardown already ran without a heartbeat.
+		await releaseWatcherId(record.id, ownerId)
+		throw new Error(`Watcher ${record.id} was shut down during startup.`)
 	}
 
 	heartbeat = startRegistryHeartbeat(
@@ -307,6 +324,12 @@ export const createWatcherHandle = async (options: StartWatcherOptions, watcherI
 			console.error(`[ArgusWatcher] Registry entry ${record.id} is now held by another process (${describeHolder(holder)}); heartbeat stopped.`)
 		},
 	)
+
+	lifecycle = startLifecycleGuard(options.lifecycle, (reason) => {
+		// Stderr: stdout may be a native-messaging channel, and a detached start keeps stderr in its launcher log.
+		console.error(`[ArgusWatcher] ${watcherId} stopping itself: ${reason}`)
+		void shutdown.close()
+	})
 
 	return {
 		watcher: record,

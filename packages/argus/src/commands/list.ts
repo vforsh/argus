@@ -5,6 +5,7 @@ import { formatCompactWatcherLine, formatWatcherLine } from '../output/format.js
 import { createOutput, type Output } from '../output/io.js'
 import { fetchWatcherJson, formatWatcherTransportError } from '../watchers/requestWatcher.js'
 import { discoverChromeInstances, formatChromeInstanceLine } from './chrome.js'
+import { matchesLabels, parseLabels } from '../watchers/labels.js'
 import {
 	detectHostVersionSkew,
 	formatHostVersionSkew,
@@ -18,6 +19,8 @@ import {
 export type ListOptions = {
 	json?: boolean
 	byCwd?: string
+	/** `key=value` filters; a watcher must carry all of them. */
+	label?: string[]
 	/** Suppress version-skew row markers and the summary line (also `ARGUS_NO_VERSION_WARNINGS=1`). */
 	quiet?: boolean
 	/** The full table: host:port, match rules, cwd, target URLs, Chrome instances, version skew. */
@@ -29,8 +32,14 @@ type WatcherProbe = { watcher: WatcherRecord; status?: StatusResponse; warning?:
 /** Execute the list command. */
 export const runList = async (options: ListOptions): Promise<void> => {
 	const output = createOutput(options)
+	const labels = parseLabels(options.label)
+	if (!labels.ok) {
+		output.writeWarn(labels.error)
+		process.exitCode = 2
+		return
+	}
 
-	const [probes, chromeInstances] = await Promise.all([listWatchers(options), discoverChromeInstances()])
+	const [probes, chromeInstances] = await Promise.all([listWatchers(options, labels.labels), discoverChromeInstances()])
 	const skews = probes.flatMap((probe) => probe.skew ?? [])
 	const quiet = options.quiet === true || isTruthyEnv(process.env[NO_VERSION_WARNINGS_ENV])
 
@@ -126,7 +135,7 @@ const describeAllUnreachable = (probes: WatcherProbe[]): string | null => {
 
 const isTruthyEnv = (value: string | undefined): boolean => value != null && value !== '' && value !== '0' && value.toLowerCase() !== 'false'
 
-const listWatchers = async (options: ListOptions): Promise<WatcherProbe[]> => {
+const listWatchers = async (options: ListOptions, labelFilter: Record<string, string>): Promise<WatcherProbe[]> => {
 	// Lock-free on purpose: dead processes and expired records are already dropped from this read, and
 	// physically pruning (`pruneRegistry`) would make `list` wait on — and fail with — a stale registry lock
 	// or a read-only registry dir. Unreachable-but-alive watchers collapse into one stderr line instead.
@@ -138,6 +147,7 @@ const listWatchers = async (options: ListOptions): Promise<WatcherProbe[]> => {
 		const substring = options.byCwd
 		watchers = watchers.filter((watcher) => watcher.cwd && watcher.cwd.includes(substring))
 	}
+	watchers = watchers.filter((watcher) => matchesLabels(watcher, labelFilter))
 
 	if (watchers.length === 0) return []
 

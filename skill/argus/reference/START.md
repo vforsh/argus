@@ -33,6 +33,29 @@ Chrome flags: `--profile`, `--dev-tools`, `--headless`, `--user-agent`, `--no-mu
 
 `watcher stop <id> --json` closes the watcher **and the Chrome launched by `start`**, removing its temp profile. Direct `POST /shutdown`, Ctrl+C, and Chrome exit use the same cleanup. A standalone `watcher start` never closes the browser it attached to. Detached launcher diagnostics live in `$ARGUS_HOME/logs/start-*/launcher.log`.
 
+### Self-stopping watchers
+
+A detached watcher otherwise lives until someone stops it; an agent that is killed (SIGKILL, closed terminal, context reset) never runs its cleanup. `start` and `watcher start` can bound their own life, with the same cleanup as `watcher stop`:
+
+```bash
+argus start --id app --url localhost:3000 --headless --profile temp --detach --json \
+  --owner-pid $PPID --idle-exit 15m --ttl 2h --label session=<id>
+argus list --label session=<id> --json
+argus watcher stop --label session=<id>          # every match; no match is success
+argus watcher prune --label session=<id>
+```
+
+- `--owner-pid <pid>`: stop within ~2s after that process exits, even by SIGKILL. Pass a long-lived process you own (your agent process; `process.pid` in a harness).
+- `--idle-exit <duration>`: stop after no CLI request for that long. In-flight requests count as activity; `list`/`status` pings do not.
+- `--ttl <duration>`: hard upper bound from start.
+- `--label key=value` (repeatable): stored in the registry record (`list --json` shows `labels` and `lifecycle`); `list`, `watcher stop`, and `watcher prune` filter by it (all given labels must match).
+
+The reason (`owner_exited`, `idle`, `ttl`) is written to the watcher's stderr — the launcher log for `--detach`.
+
+### Leftover instances
+
+If `start` fails with `Chrome started but CDP is unavailable`, the failed Chrome is already closed; the error lists live watchers and orphaned Chromes (on `argus-chrome-*` temp profiles whose launcher died) with cleanup commands. Don't retry blindly. `argus doctor` shows the same. `argus chrome prune-orphans [--dry-run]` kills only orphaned Chromes on Argus temp profiles and removes those profiles.
+
 ## `argus chrome`
 
 ```bash
@@ -83,7 +106,8 @@ argus watcher ls --by-cwd my-project
 argus watcher stop app
 argus watcher stop app --json
 argus watcher stop --port 54321 --json            # registered watcher HTTP port, not CDP
-argus watcher prune --dry-run                                    # unreachable entries + watchers whose cwd was deleted (shut down)
+argus watcher stop --label session=abc            # every watcher with that label
+argus watcher prune --dry-run                                    # stale/unreachable entries + watchers whose cwd was deleted (shut down); writes nothing
 argus watcher show app / hide app                                # alias of `page show/hide`
 ```
 

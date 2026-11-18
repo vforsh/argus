@@ -96,6 +96,23 @@ export type WatcherRecord = {
 	 * (treated as legacy: they still overwrite blindly).
 	 */
 	ownerId?: string
+	/** Caller-chosen `key=value` tags (`start --label`), so a session can find and stop only its own watchers. */
+	labels?: Record<string, string>
+	/** Self-stop conditions this watcher enforces; absent when it runs until stopped. */
+	lifecycle?: WatcherLifecycle
+}
+
+/** Why a watcher stopped itself. */
+export type WatcherAutoStopReason = 'owner_exited' | 'idle' | 'ttl'
+
+/** Self-stop conditions a watcher enforces on its own process. */
+export type WatcherLifecycle = {
+	/** Stop once this process is gone. */
+	ownerPid?: number
+	/** Stop after this many milliseconds without a client request (`/status` pings excluded). */
+	idleExitMs?: number
+	/** Hard stop time as milliseconds since Unix epoch. */
+	expiresAt?: number
 }
 
 /**

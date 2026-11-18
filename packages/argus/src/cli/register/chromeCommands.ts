@@ -12,6 +12,7 @@ const runChromeVersion = lazyAction(() => import('../../commands/chrome.js').the
 const runChromeStatus = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeStatus))
 const runChromeList = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeList))
 const runChromeStop = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromeStop))
+const runChromePruneOrphans = lazyAction(() => import('../../commands/chrome.js').then((mod) => mod.runChromePruneOrphans))
 
 const cdpTargetOptions = [
 	{ flags: '--cdp <host:port>', description: 'CDP host:port' },
@@ -113,6 +114,15 @@ export const chromeCommands: readonly ArgusCommandDefinition[] = [
 				examples: ['argus chrome stop', 'argus chrome stop --id app', 'argus chrome stop --json'],
 				action: async (options) => {
 					await runChromeStop(options)
+				},
+			},
+			{
+				name: 'prune-orphans',
+				description: 'Kill Chrome processes left on Argus temp profiles (argus-chrome-*) whose launcher is gone, and remove the profiles',
+				options: [{ flags: '--dry-run', description: 'List orphans without killing them' }, jsonOption],
+				examples: ['argus chrome prune-orphans', 'argus chrome prune-orphans --dry-run', 'argus chrome prune-orphans --json'],
+				action: async (options) => {
+					await runChromePruneOrphans(options)
 				},
 			},
 		],

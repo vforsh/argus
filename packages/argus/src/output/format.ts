@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import type { LogEvent, WatcherRecord } from '@vforsh/argus-core'
 import { formatLogLevelTag } from '@vforsh/argus-core'
+import { formatLabels } from '../watchers/labels.js'
 
 type WatcherLineStatus = { attached: boolean; target?: { title: string | null; url: string | null } | null }
 
@@ -15,12 +16,13 @@ export const formatWatcherLine = (watcher: WatcherRecord, status?: WatcherLineSt
 	const base = `${watcher.id} ${watcher.host}:${watcher.port}`
 	const match = formatMatch(watcher)
 	const cwd = formatCwd(watcher)
+	const labels = formatLabels(watcher.labels)
 	const state = formatWatcherState(watcher, status)
 	const target = typeof status === 'object' ? status.target : null
 	const targetLabel = target?.title || target?.url ? `${target?.title ?? ''}${target?.title && target?.url ? ' • ' : ''}${target?.url ?? ''}` : ''
 	const targetSuffix = targetLabel ? ` (${targetLabel})` : ''
 
-	return [base, match, cwd, state ? `[${state}]` : ''].filter(Boolean).join(' ') + targetSuffix
+	return [base, match, cwd, labels ? `labels=${labels}` : '', state ? `[${state}]` : ''].filter(Boolean).join(' ') + targetSuffix
 }
 
 /**
@@ -47,7 +49,7 @@ const shortenUrl = (url: string): string => {
 const truncateLabel = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 
 /** `45s`, `12m`, `3h`, `2d`. */
-const formatAge = (ms: number): string => {
+export const formatAge = (ms: number): string => {
 	const seconds = Math.max(0, Math.round(ms / 1000))
 	if (seconds < 60) return `${seconds}s`
 	if (seconds < 3600) return `${Math.round(seconds / 60)}m`

@@ -1,18 +1,18 @@
 import { createAuthStateOriginUrl, type AuthStateSnapshot } from '@vforsh/argus-core'
-import type { PageConsoleLogging } from '@vforsh/argus-core'
+import type { PageConsoleLogging, WatcherLifecycle } from '@vforsh/argus-core'
 import type { WatcherHandle } from '@vforsh/argus-watcher'
 import { requestAuthStateSnapshot } from './auth.js'
 import { launchChrome, type LaunchChromeResult } from './chromeStart.js'
 import { createOutput } from '../output/io.js'
 import { formatError } from '../cli/parse.js'
 import type { WatcherInjectConfig } from '../config/types.js'
-import { buildWatcherMatch, normalizeHttpUrl, registerTerminationHandlers } from './startShared.js'
+import { buildWatcherMatch, normalizeHttpUrl, registerTerminationHandlers, resolveWatcherLifecycle, type WatcherLifecycleFlags } from './startShared.js'
 import { startManagedWatcher } from './watcherSession.js'
 import { resolveStartViewport, type StartViewportOptions } from './startViewport.js'
 import { waitForStartReady } from './startReadiness.js'
 import { announceDetachedStart, startDetached } from './startDetached.js'
 
-export type StartOptions = StartViewportOptions & {
+export type StartOptions = StartViewportOptions & WatcherLifecycleFlags & {
 	id: string
 	url?: string
 	authFrom?: string
@@ -45,6 +45,9 @@ export type StartResult = {
 	/** Isolated profile directory, removed when this session closes. */
 	userDataDir: string | null
 	userAgentOverride?: true
+	labels?: Record<string, string>
+	/** Self-stop conditions (`--owner-pid`, `--idle-exit`, `--ttl`). */
+	lifecycle?: WatcherLifecycle
 	/** Persistent stderr log for a detached launcher. */
 	launcherLog?: string
 }
@@ -76,6 +79,9 @@ const runStartSession = async (options: StartOptions): Promise<void> => {
 		process.exitCode = 2
 		return
 	}
+
+	const lifecycle = resolveWatcherLifecycle(options, output)
+	if (!lifecycle) return
 
 	if (options.detach && !process.send) {
 		try {
@@ -184,6 +190,7 @@ const runStartSession = async (options: StartOptions): Promise<void> => {
 		pageConsoleLogging: options.pageConsoleLogging,
 		inject: options.inject,
 		emulation: viewport ? { viewport } : undefined,
+		...lifecycle,
 		onClose: async () => {
 			await chrome.closeGracefully()
 			if (process.stdin.isTTY) process.stdin.setRawMode(false)
@@ -220,6 +227,8 @@ const runStartSession = async (options: StartOptions): Promise<void> => {
 		watcherPort: handle.watcher.port,
 		watcherPid: handle.watcher.pid,
 		userDataDir: chrome.userDataDir,
+		labels: handle.watcher.labels,
+		lifecycle: handle.watcher.lifecycle,
 	}
 	if (options.userAgent !== undefined) {
 		result.userAgentOverride = true
@@ -268,6 +277,12 @@ const writeStartResult = (result: StartResult, options: StartOptions): void => {
 	}
 	output.writeHuman(`Watcher attached (id=${result.id}, port=${result.watcherPort})`)
 	output.writeHuman(`Chrome pid=${result.chromePid}, cdp=${result.cdpHost}:${result.cdpPort}, watcher pid=${result.watcherPid}`)
+	const selfStop = [
+		result.lifecycle?.ownerPid ? `when pid ${result.lifecycle.ownerPid} exits` : '',
+		result.lifecycle?.idleExitMs ? `after ${options.idleExit} idle` : '',
+		result.lifecycle?.expiresAt ? `at ${new Date(result.lifecycle.expiresAt).toISOString()}` : '',
+	].filter(Boolean)
+	if (selfStop.length > 0) output.writeHuman(`Stops itself ${selfStop.join(', ')}.`)
 	if (options.detach) {
 		output.writeHuman(`Running in background. Stop with: argus watcher stop ${result.id}`)
 		output.writeHuman(`Launcher log: ${result.launcherLog}`)

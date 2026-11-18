@@ -1,6 +1,6 @@
 import { describeProtocolMismatch } from '@vforsh/argus-core'
 import { accessSync, constants } from 'node:fs'
-import type { RegistryV1, StatusResponse } from '@vforsh/argus-core'
+import type { RegistryV1, StatusResponse, WatcherLifecycle } from '@vforsh/argus-core'
 import type { ChromeVersionResponse } from './chrome.js'
 import { getArgusHomeDir, getRegistryPath } from '@vforsh/argus-core'
 import { fetchJson } from '../httpClient.js'
@@ -8,6 +8,9 @@ import { loadRegistry } from '../registry.js'
 import { createOutput } from '../output/io.js'
 import { resolveChromeBin } from '../utils/chromeBin.js'
 import { formatError } from '../cli/parse.js'
+import { findOrphanChromes } from './chrome/leftovers.js'
+import { formatAge } from '../output/format.js'
+import { formatLabels } from '../watchers/labels.js'
 
 export type DoctorOptions = {
 	json?: boolean
@@ -38,7 +41,7 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 
 	const cdpHost = '127.0.0.1'
 	const cdpPort = 9222
-	const cdpResult = await checkCdp(cdpHost, cdpPort)
+	const [cdpResult, orphanChromes] = await Promise.all([checkCdp(cdpHost, cdpPort), findOrphanChromes()])
 	const cdpStatus: DoctorStatus = cdpResult.ok ? 'ok' : 'warn'
 	const cdpMessage = cdpResult.ok
 		? `cdp reachable: ${cdpHost}:${cdpPort} (${cdpResult.version})`
@@ -63,6 +66,10 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 		target?: { title: string | null; url: string | null } | null
 		/** Protocol version the watcher reports, or null when it is too old to report one. */
 		protocolVersion?: number | null
+		startedAt: number
+		cwd?: string
+		labels?: Record<string, string>
+		lifecycle?: WatcherLifecycle
 	}>
 
 	// Probed concurrently; the report stays in registry order because the results do.
@@ -70,11 +77,18 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 
 	for (const [index, watcher] of watcherEntries.entries()) {
 		const statusResult = statuses[index]
+		const identity = {
+			id: watcher.id,
+			host: watcher.host,
+			port: watcher.port,
+			startedAt: watcher.startedAt,
+			cwd: watcher.cwd,
+			labels: watcher.labels,
+			lifecycle: watcher.lifecycle,
+		}
 		if (!statusResult.ok) {
 			watcherReports.push({
-				id: watcher.id,
-				host: watcher.host,
-				port: watcher.port,
+				...identity,
 				status: 'warn',
 				message: `unreachable (${statusResult.error})`,
 			})
@@ -83,9 +97,7 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 
 		const mismatch = describeProtocolMismatch(statusResult.status.protocolVersion, statusResult.status.watcherVersion)
 		watcherReports.push({
-			id: watcher.id,
-			host: watcher.host,
-			port: watcher.port,
+			...identity,
 			status: mismatch ? 'warn' : 'ok',
 			message: mismatch ?? (statusResult.status.attached ? 'attached' : 'detached'),
 			attached: statusResult.status.attached,
@@ -110,6 +122,7 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 				? { host: cdpHost, port: cdpPort, reachable: true, version: cdpResult.version }
 				: { host: cdpHost, port: cdpPort, reachable: false, error: cdpResult.error },
 			watchers: watcherReports,
+			orphanChromes,
 		})
 		return
 	}
@@ -123,6 +136,12 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 	output.writeHuman(`${formatStatus(websocketStatus)} ${websocketMessage}`)
 	output.writeHuman(`${formatStatus(chromeStatus)} ${chromeMessage}`)
 	output.writeHuman(`${formatStatus(cdpStatus)} ${cdpMessage}`)
+	if (orphanChromes.length > 0) {
+		output.writeHuman(`WARN ${orphanChromes.length} orphaned Chrome process(es) on Argus temp profiles (no launcher alive); clean up: argus chrome prune-orphans`)
+		for (const orphan of orphanChromes) output.writeHuman(`  pid ${orphan.pid} started ${orphan.startedAt} ${orphan.userDataDir}`)
+	} else {
+		output.writeHuman('OK no orphaned Argus Chrome processes')
+	}
 
 	if (watcherReports.length === 0) {
 		output.writeHuman('WARN no registered watchers')
@@ -134,7 +153,16 @@ export const runDoctor = async (options: DoctorOptions): Promise<void> => {
 			report.target?.title || report.target?.url
 				? ` (${report.target?.title ?? ''}${report.target?.title && report.target?.url ? ' • ' : ''}${report.target?.url ?? ''})`
 				: ''
-		output.writeHuman(`${formatStatus(report.status)} watcher ${report.id} ${report.host}:${report.port} ${report.message}${targetLabel}`.trim())
+		const labels = formatLabels(report.labels)
+		const context = [
+			`age ${formatAge(Date.now() - report.startedAt)}`,
+			report.cwd ? `cwd ${report.cwd}` : '',
+			labels ? `labels ${labels}` : '',
+			report.lifecycle?.ownerPid ? `owner-pid ${report.lifecycle.ownerPid}` : '',
+		]
+			.filter(Boolean)
+			.join(' ')
+		output.writeHuman(`${formatStatus(report.status)} watcher ${report.id} ${report.host}:${report.port} ${report.message}${targetLabel} ${context}`.trim())
 	}
 }
 

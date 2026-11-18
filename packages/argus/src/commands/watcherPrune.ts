@@ -1,12 +1,23 @@
 import { existsSync } from 'node:fs'
-import type { ShutdownResponse, StatusResponse, WatcherRecord } from '@vforsh/argus-core'
-import { pruneRegistry, removeWatchersAndPersist } from '../registry.js'
+import {
+	pruneStaleWatchers,
+	readRegistry,
+	removeWatcherEntry,
+	sameWatcherEndpoint,
+	updateRegistry,
+	type ShutdownResponse,
+	type StatusResponse,
+	type WatcherRecord,
+} from '@vforsh/argus-core'
 import { fetchJson } from '../httpClient.js'
 import { createOutput } from '../output/io.js'
+import { matchesLabels, parseLabels } from '../watchers/labels.js'
 
 /** Options for the watcher prune command. */
 export type WatcherPruneOptions = {
 	byCwd?: string
+	/** `key=value` filters; only watchers carrying all of them are checked or removed. */
+	label?: string[]
 	dryRun?: boolean
 	json?: boolean
 }
@@ -31,31 +42,38 @@ export const runWatcherPrune = async (options: WatcherPruneOptions): Promise<voi
 		return
 	}
 
-	const registry = await pruneRegistry()
-
-	let watchers = Object.values(registry.watchers)
-
-	// Filter by cwd if specified
-	if (options.byCwd) {
-		const substring = options.byCwd.trim()
-		watchers = watchers.filter((watcher) => watcher.cwd && watcher.cwd.includes(substring))
-	}
-
-	// Guard: no watchers after filtering
-	if (watchers.length === 0) {
-		if (options.json) {
-			output.writeJson({ keptIds: [], removedIds: [], dryRun: options.dryRun === true } satisfies PruneResult)
-		} else {
-			output.writeHuman('No watchers to check.')
-		}
+	const labels = parseLabels(options.label)
+	if (!labels.ok) {
+		output.writeWarn(labels.error)
+		process.exitCode = 2
 		return
 	}
 
+	// One lock-free snapshot. Nothing is written until the final removal, which touches only the
+	// records reported here — so `--dry-run` leaves the file byte-identical and filters bound every change.
+	const { registry } = await readRegistry()
+	const live = pruneStaleWatchers(registry).registry.watchers
+	const substring = options.byCwd?.trim()
+	const watchers = Object.values(registry.watchers).filter(
+		(watcher) => (!substring || watcher.cwd?.includes(substring)) && matchesLabels(watcher, labels.labels),
+	)
+
 	const keptIds: string[] = []
-	const removedIds: string[] = []
+	let removedIds: string[] = []
+
+	// Dead pid or expired heartbeat: nothing to probe, the record is just left over.
+	const staleIds = new Set<string>()
+	for (const watcher of watchers) {
+		if (live[watcher.id]) continue
+		staleIds.add(watcher.id)
+		removedIds.push(watcher.id)
+		output.writeWarn(`${watcher.id}: stale (process gone or heartbeat expired)`)
+	}
 
 	// Independent reachability probes, so latency is one timeout rather than N.
-	const reachability = await Promise.all(watchers.map(async (watcher) => ({ watcher, reachable: await checkWatcherReachable(watcher) })))
+	const reachability = await Promise.all(
+		watchers.filter((watcher) => live[watcher.id]).map(async (watcher) => ({ watcher, reachable: await checkWatcherReachable(watcher) })),
+	)
 
 	// A watcher still running from a deleted worktree is reachable but serves a checkout nobody can
 	// build or open anymore; it only clutters `list` and steals `@` selections.
@@ -74,34 +92,51 @@ export const runWatcherPrune = async (options: WatcherPruneOptions): Promise<voi
 	}
 	const orphaned = orphanedIds.length > 0 ? { orphanedIds } : {}
 
-	// Guard: nothing to remove
-	if (removedIds.length === 0) {
-		if (options.json) {
-			output.writeJson({ keptIds, removedIds, dryRun: options.dryRun === true } satisfies PruneResult)
-		} else {
-			output.writeHuman('All watchers are reachable and their directories exist. Nothing to prune.')
-		}
-		return
+	const unfiltered = !substring && Object.keys(labels.labels).length === 0
+	if (!options.dryRun && (removedIds.length > 0 || unfiltered)) {
+		await Promise.all(orphanedIds.map((id) => requestShutdown(registry.watchers[id])))
+		const removed = await persistRemovals(removedIds, staleIds, registry.watchers, unfiltered)
+		// A stale run whose heartbeat recovered during the probes keeps its record and is reported as kept.
+		keptIds.push(...removedIds.filter((id) => !removed.includes(id)))
+		removedIds = removed
 	}
-
-	// Persist changes unless dry-run
-	if (options.dryRun) {
-		if (options.json) {
-			output.writeJson({ keptIds, removedIds, ...orphaned, dryRun: true } satisfies PruneResult)
-		} else {
-			output.writeHuman(`Would remove ${removedIds.length} watcher(s): ${removedIds.join(', ')}`)
-		}
-		return
-	}
-
-	await Promise.all(orphanedIds.map((id) => requestShutdown(registry.watchers[id])))
-	await removeWatchersAndPersist(removedIds, undefined, registry.watchers)
 
 	if (options.json) {
-		output.writeJson({ keptIds, removedIds, ...orphaned, dryRun: false } satisfies PruneResult)
+		output.writeJson({ keptIds, removedIds, ...orphaned, dryRun: options.dryRun === true } satisfies PruneResult)
+	} else if (watchers.length === 0) {
+		output.writeHuman('No watchers to check.')
+	} else if (removedIds.length === 0) {
+		output.writeHuman('All watchers are live, reachable, and their directories exist. Nothing to prune.')
 	} else {
-		output.writeHuman(`Removed ${removedIds.length} watcher(s): ${removedIds.join(', ')}`)
+		output.writeHuman(`${options.dryRun ? 'Would remove' : 'Removed'} ${removedIds.length} watcher(s): ${removedIds.join(', ')}`)
 	}
+}
+
+/**
+ * Remove the reported records in one locked update, re-checking under the lock: a replaced run is kept,
+ * and so is a stale one whose heartbeat came back while other records were probed.
+ * An unfiltered prune also drops expired id reservations.
+ * @returns Ids actually removed.
+ */
+const persistRemovals = async (
+	ids: string[],
+	staleIds: Set<string>,
+	observed: Record<string, WatcherRecord>,
+	unfiltered: boolean,
+): Promise<string[]> => {
+	let removed: string[] = []
+	await updateRegistry((current) => {
+		const now = Date.now()
+		const stillStale = new Set(pruneStaleWatchers(current, now).removedIds)
+		removed = ids.filter((id) => sameWatcherEndpoint(current.watchers[id], observed[id]) && (!staleIds.has(id) || stillStale.has(id)))
+		let next = removed.reduce((registry, id) => removeWatcherEntry(registry, id, now), current)
+		if (unfiltered) {
+			const reservations = pruneStaleWatchers({ ...next, watchers: {} }, now).registry.reservations
+			if (reservations !== next.reservations) next = { ...next, updatedAt: now, reservations }
+		}
+		return next
+	})
+	return removed
 }
 
 /** Check if a watcher is reachable via /status endpoint. */

@@ -1,4 +1,5 @@
 import type { ArgusCommandOption } from '../defineCommand.js'
+import { collectValues } from '../validation.js'
 
 /**
  * The `--json` flag, declared once.
@@ -9,6 +10,22 @@ import type { ArgusCommandOption } from '../defineCommand.js'
  * that the plain case has exactly one spelling.
  */
 export const jsonOption: ArgusCommandOption = { flags: '--json', description: 'Output JSON for automation' }
+
+/** `--label key=value` as a filter on `list`, `watcher stop` and `watcher prune`. */
+export const labelFilterOption: ArgusCommandOption = {
+	flags: '--label <key=value>',
+	description: 'Only watchers carrying this label (repeatable; all must match)',
+	parser: collectValues,
+	defaultValue: [],
+}
+
+/** Self-stop and tagging flags shared by `start` and `watcher start`. */
+export const watcherLifecycleOptions: readonly ArgusCommandOption[] = [
+	{ flags: '--owner-pid <pid>', description: 'Stop (and close a Chrome this command launched) once this process exits, even after SIGKILL' },
+	{ flags: '--idle-exit <duration>', description: 'Stop after this long with no CLI request against the watcher (e.g. 15m); list/status pings do not count' },
+	{ flags: '--ttl <duration>', description: 'Stop this long after start, regardless of activity (e.g. 2h)' },
+	{ flags: '--label <key=value>', description: 'Tag the watcher (repeatable); filter with list/stop/prune --label', parser: collectValues, defaultValue: [] },
+]
 
 /**
  * Post-action flags for page actions built with `defineActionCommand`.

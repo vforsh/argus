@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises'
-import type { WatcherMatch } from '@vforsh/argus-core'
+import { isProcessAlive, parseDurationMs, type WatcherMatch } from '@vforsh/argus-core'
+import type { WatcherLifecycleOptions } from '@vforsh/argus-watcher'
+import { parseLabels } from '../watchers/labels.js'
 import type { WatcherInjectConfig } from '../config/types.js'
 import { resolvePath } from '../utils/paths.js'
 import { formatError } from '../cli/parse.js'
@@ -47,6 +49,54 @@ export const resolveInjectScript = async (
 	}
 
 	return { script, exposeArgus: inject.exposeArgus }
+}
+
+/** CLI flags that bound a watcher's life and tag it (`start` and `watcher start`). */
+export type WatcherLifecycleFlags = {
+	ownerPid?: string
+	idleExit?: string
+	ttl?: string
+	label?: string[]
+}
+
+/**
+ * Validate lifecycle and label flags before anything is launched.
+ * @returns What to pass to `startWatcher`, or null after writing a usage error (exit code 2).
+ */
+export const resolveWatcherLifecycle = (
+	flags: WatcherLifecycleFlags,
+	output: WarningOutput,
+): { lifecycle?: WatcherLifecycleOptions; labels?: Record<string, string> } | null => {
+	const fail = (message: string) => {
+		output.writeWarn(message)
+		process.exitCode = 2
+		return null
+	}
+
+	const parsedLabels = parseLabels(flags.label)
+	if (!parsedLabels.ok) return fail(parsedLabels.error)
+
+	const lifecycle: WatcherLifecycleOptions = {}
+	if (flags.ownerPid !== undefined) {
+		const pid = Number(flags.ownerPid)
+		if (!Number.isInteger(pid) || pid <= 0) return fail(`Invalid --owner-pid: ${flags.ownerPid}. Expected a positive integer.`)
+		if (!isProcessAlive(pid)) return fail(`--owner-pid ${pid} is not a running process.`)
+		lifecycle.ownerPid = pid
+	}
+	for (const [flag, key, value] of [
+		['--idle-exit', 'idleExitMs', flags.idleExit],
+		['--ttl', 'ttlMs', flags.ttl],
+	] as const) {
+		if (value === undefined) continue
+		const ms = parseDurationMs(value)
+		if (ms === null || ms <= 0 || !Number.isFinite(ms)) return fail(`Invalid ${flag}: ${value}. Expected a positive duration such as 30s, 10m, or 2h.`)
+		lifecycle[key] = ms
+	}
+
+	return {
+		lifecycle: Object.keys(lifecycle).length > 0 ? lifecycle : undefined,
+		labels: Object.keys(parsedLabels.labels).length > 0 ? parsedLabels.labels : undefined,
+	}
 }
 
 export const normalizeHttpUrl = (value?: string | null): string | null => {
