@@ -2,7 +2,7 @@
 name: argus
 description: Guides use of the Argus CLI to debug and inspect web apps via Chrome CDP or the Argus Chrome extension, including authenticated browser sessions, iframe targets, logs, eval, DOM, network, and screenshots.
 metadata:
-  cli-version: 0.5.40
+  cli-version: 0.5.41
 ---
 
 # Argus CLI
