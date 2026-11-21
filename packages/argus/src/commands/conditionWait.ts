@@ -3,7 +3,7 @@ import { isTruthyEvalResult } from '@vforsh/argus-core'
 import { evalOnce } from '../eval/evalClient.js'
 import { getRequestContext, withRequestContext } from '../session/requestContext.js'
 import type { Output } from '../output/io.js'
-import { describeExceptionDetails } from './evalEmit.js'
+import { describeExceptionDetails } from './evalResultOutput.js'
 import { formatEvalValue } from './evalResultOutput.js'
 import { parseDurationFlagMs } from './evalShared.js'
 

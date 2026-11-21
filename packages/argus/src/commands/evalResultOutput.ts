@@ -1,5 +1,4 @@
 import type { EvalResponse } from '@vforsh/argus-core'
-import { previewStringify } from '@vforsh/argus-core'
 import { appendFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Output } from '../output/io.js'
@@ -96,11 +95,60 @@ const formatResultPayload = (response: EvalResponse, json: boolean): string => {
 	}
 
 	if (response.exception) {
-		const details = response.exception.details ? `\n${previewStringify(response.exception.details)}` : ''
-		return `Exception: ${response.exception.text}${details}\n`
+		return `${formatException(response)}\n`
 	}
 
 	return `${formatEvalValue(response.result)}\n`
+}
+
+/** Stack frames kept under the message; the rest are counted, not printed. */
+const STACK_FRAMES_SHOWN = 2
+
+/**
+ * Human text for an eval that threw: an Error's own message plus its top stack frames, or the thrown value.
+ *
+ * This used to print `Exception: Uncaught` followed by CDP's raw RemoteObject (`className`, `objectId`, …):
+ * 97 agent outputs in one week carried that dump. Errors print their description; any other thrown value
+ * prints as `Uncaught <value>`, read from the RemoteObject's `value`/`unserializableValue`, because a
+ * primitive's `description` (`0`) would drop its type and `undefined` has none.
+ */
+export const formatException = (response: EvalResponse): string => {
+	const exception = response.exception
+	if (!exception) return ''
+	const thrown = (exception.details && typeof exception.details === 'object' ? exception.details : {}) as ThrownObject
+	if (thrown.subtype === 'error' && typeof thrown.description === 'string') return trimStackFrames(thrown.description)
+	const value = describeThrownValue(thrown)
+	return value === undefined ? `Exception: ${exception.text}` : `${exception.text} ${value}`
+}
+
+/** The parts of a CDP `Runtime.RemoteObject` the formatter reads. */
+type ThrownObject = { type?: string; subtype?: string; value?: unknown; unserializableValue?: string; description?: string }
+
+const describeThrownValue = (thrown: ThrownObject): string | undefined => {
+	if (thrown.type === 'undefined') return 'undefined'
+	if (thrown.unserializableValue) return thrown.unserializableValue
+	if ('value' in thrown) return JSON.stringify(thrown.value)
+	return thrown.description || undefined
+}
+
+/** CDP puts the thrown value's `description` (message + stack) on `details`; keep only that. */
+export const describeExceptionDetails = (details: unknown): string | undefined => {
+	if (!details || typeof details !== 'object') return undefined
+	const description = (details as { description?: unknown }).description
+	return typeof description === 'string' && description !== '' ? description : undefined
+}
+
+/**
+ * Keep the message and the first {@link STACK_FRAMES_SHOWN} frames of the stack: the trailing run of
+ * `    at …` lines. Only the suffix counts, so a message that itself contains an indented "at" line stays whole.
+ */
+const trimStackFrames = (description: string): string => {
+	const lines = description.split('\n')
+	let stackStart = lines.length
+	while (stackStart > 0 && /^\s+at /.test(lines[stackStart - 1]!)) stackStart -= 1
+	const kept = lines.slice(0, stackStart + STACK_FRAMES_SHOWN)
+	const hidden = lines.length - kept.length
+	return hidden > 0 ? `${kept.join('\n')}\n    … ${hidden} more frame${hidden === 1 ? '' : 's'}` : kept.join('\n')
 }
 
 /** Format a serialized eval value without truncating nested objects, arrays, or strings. */

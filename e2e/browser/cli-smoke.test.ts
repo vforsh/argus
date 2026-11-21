@@ -203,7 +203,8 @@ test('watcher + CLI e2e', async () => {
 		const { stdout: failOut, stderr: failErr, code: failCode } = await cli.exec(['eval', watcherId, 'throw new Error("e2e-fail")'])
 		expect(failCode).toBe(1)
 		expect(failOut.trim()).toBe('')
-		expect(failErr).toMatch(/Exception:/)
+		expect(failErr).toMatch(/^Error: e2e-fail\n\s+at /)
+		expect(failErr).not.toContain('objectId')
 
 		const {
 			stdout: noFailOut,
@@ -211,7 +212,7 @@ test('watcher + CLI e2e', async () => {
 			code: noFailCode,
 		} = await cli.exec(['eval', watcherId, 'throw new Error("e2e-no-fail")', '--no-fail-on-exception'])
 		expect(noFailCode).toBe(0)
-		expect(noFailOut).toMatch(/Exception:/)
+		expect(noFailOut).toMatch(/^Error: e2e-no-fail\n/)
 		expect(noFailErr.trim()).toBe('')
 
 		const retryExpr =

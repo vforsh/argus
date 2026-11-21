@@ -1,9 +1,9 @@
 import type { ArgusErrorCode, ErrorResponse, EvalResponse } from '@vforsh/argus-core'
 import type { EvalFailureKind } from '../eval/evalClient.js'
-import { isArgusErrorCode, previewStringify } from '@vforsh/argus-core'
+import { isArgusErrorCode } from '@vforsh/argus-core'
 import type { Output } from '../output/io.js'
 import { projectFields, truncateJsonValue, truncateText, type OutputShaping } from '../output/projection.js'
-import { createEvalResultFileSink, formatEvalValue, type EvalResultFileOptions } from './evalResultOutput.js'
+import { createEvalResultFileSink, describeExceptionDetails, formatEvalValue, formatException, type EvalResultFileOptions } from './evalResultOutput.js'
 import { writeHintOnce } from './evalHints.js'
 
 /**
@@ -11,17 +11,6 @@ import { writeHintOnce } from './evalHints.js'
  *
  * Split out of `evalShared.ts`, which had grown to hold five unrelated concerns.
  */
-
-/** Format an exception response into a human-readable string. */
-export const formatException = (response: EvalResponse): string => {
-	if (!response.exception) {
-		return ''
-	}
-	if (response.exception.details) {
-		return `Exception: ${response.exception.text}\n${previewStringify(response.exception.details)}`
-	}
-	return `Exception: ${response.exception.text}`
-}
 
 // ---------------------------------------------------------------------------
 // Output helpers
@@ -203,11 +192,4 @@ const formatEvalErrorJson = (error: EvalAttemptFailure | { kind: 'until'; error:
 		return { ok: false, error: { message: error.error, code: error.code } }
 	}
 	return { ok: false, error: { message: error.error } }
-}
-
-/** CDP puts the thrown value's `description` (message + stack) on `details`; keep only that. */
-export const describeExceptionDetails = (details: unknown): string | undefined => {
-	if (!details || typeof details !== 'object') return undefined
-	const description = (details as { description?: unknown }).description
-	return typeof description === 'string' && description !== '' ? description : undefined
 }
