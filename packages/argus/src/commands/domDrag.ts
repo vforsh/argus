@@ -10,6 +10,8 @@ export type DomDragOptions = {
 	selector?: string
 	ref?: string
 	pos?: string
+	/** Hidden spelling of `pos`. */
+	from?: string
 	to?: string
 	by?: string
 	button?: string
@@ -48,7 +50,13 @@ export const runDomDrag = defineActionCommand<DomDragOptions, DomDragResponse, D
 const hasElementTarget = (options: DomDragOptions): boolean => Boolean(options.selector?.trim() || options.ref?.trim())
 
 /** Validate options and assemble the `/dom/drag` request plan. */
-const buildDragPlan = (options: DomDragOptions, output: Output): WatcherRequestPlan<DragMeta> | null => {
+const buildDragPlan = (rawOptions: DomDragOptions, output: Output): WatcherRequestPlan<DragMeta> | null => {
+	if (rawOptions.from != null && rawOptions.pos != null) {
+		output.writeWarn('--from is another spelling of --pos; pass only one')
+		process.exitCode = 2
+		return null
+	}
+	const options = rawOptions.from != null ? { ...rawOptions, pos: rawOptions.from } : rawOptions
 	const hasTarget = hasElementTarget(options)
 	const target = hasTarget ? requireElementTarget({ selector: options.selector, ref: options.ref }, output) : null
 	if (hasTarget && !target) return null

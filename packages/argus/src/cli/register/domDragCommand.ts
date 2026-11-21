@@ -15,6 +15,7 @@ export const domDragCommandDefinition: ArgusCommandDefinition = {
 		{ flags: '--testid <id>', description: 'Shorthand for --selector "[data-testid=\'<id>\']"' },
 		{ flags: '--ref <elementRef>', description: 'Stable element ref from snapshot/locate output' },
 		{ flags: '--pos <x,y>', description: 'Viewport start coordinates or offset from element top-left' },
+		{ flags: '--from <x,y>', description: 'Same as --pos (agents guess it beside --to)', hidden: true },
 		{ flags: '--to <x,y>', description: 'Absolute viewport destination' },
 		{ flags: '--by <dx,dy>', description: 'Destination delta from the resolved start point' },
 		{ flags: '--button <type>', description: 'Mouse button: left, middle, right (default: left)' },

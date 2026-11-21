@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import type { Command } from 'commander'
+import type { Command, Option } from 'commander'
 import type { SessionResponse } from '@vforsh/argus-core'
 import { createWatcherResolver, formatError } from '@vforsh/argus-core'
 import { usageError } from '../cli/validation.js'
@@ -82,10 +82,11 @@ export const runScript = async (id: string | undefined, options: RunScriptOption
 				await plugins.prepare(step.tokens)
 				const split = splitCommand(program, step.tokens)
 				step.cmd = split.cmd
+				const argv = splitRawExpression(split, step.line, watcherId) ?? split.argv
 				const response = await dispatchSessionRequest({
 					program,
 					capture,
-					request: { id: step.step, cmd: split.cmd, argv: split.argv },
+					request: { id: step.step, cmd: split.cmd, argv },
 					watcherId,
 					defaultTimeoutMs: STEP_TIMEOUT_MS,
 					ownsProcessExitCode: true,
@@ -190,52 +191,71 @@ export const parseScript = (source: string): { steps: ScriptStep[] } | { error: 
 	return { steps }
 }
 
+/** A shell-style word plus where it sits in the line. `bare` is false when its first character was quoted or escaped. */
+type Token = { value: string; start: number; end: number; bare: boolean }
+
 const tokenize = (line: string): { value: string[] } | { error: string } => {
-	const tokens: string[] = []
-	let current = ''
-	let started = false
+	const tokens = tokenizeSpans(line)
+	return 'error' in tokens ? tokens : { value: tokens.value.map((token) => token.value) }
+}
+
+const tokenizeSpans = (line: string): { value: Token[] } | { error: string } => {
+	const tokens: Token[] = []
+	let current: Token | null = null
 	let quote: '"' | "'" | null = null
+	const begin = (index: number, bare: boolean): Token => (current ??= { value: '', start: index, end: index, bare })
 
 	for (let index = 0; index < line.length; index += 1) {
 		const char = line[index]
 		if (quote === "'") {
 			if (char === "'") quote = null
-			else current += char
+			else current!.value += char
+			current!.end = index + 1
 			continue
 		}
 		if (quote === '"') {
 			if (char === '"') quote = null
-			else if (char === '\\' && index + 1 < line.length && '"\\$`'.includes(line[index + 1])) current += line[++index]
-			else current += char
+			else if (char === '\\' && index + 1 < line.length && '"\\$`'.includes(line[index + 1])) current!.value += line[++index]
+			else current!.value += char
+			current!.end = index + 1
 			continue
 		}
 		if (char === "'" || char === '"') {
+			begin(index, false).end = index + 1
 			quote = char
-			started = true
 			continue
 		}
 		if (char === '\\' && index + 1 < line.length) {
-			current += line[++index]
-			started = true
+			const token = begin(index, false)
+			token.value += line[++index]
+			token.end = index + 1
 			continue
 		}
 		if (/\s/.test(char)) {
-			if (started) tokens.push(current)
-			current = ''
-			started = false
+			if (current) tokens.push(current)
+			current = null
 			continue
 		}
-		if (char === '#' && !started) break
-		current += char
-		started = true
+		if (char === '#' && !current) break
+		const token = begin(index, true)
+		token.value += char
+		token.end = index + 1
 	}
 	if (quote) return { error: `unterminated ${quote} quote` }
-	if (started) tokens.push(current)
+	if (current) tokens.push(current)
 	return { value: tokens }
 }
 
+type SplitCommand = {
+	cmd: string
+	argv: string[]
+	/** The resolved command and how many leading tokens named it; absent for an unknown first word. */
+	command?: Command
+	commandTokens?: number
+}
+
 /** Longest leading run of tokens that names a command (`page emulation clear`), the rest is its argv. */
-const splitCommand = (program: Command, tokens: readonly string[]): { cmd: string; argv: string[] } => {
+const splitCommand = (program: Command, tokens: readonly string[]): SplitCommand => {
 	const path: string[] = []
 	let current = program
 	let index = 0
@@ -247,7 +267,80 @@ const splitCommand = (program: Command, tokens: readonly string[]): { cmd: strin
 	}
 	// An unknown first word still goes through dispatch, which answers `session_unknown_command`.
 	if (path.length === 0) return { cmd: tokens[0], argv: [...tokens.slice(1)] }
-	return { cmd: path.join(' '), argv: [...tokens.slice(index)] }
+	return { cmd: path.join(' '), argv: [...tokens.slice(index)], command: current, commandTokens: index }
+}
+
+/**
+ * Argv for an unquoted JS expression: `eval await app.useBooster("x") --timeout 40s`.
+ *
+ * Shell-style tokenizing splits such a line on spaces and strips its quotes, so `eval` received three to
+ * five positionals and failed with "too many arguments" (six agent runs in one week). For a command whose
+ * arguments are exactly `[id] [expression]` (`eval`, `eval-until`/`wait`), a line with more operands than
+ * that keeps its raw source text, from the first operand up to the first unquoted flag, as one expression.
+ *
+ * Conservative by design, because a wrong split runs different JavaScript: the boundary is any unquoted
+ * `-x`/`--x` word (so `10 + 2 -q` is `10 + 2` plus `-q`), and the line is left to Commander's own error
+ * whenever a flag is undeclared or a stray operand follows the flags.
+ *
+ * @returns The argv to dispatch, or `null` when the tokenized argv already fits the command or the line is ambiguous.
+ */
+const splitRawExpression = (split: SplitCommand, line: string, watcherId: string): string[] | null => {
+	const { command, commandTokens } = split
+	if (!command || commandTokens == null) return null
+	if (command.registeredArguments.map((argument) => argument.name()).join(' ') !== 'id expression') return null
+	const allowed = split.argv[0] === watcherId ? 2 : 1
+	if (countPositionals(command, split.argv) <= allowed) return null
+
+	const spans = tokenizeSpans(line)
+	if ('error' in spans) return null
+	let operands = spans.value.slice(commandTokens)
+	const prefix = operands[0]?.value === watcherId ? [watcherId] : []
+	operands = operands.slice(prefix.length)
+
+	const flagIndex = operands.findIndex(isFlagToken)
+	const expressionTokens = flagIndex === -1 ? operands : operands.slice(0, flagIndex)
+	const flags = flagIndex === -1 ? [] : operands.slice(flagIndex)
+	if (expressionTokens.length < 2 || !flagsAreWellFormed(command, flags)) return null
+
+	const expression = line.slice(expressionTokens[0]!.start, expressionTokens.at(-1)!.end)
+	return [...prefix, expression, ...flags.map((token) => token.value)]
+}
+
+/** An unquoted `-x` / `--name` word; `-1` stays an operand. */
+const isFlagToken = (token: Token): boolean => token.bare && /^--?[a-zA-Z]/.test(token.value)
+
+const findDeclaredOption = (command: Command, token: string): Option | undefined => {
+	const flag = token.split('=')[0]
+	return command.options.find((option) => option.long === flag || option.short === flag)
+}
+
+/** `--timeout 5s` takes the next word as its value; `--timeout=5s` and switches do not. */
+const consumesNextToken = (option: Option, token: string): boolean => (option.required || option.optional) && !token.includes('=')
+
+/** Every word is a declared flag or the value one of them consumes. */
+const flagsAreWellFormed = (command: Command, flags: readonly Token[]): boolean => {
+	for (let index = 0; index < flags.length; index += 1) {
+		const token = flags[index]!
+		const option = isFlagToken(token) ? findDeclaredOption(command, token.value) : undefined
+		if (!option) return false
+		if (consumesNextToken(option, token.value)) index += 1
+	}
+	return true
+}
+
+/** Operands in `argv`, skipping option values the command's own flags consume. */
+const countPositionals = (command: Command, argv: readonly string[]): number => {
+	let count = 0
+	for (let index = 0; index < argv.length; index += 1) {
+		const token = argv[index]!
+		if (!token.startsWith('-') || token === '-') {
+			count += 1
+			continue
+		}
+		const option = findDeclaredOption(command, token)
+		if (option && consumesNextToken(option, token)) index += 1
+	}
+	return count
 }
 
 const toReport = (step: ScriptStep, response: SessionResponse): StepReport => {

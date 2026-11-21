@@ -1,6 +1,7 @@
 import type { Command } from 'commander'
 import type { ArgusCommandDefinition } from '../defineCommand.js'
-import { gotoCommand } from './pageCommands.js'
+import { gotoCommand, pageUrlCommand } from './pageCommands.js'
+import { watcherStopCommand } from './watcherCommands.js'
 import { isCliProvided, resolveOptionsWithConfig } from '../../config/configContext.js'
 import { mergeChromeStartOptionsWithConfig, mergeWatcherStartOptionsWithConfig } from '../../config/mergeConfig.js'
 import { actionOptions, jsonOption, labelFilterOption, watcherLifecycleOptions } from './sharedOptions.js'
@@ -138,8 +139,12 @@ export const quickAccessCommands: readonly ArgusCommandDefinition[] = [
 		},
 	},
 	// The only navigation command that also lives at the top level, mirroring `reload` <-> `page reload`.
-	// `back`/`forward`/`url` stay under `page` so the top level does not grow a verb per CDP command.
+	// `back`/`forward` stay under `page` so the top level does not grow a verb per CDP command.
 	{ ...gotoCommand, examples: (gotoCommand.examples ?? []).map((example) => example.replace('argus page goto', 'argus goto')) },
+	// Hidden spellings agents keep typing (`argus stop app`, `argus url app`): they work, but stay out of
+	// `argus --help` so the documented top level does not grow. Aliases are dropped: `argus kill`/`detach` were never guessed.
+	{ ...watcherStopCommand, alias: undefined, aliases: undefined, hidden: true },
+	{ ...pageUrlCommand, hidden: true },
 ]
 
 const normalizeStartAuthOptions = (command: Command, options: { json?: boolean; authFrom?: string; profile?: string }): boolean => {

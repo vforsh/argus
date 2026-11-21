@@ -39,11 +39,16 @@ export type ArgusCommandDefinition = {
 	 */
 	action?: (...args: any[]) => Promise<void> | void
 	subcommands?: readonly ArgusCommandDefinition[]
+	/**
+	 * Accept the command but leave it out of `--help` listings: for top-level spellings agents keep
+	 * guessing (`argus stop <id>` for `argus watcher stop`) without growing the documented top level.
+	 */
+	hidden?: boolean
 }
 
 /** Register a declarative command definition with Commander. */
 export const defineCommand = (parent: Command, definition: ArgusCommandDefinition): Command => {
-	const command = parent.command(definition.name)
+	const command = parent.command(definition.name, { hidden: definition.hidden })
 
 	if (definition.alias) {
 		command.alias(definition.alias)

@@ -46,7 +46,7 @@ argus run app -e 'reload' -e 'wait --global app.ready' -e 'probe url=location.hr
 argus logs app --since 1m --levels error,exception
 ```
 
-`run` prints `✓ n cmd (ms) → result` per step and stops at the first failure; `--keep-going` runs every step (use it for diagnostics), `--json` returns `{ ok, steps: [{ step, cmd, ok, result | error }] }`.
+`run` prints `✓ n cmd (ms) → result` per step and stops at the first failure; an unquoted `eval`/`wait` expression keeps its spaces and quotes up to the first flag (`-e 'eval await app.use("x") --timeout 40s'`); `--keep-going` runs every step (use it for diagnostics), `--json` returns `{ ok, steps: [{ step, cmd, ok, result | error }] }`.
 
 ---
 

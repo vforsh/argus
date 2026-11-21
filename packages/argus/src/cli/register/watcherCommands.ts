@@ -14,6 +14,31 @@ const runWatcherStop = lazyAction(() => import('../../commands/watcherStop.js').
 const runWatcherPrune = lazyAction(() => import('../../commands/watcherPrune.js').then((mod) => mod.runWatcherPrune))
 const runWatcherNativeHost = lazyAction(() => import('../../commands/watcherNativeHost.js').then((mod) => mod.runWatcherNativeHost))
 
+/** `argus watcher stop`; also registered as the hidden top-level `argus stop` agents keep guessing. */
+export const watcherStopCommand: ArgusCommandDefinition = {
+	name: 'stop',
+	alias: 'kill',
+	aliases: ['detach'],
+	description: 'Stop a watcher and any Chrome launched by argus start',
+	arguments: [{ flags: '[id]', description: 'Watcher id to stop' }],
+	options: [
+		{ flags: '--id <watcherId>', description: 'Watcher id to stop' },
+		{ flags: '--port <port>', description: 'Select a registered watcher by its HTTP port' },
+		{ ...labelFilterOption, description: 'Stop every watcher carrying this label (repeatable; all must match)' },
+		jsonOption,
+	],
+	examples: [
+		'argus watcher stop app',
+		'argus watcher stop --id app',
+		'argus watcher stop --label session=abc',
+		'argus watcher kill app',
+		'argus watcher detach app',
+	],
+	action: async (id, options) => {
+		await runWatcherStop(id ?? options.id, options)
+	},
+}
+
 export const watcherCommands: readonly ArgusCommandDefinition[] = [
 	{
 		name: 'watcher',
@@ -73,29 +98,7 @@ export const watcherCommands: readonly ArgusCommandDefinition[] = [
 					await runWatcherStart(merged)
 				},
 			},
-			{
-				name: 'stop',
-				alias: 'kill',
-				aliases: ['detach'],
-				description: 'Stop a watcher and any Chrome launched by argus start',
-				arguments: [{ flags: '[id]', description: 'Watcher id to stop' }],
-				options: [
-					{ flags: '--id <watcherId>', description: 'Watcher id to stop' },
-					{ flags: '--port <port>', description: 'Select a registered watcher by its HTTP port' },
-					{ ...labelFilterOption, description: 'Stop every watcher carrying this label (repeatable; all must match)' },
-					jsonOption,
-				],
-				examples: [
-					'argus watcher stop app',
-					'argus watcher stop --id app',
-					'argus watcher stop --label session=abc',
-					'argus watcher kill app',
-					'argus watcher detach app',
-				],
-				action: async (id, options) => {
-					await runWatcherStop(id ?? options.id, options)
-				},
-			},
+			watcherStopCommand,
 			{
 				name: 'status',
 				alias: 'ping',

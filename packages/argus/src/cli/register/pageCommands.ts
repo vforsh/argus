@@ -1,6 +1,6 @@
 import type { ArgusCommandDefinition } from '../defineCommand.js'
 import { listPresetNames } from '../../emulation/devices.js'
-import { collectParam } from '../validation.js'
+import { collectParam, usageError } from '../validation.js'
 import { actionOptions, jsonOption } from './sharedOptions.js'
 import { lazyAction } from '../lazyAction.js'
 
@@ -199,6 +199,18 @@ const emulationCommand: ArgusCommandDefinition = {
 	],
 }
 
+/** `argus page url`; also registered as the hidden top-level `argus url`. */
+export const pageUrlCommand: ArgusCommandDefinition = {
+	name: 'url',
+	description: "Print the attached page's URL (bare URL, pipe-friendly)",
+	arguments: [{ flags: '[id]', description: 'Watcher ID' }],
+	options: [jsonOption],
+	examples: ['argus page url app', 'argus page url app --json'],
+	action: async (id, options) => {
+		await runPageUrl(id, options)
+	},
+}
+
 export const pageCommands: readonly ArgusCommandDefinition[] = [
 	{
 		name: 'page',
@@ -209,6 +221,9 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 				name: 'ls',
 				aliases: ['targets', 'list'],
 				description: 'List Chrome targets (tabs, extensions, etc.)',
+				// Named `watcher`, not `id`: a leading `[id]` makes `session`/`run` inject their own watcher ahead of
+				// an explicit `--id`/`--cdp` (`takesWatcherArgument`); this command keeps targeting only what it is given.
+				arguments: [{ flags: '[watcher]', description: 'Watcher whose Chrome to list (same as --id)' }],
 				options: [
 					{ flags: '--type <type>', description: 'Filter by target type (e.g. page, worker, iframe)' },
 					{ flags: '--tree', description: 'Show targets as a tree with parent-child relationships' },
@@ -220,10 +235,15 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 					'argus page ls --type iframe',
 					'argus page ls --tree',
 					'argus page ls --json',
-					'argus page ls --id app',
+					'argus page ls app',
 				],
-				action: async (options) => {
-					await runChromeTargets(options)
+				action: async (watcher, options) => {
+					if (watcher && (options.id || options.cdp)) {
+						const explicit = options.id ? `--id ${options.id}` : `--cdp ${options.cdp}`
+						usageError(options, `Pass the watcher once: positional "${watcher}" conflicts with ${explicit}`)
+						return
+					}
+					await runChromeTargets(watcher ? { ...options, id: watcher } : options)
 				},
 			},
 			{
@@ -370,16 +390,7 @@ export const pageCommands: readonly ArgusCommandDefinition[] = [
 					await runPageForward(id, options)
 				},
 			},
-			{
-				name: 'url',
-				description: "Print the attached page's URL (bare URL, pipe-friendly)",
-				arguments: [{ flags: '[id]', description: 'Watcher ID' }],
-				options: [jsonOption],
-				examples: ['argus page url app', 'argus page url app --json'],
-				action: async (id, options) => {
-					await runPageUrl(id, options)
-				},
-			},
+			pageUrlCommand,
 			emulationCommand,
 			initScriptCommand,
 		],
