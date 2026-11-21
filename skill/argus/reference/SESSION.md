@@ -35,8 +35,6 @@ EOF
 
 Quoting is shell-like (`'…'` literal, `"…"` with `\"` escapes, trailing `\` continues a line). Each step runs with `--json` forced on, as in `session`; the summary shows a bounded preview of its result. Stops at the first failure (exit 1) unless `--keep-going`. `-e` lines run first, then `--file <path>`; stdin is read only when neither is given. `--json` prints `{ ok, watcher, steps: [{ step, cmd, line, ok, durationMs, result | error }] }` (`cmd` is the canonical command path, aliases resolved) (plus `error.code: "run_step_failed"` when a step failed). Commands `session` refuses (below) are refused here too. Every step targets the run's watcher, including commands whose watcher argument is not the first positional. Per-step watchdog: 120s; use `--keep-going` for diagnostics so one failing read does not hide the rest; a step that hits it ends the run (its abandoned work cannot be joined) and the process exits once the report is written.
 
-Three or more page commands from one shell within 10s print a stderr `hint:` naming `argus run` (`ARGUS_NO_HINTS=1` silences hints).
-
 ## `argus session` (JSONL)
 
 `argus session <id>` serves many commands from one process over stdin/stdout. Each one-shot `argus` call pays Node startup plus watcher discovery (~100–200ms); a session pays it once. Use it when a harness issues dozens of sequential commands against one watcher.

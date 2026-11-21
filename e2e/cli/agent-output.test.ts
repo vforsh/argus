@@ -30,7 +30,7 @@ const defer = useCleanup()
 const open = async (extra: StubRoutes = {}): Promise<{ stub: StubWatcher; cli: ReturnType<typeof createCli> }> => {
 	const stub = await startStubWatcher({ ...routes(), ...extra }, 'app')
 	defer(() => stub.close())
-	// ARGUS_NO_HINTS keeps the cadence hint out of stderr assertions.
+	// ARGUS_NO_HINTS keeps eval hints out of stderr assertions.
 	return { stub, cli: createCli({ env: argusEnv(stub.home, { ARGUS_NO_HINTS: '1' }), cwd: stub.home }) }
 }
 

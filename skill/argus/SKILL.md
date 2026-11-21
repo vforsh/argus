@@ -95,7 +95,7 @@ Never use `argus start`, `--profile temp`, or headless for a flow that needs the
 - `--until <expr>`: truthy page expression (throws count as "not yet"); `--until-timeout` (default 15s). A miss exits 1 with `wait_timeout`, `lastState`, and the last value — after an action the action already ran, so don't blindly repeat it. Polls never match the document a navigation left.
 - `argus wait`: `--global a.b.c` (dotted path truthy), `--gone <selector>`, `--idle` (= `--settle`), or an expression; `--total-timeout`, `--fail-on-exception`.
 - Apps with their own idle signal expose it once: `window.__argus = { settle: () => store.idle() }`.
-- `eval` prints a stderr `hint:` when it sees `setTimeout`/`new Promise` polling or a multi-key `JSON.stringify({…})`; several argus calls from one shell within 10s print a hint naming `argus run` (`ARGUS_NO_HINTS=1` silences hints).
+- `eval` prints a stderr `hint:` before its result when it sees `setTimeout`/`new Promise` polling or a multi-key `JSON.stringify({…})`; each hint shows at most once per 30 min (`ARGUS_NO_HINTS=1` silences hints).
 
 ## Conventions
 

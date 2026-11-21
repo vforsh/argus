@@ -1,20 +1,67 @@
+import { closeSync, mkdirSync, openSync, renameSync, rmSync, statSync } from 'node:fs'
+import path from 'node:path'
 import type { Output } from '../output/io.js'
+import { getArgusHomeDir } from '../config/argusHome.js'
 
 /**
  * One-line stderr hints that name the command an eval pattern should have been.
  *
  * Observed agent evals hand-rolled what Argus already does: 983 wrapped several values in
  * `JSON.stringify({…})` (→ `probe`), 199 polled with `setTimeout`/`new Promise` (→ `wait` /
- * `--until`). Hints go to stderr only, so stdout stays the payload, and each fires once per process.
+ * `--until`). Hints go to stderr only, so stdout stays the payload, and always before the result: agents
+ * read output through `2>&1 | tail -1`, where a trailing hint replaced the value they asked for.
+ *
+ * Each key fires at most once per {@link HINT_INTERVAL_MS} across processes. A per-process limit let the
+ * same hint repeat on every call: a week of transcripts showed the eval hints ~130 times (and a since-removed
+ * `argus run` hint 128 times) with no change in what agents typed, so repeats are noise, not teaching.
  */
+
+const HINT_INTERVAL_MS = 30 * 60_000
 
 const shown = new Set<string>()
 
-/** Write `text` once per process under `key`. */
+/** Write `text` under `key`, at most once per process and once per {@link HINT_INTERVAL_MS} machine-wide. */
 export const writeHintOnce = (key: string, text: string, output: Output): void => {
 	if (shown.has(key) || process.env.ARGUS_NO_HINTS === '1') return
 	shown.add(key)
+	if (!claimHintSlot(key)) return
 	output.writeWarn(`hint: ${text}`)
+}
+
+/**
+ * Claim the right to show `key` now. One marker file per key; its mtime is when the hint last showed.
+ *
+ * Race-free without a lock: a missing marker is created with `wx` (exactly one process succeeds), and a
+ * stale one is first renamed away (exactly one rename succeeds; the losers see ENOENT). A shared JSON
+ * file lost concurrent claims and could be read half-written. Any other failure (read-only home) shows
+ * the hint, as before the throttle existed.
+ */
+const claimHintSlot = (key: string): boolean => {
+	const marker = path.join(getArgusHomeDir(), 'hints', key)
+	try {
+		mkdirSync(path.dirname(marker), { recursive: true })
+		const shownAt = markerTime(marker)
+		if (shownAt !== undefined) {
+			if (Date.now() - shownAt < HINT_INTERVAL_MS) return false
+			const stale = `${marker}.${process.pid}.stale`
+			renameSync(marker, stale)
+			rmSync(stale, { force: true })
+		}
+		closeSync(openSync(marker, 'wx'))
+		return true
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code
+		return code !== 'ENOENT' && code !== 'EEXIST'
+	}
+}
+
+const markerTime = (marker: string): number | undefined => {
+	try {
+		return statSync(marker).mtimeMs
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+		throw error
+	}
 }
 
 /** Hints derived from the expression text alone, before it runs. */

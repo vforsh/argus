@@ -4,7 +4,6 @@ import { registerPlugins } from './plugins/registerPlugins.js'
 import { guardUnknownCommand } from './unknownCommand.js'
 import { configureMachineSafeConsole, isJsonRequested, setPipedJsonDefault, writeJsonFailureFallback } from '../output/io.js'
 import { isPipedJsonDefault } from './jsonDefault.js'
-import { recordInvocationCadence } from './cadenceHint.js'
 
 setPipedJsonDefault(isPipedJsonDefault())
 configureMachineSafeConsole(process.argv.slice(2))
@@ -21,7 +20,6 @@ program
 	.parseAsync(guardUnknownCommand(program, process.argv.slice(2)), { from: 'user' })
 	.then(() => {
 		if (isJsonRequested(process.argv.slice(2))) writeJsonFailureFallback(Number(process.exitCode ?? 0))
-		recordInvocationCadence(process.argv.slice(2))
 	})
 	.catch((error) => {
 		console.error(error)
