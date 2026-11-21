@@ -1,6 +1,8 @@
 ---
 name: argus
 description: Guides use of the Argus CLI to debug and inspect web apps via Chrome CDP or the Argus Chrome extension, including authenticated browser sessions, iframe targets, logs, eval, DOM, network, and screenshots.
+metadata:
+  cli-version: 0.5.40
 ---
 
 # Argus CLI
@@ -161,6 +163,7 @@ Read the code before retrying or raising a timeout.
 | `log_epoch_*` | cursor from another session / evicted | take a fresh `logs cursor` |
 | `not_available` | capture under background policy, or old watcher | `page show --policy foreground`; restart the watcher |
 | `watcher_id_taken` | name held by another live watcher | `argus watcher stop <id>` or another `--id`/`--as` |
+| `unknown option` / `unknown command` on a flag this file documents | installed CLI may be older than this file | compare `argus --version` with `metadata.cli-version` above (CLI ≥ 0.5.41 prints a `hint:` itself); if older, `bun add -g @vforsh/argus@latest`, then retry |
 | `trace_conflict` | Chrome already tracing | `argus trace stop <holder>` (named in the message) |
 | `ambiguous_control` / `ambiguous_browser` / `ambiguous_tab` | several browsers / labels / bind tabs match | `--id <controlId>` or `--browser <label>`; close extra tabs |
 | `bind_ticket_expired` / `_used` | ticket older than ~60s / already bound | `argus ext bind prepare --to <url>` again |
